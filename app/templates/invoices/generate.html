@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Generate Invoice | Weighbridge Web{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Generate Invoice</h1>
+    <p class="muted">Create an invoice from completed tickets.</p>
+  </div>
+</div>
+
+{% if errors %}
+  <div class="alert">
+    <ul>
+      {% for error in errors %}
+        <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<form class="ticket-form" method="post" action="/invoices/generate">
+  <section class="card">
+    <h2>Selection</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label for="customer_id">Customer</label>
+        <select id="customer_id" name="customer_id" required>
+          <option value="">Select customer</option>
+          {% for customer in customers %}
+            <option value="{{ customer.id }}" {% if form.customer_id == customer.id|string %}selected{% endif %}>
+              {{ customer.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="date_from">Date from</label>
+        <input type="date" id="date_from" name="date_from" value="{{ form.date_from }}" />
+      </div>
+      <div class="field">
+        <label for="date_to">Date to</label>
+        <input type="date" id="date_to" name="date_to" value="{{ form.date_to }}" />
+      </div>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button type="submit">Generate</button>
+    <a class="link-button" href="/invoices">Cancel</a>
+  </div>
+</form>
+{% endblock %}

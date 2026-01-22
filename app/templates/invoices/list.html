@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Invoices | Weighbridge Web{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Invoices</h1>
+    <p class="muted">Review issued invoices.</p>
+  </div>
+  <div>
+    <a class="button" href="/invoices/generate">Generate Invoice</a>
+  </div>
+</div>
+
+<form class="filters" method="get" action="/invoices">
+  <div class="field">
+    <label for="q">Search invoice no or customer</label>
+    <input type="text" id="q" name="q" value="{{ q }}" />
+  </div>
+  <div class="actions">
+    <button type="submit">Search</button>
+    <a class="link-button" href="/invoices">Reset</a>
+  </div>
+</form>
+
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Invoice no</th>
+        <th>Customer</th>
+        <th>Date</th>
+        <th>Status</th>
+        <th>Net</th>
+        <th>VAT</th>
+        <th>Gross</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for invoice, customer in rows %}
+        <tr>
+          <td><a href="/invoices/{{ invoice.id }}">{{ invoice.invoice_no }}</a></td>
+          <td>{{ customer.name }}</td>
+          <td>{{ invoice.invoice_date }}</td>
+          <td>{{ invoice.status }}</td>
+          <td>{{ invoice.net_total }}</td>
+          <td>{{ invoice.vat_total }}</td>
+          <td>{{ invoice.gross_total }}</td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="7" class="empty">No invoices found.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

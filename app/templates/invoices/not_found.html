@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+
+{% block title %}Invoice Not Found | Weighbridge Web{% endblock %}
+
+{% block content %}
+<h1>Invoice Not Found</h1>
+<p>Invoice {{ invoice_id }} does not exist.</p>
+<a class="link-button" href="/invoices">Back to invoices</a>
+{% endblock %}

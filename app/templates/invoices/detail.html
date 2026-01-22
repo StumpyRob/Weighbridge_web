@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Invoice {{ invoice.invoice_no }} | Weighbridge Web{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ invoice.invoice_no }}</h1>
+    <p class="muted">{{ customer.name if customer else "" }}</p>
+  </div>
+</div>
+
+{% if errors %}
+  <div class="alert">
+    <ul>
+      {% for error in errors %}
+        <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<section class="card">
+  <div class="form-grid">
+    <div><strong>Status:</strong> {{ invoice.status }}</div>
+    <div><strong>Date:</strong> {{ invoice.invoice_date }}</div>
+    <div><strong>Net:</strong> {{ invoice.net_total }}</div>
+    <div><strong>VAT:</strong> {{ invoice.vat_total }}</div>
+    <div><strong>Gross:</strong> {{ invoice.gross_total }}</div>
+    <div><strong>Paid at:</strong> {{ invoice.paid_at or "" }}</div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Mark Paid</h2>
+  <form class="inline-form" method="post" action="/invoices/{{ invoice.id }}/paid">
+    <select name="payment_method_id">
+      <option value="">Select payment method</option>
+      {% for method in payment_methods %}
+        <option value="{{ method.id }}">{{ method.code }}</option>
+      {% endfor %}
+    </select>
+    <input type="datetime-local" name="paid_at" />
+    <button type="submit">Mark Paid</button>
+  </form>
+</section>
+
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Description</th>
+        <th>Qty</th>
+        <th>Unit price</th>
+        <th>Net</th>
+        <th>VAT</th>
+        <th>Gross</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in lines %}
+        <tr>
+          <td>{{ line.description }}</td>
+          <td>{{ line.quantity }}</td>
+          <td>{{ line.unit_price }}</td>
+          <td>{{ line.net }}</td>
+          <td>{{ line.vat }}</td>
+          <td>{{ line.gross }}</td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="6" class="empty">No lines found.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<section class="card">
+  <h2>Linked Tickets</h2>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Ticket no</th>
+          <th>Date/time</th>
+          <th>Status</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ticket in tickets %}
+          <tr>
+            <td><a href="/tickets/{{ ticket.id }}">{{ ticket.ticket_no }}</a></td>
+            <td>{{ ticket.datetime }}</td>
+            <td>{{ ticket.status }}</td>
+            <td>{{ ticket.total or "" }}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="4" class="empty">No linked tickets.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

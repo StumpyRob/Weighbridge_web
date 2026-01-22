@@ -28,6 +28,7 @@ class Ticket(Base):
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"))
     vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"))
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
+    invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id"))
     haulier_id: Mapped[int | None] = mapped_column(ForeignKey("hauliers.id"))
     driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"))
     container_id: Mapped[int | None] = mapped_column(ForeignKey("containers.id"))
