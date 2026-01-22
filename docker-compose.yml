@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: weighbridge
+      POSTGRES_PASSWORD: weighbridge
+      POSTGRES_DB: weighbridge
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  web:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://weighbridge:weighbridge@db:5432/weighbridge
+      SECRET_KEY: change-me
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
