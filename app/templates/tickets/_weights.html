@@ -1,0 +1,78 @@
+{% if errors %}
+  <div class="alert">
+    <ul>
+      {% for error in errors %}
+        <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+{% set gross_value = form.gross_kg if form is defined else (ticket.gross_kg or '') %}
+{% set tare_value = form.tare_kg if form is defined else (ticket.tare_kg or '') %}
+{% set net_value = form.net_kg if form is defined else (ticket.net_kg or '') %}
+
+<div class="form-grid">
+  <div class="field">
+    <label for="gross_kg">Gross kg</label>
+    <input
+      type="number"
+      step="0.001"
+      id="gross_kg"
+      name="gross_kg"
+      value="{{ gross_value }}"
+      {% if ticket.status == "COMPLETE" and not is_admin %}readonly{% endif %}
+    />
+  </div>
+  <div class="field">
+    <label for="tare_kg">Tare kg</label>
+    <input
+      type="number"
+      step="0.001"
+      id="tare_kg"
+      name="tare_kg"
+      value="{{ tare_value }}"
+      {% if ticket.status == "COMPLETE" and not is_admin %}readonly{% endif %}
+    />
+  </div>
+  <div class="field">
+    <label for="net_kg">Net kg</label>
+    <input type="text" id="net_kg" name="net_kg" value="{{ net_value }}" readonly />
+  </div>
+</div>
+
+<div class="weights-actions">
+  <div class="inline-capture">
+    <button
+      type="button"
+      class="button outline"
+      hx-get="/tickets/{{ ticket.id }}/weights/gross/form"
+      hx-target="#gross-capture"
+      hx-swap="innerHTML"
+    >
+      Capture Gross
+    </button>
+    <div id="gross-capture"></div>
+  </div>
+  <div class="inline-capture">
+    <button
+      type="button"
+      class="button outline"
+      hx-get="/tickets/{{ ticket.id }}/weights/tare/form"
+      hx-target="#tare-capture"
+      hx-swap="innerHTML"
+    >
+      Capture Tare
+    </button>
+    <div id="tare-capture"></div>
+  </div>
+  <button
+    type="button"
+    class="button outline"
+    hx-post="/tickets/{{ ticket.id }}/weights/swap"
+    hx-target="#weights-card"
+    hx-swap="innerHTML"
+  >
+    Swap Weights
+  </button>
+</div>

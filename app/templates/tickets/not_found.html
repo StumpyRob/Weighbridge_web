@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+
+{% block title %}Ticket Not Found | Weighbridge Web{% endblock %}
+
+{% block content %}
+<h1>Ticket Not Found</h1>
+<p>Ticket {{ ticket_id }} does not exist.</p>
+<a class="link-button" href="/tickets">Back to tickets</a>
+{% endblock %}

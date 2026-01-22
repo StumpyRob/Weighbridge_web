@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+
+{% block title %}New Ticket | Weighbridge Web{% endblock %}
+
+{% block content %}
+<h1>New Ticket</h1>
+
+{% if errors %}
+  <div class="alert">
+    <ul>
+      {% for error in errors %}
+        <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<form class="ticket-form" method="post" action="/tickets/new">
+  <section class="card">
+    <h2>Ticket Info</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label for="datetime">Date/time</label>
+        <input type="datetime-local" id="datetime" name="datetime" value="{{ form.datetime }}" required />
+      </div>
+      <div class="field">
+        <label for="direction">Direction</label>
+        <input type="text" id="direction" name="direction" value="{{ form.direction }}" required />
+      </div>
+      <div class="field">
+        <label for="transaction_type">Transaction type</label>
+        <input
+          type="text"
+          id="transaction_type"
+          name="transaction_type"
+          value="{{ form.transaction_type }}"
+          required
+        />
+      </div>
+      <div class="field">
+        <label for="status">Status</label>
+        <input type="text" id="status" name="status" value="{{ form.status }}" />
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Parties</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label for="customer_id">Customer</label>
+        <select id="customer_id" name="customer_id" required>
+          <option value="">Select customer</option>
+          {% for id, label in options.customers %}
+            <option value="{{ id }}" {% if form.customer_id == id %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="vehicle_id">Vehicle</label>
+        <select id="vehicle_id" name="vehicle_id" required>
+          <option value="">Select vehicle</option>
+          {% for id, label in options.vehicles %}
+            <option value="{{ id }}" {% if form.vehicle_id == id %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="product_id">Product</label>
+        <select id="product_id" name="product_id" required>
+          <option value="">Select product</option>
+          {% for id, label in options.products %}
+            <option value="{{ id }}" {% if form.product_id == id %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Optional Lookups</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label for="haulier_id">Haulier</label>
+        <select id="haulier_id" name="haulier_id">
+          <option value="">Select haulier</option>
+          {% for id, label in options.hauliers %}
+            <option value="{{ id }}" {% if form.haulier_id == id %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="driver_id">Driver</label>
+        <select id="driver_id" name="driver_id">
+          <option value="">Select driver</option>
+          {% for id, label in options.drivers %}
+            <option value="{{ id }}" {% if form.driver_id == id %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="container_id">Container</label>
+        <select id="container_id" name="container_id">
+          <option value="">Select container</option>
+          {% for id, label in options.containers %}
+            <option value="{{ id }}" {% if form.container_id == id %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="destination_id">Destination</label>
+        <select id="destination_id" name="destination_id">
+          <option value="">Select destination</option>
+          {% for id, label in options.destinations %}
+            <option value="{{ id }}" {% if form.destination_id == id %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="yard_id">Yard</label>
+        <select id="yard_id" name="yard_id">
+          <option value="">Select yard</option>
+          {% for id, label in options.yards %}
+            <option value="{{ id }}" {% if form.yard_id == id %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="area_id">Area</label>
+        <select id="area_id" name="area_id">
+          <option value="">Select area</option>
+          {% for id, label in options.areas %}
+            <option value="{{ id }}" {% if form.area_id == id %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="waste_code_id">Waste code</label>
+        <select id="waste_code_id" name="waste_code_id">
+          <option value="">Select waste code</option>
+          {% for id, label in options.waste_codes %}
+            <option value="{{ id }}" {% if form.waste_code_id == id %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="waste_producer_id">Waste producer</label>
+        <select id="waste_producer_id" name="waste_producer_id">
+          <option value="">Select waste producer</option>
+          {% for id, label in options.waste_producers %}
+            <option value="{{ id }}" {% if form.waste_producer_id == id %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="licence_id">Licence</label>
+        <select id="licence_id" name="licence_id">
+          <option value="">Select licence</option>
+          {% for id, label in options.licences %}
+            <option value="{{ id }}" {% if form.licence_id == id %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Weights</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label for="gross_kg">Gross kg</label>
+        <input type="number" step="0.001" id="gross_kg" name="gross_kg" value="{{ form.gross_kg }}" />
+      </div>
+      <div class="field">
+        <label for="tare_kg">Tare kg</label>
+        <input type="number" step="0.001" id="tare_kg" name="tare_kg" value="{{ form.tare_kg }}" />
+      </div>
+      <div class="field">
+        <label for="net_kg">Net kg</label>
+        <input type="text" id="net_kg" name="net_kg" value="{{ form.net_kg }}" readonly />
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Pricing</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label for="qty">Quantity</label>
+        <input type="number" step="0.001" id="qty" name="qty" value="{{ form.qty }}" />
+      </div>
+      <div class="field">
+        <label for="unit_id">Unit</label>
+        <select id="unit_id" name="unit_id">
+          <option value="">Select unit</option>
+          {% for id, label in options.units %}
+            <option value="{{ id }}" {% if form.unit_id == id %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="unit_price">Unit price</label>
+        <input type="number" step="0.01" id="unit_price" name="unit_price" value="{{ form.unit_price }}" />
+      </div>
+      <div class="field">
+        <label for="total">Total</label>
+        <input type="text" id="total" name="total" value="{{ form.total }}" readonly />
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Flags</h2>
+    <div class="field checkbox">
+      <input type="checkbox" id="dont_invoice" name="dont_invoice" {% if form.dont_invoice %}checked{% endif %} />
+      <label for="dont_invoice">Don't invoice</label>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button type="submit">Save</button>
+    <a class="link-button" href="/tickets">Cancel</a>
+  </div>
+</form>
+{% endblock %}

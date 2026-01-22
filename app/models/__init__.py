@@ -30,6 +30,7 @@ from .lookups import (
 )
 from .product import Product
 from .ticket import Ticket
+from .ticket_void import TicketVoid
 from .user import User
 from .vehicle import Vehicle
 
@@ -64,6 +65,7 @@ __all__ = [
     "Yard",
     "Product",
     "Ticket",
+    "TicketVoid",
     "User",
     "Vehicle",
 ]

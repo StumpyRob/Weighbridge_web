@@ -23,11 +23,6 @@ def index(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-@app.get("/tickets", response_class=HTMLResponse)
-def tickets(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("tickets.html", {"request": request})
-
-
 @app.get("/customers", response_class=HTMLResponse)
 def customers(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("customers.html", {"request": request})
