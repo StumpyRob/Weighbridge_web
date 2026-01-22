@@ -26,6 +26,7 @@ from ..models import (
     WasteProducer,
     Yard,
 )
+from ..services.weight_source import get_indicator_source
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -428,16 +429,8 @@ async def tickets_capture_gross(
     form = await request.form()
     gross_value = _parse_float(_form_value(form, "weight_value"))
     if gross_value is None:
-        return templates.TemplateResponse(
-            "tickets/_weights.html",
-            {
-                "request": request,
-                "ticket": ticket,
-                "errors": ["Gross weight is required."],
-                "is_admin": True,
-                "form": _ticket_to_form(ticket),
-            },
-            status_code=400,
+        return _render_weights_partial(
+            request, ticket, errors=["Gross weight is required."], status_code=400
         )
 
     ticket.gross_kg = gross_value
@@ -448,16 +441,7 @@ async def tickets_capture_gross(
     )
     ticket.updated_at = datetime.utcnow()
     db.commit()
-    return templates.TemplateResponse(
-        "tickets/_weights.html",
-        {
-            "request": request,
-            "ticket": ticket,
-            "errors": [],
-            "is_admin": True,
-            "form": _ticket_to_form(ticket),
-        },
-    )
+    return _render_weights_partial(request, ticket, errors=[])
 
 
 @router.get("/tickets/{ticket_id}/weights/gross/form", response_class=HTMLResponse)
@@ -467,6 +451,19 @@ def tickets_capture_gross_form(
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         return HTMLResponse("Ticket not found.", status_code=404)
+    indicator = get_indicator_source()
+    if indicator.is_connected():
+        weight = indicator.get_weight_kg()
+        if weight is not None:
+            ticket.gross_kg = weight
+            ticket.net_kg = (
+                ticket.gross_kg - ticket.tare_kg
+                if ticket.gross_kg is not None and ticket.tare_kg is not None
+                else None
+            )
+            ticket.updated_at = datetime.utcnow()
+            db.commit()
+            return _render_weights_partial(request, ticket, errors=[])
     return templates.TemplateResponse(
         "tickets/_weight_form.html",
         {
@@ -489,16 +486,8 @@ async def tickets_capture_tare(
     form = await request.form()
     tare_value = _parse_float(_form_value(form, "weight_value"))
     if tare_value is None:
-        return templates.TemplateResponse(
-            "tickets/_weights.html",
-            {
-                "request": request,
-                "ticket": ticket,
-                "errors": ["Tare weight is required."],
-                "is_admin": True,
-                "form": _ticket_to_form(ticket),
-            },
-            status_code=400,
+        return _render_weights_partial(
+            request, ticket, errors=["Tare weight is required."], status_code=400
         )
 
     ticket.tare_kg = tare_value
@@ -509,16 +498,7 @@ async def tickets_capture_tare(
     )
     ticket.updated_at = datetime.utcnow()
     db.commit()
-    return templates.TemplateResponse(
-        "tickets/_weights.html",
-        {
-            "request": request,
-            "ticket": ticket,
-            "errors": [],
-            "is_admin": True,
-            "form": _ticket_to_form(ticket),
-        },
-    )
+    return _render_weights_partial(request, ticket, errors=[])
 
 
 @router.get("/tickets/{ticket_id}/weights/tare/form", response_class=HTMLResponse)
@@ -528,6 +508,19 @@ def tickets_capture_tare_form(
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         return HTMLResponse("Ticket not found.", status_code=404)
+    indicator = get_indicator_source()
+    if indicator.is_connected():
+        weight = indicator.get_weight_kg()
+        if weight is not None:
+            ticket.tare_kg = weight
+            ticket.net_kg = (
+                ticket.gross_kg - ticket.tare_kg
+                if ticket.gross_kg is not None and ticket.tare_kg is not None
+                else None
+            )
+            ticket.updated_at = datetime.utcnow()
+            db.commit()
+            return _render_weights_partial(request, ticket, errors=[])
     return templates.TemplateResponse(
         "tickets/_weight_form.html",
         {
@@ -555,16 +548,7 @@ def tickets_swap_weights(
     )
     ticket.updated_at = datetime.utcnow()
     db.commit()
-    return templates.TemplateResponse(
-        "tickets/_weights.html",
-        {
-            "request": request,
-            "ticket": ticket,
-            "errors": [],
-            "is_admin": True,
-            "form": _ticket_to_form(ticket),
-        },
-    )
+    return _render_weights_partial(request, ticket, errors=[])
 
 
 def _apply_ticket_updates(ticket: Ticket, payload: dict) -> None:
@@ -726,6 +710,22 @@ def _ticket_to_form(ticket: Ticket) -> dict:
 
 def _form_value(form, key: str) -> str:
     return str(form.get(key, "")).strip()
+
+
+def _render_weights_partial(
+    request: Request, ticket: Ticket, errors: list[str], status_code: int = 200
+) -> HTMLResponse:
+    return templates.TemplateResponse(
+        "tickets/_weights.html",
+        {
+            "request": request,
+            "ticket": ticket,
+            "errors": errors,
+            "is_admin": True,
+            "form": _ticket_to_form(ticket),
+        },
+        status_code=status_code,
+    )
 
 
 def _parse_int(value: str) -> int | None:
