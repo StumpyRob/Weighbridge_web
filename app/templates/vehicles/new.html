@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}New Vehicle | Weighbridge Web{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>New Vehicle</h1>
+    <p class="muted">Create a vehicle record.</p>
+  </div>
+</div>
+
+{% if errors %}
+  <div class="alert">
+    <ul>
+      {% for error in errors %}
+        <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<form class="ticket-form" method="post" action="/vehicles/new">
+  {% include "vehicles/_form.html" %}
+  <div class="actions">
+    <button type="submit">Save</button>
+    <a class="link-button" href="/vehicles">Cancel</a>
+  </div>
+</form>
+{% endblock %}

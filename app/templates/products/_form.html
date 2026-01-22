@@ -1,0 +1,110 @@
+<section class="card">
+  <h2>Product</h2>
+  <div class="form-grid">
+    <div class="field">
+      <label for="code">Code</label>
+      <input type="text" id="code" name="code" value="{{ form.code }}" required />
+    </div>
+    <div class="field">
+      <label for="description">Description</label>
+      <input type="text" id="description" name="description" value="{{ form.description }}" required />
+    </div>
+    <div class="field">
+      <label for="group_id">Group</label>
+      <select id="group_id" name="group_id">
+        <option value="">Select group</option>
+        {% for id, label in options.groups %}
+          <option value="{{ id }}" {% if form.group_id == id %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="unit_id">Unit</label>
+      <select id="unit_id" name="unit_id">
+        <option value="">Select unit</option>
+        {% for id, label in options.units %}
+          <option value="{{ id }}" {% if form.unit_id == id %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="tax_rate_id">Tax rate</label>
+      <select id="tax_rate_id" name="tax_rate_id">
+        <option value="">Select rate</option>
+        {% for id, label in options.tax_rates %}
+          <option value="{{ id }}" {% if form.tax_rate_id == id %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="nominal_code_id">Nominal code</label>
+      <select id="nominal_code_id" name="nominal_code_id">
+        <option value="">Select nominal code</option>
+        {% for id, label in options.nominal_codes %}
+          <option value="{{ id }}" {% if form.nominal_code_id == id %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="default_waste_code_id">Default waste code</label>
+      <select id="default_waste_code_id" name="default_waste_code_id">
+        <option value="">Select waste code</option>
+        {% for id, label in options.waste_codes %}
+          <option value="{{ id }}" {% if form.default_waste_code_id == id %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Pricing</h2>
+  <div class="form-grid">
+    <div class="field">
+      <label for="account_price">Account price</label>
+      <input type="number" step="0.01" id="account_price" name="account_price" value="{{ form.account_price }}" />
+    </div>
+    <div class="field">
+      <label for="cash_price">Cash price</label>
+      <input type="number" step="0.01" id="cash_price" name="cash_price" value="{{ form.cash_price }}" />
+    </div>
+    <div class="field">
+      <label for="min_price">Min price</label>
+      <input type="number" step="0.01" id="min_price" name="min_price" value="{{ form.min_price }}" />
+    </div>
+    <div class="field">
+      <label for="max_price">Max price</label>
+      <input type="number" step="0.01" id="max_price" name="max_price" value="{{ form.max_price }}" />
+    </div>
+    <div class="field">
+      <label for="max_qty">Max qty</label>
+      <input type="number" step="0.001" id="max_qty" name="max_qty" value="{{ form.max_qty }}" />
+    </div>
+    <div class="field">
+      <label for="excess_trigger">Excess trigger</label>
+      <input type="number" step="0.001" id="excess_trigger" name="excess_trigger" value="{{ form.excess_trigger }}" />
+    </div>
+    <div class="field">
+      <label for="excess_price">Excess price</label>
+      <input type="number" step="0.01" id="excess_price" name="excess_price" value="{{ form.excess_price }}" />
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Flags</h2>
+  <div class="form-grid">
+    <div class="field checkbox">
+      <input type="checkbox" id="is_hazardous" name="is_hazardous" {% if form.is_hazardous %}checked{% endif %} />
+      <label for="is_hazardous">Hazardous</label>
+    </div>
+    <div class="field checkbox">
+      <input type="checkbox" id="final_disposal" name="final_disposal" {% if form.final_disposal %}checked{% endif %} />
+      <label for="final_disposal">Final disposal</label>
+    </div>
+    <div class="field checkbox">
+      <input type="checkbox" id="used_on_site" name="used_on_site" {% if form.used_on_site %}checked{% endif %} />
+      <label for="used_on_site">Used on site</label>
+    </div>
+  </div>
+</section>

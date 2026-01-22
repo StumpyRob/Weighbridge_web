@@ -1,0 +1,96 @@
+<section class="card">
+  <h2>Account</h2>
+  <div class="form-grid">
+    <div class="field">
+      <label for="account_code">Account code</label>
+      <input type="text" id="account_code" name="account_code" value="{{ form.account_code }}" required />
+    </div>
+    <div class="field">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" value="{{ form.name }}" required />
+    </div>
+    <div class="field">
+      <label for="invoice_email">Invoice email</label>
+      <input type="email" id="invoice_email" name="invoice_email" value="{{ form.invoice_email }}" />
+    </div>
+    <div class="field">
+      <label for="phone">Phone</label>
+      <input type="text" id="phone" name="phone" value="{{ form.phone }}" />
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Address</h2>
+  <div class="form-grid">
+    <div class="field">
+      <label for="address_line1">Address line 1</label>
+      <input type="text" id="address_line1" name="address_line1" value="{{ form.address_line1 }}" />
+    </div>
+    <div class="field">
+      <label for="address_line2">Address line 2</label>
+      <input type="text" id="address_line2" name="address_line2" value="{{ form.address_line2 }}" />
+    </div>
+    <div class="field">
+      <label for="city">City</label>
+      <input type="text" id="city" name="city" value="{{ form.city }}" />
+    </div>
+    <div class="field">
+      <label for="postcode">Postcode</label>
+      <input type="text" id="postcode" name="postcode" value="{{ form.postcode }}" />
+    </div>
+    <div class="field">
+      <label for="country">Country</label>
+      <input type="text" id="country" name="country" value="{{ form.country }}" />
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Billing</h2>
+  <div class="form-grid">
+    <div class="field">
+      <label for="vat_number">VAT number</label>
+      <input type="text" id="vat_number" name="vat_number" value="{{ form.vat_number }}" />
+    </div>
+    <div class="field">
+      <label for="invoice_frequency_id">Invoice frequency</label>
+      <select id="invoice_frequency_id" name="invoice_frequency_id">
+        <option value="">Select frequency</option>
+        {% for id, label in options.invoice_frequencies %}
+          <option value="{{ id }}" {% if form.invoice_frequency_id == id %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="payment_terms">Payment terms</label>
+      <input type="text" id="payment_terms" name="payment_terms" value="{{ form.payment_terms }}" />
+    </div>
+    <div class="field">
+      <label for="credit_limit">Credit limit</label>
+      <input type="number" step="0.01" id="credit_limit" name="credit_limit" value="{{ form.credit_limit }}" />
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Flags</h2>
+  <div class="form-grid">
+    <div class="field checkbox">
+      <input type="checkbox" id="on_stop" name="on_stop" {% if form.on_stop %}checked{% endif %} />
+      <label for="on_stop">On stop</label>
+    </div>
+    <div class="field checkbox">
+      <input type="checkbox" id="cash_account" name="cash_account" {% if form.cash_account %}checked{% endif %} />
+      <label for="cash_account">Cash account</label>
+    </div>
+    <div class="field checkbox">
+      <input type="checkbox" id="do_not_invoice" name="do_not_invoice" {% if form.do_not_invoice %}checked{% endif %} />
+      <label for="do_not_invoice">Do not invoice</label>
+    </div>
+    <div class="field checkbox">
+      <input type="checkbox" id="must_have_po" name="must_have_po" {% if form.must_have_po %}checked{% endif %} />
+      <label for="must_have_po">Must have PO</label>
+    </div>
+  </div>
+</section>

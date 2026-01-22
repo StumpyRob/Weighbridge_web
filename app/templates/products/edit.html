@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Product {{ product.code }} | Weighbridge Web{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ product.code }}</h1>
+    <p class="muted">Edit product details.</p>
+  </div>
+</div>
+
+{% if errors %}
+  <div class="alert">
+    <ul>
+      {% for error in errors %}
+        <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<form class="ticket-form" method="post" action="/products/{{ product.id }}">
+  {% include "products/_form.html" %}
+  <div class="actions">
+    <button type="submit">Save</button>
+    <a class="link-button" href="/products">Cancel</a>
+  </div>
+</form>
+{% endblock %}

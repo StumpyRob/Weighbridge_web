@@ -1,0 +1,65 @@
+<section class="card">
+  <h2>Vehicle</h2>
+  <div class="form-grid">
+    <div class="field">
+      <label for="registration">Registration</label>
+      <input type="text" id="registration" name="registration" value="{{ form.registration }}" required />
+    </div>
+    <div class="field">
+      <label for="owner_customer_id">Owner customer</label>
+      <select id="owner_customer_id" name="owner_customer_id">
+        <option value="">Select owner</option>
+        {% for id, label in options.customers %}
+          <option value="{{ id }}" {% if form.owner_customer_id == id %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="vehicle_type_id">Vehicle type</label>
+      <select id="vehicle_type_id" name="vehicle_type_id" required>
+        <option value="">Select type</option>
+        {% for id, label in options.vehicle_types %}
+          <option value="{{ id }}" {% if form.vehicle_type_id == id %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="default_tare_kg">Default tare (kg)</label>
+      <input type="number" step="0.001" id="default_tare_kg" name="default_tare_kg" value="{{ form.default_tare_kg }}" />
+    </div>
+    <div class="field">
+      <label for="overweight_threshold_kg">Overweight threshold (kg)</label>
+      <input
+        type="number"
+        step="0.001"
+        id="overweight_threshold_kg"
+        name="overweight_threshold_kg"
+        value="{{ form.overweight_threshold_kg }}"
+      />
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Assignments</h2>
+  <div class="form-grid">
+    <div class="field">
+      <label for="haulier_id">Haulier</label>
+      <select id="haulier_id" name="haulier_id">
+        <option value="">Select haulier</option>
+        {% for id, label in options.hauliers %}
+          <option value="{{ id }}" {% if form.haulier_id == id %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="driver_id">Driver</label>
+      <select id="driver_id" name="driver_id">
+        <option value="">Select driver</option>
+        {% for id, label in options.drivers %}
+          <option value="{{ id }}" {% if form.driver_id == id %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+</section>

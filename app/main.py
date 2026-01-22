@@ -23,21 +23,6 @@ def index(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-@app.get("/customers", response_class=HTMLResponse)
-def customers(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("customers.html", {"request": request})
-
-
-@app.get("/vehicles", response_class=HTMLResponse)
-def vehicles(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("vehicles.html", {"request": request})
-
-
-@app.get("/products", response_class=HTMLResponse)
-def products(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("products.html", {"request": request})
-
-
 @app.get("/invoices", response_class=HTMLResponse)
 def invoices(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("invoices.html", {"request": request})

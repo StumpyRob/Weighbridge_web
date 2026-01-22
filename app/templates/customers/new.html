@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}New Customer | Weighbridge Web{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>New Customer</h1>
+    <p class="muted">Create a customer account.</p>
+  </div>
+</div>
+
+{% if errors %}
+  <div class="alert">
+    <ul>
+      {% for error in errors %}
+        <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<form class="ticket-form" method="post" action="/customers/new">
+  {% include "customers/_form.html" %}
+  <div class="actions">
+    <button type="submit">Save</button>
+    <a class="link-button" href="/customers">Cancel</a>
+  </div>
+</form>
+{% endblock %}

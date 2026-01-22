@@ -33,6 +33,7 @@ from .ticket import Ticket
 from .ticket_void import TicketVoid
 from .user import User
 from .vehicle import Vehicle
+from .vehicle_tare import VehicleTare
 
 __all__ = [
     "Base",
@@ -68,4 +69,5 @@ __all__ = [
     "TicketVoid",
     "User",
     "Vehicle",
+    "VehicleTare",
 ]
