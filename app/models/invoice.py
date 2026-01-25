@@ -1,6 +1,7 @@
 from datetime import date
 
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -20,6 +21,6 @@ class Invoice(Base):
         ForeignKey("payment_methods.id")
     )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime)
-    net_total: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
-    vat_total: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
-    gross_total: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    net_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    vat_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    gross_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)

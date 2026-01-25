@@ -12,8 +12,8 @@ class Vehicle(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     registration: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     owner_customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"))
-    vehicle_type_id: Mapped[int] = mapped_column(
-        ForeignKey("vehicle_types.id"), nullable=False
+    vehicle_type_id: Mapped[int | None] = mapped_column(
+        ForeignKey("vehicle_types.id")
     )
     default_tare_kg: Mapped[float | None] = mapped_column(Numeric(12, 3))
     overweight_threshold_kg: Mapped[float | None] = mapped_column(Numeric(12, 3))

@@ -1,0 +1,8 @@
+{% include "tickets/_weights_block.html" %}
+<div id="weight-warning" hx-swap-oob="true">
+  {% if weight_warning %}
+    <div class="alert">
+      Gross is lower than Tare — use Swap Weights.
+    </div>
+  {% endif %}
+</div>

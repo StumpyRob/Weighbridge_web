@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+
+{% block title %}Not Found | Lookups{% endblock %}
+
+{% block content %}
+<h1>Not Found</h1>
+<p>{{ entity }} {{ entity_id }} does not exist.</p>
+<a class="link-button" href="/lookups/units">Back to units</a>
+{% endblock %}

@@ -41,8 +41,12 @@
           <td><a href="/vehicles/{{ vehicle.id }}">{{ vehicle.registration }}</a></td>
           <td>{{ owner.name if owner else "" }}</td>
           <td>{{ vtype.code if vtype else "" }}</td>
-          <td>{{ vehicle.default_tare_kg or "" }}</td>
-          <td>{{ vehicle.overweight_threshold_kg or "" }}</td>
+          <td>
+            {{ "{:.0f}".format(vehicle.default_tare_kg) if vehicle.default_tare_kg is not none else "" }}
+          </td>
+          <td>
+            {{ "{:.0f}".format(vehicle.overweight_threshold_kg) if vehicle.overweight_threshold_kg is not none else "" }}
+          </td>
         </tr>
       {% else %}
         <tr>

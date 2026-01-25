@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from decimal import Decimal
+
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,16 +15,17 @@ class Product(Base):
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     description: Mapped[str] = mapped_column(String(255), nullable=False)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("product_groups.id"))
-    unit_id: Mapped[int | None] = mapped_column(ForeignKey("units.id"))
+    unit_id: Mapped[int] = mapped_column(ForeignKey("units.id"), nullable=False)
     tax_rate_id: Mapped[int | None] = mapped_column(ForeignKey("tax_rates.id"))
     nominal_code_id: Mapped[int | None] = mapped_column(ForeignKey("nominal_codes.id"))
-    account_price: Mapped[float | None] = mapped_column(Numeric(12, 2))
-    cash_price: Mapped[float | None] = mapped_column(Numeric(12, 2))
-    min_price: Mapped[float | None] = mapped_column(Numeric(12, 2))
-    max_price: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    account_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    cash_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    min_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    max_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     max_qty: Mapped[float | None] = mapped_column(Numeric(12, 3))
     excess_trigger: Mapped[float | None] = mapped_column(Numeric(12, 3))
-    excess_price: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    excess_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     is_hazardous: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     final_disposal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     used_on_site: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

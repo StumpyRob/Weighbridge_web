@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -213,7 +214,7 @@ def _parse_customer_form(form) -> dict:
         "vat_number": value("vat_number") or None,
         "invoice_frequency_id": _parse_int(value("invoice_frequency_id")),
         "payment_terms": value("payment_terms") or None,
-        "credit_limit": _parse_float(value("credit_limit")),
+        "credit_limit": _parse_decimal(value("credit_limit")),
         "on_stop": value("on_stop") == "on",
         "cash_account": value("cash_account") == "on",
         "do_not_invoice": value("do_not_invoice") == "on",
@@ -257,7 +258,7 @@ def _customer_to_form(customer: Customer) -> dict:
         "vat_number": customer.vat_number or "",
         "invoice_frequency_id": str(customer.invoice_frequency_id or ""),
         "payment_terms": customer.payment_terms or "",
-        "credit_limit": f"{customer.credit_limit}" if customer.credit_limit else "",
+        "credit_limit": _format_decimal(customer.credit_limit),
         "on_stop": "on" if customer.on_stop else "",
         "cash_account": "on" if customer.cash_account else "",
         "do_not_invoice": "on" if customer.do_not_invoice else "",
@@ -274,10 +275,16 @@ def _parse_int(value: str) -> int | None:
         return None
 
 
-def _parse_float(value: str) -> float | None:
+def _parse_decimal(value: str) -> Decimal | None:
     if not value:
         return None
     try:
-        return float(value)
-    except ValueError:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
         return None
+
+
+def _format_decimal(value: Decimal | None) -> str:
+    if value is None:
+        return ""
+    return f"{value:.2f}"

@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -70,6 +71,7 @@ async def products_create(
         unit_id=payload["unit_id"],
         tax_rate_id=payload["tax_rate_id"],
         nominal_code_id=payload["nominal_code_id"],
+        unit_price=payload["unit_price"],
         account_price=payload["account_price"],
         cash_price=payload["cash_price"],
         min_price=payload["min_price"],
@@ -143,6 +145,7 @@ async def products_update(
     product.unit_id = payload["unit_id"]
     product.tax_rate_id = payload["tax_rate_id"]
     product.nominal_code_id = payload["nominal_code_id"]
+    product.unit_price = payload["unit_price"]
     product.account_price = payload["account_price"]
     product.cash_price = payload["cash_price"]
     product.min_price = payload["min_price"]
@@ -161,7 +164,9 @@ async def products_update(
 
 def _load_options(db: Session) -> dict[str, list[tuple[str, str]]]:
     groups = db.execute(select(ProductGroup).order_by(ProductGroup.code)).scalars()
-    units = db.execute(select(Unit).order_by(Unit.code)).scalars()
+    units = db.execute(
+        select(Unit).where(Unit.is_active.is_(True)).order_by(Unit.code)
+    ).scalars()
     tax_rates = db.execute(select(TaxRate).order_by(TaxRate.code)).scalars()
     nominal_codes = db.execute(select(NominalCode).order_by(NominalCode.code)).scalars()
     waste_codes = db.execute(select(WasteCode).order_by(WasteCode.code)).scalars()
@@ -185,6 +190,16 @@ def _parse_product_form(form) -> dict:
         errors.append("Code is required.")
     if not description:
         errors.append("Description is required.")
+    if not value("unit_id"):
+        errors.append("Unit is required.")
+    unit_price_raw = value("unit_price")
+    if not unit_price_raw:
+        errors.append("Unit price is required.")
+    unit_price_value = _parse_decimal(unit_price_raw)
+    if unit_price_raw and unit_price_value is None:
+        errors.append("Unit price must be a number.")
+    if unit_price_value is not None and unit_price_value < 0:
+        errors.append("Unit price must be 0 or greater.")
 
     return {
         "errors": errors,
@@ -195,6 +210,7 @@ def _parse_product_form(form) -> dict:
             "unit_id": value("unit_id"),
             "tax_rate_id": value("tax_rate_id"),
             "nominal_code_id": value("nominal_code_id"),
+        "unit_price": unit_price_raw,
             "account_price": value("account_price"),
             "cash_price": value("cash_price"),
             "min_price": value("min_price"),
@@ -213,13 +229,14 @@ def _parse_product_form(form) -> dict:
         "unit_id": _parse_int(value("unit_id")),
         "tax_rate_id": _parse_int(value("tax_rate_id")),
         "nominal_code_id": _parse_int(value("nominal_code_id")),
-        "account_price": _parse_float(value("account_price")),
-        "cash_price": _parse_float(value("cash_price")),
-        "min_price": _parse_float(value("min_price")),
-        "max_price": _parse_float(value("max_price")),
+        "unit_price": unit_price_value if unit_price_value is not None else Decimal("0.00"),
+        "account_price": _parse_decimal(value("account_price")),
+        "cash_price": _parse_decimal(value("cash_price")),
+        "min_price": _parse_decimal(value("min_price")),
+        "max_price": _parse_decimal(value("max_price")),
         "max_qty": _parse_float(value("max_qty")),
         "excess_trigger": _parse_float(value("excess_trigger")),
-        "excess_price": _parse_float(value("excess_price")),
+        "excess_price": _parse_decimal(value("excess_price")),
         "default_waste_code_id": _parse_int(value("default_waste_code_id")),
         "is_hazardous": value("is_hazardous") == "on",
         "final_disposal": value("final_disposal") == "on",
@@ -235,6 +252,7 @@ def _empty_form() -> dict:
         "unit_id": "",
         "tax_rate_id": "",
         "nominal_code_id": "",
+        "unit_price": "",
         "account_price": "",
         "cash_price": "",
         "min_price": "",
@@ -257,13 +275,14 @@ def _product_to_form(product: Product) -> dict:
         "unit_id": str(product.unit_id or ""),
         "tax_rate_id": str(product.tax_rate_id or ""),
         "nominal_code_id": str(product.nominal_code_id or ""),
-        "account_price": f"{product.account_price}" if product.account_price else "",
-        "cash_price": f"{product.cash_price}" if product.cash_price else "",
-        "min_price": f"{product.min_price}" if product.min_price else "",
-        "max_price": f"{product.max_price}" if product.max_price else "",
+        "unit_price": _format_decimal(product.unit_price),
+        "account_price": _format_decimal(product.account_price),
+        "cash_price": _format_decimal(product.cash_price),
+        "min_price": _format_decimal(product.min_price),
+        "max_price": _format_decimal(product.max_price),
         "max_qty": f"{product.max_qty}" if product.max_qty else "",
         "excess_trigger": f"{product.excess_trigger}" if product.excess_trigger else "",
-        "excess_price": f"{product.excess_price}" if product.excess_price else "",
+        "excess_price": _format_decimal(product.excess_price),
         "default_waste_code_id": str(product.default_waste_code_id or ""),
         "is_hazardous": "on" if product.is_hazardous else "",
         "final_disposal": "on" if product.final_disposal else "",
@@ -287,3 +306,18 @@ def _parse_float(value: str) -> float | None:
         return float(value)
     except ValueError:
         return None
+
+
+def _parse_decimal(value: str) -> Decimal | None:
+    if not value:
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _format_decimal(value: Decimal | None) -> str:
+    if value is None:
+        return ""
+    return f"{value:.2f}"

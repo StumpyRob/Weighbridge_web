@@ -20,12 +20,15 @@
     </div>
     <div class="field">
       <label for="unit_id">Unit</label>
-      <select id="unit_id" name="unit_id">
+      <select id="unit_id" name="unit_id" required>
         <option value="">Select unit</option>
         {% for id, label in options.units %}
           <option value="{{ id }}" {% if form.unit_id == id %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
+      {% if not options.units %}
+        <p class="help">No units configured. Please add units in Lookups.</p>
+      {% endif %}
     </div>
     <div class="field">
       <label for="tax_rate_id">Tax rate</label>
@@ -35,6 +38,10 @@
           <option value="{{ id }}" {% if form.tax_rate_id == id %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
+    </div>
+    <div class="field">
+      <label for="unit_price">Unit price</label>
+      <input type="number" step="0.01" id="unit_price" name="unit_price" value="{{ form.unit_price }}" required />
     </div>
     <div class="field">
       <label for="nominal_code_id">Nominal code</label>

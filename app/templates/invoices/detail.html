@@ -20,14 +20,23 @@
   </div>
 {% endif %}
 
+{% if created %}
+  <div class="alert">
+    Invoice {{ invoice.invoice_no }} created successfully.
+  </div>
+  <div class="actions">
+    <a class="link-button" href="/invoices/generate">Back to Generate Invoices</a>
+  </div>
+{% endif %}
+
 <section class="card">
   <div class="form-grid">
     <div><strong>Status:</strong> {{ invoice.status }}</div>
-    <div><strong>Date:</strong> {{ invoice.invoice_date }}</div>
-    <div><strong>Net:</strong> {{ invoice.net_total }}</div>
-    <div><strong>VAT:</strong> {{ invoice.vat_total }}</div>
-    <div><strong>Gross:</strong> {{ invoice.gross_total }}</div>
-    <div><strong>Paid at:</strong> {{ invoice.paid_at or "" }}</div>
+    <div><strong>Date:</strong> {{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "" }}</div>
+    <div><strong>Net:</strong> {{ "{:.2f}".format(invoice.net_total) }}</div>
+    <div><strong>VAT:</strong> {{ "{:.2f}".format(invoice.vat_total) }}</div>
+    <div><strong>Gross:</strong> {{ "{:.2f}".format(invoice.gross_total) }}</div>
+    <div><strong>Paid at:</strong> {{ invoice.paid_at.strftime("%d/%m/%Y %H:%M") if invoice.paid_at else "" }}</div>
   </div>
 </section>
 
@@ -42,6 +51,20 @@
     </select>
     <input type="datetime-local" name="paid_at" />
     <button type="submit">Mark Paid</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Void Invoice</h2>
+  <form class="inline-form" method="post" action="/invoices/{{ invoice.id }}/void">
+    <select name="void_reason_id">
+      <option value="">Select reason</option>
+      {% for reason in void_reasons %}
+        <option value="{{ reason.id }}">{{ reason.code }}</option>
+      {% endfor %}
+    </select>
+    <input type="text" name="void_note" placeholder="Reason note" />
+    <button type="submit" class="danger">Void</button>
   </form>
 </section>
 
@@ -62,10 +85,10 @@
         <tr>
           <td>{{ line.description }}</td>
           <td>{{ line.quantity }}</td>
-          <td>{{ line.unit_price }}</td>
-          <td>{{ line.net }}</td>
-          <td>{{ line.vat }}</td>
-          <td>{{ line.gross }}</td>
+          <td>{{ "{:.2f}".format(line.unit_price) }}</td>
+          <td>{{ "{:.2f}".format(line.net) }}</td>
+          <td>{{ "{:.2f}".format(line.vat) }}</td>
+          <td>{{ "{:.2f}".format(line.gross) }}</td>
         </tr>
       {% else %}
         <tr>
@@ -92,8 +115,8 @@
         {% for ticket in tickets %}
           <tr>
             <td><a href="/tickets/{{ ticket.id }}">{{ ticket.ticket_no }}</a></td>
-            <td>{{ ticket.datetime }}</td>
-            <td>{{ ticket.status }}</td>
+            <td>{{ ticket.datetime.strftime("%d/%m/%Y %H:%M") if ticket.datetime else "" }}</td>
+            <td>{{ ticket.status.value if ticket.status else "" }}</td>
             <td>{{ ticket.total or "" }}</td>
           </tr>
         {% else %}

@@ -23,11 +23,6 @@ def index(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-@app.get("/lookups", response_class=HTMLResponse)
-def lookups(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("lookups.html", {"request": request})
-
-
 @app.get("/reports", response_class=HTMLResponse)
 def reports(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("reports.html", {"request": request})

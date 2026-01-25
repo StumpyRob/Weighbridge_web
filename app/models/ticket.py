@@ -1,9 +1,28 @@
 from datetime import datetime
+from decimal import Decimal
+from enum import Enum
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Index
+from sqlalchemy import Boolean, DateTime, Enum as SAEnum, ForeignKey, Integer, Numeric, String, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
+
+
+class DirectionEnum(str, Enum):
+    INWARD = "INWARD"
+    OUTWARD = "OUTWARD"
+
+
+class TransactionTypeEnum(str, Enum):
+    WASTEIN = "WASTEIN"
+    WASTEOUT = "WASTEOUT"
+    SALE = "SALE"
+
+
+class TicketStatusEnum(str, Enum):
+    OPEN = "OPEN"
+    COMPLETE = "COMPLETE"
+    VOID = "VOID"
 
 
 class Ticket(Base):
@@ -22,9 +41,18 @@ class Ticket(Base):
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
     datetime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    status: Mapped[str] = mapped_column(String(50), nullable=False)
-    direction: Mapped[str] = mapped_column(String(50), nullable=False)
-    transaction_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[TicketStatusEnum] = mapped_column(
+        SAEnum(TicketStatusEnum, native_enum=False, create_constraint=False),
+        nullable=False,
+    )
+    direction: Mapped[DirectionEnum] = mapped_column(
+        SAEnum(DirectionEnum, native_enum=False, create_constraint=False),
+        nullable=False,
+    )
+    transaction_type: Mapped[TransactionTypeEnum] = mapped_column(
+        SAEnum(TransactionTypeEnum, native_enum=False, create_constraint=False),
+        nullable=False,
+    )
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"))
     vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"))
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
@@ -49,8 +77,8 @@ class Ticket(Base):
     net_kg: Mapped[float | None] = mapped_column(Numeric(12, 3))
     qty: Mapped[float | None] = mapped_column(Numeric(12, 3))
     unit_id: Mapped[int | None] = mapped_column(Integer)
-    unit_price: Mapped[float | None] = mapped_column(Numeric(12, 2))
-    total: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    unit_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    total: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     dont_invoice: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     paid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     payment_method_id: Mapped[int | None] = mapped_column(Integer)

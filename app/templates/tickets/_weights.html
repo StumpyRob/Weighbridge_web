@@ -1,4 +1,4 @@
-{% if errors %}
+{% if show_weight_errors and errors %}
   <div class="alert">
     <ul>
       {% for error in errors %}
@@ -11,68 +11,105 @@
 {% set gross_value = form.gross_kg if form is defined else (ticket.gross_kg or '') %}
 {% set tare_value = form.tare_kg if form is defined else (ticket.tare_kg or '') %}
 {% set net_value = form.net_kg if form is defined else (ticket.net_kg or '') %}
+{% set readout_value = form.readout_kg if form is defined else '' %}
+
+<p class="help">Manual mode — enter weights directly.</p>
 
 <div class="form-grid">
   <div class="field">
     <label for="gross_kg">Gross kg</label>
     <input
       type="number"
-      step="0.001"
+      step="1"
       id="gross_kg"
       name="gross_kg"
       value="{{ gross_value }}"
-      {% if ticket.status == "COMPLETE" and not is_admin %}readonly{% endif %}
+      {% if ticket.status and ticket.status.value == "COMPLETE" and not is_admin %}readonly{% endif %}
     />
   </div>
   <div class="field">
     <label for="tare_kg">Tare kg</label>
     <input
       type="number"
-      step="0.001"
+      step="1"
       id="tare_kg"
       name="tare_kg"
       value="{{ tare_value }}"
-      {% if ticket.status == "COMPLETE" and not is_admin %}readonly{% endif %}
+      {% if ticket.status and ticket.status.value == "COMPLETE" and not is_admin %}readonly{% endif %}
     />
   </div>
   <div class="field">
     <label for="net_kg">Net kg</label>
-    <input type="text" id="net_kg" name="net_kg" value="{{ net_value }}" readonly />
+    <input
+      type="text"
+      id="net_kg"
+      name="net_kg"
+      value="{{ net_value }}"
+      placeholder="—"
+      readonly
+    />
+  </div>
+  <div class="field">
+    <label for="readout_kg">Readout (kg)</label>
+    <input
+      type="number"
+      step="1"
+      id="readout_kg"
+      name="readout_kg"
+      value="{{ readout_value }}"
+    />
   </div>
 </div>
 
+
 <div class="weights-actions">
-  <div class="inline-capture">
-    <button
-      type="button"
-      class="button outline"
-      hx-get="/tickets/{{ ticket.id }}/weights/gross/form"
-      hx-target="#gross-capture"
-      hx-swap="innerHTML"
-    >
-      Capture Gross
-    </button>
-    <div id="gross-capture"></div>
-  </div>
-  <div class="inline-capture">
-    <button
-      type="button"
-      class="button outline"
-      hx-get="/tickets/{{ ticket.id }}/weights/tare/form"
-      hx-target="#tare-capture"
-      hx-swap="innerHTML"
-    >
-      Capture Tare
-    </button>
-    <div id="tare-capture"></div>
-  </div>
+  <button
+    type="button"
+    class="button"
+    hx-post="/tickets/weights/read"
+    hx-target="#weights-block"
+    hx-swap="innerHTML"
+    hx-include="#weights-form"
+  >
+    Read
+  </button>
   <button
     type="button"
     class="button outline"
-    hx-post="/tickets/{{ ticket.id }}/weights/swap"
-    hx-target="#weights-card"
+    hx-post="/tickets/weights/swap-preview"
+    hx-target="#weights-block"
     hx-swap="innerHTML"
   >
     Swap Weights
   </button>
 </div>
+
+{% if read_confirm %}
+  <div class="alert overwrite-alert">
+    <span>Both weights are already entered. Overwrite Gross or Tare?</span>
+    <div class="overwrite-actions">
+      <button
+        type="button"
+        class="button outline"
+        hx-post="/tickets/weights/read-apply"
+        hx-target="#weights-block"
+        hx-swap="innerHTML"
+        hx-include="#weights-form"
+        hx-vals='{"read_target":"gross"}'
+      >
+        Overwrite Gross
+      </button>
+      <button
+        type="button"
+        class="button outline"
+        hx-post="/tickets/weights/read-apply"
+        hx-target="#weights-block"
+        hx-swap="innerHTML"
+        hx-include="#weights-form"
+        hx-vals='{"read_target":"tare"}'
+      >
+        Overwrite Tare
+      </button>
+    </div>
+  </div>
+{% endif %}

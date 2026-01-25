@@ -32,6 +32,7 @@
         <th>Description</th>
         <th>Unit</th>
         <th>Tax rate</th>
+        <th>Unit price</th>
         <th>Account price</th>
         <th>Cash price</th>
       </tr>
@@ -43,12 +44,13 @@
           <td>{{ product.description }}</td>
           <td>{{ product.unit_id or "" }}</td>
           <td>{{ product.tax_rate_id or "" }}</td>
-          <td>{{ product.account_price or "" }}</td>
-          <td>{{ product.cash_price or "" }}</td>
+          <td>{{ "{:.2f}".format(product.unit_price) if product.unit_price is not none else "" }}</td>
+          <td>{{ "{:.2f}".format(product.account_price) if product.account_price is not none else "" }}</td>
+          <td>{{ "{:.2f}".format(product.cash_price) if product.cash_price is not none else "" }}</td>
         </tr>
       {% else %}
         <tr>
-          <td colspan="6" class="empty">No products found.</td>
+          <td colspan="7" class="empty">No products found.</td>
         </tr>
       {% endfor %}
     </tbody>

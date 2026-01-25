@@ -9,17 +9,48 @@
     <p class="muted">Edit ticket details and status.</p>
   </div>
   <div class="actions">
-    <form method="post" action="/tickets/{{ ticket.id }}">
-      <input type="hidden" name="action" value="complete" />
-      <button type="submit" class="button">Mark Complete</button>
-    </form>
+    {% if ticket.status == "OPEN" %}
+      <form method="post" action="/tickets/{{ ticket.id }}">
+        <input type="hidden" name="action" value="complete" />
+        <button type="submit" class="button">Mark Complete</button>
+      </form>
+    {% endif %}
   </div>
 </div>
 
+{% if invoice %}
+  <div class="audit">
+    <div>
+      <strong>Invoiced on:</strong>
+      <a href="/invoices/{{ invoice.id }}">{{ invoice.invoice_no }}</a>
+    </div>
+  </div>
+{% endif %}
+
 <div class="audit">
-  <div><strong>Created:</strong> {{ ticket.created_at }}</div>
-  <div><strong>Updated:</strong> {{ ticket.updated_at }}</div>
+  <div><strong>Created:</strong> {{ ticket.created_at.strftime("%d/%m/%Y %H:%M") if ticket.created_at else "" }}</div>
+  <div><strong>Updated:</strong> {{ ticket.updated_at.strftime("%d/%m/%Y %H:%M") if ticket.updated_at else "" }}</div>
 </div>
+
+{% if completed %}
+  <div class="alert">
+    Ticket completed.
+  </div>
+  <script>
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  </script>
+{% elif saved %}
+  <div class="alert">
+    Saved.
+  </div>
+  <script>
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  </script>
+{% endif %}
 
 {% if errors %}
   <div class="alert">
@@ -31,9 +62,29 @@
   </div>
 {% endif %}
 
+<div id="mismatch-warning">
+  {% if direction_warning %}
+    {% include "tickets/_mismatch_warning.html" %}
+  {% endif %}
+</div>
+
+<div id="weight-warning">
+{% if weight_warning %}
+  <div class="alert">
+    Gross is lower than Tare — use Swap Weights.
+  </div>
+{% endif %}
+</div>
+
 <form class="ticket-form" method="post" action="/tickets/{{ ticket.id }}">
   <input type="hidden" name="action" value="save" />
+  {% if ticket.status in ["COMPLETE", "VOID"] %}
+    <div class="alert">
+      This ticket is locked.
+    </div>
+  {% endif %}
 
+  <fieldset {% if ticket.status == "VOID" %}disabled{% endif %}>
   <section class="card">
     <h2>Ticket Info</h2>
     <div class="form-grid">
@@ -43,34 +94,60 @@
       </div>
       <div class="field">
         <label for="direction">Direction</label>
-        <input type="text" id="direction" name="direction" value="{{ form.direction }}" required />
+        <select
+          id="direction"
+          name="direction"
+          required
+          hx-get="/tickets/mismatch-warning"
+          hx-trigger="change"
+          hx-target="#mismatch-warning"
+          hx-include="#direction,#transaction_type"
+        >
+          <option value="">Select direction</option>
+          {% for value in enums.directions %}
+            <option value="{{ value }}" {% if form.direction|string == value|string %}selected{% endif %}>{{ value }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="field">
         <label for="transaction_type">Transaction type</label>
-        <input
-          type="text"
+        <select
           id="transaction_type"
           name="transaction_type"
-          value="{{ form.transaction_type }}"
           required
-        />
+          hx-get="/tickets/mismatch-warning"
+          hx-trigger="change"
+          hx-target="#mismatch-warning"
+          hx-include="#direction,#transaction_type"
+        >
+          <option value="">Select transaction</option>
+          {% for value in enums.transaction_types %}
+            <option value="{{ value }}" {% if form.transaction_type|string == value|string %}selected{% endif %}>{{ value }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="field">
-        <label for="status">Status</label>
-        <input type="text" id="status" name="status" value="{{ form.status }}" />
+        <label>Status</label>
+        <input
+          type="text"
+          class="status-input status-{{ form.status | lower }}"
+          value="{{ form.status }}"
+          readonly
+        />
       </div>
     </div>
   </section>
 
   <section class="card">
     <h2>Parties</h2>
+    <p class="help">If you select a vehicle with an owner set, the customer will default automatically.</p>
     <div class="form-grid">
       <div class="field">
         <label for="customer_id">Customer</label>
         <select id="customer_id" name="customer_id" required>
           <option value="">Select customer</option>
           {% for id, label in options.customers %}
-            <option value="{{ id }}" {% if form.customer_id == id %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ id }}" {% if form.customer_id|string == id|string %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
@@ -79,16 +156,24 @@
         <select id="vehicle_id" name="vehicle_id" required>
           <option value="">Select vehicle</option>
           {% for id, label in options.vehicles %}
-            <option value="{{ id }}" {% if form.vehicle_id == id %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ id }}" {% if form.vehicle_id|string == id|string %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
       <div class="field">
         <label for="product_id">Product</label>
-        <select id="product_id" name="product_id" required>
+        <select
+          id="product_id"
+          name="product_id"
+          required
+          hx-get="/tickets/product-defaults"
+          hx-trigger="change"
+          hx-target="#pricing-defaults"
+          hx-include="[name='unit_price'],[name='unit_id'],[name='product_id']"
+        >
           <option value="">Select product</option>
           {% for id, label in options.products %}
-            <option value="{{ id }}" {% if form.product_id == id %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ id }}" {% if form.product_id|string == id|string %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
@@ -103,7 +188,7 @@
         <select id="haulier_id" name="haulier_id">
           <option value="">Select haulier</option>
           {% for id, label in options.hauliers %}
-            <option value="{{ id }}" {% if form.haulier_id == id %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ id }}" {% if form.haulier_id|string == id|string %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
@@ -112,7 +197,7 @@
         <select id="driver_id" name="driver_id">
           <option value="">Select driver</option>
           {% for id, label in options.drivers %}
-            <option value="{{ id }}" {% if form.driver_id == id %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ id }}" {% if form.driver_id|string == id|string %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
@@ -121,7 +206,7 @@
         <select id="container_id" name="container_id">
           <option value="">Select container</option>
           {% for id, label in options.containers %}
-            <option value="{{ id }}" {% if form.container_id == id %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ id }}" {% if form.container_id|string == id|string %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
@@ -130,7 +215,7 @@
         <select id="destination_id" name="destination_id">
           <option value="">Select destination</option>
           {% for id, label in options.destinations %}
-            <option value="{{ id }}" {% if form.destination_id == id %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ id }}" {% if form.destination_id|string == id|string %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
@@ -139,7 +224,7 @@
         <select id="yard_id" name="yard_id">
           <option value="">Select yard</option>
           {% for id, label in options.yards %}
-            <option value="{{ id }}" {% if form.yard_id == id %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ id }}" {% if form.yard_id|string == id|string %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
@@ -148,7 +233,7 @@
         <select id="area_id" name="area_id">
           <option value="">Select area</option>
           {% for id, label in options.areas %}
-            <option value="{{ id }}" {% if form.area_id == id %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ id }}" {% if form.area_id|string == id|string %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
@@ -157,7 +242,7 @@
         <select id="waste_code_id" name="waste_code_id">
           <option value="">Select waste code</option>
           {% for id, label in options.waste_codes %}
-            <option value="{{ id }}" {% if form.waste_code_id == id %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ id }}" {% if form.waste_code_id|string == id|string %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
@@ -166,7 +251,7 @@
         <select id="waste_producer_id" name="waste_producer_id">
           <option value="">Select waste producer</option>
           {% for id, label in options.waste_producers %}
-            <option value="{{ id }}" {% if form.waste_producer_id == id %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ id }}" {% if form.waste_producer_id|string == id|string %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
@@ -175,7 +260,7 @@
         <select id="licence_id" name="licence_id">
           <option value="">Select licence</option>
           {% for id, label in options.licences %}
-            <option value="{{ id }}" {% if form.licence_id == id %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ id }}" {% if form.licence_id|string == id|string %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
@@ -184,8 +269,9 @@
 
   <section class="card">
     <h2>Weights</h2>
-    <div id="weights-card">
-      {% include "tickets/_weights.html" %}
+    <div id="weights-block">
+      {% set show_weight_errors = false %}
+      {% include "tickets/_weights_block.html" %}
     </div>
   </section>
 
@@ -196,22 +282,21 @@
         <label for="qty">Quantity</label>
         <input type="number" step="0.001" id="qty" name="qty" value="{{ form.qty }}" />
       </div>
-      <div class="field">
-        <label for="unit_id">Unit</label>
-        <select id="unit_id" name="unit_id">
-          <option value="">Select unit</option>
-          {% for id, label in options.units %}
-            <option value="{{ id }}" {% if form.unit_id == id %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label for="unit_price">Unit price</label>
-        <input type="number" step="0.01" id="unit_price" name="unit_price" value="{{ form.unit_price }}" />
+      <div id="pricing-defaults">
+        {% with units=options.units, unit_id=form.unit_id, unit_price=form.unit_price %}
+          {% include "tickets/_pricing_defaults.html" %}
+        {% endwith %}
       </div>
       <div class="field">
         <label for="total">Total</label>
-        <input type="text" id="total" name="total" value="{{ form.total }}" readonly />
+        <input
+          type="text"
+          id="total"
+          name="total"
+          value="{{ form.total }}"
+          placeholder="—"
+          readonly
+        />
       </div>
     </div>
   </section>
@@ -223,9 +308,12 @@
       <label for="dont_invoice">Don't invoice</label>
     </div>
   </section>
+  </fieldset>
 
   <div class="actions">
-    <button type="submit">Save</button>
+    {% if ticket.status not in ["COMPLETE", "VOID"] %}
+      <button type="submit">Save</button>
+    {% endif %}
     <a class="link-button" href="/tickets">Cancel</a>
   </div>
 </form>
@@ -250,8 +338,78 @@
       </div>
     </div>
     <div class="actions">
-      <button type="submit" class="danger">Void Ticket</button>
+      {% if ticket.status != "VOID" %}
+        <button type="submit" class="danger">Void Ticket</button>
+      {% endif %}
     </div>
   </form>
 </section>
+
+<script>
+  (function () {
+    function parseNumber(value) {
+      const parsed = parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    function bindCalculations() {
+      const grossInput = document.getElementById("gross_kg");
+      const tareInput = document.getElementById("tare_kg");
+      const netInput = document.getElementById("net_kg");
+      const qtyInput = document.getElementById("qty");
+      const unitPriceInput = document.getElementById("unit_price");
+      const totalInput = document.getElementById("total");
+
+      function updateNet() {
+        if (!netInput) {
+          return;
+        }
+        const gross = parseNumber(grossInput && grossInput.value);
+        const tare = parseNumber(tareInput && tareInput.value);
+        if (gross === null || tare === null) {
+          netInput.value = "";
+          return;
+        }
+        netInput.value = String(Math.round(gross - tare));
+      }
+
+      function updateTotal() {
+        if (!totalInput) {
+          return;
+        }
+        const qty = parseNumber(qtyInput && qtyInput.value);
+        const unitPrice = parseNumber(unitPriceInput && unitPriceInput.value);
+        if (qty === null || unitPrice === null) {
+          totalInput.value = "";
+          return;
+        }
+        totalInput.value = (qty * unitPrice).toFixed(2);
+      }
+
+      if (grossInput && tareInput && grossInput.dataset.netBound !== "true") {
+        grossInput.dataset.netBound = "true";
+        tareInput.dataset.netBound = "true";
+        grossInput.addEventListener("input", updateNet);
+        tareInput.addEventListener("input", updateNet);
+      }
+      if (qtyInput && unitPriceInput && qtyInput.dataset.totalBound !== "true") {
+        qtyInput.dataset.totalBound = "true";
+        unitPriceInput.dataset.totalBound = "true";
+        qtyInput.addEventListener("input", updateTotal);
+        unitPriceInput.addEventListener("input", updateTotal);
+      }
+
+      updateNet();
+      updateTotal();
+    }
+
+    bindCalculations();
+
+    document.body.addEventListener("htmx:afterSwap", function (event) {
+      if (event.target && event.target.id === "weights-block") {
+        bindCalculations();
+      }
+    });
+  })();
+</script>
 {% endblock %}
