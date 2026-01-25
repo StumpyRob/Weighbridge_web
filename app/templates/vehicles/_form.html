@@ -16,7 +16,7 @@
     </div>
     <div class="field">
       <label for="vehicle_type_id">Vehicle type</label>
-      <select id="vehicle_type_id" name="vehicle_type_id" required>
+      <select id="vehicle_type_id" name="vehicle_type_id">
         <option value="">Select type</option>
         {% for id, label in options.vehicle_types %}
           <option value="{{ id }}" {% if form.vehicle_type_id == id %}selected{% endif %}>{{ label }}</option>

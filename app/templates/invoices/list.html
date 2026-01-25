@@ -42,11 +42,11 @@
         <tr>
           <td><a href="/invoices/{{ invoice.id }}">{{ invoice.invoice_no }}</a></td>
           <td>{{ customer.name }}</td>
-          <td>{{ invoice.invoice_date }}</td>
+          <td>{{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "" }}</td>
           <td>{{ invoice.status }}</td>
-          <td>{{ invoice.net_total }}</td>
-          <td>{{ invoice.vat_total }}</td>
-          <td>{{ invoice.gross_total }}</td>
+          <td>{{ "{:.2f}".format(invoice.net_total) }}</td>
+          <td>{{ "{:.2f}".format(invoice.vat_total) }}</td>
+          <td>{{ "{:.2f}".format(invoice.gross_total) }}</td>
         </tr>
       {% else %}
         <tr>

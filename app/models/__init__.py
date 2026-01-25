@@ -2,6 +2,8 @@ from .base import Base
 from .customer import Customer
 from .invoice import Invoice
 from .invoice_line import InvoiceLine
+from .invoice_sequence import InvoiceSequence
+from .invoice_void import InvoiceVoid
 from .item import Item
 from .lookups import (
     Area,
@@ -29,7 +31,8 @@ from .lookups import (
     Yard,
 )
 from .product import Product
-from .ticket import Ticket
+from .ticket import DirectionEnum, Ticket, TicketStatusEnum, TransactionTypeEnum
+from .ticket_sequence import TicketSequence
 from .ticket_void import TicketVoid
 from .user import User
 from .vehicle import Vehicle
@@ -40,6 +43,8 @@ __all__ = [
     "Customer",
     "Invoice",
     "InvoiceLine",
+    "InvoiceSequence",
+    "InvoiceVoid",
     "Item",
     "Area",
     "Container",
@@ -66,6 +71,10 @@ __all__ = [
     "Yard",
     "Product",
     "Ticket",
+    "DirectionEnum",
+    "TransactionTypeEnum",
+    "TicketStatusEnum",
+    "TicketSequence",
     "TicketVoid",
     "User",
     "Vehicle",

@@ -9,47 +9,31 @@
     <p class="muted">Filter and review ticket activity.</p>
   </div>
   <div>
-    <a class="button" href="/tickets/new">New Ticket</a>
+    <form method="post" action="/tickets/new/quick">
+      <button class="button" type="submit">New Ticket</button>
+    </form>
   </div>
 </div>
 
 <form class="filters" method="get" action="/tickets">
   <div class="field">
-    <label for="date_from">Date from</label>
-    <input type="date" id="date_from" name="date_from" value="{{ filters.date_from }}" />
-  </div>
-  <div class="field">
-    <label for="date_to">Date to</label>
-    <input type="date" id="date_to" name="date_to" value="{{ filters.date_to }}" />
-  </div>
-  <div class="field">
-    <label for="status">Status</label>
-    <input type="text" id="status" name="status" value="{{ filters.status }}" />
-  </div>
-  <div class="field">
-    <label for="direction">Direction</label>
-    <input type="text" id="direction" name="direction" value="{{ filters.direction }}" />
-  </div>
-  <div class="field">
-    <label for="transaction_type">Transaction type</label>
+    <label for="q">Search</label>
     <input
       type="text"
-      id="transaction_type"
-      name="transaction_type"
-      value="{{ filters.transaction_type }}"
+      id="q"
+      name="q"
+      value="{{ filters.q }}"
+      placeholder="Ticket, vehicle, customer"
     />
   </div>
   <div class="field">
-    <label for="customer">Customer</label>
-    <input type="text" id="customer" name="customer" value="{{ filters.customer }}" />
-  </div>
-  <div class="field">
-    <label for="vehicle">Vehicle reg contains</label>
-    <input type="text" id="vehicle" name="vehicle" value="{{ filters.vehicle }}" />
-  </div>
-  <div class="field">
-    <label for="ticket_no">Ticket no</label>
-    <input type="text" id="ticket_no" name="ticket_no" value="{{ filters.ticket_no }}" />
+    <label for="status">Status</label>
+    <select id="status" name="status">
+      <option value="">All</option>
+      <option value="OPEN" {% if filters.status == "OPEN" %}selected{% endif %}>OPEN</option>
+      <option value="COMPLETE" {% if filters.status == "COMPLETE" %}selected{% endif %}>COMPLETE</option>
+      <option value="VOID" {% if filters.status == "VOID" %}selected{% endif %}>VOID</option>
+    </select>
   </div>
   <div class="actions">
     <button type="submit">Filter</button>
@@ -58,7 +42,7 @@
 </form>
 
 <div class="table-wrap">
-  <table class="data-table">
+  <table class="data-table tickets-table">
     <thead>
       <tr>
         <th>Ticket no</th>
@@ -68,28 +52,54 @@
         <th>Customer</th>
         <th>Vehicle</th>
         <th>Product</th>
-        <th>Gross/Tare/Net</th>
+        <th class="weights-col">Gross/Tare/Net</th>
         <th>Total</th>
-        <th>Status</th>
+        <th class="status-col">Status</th>
       </tr>
     </thead>
     <tbody>
       {% for row in rows %}
         <tr>
-          <td><a href="/tickets/{{ row.Ticket.id }}">{{ row.Ticket.ticket_no }}</a></td>
-          <td>{{ row.Ticket.datetime }}</td>
-          <td>{{ row.Ticket.direction }}</td>
-          <td>{{ row.Ticket.transaction_type }}</td>
+          <td>
+            <a
+              href="/tickets/{{ row.Ticket.id }}"
+              {% if row.Ticket.status and row.Ticket.status.value == "VOID" %}class="link-muted"{% endif %}
+            >
+              {{ row.Ticket.ticket_no }}
+            </a>
+          </td>
+          <td>{{ row.Ticket.datetime.strftime("%d/%m/%Y %H:%M") if row.Ticket.datetime else "" }}</td>
+          <td>{{ row.Ticket.direction.value if row.Ticket.direction else "" }}</td>
+          <td>{{ row.Ticket.transaction_type.value if row.Ticket.transaction_type else "" }}</td>
           <td>{{ row.Customer.name if row.Customer else "" }}</td>
           <td>{{ row.Vehicle.registration if row.Vehicle else "" }}</td>
           <td>{{ row.Product.description if row.Product else "" }}</td>
-          <td>
-            {{ row.Ticket.gross_kg or "" }} /
-            {{ row.Ticket.tare_kg or "" }} /
-            {{ row.Ticket.net_kg or "" }}
+          <td class="weights-col">
+            {{ "{:.0f}".format(row.Ticket.gross_kg) if row.Ticket.gross_kg is not none else "&mdash;" | safe }} /
+            {{ "{:.0f}".format(row.Ticket.tare_kg) if row.Ticket.tare_kg is not none else "&mdash;" | safe }} /
+            {{ "{:.0f}".format(row.Ticket.net_kg) if row.Ticket.net_kg is not none else "&mdash;" | safe }}
           </td>
-          <td>{{ row.Ticket.total or "" }}</td>
-          <td>{{ row.Ticket.status }}</td>
+          <td>
+            {{ "{:.2f}".format(row.Ticket.total) if row.Ticket.total is not none else "&mdash;" | safe }}
+            {% if row.Ticket.dont_invoice %}
+              <div class="muted">Do not invoice</div>
+            {% endif %}
+          </td>
+          <td class="status-col">
+            {% if row.Ticket.status %}
+              <span class="status-text status-{{ row.Ticket.status.value | lower }}">
+                {{ row.Ticket.status.value }}
+              </span>
+            {% endif %}
+            {% if row.Invoice %}
+              <a class="muted" href="/invoices/{{ row.Invoice.id }}">
+                [{{ row.Invoice.invoice_no }}]
+              </a>
+            {% endif %}
+            {% if row.Ticket.status and row.Ticket.status.value in ["COMPLETE", "VOID"] %}
+              <div class="muted">Locked</div>
+            {% endif %}
+          </td>
         </tr>
       {% else %}
         <tr>

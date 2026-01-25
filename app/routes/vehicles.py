@@ -254,8 +254,7 @@ def _parse_vehicle_form(form) -> dict:
 
     if not registration:
         errors.append("Registration is required.")
-    if not vehicle_type_id:
-        errors.append("Vehicle type is required.")
+    # vehicle_type_id is optional
 
     return {
         "errors": errors,
@@ -295,8 +294,16 @@ def _vehicle_to_form(vehicle: Vehicle) -> dict:
         "registration": vehicle.registration or "",
         "owner_customer_id": str(vehicle.owner_customer_id or ""),
         "vehicle_type_id": str(vehicle.vehicle_type_id or ""),
-        "default_tare_kg": f"{vehicle.default_tare_kg}" if vehicle.default_tare_kg else "",
-        "overweight_threshold_kg": f"{vehicle.overweight_threshold_kg}" if vehicle.overweight_threshold_kg else "",
+        "default_tare_kg": (
+            f"{float(vehicle.default_tare_kg):.0f}"
+            if vehicle.default_tare_kg is not None
+            else ""
+        ),
+        "overweight_threshold_kg": (
+            f"{float(vehicle.overweight_threshold_kg):.0f}"
+            if vehicle.overweight_threshold_kg is not None
+            else ""
+        ),
         "haulier_id": str(vehicle.haulier_id or ""),
         "driver_id": str(vehicle.driver_id or ""),
     }

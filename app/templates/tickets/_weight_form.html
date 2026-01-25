@@ -1,9 +1,0 @@
-<form
-  class="inline-form"
-  hx-post="/tickets/{{ ticket.id }}/weights/{{ field }}"
-  hx-target="#weights-card"
-  hx-swap="innerHTML"
->
-  <input type="number" step="0.001" name="weight_value" placeholder="{{ placeholder }}" />
-  <button type="submit">Apply</button>
-</form>

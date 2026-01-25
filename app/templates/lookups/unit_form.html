@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}{% if unit %}Edit Unit {{ unit.code }}{% else %}New Unit{% endif %}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{% if unit %}Edit Unit{% else %}New Unit{% endif %}</h1>
+    <p class="muted">Define a measurement unit.</p>
+  </div>
+</div>
+
+{% if errors %}
+  <div class="alert">
+    <ul>
+      {% for error in errors %}
+        <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<form class="ticket-form" method="post" action="{% if unit %}/lookups/units/{{ unit.id }}{% else %}/lookups/units/new{% endif %}">
+  <section class="card">
+    <h2>Details</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label for="code">Code</label>
+        <input type="text" id="code" name="code" value="{{ form.code }}" required />
+      </div>
+      <div class="field">
+        <label for="description">Description</label>
+        <input type="text" id="description" name="description" value="{{ form.description }}" />
+      </div>
+      <div class="field checkbox">
+        <input type="checkbox" id="is_active" name="is_active" {% if form.is_active %}checked{% endif %} />
+        <label for="is_active">Active</label>
+      </div>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button type="submit">Save</button>
+    <a class="link-button" href="/lookups/units">Cancel</a>
+  </div>
+</form>
+{% endblock %}

@@ -17,10 +17,17 @@ set DATABASE_URL=postgresql+psycopg://weighbridge:weighbridge@localhost:5432/wei
 set SECRET_KEY=change-me
 ```
 
-Run database migrations (after creating a revision; only re-run `alembic revision` when models change):
+Run database migrations (only create a new revision when models change):
 
 ```bash
-alembic revision --autogenerate -m "init"
+alembic upgrade head
+```
+
+If you are enabling required product units, seed lookup units first:
+
+```bash
+alembic upgrade 0a9b3d5c7e21
+python -m app.seed
 alembic upgrade head
 ```
 

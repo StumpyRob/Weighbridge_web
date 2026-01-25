@@ -47,8 +47,93 @@
   </section>
 
   <div class="actions">
-    <button type="submit">Generate</button>
+    <button type="submit">Preview</button>
     <a class="link-button" href="/invoices">Cancel</a>
   </div>
 </form>
+
+{% if preview %}
+  <section class="card">
+    <h2>Summary</h2>
+    <div class="form-grid">
+      <div><strong>Included tickets:</strong> {{ preview.included | length }}</div>
+      <div><strong>Excluded tickets:</strong> {{ preview.excluded | length }}</div>
+      <div><strong>Included total:</strong> {{ "{:.2f}".format(preview.included_total) }}</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Included Tickets</h2>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Ticket no</th>
+            <th>Date/time</th>
+            <th>Status</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ticket in preview.included %}
+            <tr>
+              <td><a href="/tickets/{{ ticket.id }}">{{ ticket.ticket_no }}</a></td>
+              <td>{{ ticket.datetime.strftime("%d/%m/%Y %H:%M") if ticket.datetime else "" }}</td>
+              <td>{{ ticket.status.value if ticket.status else "" }}</td>
+              <td>{{ "{:.2f}".format(ticket.total) if ticket.total is not none else "" }}</td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="4" class="empty">No included tickets.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <form class="actions" method="post" action="/invoices/generate/confirm">
+      <input type="hidden" name="customer_id" value="{{ form.customer_id }}" />
+      <input type="hidden" name="date_from" value="{{ form.date_from }}" />
+      <input type="hidden" name="date_to" value="{{ form.date_to }}" />
+      <button type="submit" {% if preview.included | length == 0 %}disabled{% endif %}>
+        Create Invoice
+      </button>
+      {% if preview.included | length == 0 %}
+        <span class="muted">Nothing to invoice.</span>
+      {% endif %}
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Excluded Tickets</h2>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Ticket no</th>
+            <th>Date/time</th>
+            <th>Status</th>
+            <th>Total</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ticket, reason in preview.excluded %}
+            <tr>
+              <td><a href="/tickets/{{ ticket.id }}">{{ ticket.ticket_no }}</a></td>
+              <td>{{ ticket.datetime.strftime("%d/%m/%Y %H:%M") if ticket.datetime else "" }}</td>
+              <td>{{ ticket.status.value if ticket.status else "" }}</td>
+              <td>{{ "{:.2f}".format(ticket.total) if ticket.total is not none else "" }}</td>
+              <td><span class="tag">{{ reason }}</span></td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="5" class="empty">No excluded tickets.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endif %}
 {% endblock %}
