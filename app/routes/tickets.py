@@ -388,6 +388,25 @@ async def tickets_update(
         )
 
     if action == "complete":
+        payload = _parse_ticket_form(
+            form, current_status=ticket.status.value if ticket.status else None
+        )
+        gross_kg = payload["gross_kg"]
+        tare_kg = payload["tare_kg"]
+        qty = payload["qty"]
+        unit_price = payload["unit_price"]
+        product_id = payload["product_id"]
+        has_weights = gross_kg is not None and tare_kg is not None
+        has_pricing = (
+            qty is not None
+            and float(qty) > 0
+            and unit_price is not None
+            and unit_price >= 0
+        )
+        weight_warning = _net_negative_values(gross_kg, tare_kg)
+        direction_warning = _direction_transaction_warning(
+            payload["direction"], payload["transaction_type"]
+        )
         if ticket.status in (TicketStatusEnum.COMPLETE, TicketStatusEnum.VOID):
             return templates.TemplateResponse(
                 "tickets/edit.html",
@@ -396,32 +415,9 @@ async def tickets_update(
                     "errors": ["Ticket is locked."],
                     "ticket": ticket,
                     "is_admin": is_admin,
-                    "weight_warning": _net_negative(ticket),
+                    "weight_warning": weight_warning,
                     "direction_warning": direction_warning,
-                    "form": _ticket_to_form(ticket),
-                    "options": _load_ticket_options(db),
-                    "enums": _ticket_enums(),
-                },
-                status_code=400,
-            )
-        has_weights = ticket.gross_kg is not None and ticket.tare_kg is not None
-        has_pricing = (
-            ticket.qty is not None
-            and float(ticket.qty) > 0
-            and ticket.unit_price is not None
-            and ticket.unit_price >= 0
-        )
-        if has_weights and _net_negative(ticket):
-            return templates.TemplateResponse(
-                "tickets/edit.html",
-                {
-                    "request": request,
-                    "errors": ["Gross is lower than Tare — use Swap Weights."],
-                    "ticket": ticket,
-                    "is_admin": is_admin,
-                    "weight_warning": True,
-                    "direction_warning": direction_warning,
-                    "form": _ticket_to_form(ticket),
+                    "form": payload["form"],
                     "options": _load_ticket_options(db),
                     "enums": _ticket_enums(),
                 },
@@ -432,19 +428,50 @@ async def tickets_update(
                 "tickets/edit.html",
                 {
                     "request": request,
-                    "errors": [
-                        "To complete a ticket, enter Gross and Tare weights, or enter Quantity and Unit Price."
-                    ],
+                    "errors": ["Enter Gross+Tare OR Quantity+Unit Price."],
                     "ticket": ticket,
                     "is_admin": is_admin,
-                    "weight_warning": _net_negative(ticket),
+                    "weight_warning": weight_warning,
                     "direction_warning": direction_warning,
-                    "form": _ticket_to_form(ticket),
+                    "form": payload["form"],
                     "options": _load_ticket_options(db),
                     "enums": _ticket_enums(),
                 },
                 status_code=400,
             )
+        if has_pricing and product_id is None:
+            return templates.TemplateResponse(
+                "tickets/edit.html",
+                {
+                    "request": request,
+                    "errors": ["Product is required when using pricing."],
+                    "ticket": ticket,
+                    "is_admin": is_admin,
+                    "weight_warning": weight_warning,
+                    "direction_warning": direction_warning,
+                    "form": payload["form"],
+                    "options": _load_ticket_options(db),
+                    "enums": _ticket_enums(),
+                },
+                status_code=400,
+            )
+        if has_weights and weight_warning:
+            return templates.TemplateResponse(
+                "tickets/edit.html",
+                {
+                    "request": request,
+                    "errors": ["Gross is lower than Tare - use Swap Weights."],
+                    "ticket": ticket,
+                    "is_admin": is_admin,
+                    "weight_warning": False,
+                    "direction_warning": direction_warning,
+                    "form": payload["form"],
+                    "options": _load_ticket_options(db),
+                    "enums": _ticket_enums(),
+                },
+                status_code=400,
+            )
+        _apply_ticket_updates(ticket, payload)
         ticket.status = TicketStatusEnum.COMPLETE.value
         db.commit()
         return RedirectResponse(url=f"/tickets/{ticket_id}?completed=1", status_code=303)
@@ -849,12 +876,7 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         errors.append("Direction is required.")
     if not transaction_type:
         errors.append("Transaction type is required.")
-    if not customer_id:
-        errors.append("Customer is required.")
-    if not vehicle_id:
-        errors.append("Vehicle is required.")
-    if not product_id:
-        errors.append("Product is required.")
+    # Customer/vehicle/product can be left blank on open tickets.
 
     if direction and direction not in _ticket_enums()["directions"]:
         errors.append("Direction must be INWARD or OUTWARD.")
@@ -1140,3 +1162,4 @@ def _parse_decimal(value: str) -> Decimal | None:
         return Decimal(str(value))
     except (InvalidOperation, ValueError):
         return None
+

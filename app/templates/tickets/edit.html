@@ -10,10 +10,9 @@
   </div>
   <div class="actions">
     {% if ticket.status == "OPEN" %}
-      <form method="post" action="/tickets/{{ ticket.id }}">
-        <input type="hidden" name="action" value="complete" />
-        <button type="submit" class="button">Mark Complete</button>
-      </form>
+      <button type="submit" class="button" form="ticket-form" name="action" value="complete">
+        Mark Complete
+      </button>
     {% endif %}
   </div>
 </div>
@@ -32,23 +31,20 @@
   <div><strong>Updated:</strong> {{ ticket.updated_at.strftime("%d/%m/%Y %H:%M") if ticket.updated_at else "" }}</div>
 </div>
 
-{% if completed %}
-  <div class="alert">
-    Ticket completed.
+{% if completed or saved %}
+  <div class="alert alert-success" data-auto-dismiss>
+    {{ "Ticket completed." if completed else "Saved." }}
   </div>
   <script>
     if (window.history && window.history.replaceState) {
       window.history.replaceState({}, "", window.location.pathname);
     }
-  </script>
-{% elif saved %}
-  <div class="alert">
-    Saved.
-  </div>
-  <script>
-    if (window.history && window.history.replaceState) {
-      window.history.replaceState({}, "", window.location.pathname);
-    }
+    window.setTimeout(function () {
+      const banner = document.querySelector("[data-auto-dismiss]");
+      if (banner) {
+        banner.remove();
+      }
+    }, 3000);
   </script>
 {% endif %}
 
@@ -71,20 +67,19 @@
 <div id="weight-warning">
 {% if weight_warning %}
   <div class="alert">
-    Gross is lower than Tare — use Swap Weights.
+    Gross is lower than Tare - use Swap Weights.
   </div>
 {% endif %}
 </div>
 
-<form class="ticket-form" method="post" action="/tickets/{{ ticket.id }}">
-  <input type="hidden" name="action" value="save" />
+<form id="ticket-form" class="ticket-form" method="post" action="/tickets/{{ ticket.id }}">
   {% if ticket.status in ["COMPLETE", "VOID"] %}
     <div class="alert">
       This ticket is locked.
     </div>
   {% endif %}
 
-  <fieldset {% if ticket.status == "VOID" %}disabled{% endif %}>
+  <fieldset {% if ticket.status in ["COMPLETE", "VOID"] %}disabled{% endif %}>
   <section class="card">
     <h2>Ticket Info</h2>
     <div class="form-grid">
@@ -144,7 +139,7 @@
     <div class="form-grid">
       <div class="field">
         <label for="customer_id">Customer</label>
-        <select id="customer_id" name="customer_id" required>
+        <select id="customer_id" name="customer_id">
           <option value="">Select customer</option>
           {% for id, label in options.customers %}
             <option value="{{ id }}" {% if form.customer_id|string == id|string %}selected{% endif %}>{{ label }}</option>
@@ -153,7 +148,7 @@
       </div>
       <div class="field">
         <label for="vehicle_id">Vehicle</label>
-        <select id="vehicle_id" name="vehicle_id" required>
+        <select id="vehicle_id" name="vehicle_id">
           <option value="">Select vehicle</option>
           {% for id, label in options.vehicles %}
             <option value="{{ id }}" {% if form.vehicle_id|string == id|string %}selected{% endif %}>{{ label }}</option>
@@ -165,7 +160,6 @@
         <select
           id="product_id"
           name="product_id"
-          required
           hx-get="/tickets/product-defaults"
           hx-trigger="change"
           hx-target="#pricing-defaults"
@@ -220,49 +214,29 @@
         </select>
       </div>
       <div class="field">
-        <label for="yard_id">Yard</label>
-        <select id="yard_id" name="yard_id">
-          <option value="">Select yard</option>
-          {% for id, label in options.yards %}
-            <option value="{{ id }}" {% if form.yard_id|string == id|string %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
+        <label for="yard_id">Yard <span class="muted">TODO: Not wired yet</span></label>
+        <input type="hidden" name="yard_id" value="{{ form.yard_id }}" />
+        <input type="text" value="TODO: Not wired yet" disabled />
       </div>
       <div class="field">
-        <label for="area_id">Area</label>
-        <select id="area_id" name="area_id">
-          <option value="">Select area</option>
-          {% for id, label in options.areas %}
-            <option value="{{ id }}" {% if form.area_id|string == id|string %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
+        <label for="area_id">Area <span class="muted">TODO: Not wired yet</span></label>
+        <input type="hidden" name="area_id" value="{{ form.area_id }}" />
+        <input type="text" value="TODO: Not wired yet" disabled />
       </div>
       <div class="field">
-        <label for="waste_code_id">Waste code</label>
-        <select id="waste_code_id" name="waste_code_id">
-          <option value="">Select waste code</option>
-          {% for id, label in options.waste_codes %}
-            <option value="{{ id }}" {% if form.waste_code_id|string == id|string %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
+        <label for="waste_code_id">Waste code <span class="muted">TODO: Not wired yet</span></label>
+        <input type="hidden" name="waste_code_id" value="{{ form.waste_code_id }}" />
+        <input type="text" value="TODO: Not wired yet" disabled />
       </div>
       <div class="field">
-        <label for="waste_producer_id">Waste producer</label>
-        <select id="waste_producer_id" name="waste_producer_id">
-          <option value="">Select waste producer</option>
-          {% for id, label in options.waste_producers %}
-            <option value="{{ id }}" {% if form.waste_producer_id|string == id|string %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
+        <label for="waste_producer_id">Waste producer <span class="muted">TODO: Not wired yet</span></label>
+        <input type="hidden" name="waste_producer_id" value="{{ form.waste_producer_id }}" />
+        <input type="text" value="TODO: Not wired yet" disabled />
       </div>
       <div class="field">
-        <label for="licence_id">Licence</label>
-        <select id="licence_id" name="licence_id">
-          <option value="">Select licence</option>
-          {% for id, label in options.licences %}
-            <option value="{{ id }}" {% if form.licence_id|string == id|string %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
+        <label for="licence_id">Licence <span class="muted">TODO: Not wired yet</span></label>
+        <input type="hidden" name="licence_id" value="{{ form.licence_id }}" />
+        <input type="text" value="TODO: Not wired yet" disabled />
       </div>
     </div>
   </section>
@@ -312,7 +286,7 @@
 
   <div class="actions">
     {% if ticket.status not in ["COMPLETE", "VOID"] %}
-      <button type="submit">Save</button>
+      <button type="submit" name="action" value="save">Save</button>
     {% endif %}
     <a class="link-button" href="/tickets">Cancel</a>
   </div>
@@ -413,3 +387,4 @@
   })();
 </script>
 {% endblock %}
+
