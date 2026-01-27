@@ -37,6 +37,15 @@ Start the app:
 uvicorn app.main:app --reload
 ```
 
+## Debug tooling
+
+- `/debug/integrity` is available only when `DEBUG=true`.
+- It lists:
+  - negative net weights
+  - complete tickets missing weights
+  - tickets referencing inactive lookups/units
+- Date filtering uses server-local time (UTC by default).
+
 ## Docker
 
 ```bash

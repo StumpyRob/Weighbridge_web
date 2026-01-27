@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}{{ entity_plural }} | Weighbridge Web{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{{ entity_plural }}</h1>
+      <p class="muted">Manage {{ entity_plural | lower }}.</p>
+    </div>
+    <div class="actions">
+      <a class="button" href="{{ base_path }}/new">Add {{ entity_singular }}</a>
+    </div>
+  </div>
+
+  {% if base_path.startswith("/products/") %}
+    {% include "products/_subnav.html" %}
+  {% endif %}
+
+  {% if show_tabs is not defined or show_tabs %}
+    <div class="tabs">
+      <a class="link-button" href="/lookups/hauliers">Hauliers</a>
+      <a class="link-button" href="/lookups/drivers">Drivers</a>
+      <a class="link-button" href="/lookups/containers">Containers</a>
+      <a class="link-button" href="/lookups/destinations">Destinations</a>
+    </div>
+  {% endif %}
+
+  {% if saved %}
+    <div class="alert alert-success" data-auto-dismiss>
+      Saved.
+    </div>
+    <script>
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+      window.setTimeout(function () {
+        const banner = document.querySelector("[data-auto-dismiss]");
+        if (banner) {
+          banner.remove();
+        }
+      }, 3000);
+    </script>
+  {% endif %}
+
+  {% if error %}
+    <div class="alert">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  <form class="filters filters-inline" method="get" action="{{ base_path }}">
+    <div class="field">
+      <label for="q">Search</label>
+      <input type="text" id="q" name="q" value="{{ q }}" />
+    </div>
+    <div class="field checkbox">
+      <input type="hidden" name="hide_inactive" value="0" />
+      <input
+        type="checkbox"
+        id="hide_inactive"
+        name="hide_inactive"
+        value="1"
+        {% if hide_inactive %}checked{% endif %}
+      />
+      <label for="hide_inactive">Hide inactive</label>
+    </div>
+    <div class="actions">
+      <button type="submit">Search</button>
+      <a class="link-button" href="{{ base_path }}">Reset</a>
+    </div>
+  </form>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Status</th>
+        <th class="actions-col">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+        <tr>
+          <td>{{ item.name }}</td>
+          <td>
+            {% if item.is_active %}
+              <span class="status-pill status-open">Active</span>
+            {% else %}
+              <span class="status-pill status-void">Inactive</span>
+            {% endif %}
+          </td>
+          <td class="actions">
+            <a class="link-button" href="{{ base_path }}/{{ item.id }}/edit">Edit</a>
+            {% if item.is_active %}
+              <form method="post" action="{{ base_path }}/{{ item.id }}/deactivate">
+                <button type="submit" class="danger">Deactivate</button>
+              </form>
+            {% elif not hide_inactive %}
+              <form method="post" action="{{ base_path }}/{{ item.id }}/reactivate">
+                <button type="submit">Reactivate</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="3" class="empty">No {{ entity_plural | lower }} found.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

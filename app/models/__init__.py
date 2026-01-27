@@ -5,14 +5,11 @@ from .invoice_line import InvoiceLine
 from .invoice_sequence import InvoiceSequence
 from .invoice_void import InvoiceVoid
 from .item import Item
-from .lookups import (
+from .lookups import Container, Destination, Driver, Haulier
+from .lookups_misc import (
     Area,
-    Container,
     Contractor,
     CostCenter,
-    Destination,
-    Driver,
-    Haulier,
     HazCode,
     InvoiceFrequency,
     Licence,

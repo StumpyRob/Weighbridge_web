@@ -1,4 +1,4 @@
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 import logging
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -9,6 +9,7 @@ from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..models.base import utcnow
 from ..models import (
     Customer,
     Invoice,
@@ -43,7 +44,7 @@ def invoices_list(
             or_(Invoice.invoice_no.ilike(like), Customer.name.ilike(like))
         )
     rows = db.execute(query).all()
-    return templates.TemplateResponse(
+    return templates.TemplateResponse(request, 
         "invoices/list.html", {"request": request, "rows": rows, "q": q or ""}
     )
 
@@ -53,7 +54,7 @@ def invoices_generate_form(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
     customers = db.execute(select(Customer).order_by(Customer.name)).scalars().all()
-    return templates.TemplateResponse(
+    return templates.TemplateResponse(request, 
         "invoices/generate.html",
         {
             "request": request,
@@ -88,7 +89,7 @@ async def invoices_generate(
 
     customers = db.execute(select(Customer).order_by(Customer.name)).scalars().all()
     if errors:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "invoices/generate.html",
             {
                 "request": request,
@@ -110,7 +111,7 @@ async def invoices_generate(
         )
     except Exception:
         logger.exception("Invoice preview failed")
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "invoices/generate.html",
             {
                 "request": request,
@@ -125,7 +126,7 @@ async def invoices_generate(
         )
 
     if not tickets:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "invoices/generate.html",
             {
                 "request": request,
@@ -139,7 +140,7 @@ async def invoices_generate(
             },
         )
 
-    return templates.TemplateResponse(
+    return templates.TemplateResponse(request, 
         "invoices/generate.html",
         {
             "request": request,
@@ -182,7 +183,7 @@ async def invoices_generate_confirm(
 
     customers = db.execute(select(Customer).order_by(Customer.name)).scalars().all()
     if errors:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "invoices/generate.html",
             {
                 "request": request,
@@ -209,14 +210,12 @@ async def invoices_generate_confirm(
         Ticket.total.is_not(None),
         Ticket.total > 0,
     ]
+    # Date filters are interpreted in server-local time (UTC by default).
     if date_from:
-        ticket_filters.append(
-            Ticket.datetime >= datetime.combine(date_from, time.min)
-        )
+        ticket_filters.append(Ticket.datetime >= datetime.combine(date_from, time.min))
     if date_to:
-        ticket_filters.append(
-            Ticket.datetime <= datetime.combine(date_to, time.max)
-        )
+        end_exclusive = datetime.combine(date_to + timedelta(days=1), time.min)
+        ticket_filters.append(Ticket.datetime < end_exclusive)
 
     try:
         ticket_rows = db.execute(
@@ -228,7 +227,7 @@ async def invoices_generate_confirm(
         ).all()
     except Exception:
         logger.exception("Invoice confirm query failed")
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "invoices/generate.html",
             {
                 "request": request,
@@ -243,7 +242,7 @@ async def invoices_generate_confirm(
         )
 
     if not ticket_rows:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "invoices/generate.html",
             {
                 "request": request,
@@ -302,7 +301,7 @@ async def invoices_generate_confirm(
     except Exception:
         db.rollback()
         logger.exception("Invoice creation failed")
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "invoices/generate.html",
             {
                 "request": request,
@@ -328,7 +327,7 @@ def invoices_detail(
 ) -> HTMLResponse:
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "invoices/not_found.html",
             {"request": request, "invoice_id": invoice_id},
             status_code=404,
@@ -348,7 +347,7 @@ def invoices_detail(
     void_reasons = db.execute(
         select(VoidReason).order_by(VoidReason.code)
     ).scalars().all()
-    return templates.TemplateResponse(
+    return templates.TemplateResponse(request, 
         "invoices/detail.html",
         {
             "request": request,
@@ -370,7 +369,7 @@ async def invoices_mark_paid(
 ) -> HTMLResponse:
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "invoices/not_found.html",
             {"request": request, "invoice_id": invoice_id},
             status_code=404,
@@ -395,7 +394,7 @@ async def invoices_mark_paid(
             .where(Ticket.invoice_id == invoice.id)
             .order_by(Ticket.datetime)
         ).scalars().all()
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "invoices/detail.html",
             {
                 "request": request,
@@ -429,7 +428,7 @@ async def invoices_mark_paid(
             .where(Ticket.invoice_id == invoice.id)
             .order_by(Ticket.datetime)
         ).scalars().all()
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "invoices/detail.html",
             {
                 "request": request,
@@ -456,7 +455,7 @@ async def invoices_void(
 ) -> HTMLResponse:
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "invoices/not_found.html",
             {"request": request, "invoice_id": invoice_id},
             status_code=404,
@@ -484,7 +483,7 @@ async def invoices_void(
         void_reasons = db.execute(
             select(VoidReason).order_by(VoidReason.code)
         ).scalars().all()
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "invoices/detail.html",
             {
                 "request": request,
@@ -505,7 +504,7 @@ async def invoices_void(
             invoice_id=invoice.id,
             reason_id=reason_id,
             note=note,
-            voided_at=datetime.utcnow(),
+            voided_at=utcnow(),
             voided_by="admin",
         )
     )
@@ -514,13 +513,13 @@ async def invoices_void(
 
 
 def _generate_invoice_no(db: Session) -> str:
-    year = datetime.utcnow().year
+    year = utcnow().year
     db.execute(
         text(
             "INSERT OR IGNORE INTO invoice_sequences (year, last_number, updated_at) "
             "VALUES (:year, 0, :updated_at)"
         ),
-        {"year": year, "updated_at": datetime.utcnow()},
+        {"year": year, "updated_at": utcnow()},
     )
     db.execute(
         text(
@@ -528,7 +527,7 @@ def _generate_invoice_no(db: Session) -> str:
             "SET last_number = last_number + 1, updated_at = :updated_at "
             "WHERE year = :year"
         ),
-        {"year": year, "updated_at": datetime.utcnow()},
+        {"year": year, "updated_at": utcnow()},
     )
     next_number = db.execute(
         text("SELECT last_number FROM invoice_sequences WHERE year = :year"),
@@ -574,10 +573,12 @@ def _fetch_ticket_candidates(
     db: Session, customer_id: int, date_from: date | None, date_to: date | None
 ) -> list[Ticket]:
     filters = [Ticket.customer_id == customer_id]
+    # Date filters are interpreted in server-local time (UTC by default).
     if date_from:
         filters.append(Ticket.datetime >= datetime.combine(date_from, time.min))
     if date_to:
-        filters.append(Ticket.datetime <= datetime.combine(date_to, time.max))
+        end_exclusive = datetime.combine(date_to + timedelta(days=1), time.min)
+        filters.append(Ticket.datetime < end_exclusive)
     return (
         db.execute(select(Ticket).where(and_(*filters)).order_by(Ticket.datetime.asc()))
         .scalars()

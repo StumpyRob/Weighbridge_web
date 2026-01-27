@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}
+  {% if mode == "edit" %}
+    Edit {{ entity_singular }} | Weighbridge Web
+  {% else %}
+    New {{ entity_singular }} | Weighbridge Web
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      {% if mode == "edit" %}
+        <h1>Edit {{ entity_singular }}</h1>
+      {% else %}
+        <h1>New {{ entity_singular }}</h1>
+      {% endif %}
+      <p class="muted">Manage {{ entity_plural | lower }}.</p>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="alert">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  <form class="ticket-form" method="post">
+    <div class="field">
+      <label for="name">Name</label>
+      <input
+        type="text"
+        id="name"
+        name="name"
+        value="{% if prefill_name is defined and prefill_name is not none %}{{ prefill_name }}{% elif item %}{{ item.name }}{% else %}{% endif %}"
+        required
+      />
+    </div>
+    <div class="actions">
+      <button type="submit">Save</button>
+      <a class="link-button" href="{{ base_path }}">Cancel</a>
+    </div>
+  </form>
+{% endblock %}

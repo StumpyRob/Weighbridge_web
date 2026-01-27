@@ -2,10 +2,19 @@ from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 
-from sqlalchemy import Boolean, DateTime, Enum as SAEnum, ForeignKey, Integer, Numeric, String, Index
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum as SAEnum,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base
+from .base import Base, utcnow
 
 
 class DirectionEnum(str, Enum):
@@ -32,13 +41,17 @@ class Ticket(Base):
         Index("ix_tickets_status", "status"),
         Index("ix_tickets_customer_id", "customer_id"),
         Index("ix_tickets_vehicle_id", "vehicle_id"),
+        Index("ix_tickets_haulier_id", "haulier_id"),
+        Index("ix_tickets_driver_id", "driver_id"),
+        Index("ix_tickets_container_id", "container_id"),
+        Index("ix_tickets_destination_id", "destination_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     ticket_no: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utcnow, onupdate=utcnow
     )
     datetime: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     status: Mapped[TicketStatusEnum] = mapped_column(
@@ -82,3 +95,8 @@ class Ticket(Base):
     dont_invoice: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     paid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     payment_method_id: Mapped[int | None] = mapped_column(Integer)
+    product: Mapped["Product | None"] = relationship("Product")
+    haulier: Mapped["Haulier | None"] = relationship("Haulier")
+    driver: Mapped["Driver | None"] = relationship("Driver")
+    container: Mapped["Container | None"] = relationship("Container")
+    destination: Mapped["Destination | None"] = relationship("Destination")

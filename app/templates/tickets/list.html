@@ -1,3 +1,6 @@
+{# Ticket list is intentionally minimal (scan view).
+   Extra fields belong on the ticket detail/edit page.
+   Do not re-add lookups/customer/product here unless requested. #}
 {% extends "base.html" %}
 
 {% block title %}Tickets | Weighbridge Web{% endblock %}
@@ -16,6 +19,15 @@
 </div>
 
 <form class="filters" method="get" action="/tickets">
+  {% if filters.date_from %}
+    <input type="hidden" name="date_from" value="{{ filters.date_from }}" />
+  {% endif %}
+  {% if filters.date_to %}
+    <input type="hidden" name="date_to" value="{{ filters.date_to }}" />
+  {% endif %}
+  {% if filters.direction %}
+    <input type="hidden" name="direction" value="{{ filters.direction }}" />
+  {% endif %}
   <div class="field">
     <label for="q">Search</label>
     <input
@@ -23,17 +35,30 @@
       id="q"
       name="q"
       value="{{ filters.q }}"
-      placeholder="Ticket, vehicle, customer"
+      placeholder="Ticket, vehicle"
     />
   </div>
   <div class="field">
     <label for="status">Status</label>
-    <select id="status" name="status">
+    <select id="status" {% if filters.open_only %}disabled{% else %}name="status"{% endif %}>
       <option value="">All</option>
       <option value="OPEN" {% if filters.status == "OPEN" %}selected{% endif %}>OPEN</option>
       <option value="COMPLETE" {% if filters.status == "COMPLETE" %}selected{% endif %}>COMPLETE</option>
       <option value="VOID" {% if filters.status == "VOID" %}selected{% endif %}>VOID</option>
     </select>
+    {% if filters.open_only %}
+      <div class="muted">(Open only enabled)</div>
+    {% endif %}
+  </div>
+  <div class="field">
+    <label for="open_only">Open only</label>
+    <input
+      type="checkbox"
+      id="open_only"
+      name="open_only"
+      value="1"
+      {% if filters.open_only %}checked{% endif %}
+    />
   </div>
   <div class="actions">
     <button type="submit">Filter</button>
@@ -45,16 +70,12 @@
   <table class="data-table tickets-table">
     <thead>
       <tr>
-        <th>Ticket no</th>
-        <th>Date/time</th>
+        <th>Ticket #</th>
+        <th>Date / Time</th>
         <th>Direction</th>
-        <th>Transaction</th>
-        <th>Customer</th>
         <th>Vehicle</th>
-        <th>Product</th>
-        <th class="weights-col">Gross/Tare/Net</th>
-        <th>Total</th>
         <th class="status-col">Status</th>
+        <th class="weights-col">Net</th>
       </tr>
     </thead>
     <tbody>
@@ -69,21 +90,13 @@
             </a>
           </td>
           <td>{{ row.Ticket.datetime.strftime("%d/%m/%Y %H:%M") if row.Ticket.datetime else "" }}</td>
-          <td>{{ row.Ticket.direction.value if row.Ticket.direction else "" }}</td>
-          <td>{{ row.Ticket.transaction_type.value if row.Ticket.transaction_type else "" }}</td>
-          <td>{{ row.Customer.name if row.Customer else "" }}</td>
-          <td>{{ row.Vehicle.registration if row.Vehicle else "" }}</td>
-          <td>{{ row.Product.description if row.Product else "" }}</td>
-          <td class="weights-col">
-            {{ "{:.0f}".format(row.Ticket.gross_kg) if row.Ticket.gross_kg is not none else "&mdash;" | safe }} /
-            {{ "{:.0f}".format(row.Ticket.tare_kg) if row.Ticket.tare_kg is not none else "&mdash;" | safe }} /
-            {{ "{:.0f}".format(row.Ticket.net_kg) if row.Ticket.net_kg is not none else "&mdash;" | safe }}
+          <td>
+            {% if row.Ticket.direction %}
+              {% if row.Ticket.direction.value == "INWARD" %}IN{% elif row.Ticket.direction.value == "OUTWARD" %}OUT{% else %}{{ row.Ticket.direction.value }}{% endif %}
+            {% endif %}
           </td>
           <td>
-            {{ "{:.2f}".format(row.Ticket.total) if row.Ticket.total is not none else "&mdash;" | safe }}
-            {% if row.Ticket.dont_invoice %}
-              <div class="muted">Do not invoice</div>
-            {% endif %}
+            {{ row.Vehicle.registration if row.Vehicle else "&mdash;" | safe }}
           </td>
           <td class="status-col">
             {% if row.Ticket.status %}
@@ -91,19 +104,14 @@
                 {{ row.Ticket.status.value }}
               </span>
             {% endif %}
-            {% if row.Invoice %}
-              <a class="muted" href="/invoices/{{ row.Invoice.id }}">
-                [{{ row.Invoice.invoice_no }}]
-              </a>
-            {% endif %}
-            {% if row.Ticket.status and row.Ticket.status.value in ["COMPLETE", "VOID"] %}
-              <div class="muted">Locked</div>
-            {% endif %}
+          </td>
+          <td class="weights-col">
+            {{ "{:.0f}".format(row.Ticket.net_kg) if row.Ticket.net_kg is not none else "&mdash;" | safe }}
           </td>
         </tr>
       {% else %}
         <tr>
-          <td colspan="10" class="empty">No tickets found.</td>
+          <td colspan="6" class="empty">No tickets found.</td>
         </tr>
       {% endfor %}
     </tbody>
