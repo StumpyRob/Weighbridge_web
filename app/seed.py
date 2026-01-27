@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from .models.base import utcnow
 
 from sqlalchemy import select
 
@@ -9,26 +9,25 @@ from .models import Unit
 
 
 SEED_UNITS = [
-    {"code": "TONNE", "description": "Tonne"},
-    {"code": "KG", "description": "Kilogram"},
-    {"code": "LOAD", "description": "Load"},
+    {"name": "Tonne"},
+    {"name": "Kilogram"},
+    {"name": "Load"},
 ]
 
 
 def seed_units() -> int:
-    now = datetime.utcnow()
+    now = utcnow()
     created = 0
     with SessionLocal() as session:
         for entry in SEED_UNITS:
             exists = session.execute(
-                select(Unit).where(Unit.code == entry["code"])
+                select(Unit).where(Unit.name == entry["name"])
             ).scalar_one_or_none()
             if exists:
                 continue
             session.add(
                 Unit(
-                    code=entry["code"],
-                    description=entry["description"],
+                    name=entry["name"],
                     is_active=True,
                     created_at=now,
                     updated_at=now,

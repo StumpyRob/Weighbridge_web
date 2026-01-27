@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Integrity Check | Weighbridge Web{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Integrity Check</h1>
+      <p class="muted">Available only in DEBUG mode. Dates use server-local time.</p>
+    </div>
+  </div>
+
+  <section class="card">
+    <h2>Negative net weights</h2>
+    {% if negative_net %}
+      <ul>
+        {% for ticket in negative_net %}
+          <li>
+            <a href="/tickets/{{ ticket.id }}">Ticket {{ ticket.ticket_no }}</a>
+            (gross {{ ticket.gross_kg }}, tare {{ ticket.tare_kg }})
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">None found.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Complete tickets missing weights</h2>
+    {% if complete_missing_weights %}
+      <ul>
+        {% for ticket in complete_missing_weights %}
+          <li>
+            <a href="/tickets/{{ ticket.id }}">Ticket {{ ticket.ticket_no }}</a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">None found.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Inactive lookup or unit references</h2>
+    {% if inactive_refs %}
+      <ul>
+        {% for row in inactive_refs %}
+          <li>
+            <a href="/tickets/{{ row.ticket.id }}">Ticket {{ row.ticket.ticket_no }}</a>
+            - {{ row.issue }}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">None found.</p>
+    {% endif %}
+  </section>
+{% endblock %}

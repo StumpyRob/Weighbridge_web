@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base
+from .base import Base, utcnow
 
 
 class Vehicle(Base):
@@ -19,7 +19,7 @@ class Vehicle(Base):
     overweight_threshold_kg: Mapped[float | None] = mapped_column(Numeric(12, 3))
     haulier_id: Mapped[int | None] = mapped_column(ForeignKey("hauliers.id"))
     driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utcnow, onupdate=utcnow
     )

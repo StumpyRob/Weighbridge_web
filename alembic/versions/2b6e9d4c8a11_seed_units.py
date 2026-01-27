@@ -19,26 +19,21 @@ depends_on = None
 def upgrade() -> None:
     conn = op.get_bind()
     now = datetime.utcnow()
-    rows = [
-        ("TONNE", "Tonne"),
-        ("KG", "Kilogram"),
-        ("LOAD", "Load"),
-    ]
-    for code, description in rows:
+    rows = ["Tonne", "Kilogram", "Load"]
+    for name in rows:
         exists = conn.execute(
-            sa.text("SELECT 1 FROM units WHERE code = :code LIMIT 1"),
-            {"code": code},
+            sa.text("SELECT 1 FROM units WHERE name = :name LIMIT 1"),
+            {"name": name},
         ).fetchone()
         if exists:
             continue
         conn.execute(
             sa.text(
-                "INSERT INTO units (code, description, is_active, created_at, updated_at) "
-                "VALUES (:code, :description, :is_active, :created_at, :updated_at)"
+                "INSERT INTO units (name, is_active, created_at, updated_at) "
+                "VALUES (:name, :is_active, :created_at, :updated_at)"
             ),
             {
-                "code": code,
-                "description": description,
+                "name": name,
                 "is_active": True,
                 "created_at": now,
                 "updated_at": now,
@@ -49,5 +44,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     conn = op.get_bind()
     conn.execute(
-        sa.text("DELETE FROM units WHERE code IN ('TONNE', 'KG', 'LOAD')")
+        sa.text("DELETE FROM units WHERE name IN ('Tonne', 'Kilogram', 'Load')")
     )

@@ -83,6 +83,17 @@ body {
   margin-bottom: 1.5rem;
 }
 
+.filters.filters-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.filters.filters-inline .field {
+  min-width: 180px;
+}
+
 .field label {
   display: block;
   font-size: 0.85rem;
@@ -134,6 +145,27 @@ body {
   background: #6b7280;
 }
 
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.tabs .tab-link {
+  color: #4b5563;
+  text-decoration: none;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+
+.tabs .tab-link:hover,
+.tabs .tab-link:focus {
+  color: #14213d;
+  background: #e5e7eb;
+  text-decoration: none;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -168,6 +200,12 @@ body {
 .tickets-table .status-col,
 .tickets-table .weights-col {
   min-width: 0;
+}
+
+.tickets-table .lookups-col {
+  max-width: 220px;
+  line-height: 1.2;
+  white-space: normal;
 }
 
 .data-table th {

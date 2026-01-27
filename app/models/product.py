@@ -3,9 +3,9 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base
+from .base import Base, utcnow
 
 
 class Product(Base):
@@ -15,7 +15,8 @@ class Product(Base):
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     description: Mapped[str] = mapped_column(String(255), nullable=False)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("product_groups.id"))
-    unit_id: Mapped[int] = mapped_column(ForeignKey("units.id"), nullable=False)
+    unit_id: Mapped[int | None] = mapped_column(ForeignKey("units.id"), nullable=True)
+    unit: Mapped["Unit | None"] = relationship("Unit")
     tax_rate_id: Mapped[int | None] = mapped_column(ForeignKey("tax_rates.id"))
     nominal_code_id: Mapped[int | None] = mapped_column(ForeignKey("nominal_codes.id"))
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
@@ -32,7 +33,7 @@ class Product(Base):
     default_waste_code_id: Mapped[int | None] = mapped_column(
         ForeignKey("waste_codes.id")
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utcnow, onupdate=utcnow
     )

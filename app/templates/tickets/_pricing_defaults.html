@@ -1,14 +1,5 @@
 <div class="form-grid">
   <div class="field">
-    <label for="unit_id">Unit</label>
-    <select id="unit_id" name="unit_id">
-      <option value="">Select unit</option>
-      {% for id, label in units %}
-        <option value="{{ id }}" {% if unit_id|string == id|string %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="field">
     <label for="unit_price">Unit price</label>
     <input type="number" step="0.01" id="unit_price" name="unit_price" value="{{ unit_price }}" />
   </div>

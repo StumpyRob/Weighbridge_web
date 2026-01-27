@@ -8,6 +8,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..models.base import utcnow
 from ..models import Customer, InvoiceFrequency
 
 router = APIRouter()
@@ -27,7 +28,7 @@ def customers_list(
             or_(Customer.name.ilike(like), Customer.account_code.ilike(like))
         )
     customers = db.execute(query).scalars().all()
-    return templates.TemplateResponse(
+    return templates.TemplateResponse(request, 
         "customers/list.html",
         {"request": request, "customers": customers, "q": q or ""},
     )
@@ -35,7 +36,7 @@ def customers_list(
 
 @router.get("/customers/new", response_class=HTMLResponse)
 def customers_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
-    return templates.TemplateResponse(
+    return templates.TemplateResponse(request, 
         "customers/new.html",
         {
             "request": request,
@@ -53,7 +54,7 @@ async def customers_create(
     form = await request.form()
     payload = _parse_customer_form(form)
     if payload["errors"]:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "customers/new.html",
             {
                 "request": request,
@@ -94,12 +95,12 @@ def customers_edit(
 ) -> HTMLResponse:
     customer = db.get(Customer, customer_id)
     if not customer:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "customers/not_found.html",
             {"request": request, "customer_id": customer_id},
             status_code=404,
         )
-    return templates.TemplateResponse(
+    return templates.TemplateResponse(request, 
         "customers/edit.html",
         {
             "request": request,
@@ -117,7 +118,7 @@ async def customers_update(
 ) -> HTMLResponse:
     customer = db.get(Customer, customer_id)
     if not customer:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "customers/not_found.html",
             {"request": request, "customer_id": customer_id},
             status_code=404,
@@ -126,7 +127,7 @@ async def customers_update(
     form = await request.form()
     payload = _parse_customer_form(form)
     if payload["errors"]:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "customers/edit.html",
             {
                 "request": request,
@@ -155,7 +156,7 @@ async def customers_update(
     customer.cash_account = payload["cash_account"]
     customer.do_not_invoice = payload["do_not_invoice"]
     customer.must_have_po = payload["must_have_po"]
-    customer.updated_at = datetime.utcnow()
+    customer.updated_at = utcnow()
     db.commit()
     return RedirectResponse(url=f"/customers/{customer.id}", status_code=303)
 

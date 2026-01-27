@@ -17,7 +17,7 @@ depends_on = None
 def upgrade() -> None:
     conn = op.get_bind()
     tonne_row = conn.execute(
-        sa.text("SELECT id FROM units WHERE code = 'TONNE' LIMIT 1")
+        sa.text("SELECT id FROM units WHERE name = 'Tonne' LIMIT 1")
     ).fetchone()
     null_count = conn.execute(
         sa.text("SELECT COUNT(*) FROM products WHERE unit_id IS NULL")
@@ -26,7 +26,7 @@ def upgrade() -> None:
     if null_count and null_count > 0:
         if tonne_row is None:
             raise RuntimeError(
-                "Products have null unit_id but TONNE unit is missing. "
+                "Products have null unit_id but Tonne unit is missing. "
                 "Run `python -m app.seed` before applying this migration."
             )
         conn.execute(

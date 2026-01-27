@@ -20,14 +20,14 @@
     </div>
     <div class="field">
       <label for="unit_id">Unit</label>
-      <select id="unit_id" name="unit_id" required>
+      <select id="unit_id" name="unit_id">
         <option value="">Select unit</option>
         {% for id, label in options.units %}
           <option value="{{ id }}" {% if form.unit_id == id %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
       {% if not options.units %}
-        <p class="help">No units configured. Please add units in Lookups.</p>
+        <p class="help">No units configured. Please add units in Products &gt; Units.</p>
       {% endif %}
     </div>
     <div class="field">

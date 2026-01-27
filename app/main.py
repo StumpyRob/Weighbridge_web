@@ -4,10 +4,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .routes import api_router
+from .routers.lookups import router as lookups_router
 
 app = FastAPI(title="weighbridge_web")
 
 app.include_router(api_router)
+app.include_router(lookups_router)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 templates = Jinja2Templates(directory="app/templates")
@@ -20,14 +22,14 @@ def health_check() -> dict:
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html", {"request": request})
 
 
 @app.get("/reports", response_class=HTMLResponse)
 def reports(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("reports.html", {"request": request})
+    return templates.TemplateResponse(request, "reports.html", {"request": request})
 
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("admin.html", {"request": request})
+    return templates.TemplateResponse(request, "admin.html", {"request": request})

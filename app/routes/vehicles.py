@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..models.base import utcnow
 from ..models import (
     Container,
     Customer,
@@ -37,7 +38,7 @@ def vehicles_list(
         like = f"%{q}%"
         query = query.where(Vehicle.registration.ilike(like))
     rows = db.execute(query).all()
-    return templates.TemplateResponse(
+    return templates.TemplateResponse(request, 
         "vehicles/list.html",
         {"request": request, "rows": rows, "q": q or ""},
     )
@@ -45,7 +46,7 @@ def vehicles_list(
 
 @router.get("/vehicles/new", response_class=HTMLResponse)
 def vehicles_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
-    return templates.TemplateResponse(
+    return templates.TemplateResponse(request, 
         "vehicles/new.html",
         {
             "request": request,
@@ -63,7 +64,7 @@ async def vehicles_create(
     form = await request.form()
     payload = _parse_vehicle_form(form)
     if payload["errors"]:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "vehicles/new.html",
             {
                 "request": request,
@@ -94,7 +95,7 @@ def vehicles_edit(
 ) -> HTMLResponse:
     vehicle = db.get(Vehicle, vehicle_id)
     if not vehicle:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "vehicles/not_found.html",
             {"request": request, "vehicle_id": vehicle_id},
             status_code=404,
@@ -103,9 +104,9 @@ def vehicles_edit(
         select(VehicleTare, Container)
         .join(Container, VehicleTare.container_id == Container.id)
         .where(VehicleTare.vehicle_id == vehicle.id)
-        .order_by(Container.code)
+        .order_by(Container.name)
     ).all()
-    return templates.TemplateResponse(
+    return templates.TemplateResponse(request, 
         "vehicles/edit.html",
         {
             "request": request,
@@ -124,7 +125,7 @@ async def vehicles_update(
 ) -> HTMLResponse:
     vehicle = db.get(Vehicle, vehicle_id)
     if not vehicle:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "vehicles/not_found.html",
             {"request": request, "vehicle_id": vehicle_id},
             status_code=404,
@@ -136,9 +137,9 @@ async def vehicles_update(
             select(VehicleTare, Container)
             .join(Container, VehicleTare.container_id == Container.id)
             .where(VehicleTare.vehicle_id == vehicle.id)
-            .order_by(Container.code)
+            .order_by(Container.name)
         ).all()
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "vehicles/edit.html",
             {
                 "request": request,
@@ -158,7 +159,7 @@ async def vehicles_update(
     vehicle.overweight_threshold_kg = payload["overweight_threshold_kg"]
     vehicle.haulier_id = payload["haulier_id"]
     vehicle.driver_id = payload["driver_id"]
-    vehicle.updated_at = datetime.utcnow()
+    vehicle.updated_at = utcnow()
     db.commit()
     return RedirectResponse(url=f"/vehicles/{vehicle.id}", status_code=303)
 
@@ -169,7 +170,7 @@ async def vehicle_tares_add(
 ) -> HTMLResponse:
     vehicle = db.get(Vehicle, vehicle_id)
     if not vehicle:
-        return templates.TemplateResponse(
+        return templates.TemplateResponse(request, 
             "vehicles/not_found.html",
             {"request": request, "vehicle_id": vehicle_id},
             status_code=404,
@@ -232,15 +233,15 @@ def vehicle_tares_delete(
 def _load_options(db: Session) -> dict[str, list[tuple[str, str]]]:
     customers = db.execute(select(Customer).order_by(Customer.name)).scalars()
     vehicle_types = db.execute(select(VehicleType).order_by(VehicleType.code)).scalars()
-    hauliers = db.execute(select(Haulier).order_by(Haulier.code)).scalars()
+    hauliers = db.execute(select(Haulier).order_by(Haulier.name)).scalars()
     drivers = db.execute(select(Driver).order_by(Driver.name)).scalars()
-    containers = db.execute(select(Container).order_by(Container.code)).scalars()
+    containers = db.execute(select(Container).order_by(Container.name)).scalars()
     return {
         "customers": [(str(row.id), row.name) for row in customers],
         "vehicle_types": [(str(row.id), row.code) for row in vehicle_types],
-        "hauliers": [(str(row.id), row.code) for row in hauliers],
+        "hauliers": [(str(row.id), row.name) for row in hauliers],
         "drivers": [(str(row.id), row.name) for row in drivers],
-        "containers": [(str(row.id), row.code) for row in containers],
+        "containers": [(str(row.id), row.name) for row in containers],
     }
 
 

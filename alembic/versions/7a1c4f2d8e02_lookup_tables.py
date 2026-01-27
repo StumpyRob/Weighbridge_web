@@ -144,11 +144,10 @@ def upgrade() -> None:
     op.create_table(
         "units",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("code", sa.String(length=50), nullable=False, unique=True),
-        sa.Column("description", sa.String(length=255), nullable=True),
-        sa.Column("is_active", sa.Boolean(), nullable=False),
-        sa.Column("created_at", sa.DateTime(), nullable=True),
-        sa.Column("updated_at", sa.DateTime(), nullable=True),
+        sa.Column("name", sa.String(length=50), nullable=False, unique=True),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
+        sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
     )
     op.create_table(
         "tax_rates",

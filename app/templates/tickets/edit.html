@@ -9,7 +9,7 @@
     <p class="muted">Edit ticket details and status.</p>
   </div>
   <div class="actions">
-    {% if ticket.status == "OPEN" %}
+    {% if is_open %}
       <button type="submit" class="button" form="ticket-form" name="action" value="complete">
         Mark Complete
       </button>
@@ -163,7 +163,7 @@
           hx-get="/tickets/product-defaults"
           hx-trigger="change"
           hx-target="#pricing-defaults"
-          hx-include="[name='unit_price'],[name='unit_id'],[name='product_id']"
+          hx-include="[name='unit_price'],[name='product_id']"
         >
           <option value="">Select product</option>
           {% for id, label in options.products %}
@@ -177,42 +177,61 @@
   <section class="card">
     <h2>Optional Lookups</h2>
     <div class="form-grid">
-      <div class="field">
-        <label for="haulier_id">Haulier</label>
-        <select id="haulier_id" name="haulier_id">
-          <option value="">Select haulier</option>
-          {% for id, label in options.hauliers %}
-            <option value="{{ id }}" {% if form.haulier_id|string == id|string %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label for="driver_id">Driver</label>
-        <select id="driver_id" name="driver_id">
-          <option value="">Select driver</option>
-          {% for id, label in options.drivers %}
-            <option value="{{ id }}" {% if form.driver_id|string == id|string %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label for="container_id">Container</label>
-        <select id="container_id" name="container_id">
-          <option value="">Select container</option>
-          {% for id, label in options.containers %}
-            <option value="{{ id }}" {% if form.container_id|string == id|string %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label for="destination_id">Destination</label>
-        <select id="destination_id" name="destination_id">
-          <option value="">Select destination</option>
-          {% for id, label in options.destinations %}
-            <option value="{{ id }}" {% if form.destination_id|string == id|string %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
+      {% if is_open %}
+        <div class="field">
+          <label for="haulier_id">Haulier</label>
+          <select id="haulier_id" name="haulier_id">
+            <option value="">Select haulier</option>
+            {% for id, label in hauliers %}
+              <option value="{{ id }}" {% if form.haulier_id|string == id|string %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="driver_id">Driver</label>
+          <select id="driver_id" name="driver_id">
+            <option value="">Select driver</option>
+            {% for id, label in drivers %}
+              <option value="{{ id }}" {% if form.driver_id|string == id|string %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="container_id">Container</label>
+          <select id="container_id" name="container_id">
+            <option value="">Select container</option>
+            {% for id, label in containers %}
+              <option value="{{ id }}" {% if form.container_id|string == id|string %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="destination_id">Destination</label>
+          <select id="destination_id" name="destination_id">
+            <option value="">Select destination</option>
+            {% for id, label in destinations %}
+              <option value="{{ id }}" {% if form.destination_id|string == id|string %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      {% else %}
+        <div class="field">
+          <label>Haulier</label>
+          <div>{{ ticket.haulier.name if ticket.haulier else "—" }}</div>
+        </div>
+        <div class="field">
+          <label>Driver</label>
+          <div>{{ ticket.driver.name if ticket.driver else "—" }}</div>
+        </div>
+        <div class="field">
+          <label>Container</label>
+          <div>{{ ticket.container.name if ticket.container else "—" }}</div>
+        </div>
+        <div class="field">
+          <label>Destination</label>
+          <div>{{ ticket.destination.name if ticket.destination else "—" }}</div>
+        </div>
+      {% endif %}
       <div class="field">
         <label for="yard_id">Yard <span class="muted">TODO: Not wired yet</span></label>
         <input type="hidden" name="yard_id" value="{{ form.yard_id }}" />
@@ -256,8 +275,14 @@
         <label for="qty">Quantity</label>
         <input type="number" step="0.001" id="qty" name="qty" value="{{ form.qty }}" />
       </div>
+      {% if ticket.product and ticket.product.unit %}
+        <div class="field">
+          <label>Unit</label>
+          <div class="readonly">{{ ticket.product.unit.name }}</div>
+        </div>
+      {% endif %}
       <div id="pricing-defaults">
-        {% with units=options.units, unit_id=form.unit_id, unit_price=form.unit_price %}
+        {% with unit_price=form.unit_price %}
           {% include "tickets/_pricing_defaults.html" %}
         {% endwith %}
       </div>

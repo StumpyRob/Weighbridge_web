@@ -5,7 +5,7 @@ from decimal import Decimal
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base
+from .base import Base, utcnow
 
 
 class Customer(Base):
@@ -31,7 +31,7 @@ class Customer(Base):
     cash_account: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     do_not_invoice: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     must_have_po: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utcnow, onupdate=utcnow
     )
