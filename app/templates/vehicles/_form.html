@@ -1,18 +1,9 @@
 <section class="card">
-  <h2>Vehicle</h2>
+  <h2>Vehicle details</h2>
   <div class="form-grid">
     <div class="field">
       <label for="registration">Registration</label>
       <input type="text" id="registration" name="registration" value="{{ form.registration }}" required />
-    </div>
-    <div class="field">
-      <label for="owner_customer_id">Owner customer</label>
-      <select id="owner_customer_id" name="owner_customer_id">
-        <option value="">Select owner</option>
-        {% for id, label in options.customers %}
-          <option value="{{ id }}" {% if form.owner_customer_id == id %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
     </div>
     <div class="field">
       <label for="vehicle_type_id">Vehicle type</label>
@@ -37,14 +28,48 @@
         value="{{ form.overweight_threshold_kg }}"
       />
     </div>
+    <div class="field">
+      <label for="owner_customer_id">Owner customer</label>
+      <select id="owner_customer_id" name="owner_customer_id">
+        <option value="">Select owner</option>
+        {% for id, label in options.customers %}
+          <option value="{{ id }}" {% if form.owner_customer_id == id %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
   </div>
 </section>
 
 <section class="card">
-  <h2>Assignments</h2>
+  <h2>Defaults (auto-applied to new tickets)</h2>
+  <div class="hint">These defaults are suggested on new tickets when this vehicle is identified.</div>
   <div class="form-grid">
     <div class="field">
-      <label for="haulier_id">Haulier</label>
+      <label for="default_customer_id">Default customer</label>
+      <select id="default_customer_id" name="default_customer_id">
+        <option value="">Select default customer</option>
+        {% for id, label in options.customers %}
+          <option value="{{ id }}" {% if form.default_customer_id == id %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="default_haulier_id">Default haulier</label>
+      <select id="default_haulier_id" name="default_haulier_id">
+        <option value="">Select default haulier</option>
+        {% for id, label in options.hauliers %}
+          <option value="{{ id }}" {% if form.default_haulier_id == id %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Assignments (typical / informational)</h2>
+  <div class="form-grid">
+    <div class="field">
+      <label for="haulier_id">Assigned haulier</label>
       <select id="haulier_id" name="haulier_id">
         <option value="">Select haulier</option>
         {% for id, label in options.hauliers %}
@@ -53,7 +78,7 @@
       </select>
     </div>
     <div class="field">
-      <label for="driver_id">Driver</label>
+      <label for="driver_id">Assigned driver</label>
       <select id="driver_id" name="driver_id">
         <option value="">Select driver</option>
         {% for id, label in options.drivers %}

@@ -6,8 +6,8 @@
   <h1>{{ entity }} not found</h1>
   <p>ID {{ entity_id }} does not exist.</p>
   {% if base_path %}
-    <a class="link-button" href="{{ base_path }}">Back to {{ entity | lower }} list</a>
+    <a class="btn btn--ghost" href="{{ base_path }}">Back to {{ entity | lower }} list</a>
   {% else %}
-    <a class="link-button" href="/lookups/hauliers">Back to lookups</a>
+    <a class="btn btn--ghost" href="/lookups/hauliers">Back to lookups</a>
   {% endif %}
 {% endblock %}

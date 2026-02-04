@@ -118,6 +118,7 @@ async def hauliers_create(
 ) -> HTMLResponse:
     form = await request.form()
     raw_name = str(form.get("name", ""))
+    carrier_licence_number = str(form.get("carrier_licence_number", "")).strip()
     name = re.sub(r"\s+", " ", raw_name.strip())
     error = None
     if not name:
@@ -147,7 +148,11 @@ async def hauliers_create(
             status_code=400,
         )
 
-    haulier = Haulier(name=name, is_active=True)
+    haulier = Haulier(
+        name=name,
+        carrier_licence_number=carrier_licence_number or None,
+        is_active=True,
+    )
     db.add(haulier)
     db.commit()
     return RedirectResponse(
@@ -205,6 +210,7 @@ async def hauliers_update(
         )
     form = await request.form()
     raw_name = str(form.get("name", ""))
+    carrier_licence_number = str(form.get("carrier_licence_number", "")).strip()
     name = re.sub(r"\s+", " ", raw_name.strip())
     error = None
     if not name:
@@ -238,6 +244,7 @@ async def hauliers_update(
         )
 
     haulier.name = name
+    haulier.carrier_licence_number = carrier_licence_number or None
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/hauliers"),

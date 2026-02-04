@@ -1,5 +1,6 @@
 from .base import Base
 from .customer import Customer
+from .ewc_code import EwcCode
 from .invoice import Invoice
 from .invoice_line import InvoiceLine
 from .invoice_sequence import InvoiceSequence
@@ -38,6 +39,7 @@ from .vehicle_tare import VehicleTare
 __all__ = [
     "Base",
     "Customer",
+    "EwcCode",
     "Invoice",
     "InvoiceLine",
     "InvoiceSequence",

@@ -3,7 +3,17 @@
   <div class="form-grid">
     <div class="field">
       <label for="account_code">Account code</label>
-      <input type="text" id="account_code" name="account_code" value="{{ form.account_code }}" required />
+      <input
+        type="text"
+        id="account_code"
+        name="account_code"
+        value="{{ form.account_code }}"
+        maxlength="16"
+        pattern="[A-Z0-9-]+"
+        title="Use A-Z, 0-9, and - only (max 16 characters)."
+        class="account-code"
+        required
+      />
     </div>
     <div class="field">
       <label for="name">Name</label>
@@ -19,6 +29,21 @@
     </div>
   </div>
 </section>
+
+<script>
+  (function () {
+    const input = document.getElementById("account_code");
+    if (!input || input.dataset.upperBound === "true") {
+      return;
+    }
+    input.dataset.upperBound = "true";
+    function sync() {
+      input.value = input.value.toUpperCase();
+    }
+    input.addEventListener("input", sync);
+    sync();
+  })();
+</script>
 
 <section class="card">
   <h2>Address</h2>

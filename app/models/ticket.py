@@ -11,6 +11,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -41,6 +42,7 @@ class Ticket(Base):
         Index("ix_tickets_status", "status"),
         Index("ix_tickets_customer_id", "customer_id"),
         Index("ix_tickets_vehicle_id", "vehicle_id"),
+        Index("ix_tickets_vehicle_reg_text", "vehicle_reg_text"),
         Index("ix_tickets_haulier_id", "haulier_id"),
         Index("ix_tickets_driver_id", "driver_id"),
         Index("ix_tickets_container_id", "container_id"),
@@ -68,9 +70,16 @@ class Ticket(Base):
     )
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"))
     vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"))
+    vehicle_reg_text: Mapped[str | None] = mapped_column(String(50))
+    walk_in: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
+    ewc_code_6: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    ewc_code_display: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    ewc_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ewc_hazardous: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id"))
     haulier_id: Mapped[int | None] = mapped_column(ForeignKey("hauliers.id"))
+    carrier_licence_number: Mapped[str | None] = mapped_column(String(100))
     driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"))
     container_id: Mapped[int | None] = mapped_column(ForeignKey("containers.id"))
     destination_id: Mapped[int | None] = mapped_column(
@@ -81,10 +90,11 @@ class Ticket(Base):
     waste_code_id: Mapped[int | None] = mapped_column(
         ForeignKey("waste_codes.id")
     )
-    waste_producer_id: Mapped[int | None] = mapped_column(
-        ForeignKey("waste_producers.id")
+    waste_producer_customer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("customers.id")
     )
-    licence_id: Mapped[int | None] = mapped_column(ForeignKey("licences.id"))
+    waste_producer_name: Mapped[str | None] = mapped_column(String(255))
+    waste_producer_address: Mapped[str | None] = mapped_column(Text)
     gross_kg: Mapped[float | None] = mapped_column(Numeric(12, 3))
     tare_kg: Mapped[float | None] = mapped_column(Numeric(12, 3))
     net_kg: Mapped[float | None] = mapped_column(Numeric(12, 3))
@@ -92,6 +102,13 @@ class Ticket(Base):
     unit_id: Mapped[int | None] = mapped_column(Integer)
     unit_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     total: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    pricing_basis: Mapped[str | None] = mapped_column(String(10))
+    pricing_unit_name: Mapped[str | None] = mapped_column(String(50))
+    pricing_unit_type: Mapped[str | None] = mapped_column(String(10))
+    pricing_unit_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    pricing_qty_snapshot: Mapped[float | None] = mapped_column(Numeric(12, 3))
+    pricing_net_kg_snapshot: Mapped[float | None] = mapped_column(Numeric(12, 3))
+    pricing_billable_qty_snapshot: Mapped[float | None] = mapped_column(Numeric(12, 3))
     dont_invoice: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     paid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     payment_method_id: Mapped[int | None] = mapped_column(Integer)

@@ -9,51 +9,57 @@
     <p class="muted">Review issued invoices.</p>
   </div>
   <div>
-    <a class="button" href="/invoices/generate">Generate Invoice</a>
+    <a class="btn btn--primary" href="/invoices/generate">Generate Invoice</a>
   </div>
 </div>
 
-<form class="filters" method="get" action="/invoices">
-  <div class="field">
-    <label for="q">Search invoice no or customer</label>
-    <input type="text" id="q" name="q" value="{{ q }}" />
-  </div>
-  <div class="actions">
-    <button type="submit">Search</button>
-    <a class="link-button" href="/invoices">Reset</a>
-  </div>
-</form>
+<section class="card">
+  <h2>Filters</h2>
+  <form class="filters" method="get" action="/invoices">
+    <div class="field">
+      <label for="q">Search invoice no or customer</label>
+      <input type="text" id="q" name="q" value="{{ q }}" />
+    </div>
+    <div class="actions btn-group">
+      <button type="submit" class="btn btn--secondary">Search</button>
+      <a class="btn btn--ghost" href="/invoices">Reset</a>
+    </div>
+  </form>
+</section>
 
-<div class="table-wrap">
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Invoice no</th>
-        <th>Customer</th>
-        <th>Date</th>
-        <th>Status</th>
-        <th>Net</th>
-        <th>VAT</th>
-        <th>Gross</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for invoice, customer in rows %}
+<section class="card">
+  <h2>Invoices</h2>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
         <tr>
-          <td><a href="/invoices/{{ invoice.id }}">{{ invoice.invoice_no }}</a></td>
-          <td>{{ customer.name }}</td>
-          <td>{{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "" }}</td>
-          <td>{{ invoice.status }}</td>
-          <td>{{ "{:.2f}".format(invoice.net_total) }}</td>
-          <td>{{ "{:.2f}".format(invoice.vat_total) }}</td>
-          <td>{{ "{:.2f}".format(invoice.gross_total) }}</td>
+          <th>Invoice no</th>
+          <th>Customer</th>
+          <th>Date</th>
+          <th>Status</th>
+          <th>Net</th>
+          <th>VAT</th>
+          <th>Gross</th>
         </tr>
-      {% else %}
-        <tr>
-          <td colspan="7" class="empty">No invoices found.</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+      </thead>
+      <tbody>
+        {% for invoice, customer in rows %}
+          <tr>
+            <td><a href="/invoices/{{ invoice.id }}">{{ invoice.invoice_no }}</a></td>
+            <td>{{ customer.name }}</td>
+            <td>{{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "" }}</td>
+            <td>{{ invoice.status }}</td>
+            <td>{{ "{:.2f}".format(invoice.net_total) }}</td>
+            <td>{{ "{:.2f}".format(invoice.vat_total) }}</td>
+            <td>{{ "{:.2f}".format(invoice.gross_total) }}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="7" class="empty">No invoices found.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 {% endblock %}

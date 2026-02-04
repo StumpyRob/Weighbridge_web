@@ -22,9 +22,9 @@
 
 <form class="ticket-form" method="post" action="/customers/new">
   {% include "customers/_form.html" %}
-  <div class="actions">
-    <button type="submit">Save</button>
-    <a class="link-button" href="/customers">Cancel</a>
-  </div>
-</form>
+    <div class="actions btn-group">
+      <button type="submit" class="btn btn--primary">Save</button>
+      <a class="btn btn--secondary" href="/customers">Cancel</a>
+    </div>
+  </form>
 {% endblock %}

@@ -19,8 +19,16 @@
       </select>
     </div>
     <div class="field">
+      <label for="sale_type">Sale type</label>
+      <select id="sale_type" name="sale_type" required>
+        <option value="">Select sale type</option>
+        <option value="COUNT" {% if form.sale_type == "COUNT" %}selected{% endif %}>Count</option>
+        <option value="WEIGHT" {% if form.sale_type == "WEIGHT" %}selected{% endif %}>Weight</option>
+      </select>
+    </div>
+    <div class="field" id="unit-count-wrap" {% if form.sale_type == "WEIGHT" %}style="display:none"{% endif %}>
       <label for="unit_id">Unit</label>
-      <select id="unit_id" name="unit_id">
+      <select id="unit_id" name="unit_id" required {% if form.sale_type == "WEIGHT" %}disabled{% endif %}>
         <option value="">Select unit</option>
         {% for id, label in options.units %}
           <option value="{{ id }}" {% if form.unit_id == id %}selected{% endif %}>{{ label }}</option>
@@ -29,6 +37,10 @@
       {% if not options.units %}
         <p class="help">No units configured. Please add units in Products &gt; Units.</p>
       {% endif %}
+    </div>
+    <div class="field" id="unit-weight-wrap" {% if form.sale_type != "WEIGHT" %}style="display:none"{% endif %}>
+      <label>Unit</label>
+      <div class="readonly">Priced per tonne</div>
     </div>
     <div class="field">
       <label for="tax_rate_id">Tax rate</label>
@@ -40,7 +52,19 @@
       </select>
     </div>
     <div class="field">
-      <label for="unit_price">Unit price</label>
+      {% set selected_unit = "" %}
+      {% if form.sale_type == "WEIGHT" %}
+        {% set selected_unit = "tonne" %}
+      {% else %}
+        {% for id, label in options.units %}
+          {% if form.unit_id == id %}
+            {% set selected_unit = label %}
+          {% endif %}
+        {% endfor %}
+      {% endif %}
+      <label for="unit_price">
+        {% if selected_unit %}Unit price (per {{ selected_unit }}){% else %}Unit price{% endif %}
+      </label>
       <input type="number" step="0.01" id="unit_price" name="unit_price" value="{{ form.unit_price }}" required />
     </div>
     <div class="field">
@@ -53,16 +77,63 @@
       </select>
     </div>
     <div class="field">
-      <label for="default_waste_code_id">Default waste code</label>
-      <select id="default_waste_code_id" name="default_waste_code_id">
-        <option value="">Select waste code</option>
-        {% for id, label in options.waste_codes %}
-          <option value="{{ id }}" {% if form.default_waste_code_id == id %}selected{% endif %}>{{ label }}</option>
+      <label for="ewc_code_input">EWC code</label>
+      <input
+        type="text"
+        id="ewc_code_input"
+        name="ewc_code_label"
+        list="ewc_code_list"
+        value="{{ form.ewc_code_label }}"
+        placeholder="Search by code or description"
+        autocomplete="off"
+      />
+      <datalist id="ewc_code_list">
+        {% for id, label, hazardous, code_6 in options.ewc_codes %}
+          <option
+            value="{{ label }}"
+            data-id="{{ id }}"
+            data-hazardous="{{ "1" if hazardous else "0" }}"
+            data-code-6="{{ code_6 }}"
+          ></option>
+        {% endfor %}
+      </datalist>
+      <input type="hidden" id="ewc_code_id" name="ewc_code_id" value="{{ form.ewc_code_id }}" />
+    </div>
+    <div class="field">
+      <label for="default_destination_id">Default destination</label>
+      <select id="default_destination_id" name="default_destination_id">
+        <option value="">No default</option>
+        {% for id, label in options.destinations %}
+          <option value="{{ id }}" {% if form.default_destination_id == id %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
     </div>
   </div>
 </section>
+
+<script>
+  (function () {
+    const saleType = document.getElementById("sale_type");
+    const countWrap = document.getElementById("unit-count-wrap");
+    const weightWrap = document.getElementById("unit-weight-wrap");
+    const unitSelect = document.getElementById("unit_id");
+
+    function syncUnitFields() {
+      if (!saleType || !countWrap || !weightWrap) {
+        return;
+      }
+      const isWeight = saleType.value === "WEIGHT";
+      countWrap.style.display = isWeight ? "none" : "";
+      weightWrap.style.display = isWeight ? "" : "none";
+      if (unitSelect) {
+        unitSelect.disabled = isWeight;
+      }
+    }
+
+    saleType?.addEventListener("change", syncUnitFields);
+    syncUnitFields();
+  })();
+</script>
 
 <section class="card">
   <h2>Pricing</h2>
@@ -97,6 +168,130 @@
     </div>
   </div>
 </section>
+
+<script>
+  (function () {
+    function initEwcBinding() {
+      const input = document.getElementById("ewc_code_input");
+      const list = document.getElementById("ewc_code_list");
+      const hidden = document.getElementById("ewc_code_id");
+      const hazardCheckbox = document.getElementById("is_hazardous");
+
+      if (!input || !list || !hidden) {
+        return;
+      }
+
+      const options = Array.from(list.options);
+
+      function optionByValue(value) {
+        return options.find((option) => option.value === value) || null;
+      }
+
+      function optionById(value) {
+        return options.find((option) => option.dataset.id === value) || null;
+      }
+
+      function optionByCode(value) {
+        return options.find((option) => option.dataset.code6 === value) || null;
+      }
+
+      function normalizeDigits(value) {
+        return String(value || "").replace(/\D/g, "");
+      }
+
+      let currentEwcId = hidden.value || "";
+      let expectedHazard = null;
+
+      function lockHazard(locked) {
+        if (!hazardCheckbox) {
+          return;
+        }
+        if (locked) {
+          hazardCheckbox.setAttribute("aria-disabled", "true");
+          hazardCheckbox.style.pointerEvents = "none";
+        } else {
+          hazardCheckbox.removeAttribute("aria-disabled");
+          hazardCheckbox.style.pointerEvents = "";
+        }
+      }
+
+      function applyOption(option) {
+        if (!option) {
+          hidden.value = "";
+          currentEwcId = "";
+          expectedHazard = null;
+          lockHazard(false);
+          return;
+        }
+        const newId = option.dataset.id || "";
+        hidden.value = newId;
+        const hazardous = option.dataset.hazardous === "1";
+        expectedHazard = hazardous;
+        if (hazardCheckbox) {
+          hazardCheckbox.checked = hazardous;
+        }
+        lockHazard(true);
+        if (input.value !== option.value) {
+          input.value = option.value;
+        }
+        currentEwcId = newId;
+      }
+
+      function syncFromInput() {
+        let matched = optionByValue(input.value);
+        if (!matched) {
+          const digits = normalizeDigits(input.value);
+          if (digits.length === 6) {
+            matched = optionByCode(digits);
+          }
+        }
+        applyOption(matched);
+      }
+
+      if (hidden.value && !input.value) {
+        const matched = optionById(hidden.value);
+        if (matched) {
+          input.value = matched.value;
+        }
+      }
+
+      if (hazardCheckbox) {
+        hazardCheckbox.addEventListener("click", function (event) {
+          if (expectedHazard === null) {
+            return;
+          }
+          event.preventDefault();
+          hazardCheckbox.checked = expectedHazard;
+        });
+        hazardCheckbox.addEventListener("keydown", function (event) {
+          if (expectedHazard === null) {
+            return;
+          }
+          if (event.key === " " || event.key === "Enter") {
+            event.preventDefault();
+            hazardCheckbox.checked = expectedHazard;
+          }
+        });
+        hazardCheckbox.addEventListener("change", function () {
+          if (expectedHazard === null) {
+            return;
+          }
+          hazardCheckbox.checked = expectedHazard;
+        });
+      }
+
+      syncFromInput();
+      input.addEventListener("input", syncFromInput);
+      input.addEventListener("change", syncFromInput);
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initEwcBinding);
+    } else {
+      initEwcBinding();
+    }
+  })();
+</script>
 
 <section class="card">
   <h2>Flags</h2>

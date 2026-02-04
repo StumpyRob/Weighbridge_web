@@ -147,6 +147,9 @@ class Unit(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(50), nullable=False)
+    unit_type: Mapped[str] = mapped_column(
+        String(10), nullable=False, server_default="COUNT"
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=sa.true()
     )

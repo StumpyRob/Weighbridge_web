@@ -13,7 +13,7 @@
   </div>
   <div>
     <form method="post" action="/tickets/new/quick">
-      <button class="button" type="submit">New Ticket</button>
+      <button class="btn btn--primary" type="submit">New Ticket</button>
     </form>
   </div>
 </div>
@@ -60,9 +60,9 @@
       {% if filters.open_only %}checked{% endif %}
     />
   </div>
-  <div class="actions">
-    <button type="submit">Filter</button>
-    <a class="link-button" href="/tickets">Reset</a>
+  <div class="actions btn-group">
+    <button type="submit" class="btn btn--secondary">Filter</button>
+    <a class="btn btn--ghost" href="/tickets">Reset</a>
   </div>
 </form>
 

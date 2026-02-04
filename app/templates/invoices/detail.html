@@ -24,12 +24,13 @@
   <div class="alert">
     Invoice {{ invoice.invoice_no }} created successfully.
   </div>
-  <div class="actions">
-    <a class="link-button" href="/invoices/generate">Back to Generate Invoices</a>
+  <div class="actions btn-group">
+    <a class="btn btn--ghost" href="/invoices/generate">Back to Generate Invoices</a>
   </div>
 {% endif %}
 
 <section class="card">
+  <h2>Summary</h2>
   <div class="form-grid">
     <div><strong>Status:</strong> {{ invoice.status }}</div>
     <div><strong>Date:</strong> {{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "" }}</div>
@@ -42,7 +43,7 @@
 
 <section class="card">
   <h2>Mark Paid</h2>
-  <form class="inline-form" method="post" action="/invoices/{{ invoice.id }}/paid">
+  <form class="inline-form btn-group" method="post" action="/invoices/{{ invoice.id }}/paid">
     <select name="payment_method_id">
       <option value="">Select payment method</option>
       {% for method in payment_methods %}
@@ -50,13 +51,13 @@
       {% endfor %}
     </select>
     <input type="datetime-local" name="paid_at" />
-    <button type="submit">Mark Paid</button>
+    <button type="submit" class="btn btn--primary">Mark Paid</button>
   </form>
 </section>
 
 <section class="card">
   <h2>Void Invoice</h2>
-  <form class="inline-form" method="post" action="/invoices/{{ invoice.id }}/void">
+  <form class="inline-form btn-group" method="post" action="/invoices/{{ invoice.id }}/void">
     <select name="void_reason_id">
       <option value="">Select reason</option>
       {% for reason in void_reasons %}
@@ -64,40 +65,43 @@
       {% endfor %}
     </select>
     <input type="text" name="void_note" placeholder="Reason note" />
-    <button type="submit" class="danger">Void</button>
+    <button type="submit" class="btn btn--danger">Void</button>
   </form>
 </section>
 
-<div class="table-wrap">
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Description</th>
-        <th>Qty</th>
-        <th>Unit price</th>
-        <th>Net</th>
-        <th>VAT</th>
-        <th>Gross</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for line in lines %}
+<section class="card">
+  <h2>Line Items</h2>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
         <tr>
-          <td>{{ line.description }}</td>
-          <td>{{ line.quantity }}</td>
-          <td>{{ "{:.2f}".format(line.unit_price) }}</td>
-          <td>{{ "{:.2f}".format(line.net) }}</td>
-          <td>{{ "{:.2f}".format(line.vat) }}</td>
-          <td>{{ "{:.2f}".format(line.gross) }}</td>
+          <th>Description</th>
+          <th>Qty</th>
+          <th>Unit price</th>
+          <th>Net</th>
+          <th>VAT</th>
+          <th>Gross</th>
         </tr>
-      {% else %}
-        <tr>
-          <td colspan="6" class="empty">No lines found.</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+      </thead>
+      <tbody>
+        {% for line in lines %}
+          <tr>
+            <td>{{ line.description }}</td>
+            <td>{{ line.quantity }}</td>
+            <td>{{ "{:.2f}".format(line.unit_price) }}</td>
+            <td>{{ "{:.2f}".format(line.net) }}</td>
+            <td>{{ "{:.2f}".format(line.vat) }}</td>
+            <td>{{ "{:.2f}".format(line.gross) }}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="6" class="empty">No lines found.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 
 <section class="card">
   <h2>Linked Tickets</h2>

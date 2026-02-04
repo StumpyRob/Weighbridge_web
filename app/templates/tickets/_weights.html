@@ -13,9 +13,7 @@
 {% set net_value = form.net_kg if form is defined else (ticket.net_kg or '') %}
 {% set readout_value = form.readout_kg if form is defined else '' %}
 
-<p class="help">Manual mode — enter weights directly.</p>
-
-<div class="form-grid">
+<div class="form-grid" id="weights-wrap">
   <div class="field">
     <label for="gross_kg">Gross kg</label>
     <input
@@ -62,10 +60,10 @@
 </div>
 
 
-<div class="weights-actions">
+<div class="weights-actions btn-group">
   <button
     type="button"
-    class="button"
+    class="btn btn--primary"
     hx-post="/tickets/weights/read"
     hx-target="#weights-block"
     hx-swap="innerHTML"
@@ -75,7 +73,7 @@
   </button>
   <button
     type="button"
-    class="button outline"
+    class="btn btn--secondary"
     hx-post="/tickets/weights/swap-preview"
     hx-target="#weights-block"
     hx-swap="innerHTML"
@@ -85,12 +83,12 @@
 </div>
 
 {% if read_confirm %}
-  <div class="alert overwrite-alert">
+  <div class="notice overwrite-alert">
     <span>Both weights are already entered. Overwrite Gross or Tare?</span>
-    <div class="overwrite-actions">
+    <div class="overwrite-actions btn-group">
       <button
         type="button"
-        class="button outline"
+        class="btn btn--secondary"
         hx-post="/tickets/weights/read-apply"
         hx-target="#weights-block"
         hx-swap="innerHTML"
@@ -101,7 +99,7 @@
       </button>
       <button
         type="button"
-        class="button outline"
+        class="btn btn--secondary"
         hx-post="/tickets/weights/read-apply"
         hx-target="#weights-block"
         hx-swap="innerHTML"

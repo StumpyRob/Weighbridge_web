@@ -1,6 +1,8 @@
 <div class="form-grid">
   <div class="field">
-    <label for="unit_price">Unit price</label>
+    <label for="unit_price">
+      {% if unit_name %}Unit price (per {{ unit_name }}){% else %}Unit price{% endif %}
+    </label>
     <input type="number" step="0.01" id="unit_price" name="unit_price" value="{{ unit_price }}" />
   </div>
 </div>

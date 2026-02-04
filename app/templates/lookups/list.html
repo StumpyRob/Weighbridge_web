@@ -8,8 +8,8 @@
       <h1>{{ entity_plural }}</h1>
       <p class="muted">Manage {{ entity_plural | lower }}.</p>
     </div>
-    <div class="actions">
-      <a class="button" href="{{ base_path }}/new">Add {{ entity_singular }}</a>
+    <div class="actions btn-group">
+      <a class="btn btn--primary" href="{{ base_path }}/new">Add {{ entity_singular }}</a>
     </div>
   </div>
 
@@ -19,10 +19,10 @@
 
   {% if show_tabs is not defined or show_tabs %}
     <div class="tabs">
-      <a class="link-button" href="/lookups/hauliers">Hauliers</a>
-      <a class="link-button" href="/lookups/drivers">Drivers</a>
-      <a class="link-button" href="/lookups/containers">Containers</a>
-      <a class="link-button" href="/lookups/destinations">Destinations</a>
+      <a class="btn btn--ghost{% if base_path == '/lookups/hauliers' %} is-active{% endif %}" href="/lookups/hauliers">Hauliers</a>
+      <a class="btn btn--ghost{% if base_path == '/lookups/drivers' %} is-active{% endif %}" href="/lookups/drivers">Drivers</a>
+      <a class="btn btn--ghost{% if base_path == '/lookups/containers' %} is-active{% endif %}" href="/lookups/containers">Containers</a>
+      <a class="btn btn--ghost{% if base_path == '/lookups/destinations' %} is-active{% endif %}" href="/lookups/destinations">Destinations</a>
     </div>
   {% endif %}
 
@@ -65,49 +65,74 @@
       />
       <label for="hide_inactive">Hide inactive</label>
     </div>
-    <div class="actions">
-      <button type="submit">Search</button>
-      <a class="link-button" href="{{ base_path }}">Reset</a>
+    <div class="actions btn-group">
+      <button type="submit" class="btn btn--secondary">Search</button>
+      <a class="btn btn--ghost" href="{{ base_path }}">Reset</a>
     </div>
   </form>
 
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Status</th>
-        <th class="actions-col">Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for item in items %}
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
         <tr>
-          <td>{{ item.name }}</td>
-          <td>
-            {% if item.is_active %}
-              <span class="status-pill status-open">Active</span>
-            {% else %}
-              <span class="status-pill status-void">Inactive</span>
-            {% endif %}
-          </td>
-          <td class="actions">
-            <a class="link-button" href="{{ base_path }}/{{ item.id }}/edit">Edit</a>
-            {% if item.is_active %}
-              <form method="post" action="{{ base_path }}/{{ item.id }}/deactivate">
-                <button type="submit" class="danger">Deactivate</button>
-              </form>
-            {% elif not hide_inactive %}
-              <form method="post" action="{{ base_path }}/{{ item.id }}/reactivate">
-                <button type="submit">Reactivate</button>
-              </form>
-            {% endif %}
-          </td>
+          <th>Name</th>
+          {% if entity_singular == "Unit" %}
+            <th class="type-col">Type</th>
+          {% endif %}
+          <th>Status</th>
+          <th class="actions-col">Actions</th>
         </tr>
-      {% else %}
-        <tr>
-          <td colspan="3" class="empty">No {{ entity_plural | lower }} found.</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {% for item in items %}
+          <tr>
+            <td>
+              {{ item.name }}
+            </td>
+            {% if entity_singular == "Unit" %}
+              <td class="type-col">
+                {% if item.unit_type == "WEIGHT" %}
+                  Weight
+                {% else %}
+                  Count
+                {% endif %}
+                {% if item.unit_type == "WEIGHT" %}
+                  <span class="status-pill status-open">System</span>
+                {% endif %}
+              </td>
+            {% endif %}
+            <td>
+              {% if item.is_active %}
+                <span class="status-pill status-open">Active</span>
+              {% else %}
+                <span class="status-pill status-void">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="actions btn-group">
+              {% if entity_singular == "Unit" and item.unit_type == "WEIGHT" %}
+                &nbsp;
+              {% else %}
+                <a class="btn btn--ghost" href="{{ base_path }}/{{ item.id }}/edit">Edit</a>
+                {% if item.is_active %}
+                  <form method="post" action="{{ base_path }}/{{ item.id }}/deactivate">
+                    <button type="submit" class="btn btn--danger">Deactivate</button>
+                  </form>
+                {% elif not hide_inactive %}
+                  <form method="post" action="{{ base_path }}/{{ item.id }}/reactivate">
+                    <button type="submit" class="btn btn--secondary">Reactivate</button>
+                  </form>
+                {% endif %}
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="{% if entity_singular == 'Unit' %}4{% else %}3{% endif %}" class="empty">
+              No {{ entity_plural | lower }} found.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 {% endblock %}

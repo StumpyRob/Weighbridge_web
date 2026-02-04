@@ -27,19 +27,54 @@
   {% endif %}
 
   <form class="ticket-form" method="post">
-    <div class="field">
-      <label for="name">Name</label>
-      <input
-        type="text"
-        id="name"
-        name="name"
-        value="{% if prefill_name is defined and prefill_name is not none %}{{ prefill_name }}{% elif item %}{{ item.name }}{% else %}{% endif %}"
-        required
-      />
-    </div>
-    <div class="actions">
-      <button type="submit">Save</button>
-      <a class="link-button" href="{{ base_path }}">Cancel</a>
+    {% if entity_singular != "Unit" %}
+      <div class="field">
+        <label for="name">Name</label>
+        <input
+          type="text"
+          id="name"
+          name="name"
+          value="{% if prefill_name is defined and prefill_name is not none %}{{ prefill_name }}{% elif item %}{{ item.name }}{% else %}{% endif %}"
+          required
+        />
+      </div>
+    {% else %}
+      {% set unit_name_value = "" %}
+      {% if prefill_name is defined and prefill_name is not none %}
+        {% set unit_name_value = prefill_name %}
+      {% elif item and item.name %}
+        {% set unit_name_value = item.name %}
+      {% endif %}
+      <input type="hidden" name="unit_type" value="COUNT" />
+      <div class="field" id="unit-name-count">
+        <label for="unit_name_count">Name</label>
+        <input
+          type="text"
+          id="unit_name_count"
+          name="name"
+          maxlength="50"
+          value="{{ unit_name_value }}"
+          required
+        />
+        <div class="hint">
+          Count units only. Weight units (kg/tonnes) are system-defined.
+        </div>
+      </div>
+    {% endif %}
+    {% if entity_singular == "Haulier" %}
+      <div class="field">
+        <label for="carrier_licence_number">Carrier licence number</label>
+        <input
+          type="text"
+          id="carrier_licence_number"
+          name="carrier_licence_number"
+          value="{% if item %}{{ item.carrier_licence_number or "" }}{% endif %}"
+        />
+      </div>
+    {% endif %}
+    <div class="actions btn-group">
+      <button type="submit" class="btn btn--primary">Save</button>
+      <a class="btn btn--secondary" href="{{ base_path }}">Cancel</a>
     </div>
   </form>
 {% endblock %}
