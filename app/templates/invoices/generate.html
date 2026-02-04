@@ -46,9 +46,9 @@
     </div>
   </section>
 
-  <div class="actions">
-    <button type="submit">Preview</button>
-    <a class="link-button" href="/invoices">Cancel</a>
+  <div class="actions btn-group">
+    <button type="submit" class="btn btn--primary">Preview</button>
+    <a class="btn btn--secondary" href="/invoices">Cancel</a>
   </div>
 </form>
 
@@ -91,11 +91,11 @@
       </table>
     </div>
 
-    <form class="actions" method="post" action="/invoices/generate/confirm">
+    <form class="actions btn-group" method="post" action="/invoices/generate/confirm">
       <input type="hidden" name="customer_id" value="{{ form.customer_id }}" />
       <input type="hidden" name="date_from" value="{{ form.date_from }}" />
       <input type="hidden" name="date_to" value="{{ form.date_to }}" />
-      <button type="submit" {% if preview.included | length == 0 %}disabled{% endif %}>
+      <button type="submit" class="btn btn--primary" {% if preview.included | length == 0 %}disabled{% endif %}>
         Create Invoice
       </button>
       {% if preview.included | length == 0 %}

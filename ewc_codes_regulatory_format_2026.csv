@@ -1,0 +1,843 @@
+ewc_code,hazardous,description
+01 01 01,False,Wastes from mineral metalliferous excavation
+01 01 02,False,Wastes from mineral non-metalliferous excavation
+01 03 04*,True,Acid-generating tailings from processing of sulphide ore
+01 03 05*,True,Other tailings containing hazardous substances
+01 03 06,False,Tailings other than those mentioned in 01 03 04 and 01 03 05
+01 03 07*,True,Other wastes containing hazardous substances from physical and chemical processing of metalliferous minerals
+01 03 08,False,Dusty and powdery wastes other than those mentioned in 01 03 07
+01 03 09,False,Red mud from alumina production other than the wastes mentioned in 01 03 10
+01 03 10*,True,Red mud from alumina production containing hazardous substances other than the wastes mentioned in 01 03 07
+01 03 99,False,Wastes not otherwise specified
+01 04 07*,True,Wastes containing hazardous substances from physical and chemical processing of non-metalliferous minerals
+01 04 08,False,Waste gravel and crushed rocks other than those mentioned in 01 04 07
+01 04 09,False,Waste sand and clays
+01 04 10,False,Dusty and powdery wastes other than those mentioned in 01 04 07
+01 04 11,False,Wastes from potash and rock salt processing other than those mentioned in 01 04 07
+01 04 12,False,Tailings and other wastes from washing and cleaning of minerals other than those mentioned in 01 04 07 and 01 04 11
+01 04 13,False,Wastes from stone cutting and sawing other than those mentioned in 01 04 07
+01 04 99,False,Wastes not otherwise specified
+01 05 04,False,Freshwater drilling muds and wastes
+01 05 05*,True,Oil-containing drilling muds and wastes
+01 05 06*,True,Drilling muds and other drilling wastes containing hazardous substances
+01 05 07,False,Barite-containing drilling muds and wastes other than those mentioned in 01 05 05 and 01 05 06
+01 05 08,False,Chloride-containing drilling muds and wastes other than those mentioned in 01 05 05 and 01 05 06
+01 05 99,False,Wastes not otherwise specified preparation and processing
+02 01 01,False,Sludges from washing and cleaning
+02 01 02,False,Animal-tissue waste
+02 01 03,False,Plant-tissue waste
+02 01 04,False,Waste plastics (except packaging)
+02 01 06,False,"Animal faeces, urine and manure (including spoiled straw), effluent, collected separately and treated off-site"
+02 01 07,False,Wastes from forestry
+02 01 08*,True,Agrochemical waste containing hazardous substances
+02 01 09,False,Agrochemical waste other than those mentioned in 02 01 08
+02 01 10,False,Waste metal
+02 01 99,False,Wastes not otherwise specified
+02 02 01,False,Sludges from washing and cleaning
+02 02 02,False,Animal-tissue waste
+02 02 03,False,Materials unsuitable for consumption or processing
+02 02 04,False,Sludges from on-site effluent treatment
+02 02 99,False,"Wastes not otherwise specified conserve production; yeast and yeast extract production, molasses preparation and fermentation"
+02 03 01,False,"Sludges from washing, cleaning, peeling, centrifuging and separation"
+02 03 02,False,Wastes from preserving agents
+02 03 03,False,Wastes from solvent extraction
+02 03 04,False,Materials unsuitable for consumption or processing
+02 03 05,False,Sludges from on-site effluent treatment
+02 03 99,False,Wastes not otherwise specified
+02 04 01,False,Soil from cleaning and washing beet
+02 04 02,False,Off-specification calcium carbonate
+02 04 03,False,Sludges from on-site effluent treatment
+02 04 99,False,Wastes not otherwise specified
+02 05 01,False,Materials unsuitable for consumption or processing
+02 05 02,False,Sludges from on-site effluent treatment
+02 05 99,False,Wastes not otherwise specified
+02 06 01,False,Materials unsuitable for consumption or processing
+02 06 02,False,Wastes from preserving agents
+02 06 03,False,Sludges from on-site effluent treatment
+02 06 99,False,Wastes not otherwise specified
+02 07 01,False,"Wastes from washing, cleaning and mechanical reduction of raw materials"
+02 07 02,False,Wastes from spirits distillation
+02 07 03,False,Wastes from chemical treatment
+02 07 04,False,Materials unsuitable for consumption or processing
+02 07 05,False,Sludges from on-site effluent treatment
+02 07 99,False,Wastes not otherwise specified cardboard
+03 01 01,False,Waste bark and cork
+03 01 04*,True,"Sawdust, shavings, cuttings, wood, particle board and veneer containing hazardous substances"
+03 01 05,False,"Sawdust, shavings, cuttings, wood, particle board and veneer other than those mentioned in 03 01 04"
+03 01 99,False,Wastes not otherwise specified
+03 02 01*,True,Non-halogenated organic wood preservatives
+03 02 02*,True,Organochlorinated wood preservatives
+03 02 03*,True,Organometallic wood preservatives
+03 02 04*,True,Inorganic wood preservatives
+03 02 05*,True,Other wood preservatives containing hazardous substances
+03 02 99,False,Wood preservatives not otherwise specified
+03 03 01,False,Waste bark and wood
+03 03 02,False,Green liquor sludge (from recovery of cooking liquor)
+03 03 05,False,De-inking sludges from paper recycling
+03 03 07,False,Mechanically separated rejects from pulping of waste paper and cardboard
+03 03 08,False,Wastes from sorting of paper and cardboard destined for recycling
+03 03 09,False,Lime mud waste
+03 03 10,False,"Fibre rejects, fibre-, filler- and coating-sludges from mechanical separation"
+03 03 11,False,Sludges from on-site effluent treatment other than those mentioned in 03 03 10
+03 03 99,False,Wastes not otherwise specified
+04 01 01,False,Fleshings and lime split wastes
+04 01 02,False,Liming waste
+04 01 03*,True,Degreasing wastes containing solvents without a liquid phase
+04 01 04,False,Tanning liquor containing chromium
+04 01 05,False,Tanning liquor free of chromium
+04 01 06,False,"Sludges, in particular from on-site effluent treatment containing chromium"
+04 01 07,False,"Sludges, in particular from on-site effluent treatment free of chromium"
+04 01 08,False,"Waste tanned leather (blue sheetings, shavings, cuttings, buffing dust) containing chromium"
+04 01 09,False,Wastes from dressing and finishing
+04 01 99,False,Wastes not otherwise specified
+04 02 09,False,"Wastes from composite materials (impregnated textile, elastomer, plastomer)"
+04 02 10,False,"Organic matter from natural products (for example grease, wax)"
+04 02 14*,True,Wastes from finishing containing organic solvents
+04 02 15,False,Wastes from finishing other than those mentioned in 04 02 14
+04 02 16*,True,Dyestuffs and pigments containing hazardous substances
+04 02 17,False,Dyestuffs and pigments other than those mentioned in 04 02 16
+04 02 19*,True,Sludges from on-site effluent treatment containing hazardous substances
+04 02 20,False,Sludges from on-site effluent treatment other than those mentioned in 04 02 19
+04 02 21,False,Wastes from unprocessed textile fibres
+04 02 22,False,Wastes from processed textile fibres
+04 02 99,False,Wastes not otherwise specified
+05 01 02*,True,Desalter sludges
+05 01 03*,True,Tank bottom sludges
+05 01 04*,True,Acid alkyl sludges
+05 01 05*,True,Oil spills
+05 01 06*,True,Oily sludges from maintenance operations of the plant or equipment
+05 01 07*,True,Acid tars
+05 01 08*,True,Other tars
+05 01 09*,True,Sludges from on-site effluent treatment containing hazardous substances
+05 01 10,False,Sludges from on-site effluent treatment other than those mentioned in 05 01 09
+05 01 11*,True,Wastes from cleaning of fuels with bases
+05 01 12*,True,Oil containing acids
+05 01 13,False,Boiler feedwater sludges
+05 01 14,False,Wastes from cooling columns
+05 01 15*,True,Spent filter clays
+05 01 16,False,Sulphur-containing wastes from petroleum desulphurisation
+05 01 17,False,Bitumen
+05 01 99,False,Wastes not otherwise specified
+05 06 01*,True,Acid tars
+05 06 03*,True,Other tars
+05 06 04,False,Waste from cooling columns
+05 06 99,False,Wastes not otherwise specified
+05 07 01*,True,Wastes containing mercury
+05 07 02,False,Wastes containing sulphur
+05 07 99,False,Wastes not otherwise specified
+06 01 01*,True,Sulphuric acid and sulphurous acid
+06 01 02*,True,Hydrochloric acid
+06 01 03*,True,Hydrofluoric acid
+06 01 04*,True,Phosphoric and phosphorous acid
+06 01 05*,True,Nitric acid and nitrous acid
+06 01 06*,True,Other acids
+06 01 99,False,Wastes not otherwise specified
+06 02 01*,True,Calcium hydroxide
+06 02 03*,True,Ammonium hydroxide
+06 02 04*,True,Sodium and potassium hydroxide
+06 02 05*,True,Other bases
+06 02 99,False,Wastes not otherwise specified
+06 03 11*,True,Solid salts and solutions containing cyanides
+06 03 13*,True,Solid salts and solutions containing heavy metals
+06 03 14,False,Solid salts and solutions other than those mentioned in 06 03 11 and 06 03 13
+06 03 15*,True,Metallic oxides containing heavy metals
+06 03 16,False,Metallic oxides other than those mentioned in 06 03 15
+06 03 99,False,Wastes not otherwise specified
+06 04 03*,True,Wastes containing arsenic
+06 04 04*,True,Wastes containing mercury
+06 04 05*,True,Wastes containing other heavy metals
+06 04 99,False,Wastes not otherwise specified
+06 05 02*,True,Sludges from on-site effluent treatment containing hazardous substances
+06 05 03,False,Sludges from on-site effluent treatment other than those mentioned in 06 05 02
+06 06 02*,True,Wastes containing hazardous sulphides
+06 06 03,False,Wastes containing sulphides other than those mentioned in 06 06 02
+06 06 99,False,Wastes not otherwise specified
+06 07 01*,True,Wastes containing asbestos from electrolysis
+06 07 02*,True,Activated carbon from chlorine production
+06 07 03*,True,Barium sulphate sludge containing mercury
+06 07 04*,True,"Solutions and acids, for example contact acid"
+06 07 99,False,Wastes not otherwise specified
+06 08 02*,True,Waste containing hazardous chlorosilanes
+06 08 99,False,Wastes not otherwise specified
+06 09 02,False,Phosphorous slag
+06 09 03*,True,Calcium-based reaction wastes containing or contaminated with hazardous substances
+06 09 04,False,Calcium-based reaction wastes other than those mentioned in 06 09 03
+06 09 99,False,Wastes not otherwise specified
+06 10 02*,True,Wastes containing hazardous substances
+06 10 99,False,Wastes not otherwise specified
+06 11 01,False,Calcium-based reaction wastes from titanium dioxide production
+06 11 99,False,Wastes not otherwise specified
+06 13 01*,True,"Inorganic plant protection products, wood-preserving agents and other biocides."
+06 13 02*,True,Spent activated carbon (except 06 07 02)
+06 13 03,False,Carbon black
+06 13 04*,True,Wastes from asbestos processing
+06 13 05*,True,Soot
+06 13 99,False,Wastes not otherwise specified
+07 01 01*,True,Aqueous washing liquids and mother liquors
+07 01 03*,True,"Organic halogenated solvents, washing liquids and mother liquors"
+07 01 04*,True,"Other organic solvents, washing liquids and mother liquors"
+07 01 07*,True,Halogenated still bottoms and reaction residues
+07 01 08*,True,Other still bottoms and reaction residues
+07 01 09*,True,Halogenated filter cakes and spent absorbents
+07 01 10*,True,Other filter cakes and spent absorbents
+07 01 11*,True,Sludges from on-site effluent treatment containing hazardous substances
+07 01 12,False,Sludges from on-site effluent treatment other than those mentioned in 07 01 11
+07 01 99,False,Wastes not otherwise specified
+07 02 01*,True,Aqueous washing liquids and mother liquors
+07 02 03*,True,"Organic halogenated solvents, washing liquids and mother liquors"
+07 02 04*,True,"Other organic solvents, washing liquids and mother liquors"
+07 02 07*,True,Halogenated still bottoms and reaction residues
+07 02 08*,True,Other still bottoms and reaction residues
+07 02 09*,True,Halogenated filter cakes and spent absorbents
+07 02 10*,True,Other filter cakes and spent absorbents
+07 02 11*,True,Sludges from on-site effluent treatment containing hazardous substances
+07 02 12,False,Sludges from on-site effluent treatment other than those mentioned in 07 02 11
+07 02 13,False,Waste plastic
+07 02 14*,True,Wastes from additives containing hazardous substances
+07 02 15,False,Wastes from additives other than those mentioned in 07 02 14
+07 02 16*,True,Waste containing hazardous silicones
+07 02 17,False,Waste containing silicones other than those mentioned in 07 02 16
+07 02 99,False,Wastes not otherwise specified
+07 03 01*,True,Aqueous washing liquids and mother liquors
+07 03 03*,True,"Organic halogenated solvents, washing liquids and mother liquors"
+07 03 04*,True,"Other organic solvents, washing liquids and mother liquors"
+07 03 07*,True,Halogenated still bottoms and reaction residues
+07 03 08*,True,Other still bottoms and reaction residues
+07 03 09*,True,Halogenated filter cakes and spent absorbents
+07 03 10*,True,Other filter cakes and spent absorbents
+07 03 11*,True,Sludges from on-site effluent treatment containing hazardous substances
+07 03 12,False,Sludges from on-site effluent treatment other than those mentioned in 07 03 11
+07 03 99,False,Wastes not otherwise specified agents (except 03 02) and other biocides
+07 04 01*,True,Aqueous washing liquids and mother liquors
+07 04 03*,True,"Organic halogenated solvents, washing liquids and mother liquors"
+07 04 04*,True,"Other organic solvents, washing liquids and mother liquors"
+07 04 07*,True,Halogenated still bottoms and reaction residues
+07 04 08*,True,Other still bottoms and reaction residues
+07 04 09*,True,Halogenated filter cakes and spent absorbents
+07 04 10*,True,Other filter cakes and spent absorbents
+07 04 11*,True,Sludges from on-site effluent treatment containing hazardous substances
+07 04 12,False,Sludges from on-site effluent treatment other than those mentioned in 07 04 11
+07 04 13*,True,Solid wastes containing hazardous substances
+07 04 99,False,Wastes not otherwise specified
+07 05 01*,True,Aqueous washing liquids and mother liquors
+07 05 03*,True,"Organic halogenated solvents, washing liquids and mother liquors"
+07 05 04*,True,"Other organic solvents, washing liquids and mother liquors"
+07 05 07*,True,Halogenated still bottoms and reaction residues
+07 05 08*,True,Other still bottoms and reaction residues
+07 05 09*,True,Halogenated filter cakes and spent absorbents
+07 05 10*,True,Other filter cakes and spent absorbents
+07 05 11*,True,Sludges from on-site effluent treatment containing hazardous substances
+07 05 12,False,Sludges from on-site effluent treatment other than those mentioned in 07 05 11
+07 05 13*,True,Solid wastes containing hazardous substances
+07 05 14,False,Solid wastes other than those mentioned in 07 05 13
+07 05 99,False,Wastes not otherwise specified
+07 06 01*,True,Aqueous washing liquids and mother liquors
+07 06 03*,True,"Organic halogenated solvents, washing liquids and mother liquors"
+07 06 04*,True,"Other organic solvents, washing liquids and mother liquors"
+07 06 07*,True,Halogenated still bottoms and reaction residues
+07 06 08*,True,Other still bottoms and reaction residues
+07 06 09*,True,Halogenated filter cakes and spent absorbents
+07 06 10*,True,Other filter cakes and spent absorbents
+07 06 11*,True,Sludges from on-site effluent treatment containing hazardous substances
+07 06 12,False,Sludges from on-site effluent treatment other than those mentioned in 07 06 11
+07 06 99,False,Wastes not otherwise specified
+07 07 01*,True,Aqueous washing liquids and mother liquors
+07 07 03*,True,"Organic halogenated solvents, washing liquids and mother liquors"
+07 07 04*,True,"Other organic solvents, washing liquids and mother liquors"
+07 07 07*,True,Halogenated still bottoms and reaction residues
+07 07 08*,True,Other still bottoms and reaction residues
+07 07 09*,True,Halogenated filter cakes and spent absorbents
+07 07 10*,True,Other filter cakes and spent absorbents
+07 07 11*,True,Sludges from on-site effluent treatment containing hazardous substances
+07 07 12,False,Sludges from on-site effluent treatment other than those mentioned in 07 07 11
+07 07 99,False,"Wastes not otherwise specified varnishes and vitreous enamels), adhesives, sealants and printing inks"
+08 01 11*,True,Waste paint and varnish containing organic solvents or other hazardous substances
+08 01 12,False,Waste paint and varnish other than those mentioned in 08 01 11
+08 01 13*,True,Sludges from paint or varnish containing organic solvents or other hazardous substances
+08 01 14,False,Sludges from paint or varnish other than those mentioned in 08 01 13
+08 01 15*,True,Aqueous sludges containing paint or varnish containing organic solvents or other hazardous substances
+08 01 16,False,Aqueous sludges containing paint or varnish other than those mentioned in 08 01 15
+08 01 17*,True,Wastes from paint or varnish removal containing organic solvents or other hazardous substances
+08 01 18,False,Wastes from paint or varnish removal other than those mentioned in 08 01 17
+08 01 19*,True,Aqueous suspensions containing paint or varnish containing organic solvents or other hazardous substances
+08 01 20,False,Aqueous suspensions containing paint or varnish other than those mentioned in 08 01 19
+08 01 21*,True,Waste paint or varnish remover
+08 01 99,False,Wastes not otherwise specified
+08 02 01,False,Waste coating powders
+08 02 02,False,Aqueous sludges containing ceramic materials
+08 02 03,False,Aqueous suspensions containing ceramic materials
+08 02 99,False,Wastes not otherwise specified
+08 03 07,False,Aqueous sludges containing ink
+08 03 08,False,Aqueous liquid waste containing ink
+08 03 12*,True,Waste ink containing hazardous substances
+08 03 13,False,Waste ink other than those mentioned in 08 03 12
+08 03 14*,True,Ink sludges containing hazardous substances
+08 03 15,False,Ink sludges other than those mentioned in 08 03 14
+08 03 16*,True,Waste etching solutions
+08 03 17*,True,Waste printing toner containing hazardous substances
+08 03 18,False,Waste printing toner other than those mentioned in 08 03 17
+08 03 19*,True,Disperse oil
+08 03 99,False,Wastes not otherwise specified
+08 04 09*,True,Waste adhesives and sealants containing organic solvents or other hazardous substances
+08 04 10,False,Waste adhesives and sealants other than those mentioned in 08 04 09
+08 04 11*,True,Adhesive and sealant sludges containing organic solvents or other hazardous substances
+08 04 12,False,Adhesive and sealant sludges other than those mentioned in 08 04 11
+08 04 13*,True,Aqueous sludges containing adhesives or sealants containing organic solvents or other hazardous substances
+08 04 14,False,Aqueous sludges containing adhesives or sealants other than those mentioned in 08 04 13
+08 04 15*,True,Aqueous liquid waste containing adhesives or sealants containing organic solvents or other hazardous substances
+08 04 16,False,Aqueous liquid waste containing adhesives or sealants other than those mentioned in 08 04 15
+08 04 17*,True,Rosin oil
+08 04 99,False,Wastes not otherwise specified
+08 05 01*,True,Waste isocyanates
+09 01 01*,True,Water-based developer and activator solutions
+09 01 02*,True,Water-based offset plate developer solutions
+09 01 03*,True,Solvent-based developer solutions
+09 01 04*,True,Fixer solutions
+09 01 05*,True,Bleach solutions and bleach fixer solutions
+09 01 06*,True,Wastes containing silver from on-site treatment of photographic wastes
+09 01 07,False,Photographic film and paper containing silver or silver compounds
+09 01 08,False,Photographic film and paper free of silver or silver compounds
+09 01 10,False,Single-use cameras without batteries
+09 01 11*,True,"Single-use cameras containing batteries included in 16 06 01, 16 06 02 or 16 06 03"
+09 01 12,False,Single-use cameras containing batteries other than those mentioned in 09 01 11
+09 01 13*,True,Aqueous liquid waste from on-site reclamation of silver other than those mentioned in 09 01 06
+09 01 99,False,Wastes not otherwise specified
+10 01 01,False,"Bottom ash, slag and boiler dust (excluding boiler dust mentioned in 10 01 04)"
+10 01 02,False,Coal fly ash
+10 01 03,False,Fly ash from peat and untreated wood
+10 01 04*,True,Oil fly ash and boiler dust
+10 01 05,False,Calcium-based reaction wastes from flue-gas desulphurisation in solid form
+10 01 07,False,Calcium-based reaction wastes from flue-gas desulphurisation in sludge form
+10 01 09*,True,Sulphuric acid
+10 01 13*,True,Fly ash from emulsified hydrocarbons used as fuel
+10 01 14*,True,"Bottom ash, slag and boiler dust from co-incineration containing hazardous substances"
+10 01 15,False,"Bottom ash, slag and boiler dust from co-incineration other than those mentioned in 10 01 14"
+10 01 16*,True,Fly ash from co-incineration containing hazardous substances
+10 01 17,False,Fly ash from co-incineration other than those mentioned in 10 01 16
+10 01 18*,True,Wastes from gas cleaning containing hazardous substances
+10 01 19,False,"Wastes from gas cleaning other than those mentioned in 10 01 05, 10 01 07 and 10 01 18"
+10 01 20*,True,Sludges from on-site effluent treatment containing hazardous substances
+10 01 21,False,Sludges from on-site effluent treatment other than those mentioned in 10 01 20
+10 01 22*,True,Aqueous sludges from boiler cleansing containing hazardous substances
+10 01 23,False,Aqueous sludges from boiler cleansing other than those mentioned in 10 01 22
+10 01 24,False,Sands from fluidised beds
+10 01 25,False,Wastes from fuel storage and preparation of coal-fired power plants
+10 01 26,False,Wastes from cooling-water treatment
+10 01 99,False,Wastes not otherwise specified
+10 02 01,False,Wastes from the processing of slag
+10 02 02,False,Unprocessed slag
+10 02 07*,True,Solid wastes from gas treatment containing hazardous substances
+10 02 08,False,Solid wastes from gas treatment other than those mentioned in 10 02 07
+10 02 10,False,Mill scales
+10 02 11*,True,Wastes from cooling-water treatment containing oil
+10 02 12,False,Wastes from cooling-water treatment other than those mentioned in 10 02 11
+10 02 13*,True,Sludges and filter cakes from gas treatment containing hazardous substances
+10 02 14,False,Sludges and filter cakes from gas treatment other than those mentioned in 10 02 13
+10 02 15,False,Other sludges and filter cakes
+10 02 99,False,Wastes not otherwise specified
+10 03 02,False,Anode scraps
+10 03 04*,True,Primary production slags
+10 03 05,False,Waste alumina
+10 03 08*,True,Salt slags from secondary production
+10 03 09*,True,Black drosses from secondary production
+10 03 15*,True,"Skimmings that are flammable or emit, upon contact with water, flammable gases in hazardous quantities"
+10 03 16,False,Skimmings other than those mentioned in 10 03 15
+10 03 17*,True,Tar-containing wastes from anode manufacture
+10 03 18,False,Carbon-containing wastes from anode manufacture other than those mentioned in 10 03 17
+10 03 19*,True,Flue-gas dust containing hazardous substances
+10 03 20,False,Flue-gas dust other than those mentioned in 10 03 19
+10 03 21*,True,Other particulates and dust (including ball-mill dust) containing hazardous substances
+10 03 22,False,Other particulates and dust (including ball-mill dust) other than those mentioned in 10 03 21
+10 03 23*,True,Solid wastes from gas treatment containing hazardous substances
+10 03 24,False,Solid wastes from gas treatment other than those mentioned in 10 03 23
+10 03 25*,True,Sludges and filter cakes from gas treatment containing hazardous substances
+10 03 26,False,Sludges and filter cakes from gas treatment other than those mentioned in 10 03 25
+10 03 27*,True,Wastes from cooling-water treatment containing oil
+10 03 28,False,Wastes from cooling-water treatment other than those mentioned in 10 03 27
+10 03 29*,True,Wastes from treatment of salt slags and black drosses containing hazardous substances
+10 03 30,False,Wastes from treatment of salt slags and black drosses other than those mentioned in 10 03 29
+10 03 99,False,Wastes not otherwise specified
+10 04 01*,True,Slags from primary and secondary production
+10 04 02*,True,Dross and skimmings from primary and secondary production
+10 04 03*,True,Calcium arsenate
+10 04 04*,True,Flue-gas dust
+10 04 05*,True,Other particulates and dust
+10 04 06*,True,Solid wastes from gas treatment
+10 04 07*,True,Sludges and filter cakes from gas treatment
+10 04 09*,True,Wastes from cooling-water treatment containing oil
+10 04 10,False,Wastes from cooling-water treatment other than those mentioned in 10 04 09
+10 04 99,False,Wastes not otherwise specified
+10 05 01,False,Slags from primary and secondary production
+10 05 03*,True,Flue-gas dust
+10 05 04,False,Other particulates and dust
+10 05 05*,True,Solid waste from gas treatment
+10 05 06*,True,Sludges and filter cakes from gas treatment
+10 05 08*,True,Wastes from cooling-water treatment containing oil
+10 05 09,False,Wastes from cooling-water treatment other than those mentioned in 10 05 08
+10 05 10*,True,"Dross and skimmings that are flammable or emit, upon contact with water, flammable gases in hazardous quantities"
+10 05 11,False,Dross and skimmings other than those mentioned in 10 05 10
+10 05 99,False,Wastes not otherwise specified
+10 06 01,False,Slags from primary and secondary production
+10 06 02,False,Dross and skimmings from primary and secondary production
+10 06 03*,True,Flue-gas dust
+10 06 04,False,Other particulates and dust
+10 06 06*,True,Solid wastes from gas treatment
+10 06 07*,True,Sludges and filter cakes from gas treatment
+10 06 09*,True,Wastes from cooling-water treatment containing oil
+10 06 10,False,Wastes from cooling-water treatment other than those mentioned in 10 06 09
+10 06 99,False,Wastes not otherwise specified
+10 07 01,False,Slags from primary and secondary production
+10 07 02,False,Dross and skimmings from primary and secondary production
+10 07 03,False,Solid wastes from gas treatment
+10 07 04,False,Other particulates and dust
+10 07 05,False,Sludges and filter cakes from gas treatment
+10 07 07*,True,Wastes from cooling-water treatment containing oil
+10 07 08,False,Wastes from cooling-water treatment other than those mentioned in 10 07 07
+10 07 99,False,Wastes not otherwise specified
+10 08 04,False,Particulates and dust
+10 08 08*,True,Salt slag from primary and secondary production
+10 08 09,False,Other slags
+10 08 10*,True,"Dross and skimmings that are flammable or emit, upon contact with water, flammable gases in hazardous quantities"
+10 08 11,False,Dross and skimmings other than those mentioned in 10 08 10
+10 08 12*,True,Tar-containing wastes from anode manufacture
+10 08 13,False,Carbon-containing wastes from anode manufacture other than those mentioned in 10 08 12
+10 08 14,False,Anode scrap
+10 08 15*,True,Flue-gas dust containing hazardous substances
+10 08 16,False,Flue-gas dust other than those mentioned in 10 08 15
+10 08 17*,True,Sludges and filter cakes from flue-gas treatment containing hazardous substances
+10 08 18,False,Sludges and filter cakes from flue-gas treatment other than those mentioned in 10 08 17
+10 08 19*,True,Wastes from cooling-water treatment containing oil
+10 08 20,False,Wastes from cooling-water treatment other than those mentioned in 10 08 19
+10 08 99,False,Wastes not otherwise specified
+10 09 03,False,Furnace slag
+10 09 05*,True,Casting cores and moulds which have not undergone pouring containing hazardous substances
+10 09 06,False,Casting cores and moulds which have not undergone pouring other than those mentioned in 10 09 05
+10 09 07*,True,Casting cores and moulds which have undergone pouring containing hazardous substances
+10 09 08,False,Casting cores and moulds which have undergone pouring other than those mentioned in 10 09 07
+10 09 09*,True,Flue-gas dust containing hazardous substances
+10 09 10,False,Flue-gas dust other than those mentioned in 10 09 09
+10 09 11*,True,Other particulates containing hazardous substances
+10 09 12,False,Other particulates other than those mentioned in 10 09 11
+10 09 13*,True,Waste binders containing hazardous substances
+10 09 14,False,Waste binders other than those mentioned in 10 09 13
+10 09 15*,True,Waste crack-indicating agent containing hazardous substances
+10 09 16,False,Waste crack-indicating agent other than those mentioned in 10 09 15
+10 09 99,False,Wastes not otherwise specified
+10 10 03,False,Furnace slag
+10 10 05*,True,"Casting cores and moulds which have not undergone pouring, containing hazardous substances"
+10 10 06,False,"Casting cores and moulds which have not undergone pouring, other than those mentioned in 10 10 05"
+10 10 07*,True,"Casting cores and moulds which have undergone pouring, containing hazardous substances"
+10 10 08,False,"Casting cores and moulds which have undergone pouring, other than those mentioned in 10 10 07"
+10 10 09*,True,Flue-gas dust containing hazardous substances
+10 10 10,False,Flue-gas dust other than those mentioned in 10 10 09
+10 10 11*,True,Other particulates containing hazardous substances
+10 10 12,False,Other particulates other than those mentioned in 10 10 11
+10 10 13*,True,Waste binders containing hazardous substances
+10 10 14,False,Waste binders other than those mentioned in 10 10 13
+10 10 15*,True,Waste crack-indicating agent containing hazardous substances
+10 10 16,False,Waste crack-indicating agent other than those mentioned in 10 10 15
+10 10 99,False,Wastes not otherwise specified
+10 11 03,False,Waste glass-based fibrous materials
+10 11 05,False,Particulates and dust
+10 11 09*,True,"Waste preparation mixture before thermal processing, containing hazardous substances"
+10 11 10,False,"Waste preparation mixture before thermal processing, other than those mentioned in 10 11 09"
+10 11 11*,True,Waste glass in small particles and glass powder containing heavy metals (for example from cathode ray tubes)
+10 11 12,False,Waste glass other than those mentioned in 10 11 11
+10 11 13*,True,Glass-polishing and -grinding sludge containing hazardous substances
+10 11 14,False,Glass-polishing and -grinding sludge other than those mentioned in 10 11 13
+10 11 15*,True,Solid wastes from flue-gas treatment containing hazardous substances
+10 11 16,False,Solid wastes from flue-gas treatment other than those mentioned in 10 11 15
+10 11 17*,True,Sludges and filter cakes from flue-gas treatment containing hazardous substances
+10 11 18,False,Sludges and filter cakes from flue-gas treatment other than those mentioned in 10 11 17
+10 11 19*,True,Solid wastes from on-site effluent treatment containing hazardous substances
+10 11 20,False,Solid wastes from on-site effluent treatment other than those mentioned in 10 11 19
+10 11 99,False,Wastes not otherwise specified
+10 12 01,False,Waste preparation mixture before thermal processing
+10 12 03,False,Particulates and dust
+10 12 05,False,Sludges and filter cakes from gas treatment
+10 12 06,False,Discarded moulds
+10 12 08,False,"Waste ceramics, bricks, tiles and construction products (after thermal processing)"
+10 12 09*,True,Solid wastes from gas treatment containing hazardous substances
+10 12 10,False,Solid wastes from gas treatment other than those mentioned in 10 12 09
+10 12 11*,True,Wastes from glazing containing heavy metals
+10 12 12,False,Wastes from glazing other than those mentioned in 10 12 11
+10 12 13,False,Sludge from on-site effluent treatment
+10 12 99,False,Wastes not otherwise specified
+10 13 01,False,Waste preparation mixture before thermal processing
+10 13 04,False,Wastes from calcination and hydration of lime
+10 13 06,False,Particulates and dust (except 10 13 12 and 10 13 13)
+10 13 07,False,Sludges and filter cakes from gas treatment
+10 13 09*,True,Wastes from asbestos-cement manufacture containing asbestos
+10 13 10,False,Wastes from asbestos-cement manufacture other than those mentioned in 10 13 09
+10 13 11,False,Wastes from cement-based composite materials other than those mentioned in 10 13 09 and 10 13 10
+10 13 12*,True,Solid wastes from gas treatment containing hazardous substances
+10 13 13,False,Solid wastes from gas treatment other than those mentioned in 10 13 12
+10 13 14,False,Waste concrete and concrete sludge
+10 13 99,False,Wastes not otherwise specified
+10 14 01*,True,"Waste from gas cleaning containing mercury ferrous hydro-metallurgy processes, zinc coating processes, pickling processes, etching, phosphating, alkaline degreasing, anodising)"
+11 01 05*,True,Pickling acids
+11 01 06*,True,Acids not otherwise specified
+11 01 07*,True,Pickling bases
+11 01 08*,True,Phosphatising sludges
+11 01 09*,True,Sludges and filter cakes containing hazardous substances
+11 01 10,False,Sludges and filter cakes other than those mentioned in 11 01 09
+11 01 11*,True,Aqueous rinsing liquids containing hazardous substances
+11 01 12,False,Aqueous rinsing liquids other than those mentioned in 11 01 11
+11 01 13*,True,Degreasing wastes containing hazardous substances
+11 01 14,False,Degreasing wastes other than those mentioned in 11 01 13
+11 01 15*,True,Eluate and sludges from membrane systems or ion exchange systems containing hazardous substances
+11 01 16*,True,Saturated or spent ion exchange resins
+11 01 98*,True,Other wastes containing hazardous substances
+11 01 99,False,Wastes not otherwise specified
+11 02 02*,True,"Sludges from zinc hydrometallurgy (including jarosite, goethite)"
+11 02 03,False,Wastes from the production of anodes for aqueous electrolytical processes
+11 02 05*,True,Wastes from copper hydrometallurgical processes containing hazardous substances
+11 02 06,False,Wastes from copper hydrometallurgical processes other than those mentioned in 11 02 05
+11 02 07*,True,Other wastes containing hazardous substances
+11 02 99,False,Wastes not otherwise specified
+11 03 01*,True,Wastes containing cyanide
+11 03 02*,True,Other wastes
+11 05 01,False,Hard zinc
+11 05 02,False,Zinc ash
+11 05 03*,True,Solid wastes from gas treatment
+11 05 04*,True,Spent flux
+11 05 99,False,Wastes not otherwise specified
+12 01 01,False,Ferrous metal filings and turnings
+12 01 02,False,Ferrous metal dust and particles
+12 01 03,False,Non-ferrous metal filings and turnings
+12 01 04,False,Non-ferrous metal dust and particles
+12 01 05,False,Plastics shavings and turnings
+12 01 06*,True,Mineral-based machining oils containing halogens (except emulsions and solutions)
+12 01 07*,True,Mineral-based machining oils free of halogens (except emulsions and solutions)
+12 01 08*,True,Machining emulsions and solutions containing halogens
+12 01 09*,True,Machining emulsions and solutions free of halogens
+12 01 10*,True,Synthetic machining oils
+12 01 12*,True,Spent waxes and fats
+12 01 13,False,Welding wastes
+12 01 14*,True,Machining sludges containing hazardous substances
+12 01 15,False,Machining sludges other than those mentioned in 12 01 14
+12 01 16*,True,Waste blasting material containing hazardous substances
+12 01 17,False,Waste blasting material other than those mentioned in 12 01 16
+12 01 18*,True,"Metal sludge (grinding, honing and lapping sludge) containing oil"
+12 01 19*,True,Readily biodegradable machining oil
+12 01 20*,True,Spent grinding bodies and grinding materials containing hazardous substances
+12 01 21,False,Spent grinding bodies and grinding materials other than those mentioned in 12 01 20
+12 01 99,False,Wastes not otherwise specified
+12 03 01*,True,Aqueous washing liquids
+12 03 02*,True,Steam degreasing wastes
+13 01 01*,True,"Hydraulic oils, containing pcbs"
+13 01 04*,True,Chlorinated emulsions
+13 01 05*,True,Non-chlorinated emulsions
+13 01 09*,True,Mineral-based chlorinated hydraulic oils
+13 01 10*,True,Mineral based non-chlorinated hydraulic oils
+13 01 11*,True,Synthetic hydraulic oils
+13 01 12*,True,Readily biodegradable hydraulic oils
+13 01 13*,True,Other hydraulic oils
+13 02 04*,True,"Mineral-based chlorinated engine, gear and lubricating oils"
+13 02 05*,True,"Mineral-based non-chlorinated engine, gear and lubricating oils"
+13 02 06*,True,"Synthetic engine, gear and lubricating oils"
+13 02 07*,True,"Readily biodegradable engine, gear and lubricating oils"
+13 02 08*,True,"Other engine, gear and lubricating oils"
+13 03 01*,True,Insulating or heat transmission oils containing pcbs
+13 03 06*,True,Mineral-based chlorinated insulating and heat transmission oils other than those mentioned in 13 03 01
+13 03 07*,True,Mineral-based non-chlorinated insulating and heat transmission oils
+13 03 08*,True,Synthetic insulating and heat transmission oils
+13 03 09*,True,Readily biodegradable insulating and heat transmission oils
+13 03 10*,True,Other insulating and heat transmission oils
+13 04 01*,True,Bilge oils from inland navigation
+13 04 02*,True,Bilge oils from jetty sewers
+13 04 03*,True,Bilge oils from other navigation
+13 05 01*,True,Solids from grit chambers and oil/water separators
+13 05 02*,True,Sludges from oil/water separators
+13 05 03*,True,Interceptor sludges
+13 05 06*,True,Oil from oil/water separators
+13 05 07*,True,Oily water from oil/water separators
+13 05 08*,True,Mixtures of wastes from grit chambers and oil/water separators
+13 07 01*,True,Fuel oil and diesel
+13 07 02*,True,Petrol
+13 07 03*,True,Other fuels (including mixtures)
+13 08 01*,True,Desalter sludges or emulsions
+13 08 02*,True,Other emulsions
+13 08 99*,True,Wastes not otherwise specified
+14 06 01*,True,"Chlorofluorocarbons, hcfc, hfc"
+14 06 02*,True,Other halogenated solvents and solvent mixtures
+14 06 03*,True,Other solvents and solvent mixtures
+14 06 04*,True,Sludges or solid wastes containing halogenated solvents
+14 06 05*,True,Sludges or solid wastes containing other solvents otherwise specified
+15 01 01,False,Paper and cardboard packaging
+15 01 02,False,Plastic packaging
+15 01 03,False,Wooden packaging
+15 01 04,False,Metallic packaging
+15 01 05,False,Composite packaging
+15 01 06,False,Mixed packaging
+15 01 07,False,Glass packaging
+15 01 09,False,Textile packaging
+15 01 10*,True,Packaging containing residues of or contaminated by hazardous substances
+15 01 11*,True,"Metallic packaging containing a hazardous solid porous matrix (for example asbestos), including empty pressure containers"
+15 02 02*,True,"Absorbents, filter materials (including oil filters not otherwise specified), wiping cloths, protective clothing contaminated by hazardous substances"
+15 02 03,False,"Absorbents, filter materials, wiping cloths and protective clothing other than those mentioned in 15 02 02 tling of end-of-life vehicles and vehicle maintenance (except 13, 14, 16 06 and 16 08)"
+16 01 03,False,End-of-life tyres
+16 01 04*,True,End-of-life vehicles
+16 01 06,False,"End-of-life vehicles, containing neither liquids nor other hazardous components"
+16 01 07*,True,Oil filters
+16 01 08*,True,Components containing mercury
+16 01 09*,True,Components containing pcbs
+16 01 10*,True,Explosive components (for example air bags)
+16 01 11*,True,Brake pads containing asbestos
+16 01 12,False,Brake pads other than those mentioned in 16 01 11
+16 01 13*,True,Brake fluids
+16 01 14*,True,Antifreeze fluids containing hazardous substances
+16 01 15,False,Antifreeze fluids other than those mentioned in 16 01 14
+16 01 16,False,Tanks for liquefied gas
+16 01 17,False,Ferrous metal
+16 01 18,False,Non-ferrous metal
+16 01 19,False,Plastic
+16 01 20,False,Glass
+16 01 21*,True,Hazardous components other than those mentioned in 16 01 07 to 16 01 11 and 16 01 13 and 16 01 14
+16 01 22,False,Components not otherwise specified
+16 01 99,False,Wastes not otherwise specified
+16 02 09*,True,Transformers and capacitors containing pcbs
+16 02 10*,True,Discarded equipment containing or contaminated by pcbs other than those mentioned in 16 02 09
+16 02 11*,True,"Discarded equipment containing chlorofluorocarbons, hcfc, hfc"
+16 02 12*,True,Discarded equipment containing free asbestos
+16 02 13*,True,Discarded equipment containing hazardous components(1) other than those mentioned in 16 02 09 to 16 02 12
+16 02 14,False,Discarded equipment other than those mentioned in 16 02 09 to 16 02 13
+16 02 15*,True,Hazardous components removed from discarded equipment
+16 02 16,False,Components removed from discarded equipment other than those mentioned in 16 02 15
+16 03 03*,True,Inorganic wastes containing hazardous substances
+16 03 04,False,Inorganic wastes other than those mentioned in 16 03 03
+16 03 05*,True,Organic wastes containing hazardous substances
+16 03 06,False,Organic wastes other than those mentioned in 16 03 05
+16 03 07*,True,Metallic mercury
+16 04 01*,True,Waste ammunition
+16 04 02*,True,Fireworks wastes
+16 04 03*,True,Other waste explosives
+16 05 04*,True,Gases in pressure containers (including halons) containing hazardous substances
+16 05 05,False,Gases in pressure containers other than those mentioned in 16 05 04
+16 05 06*,True,"Laboratory chemicals, consisting of or containing hazardous substances, including mixtures of laboratory chemicals"
+16 05 07*,True,Discarded inorganic chemicals consisting of or containing hazardous substances
+16 05 08*,True,Discarded organic chemicals consisting of or containing hazardous substances
+16 05 09,False,"Discarded chemicals other than those mentioned in 16 05 06, 16 05 07 or 16 05 08"
+16 06 01*,True,Lead batteries
+16 06 02*,True,Ni-cd batteries
+16 06 03*,True,Mercury-containing batteries
+16 06 04,False,Alkaline batteries (except 16 06 03)
+16 06 05,False,Other batteries and accumulators
+16 06 06*,True,Separately collected electrolyte from batteries and accumulators
+16 07 08*,True,Wastes containing oil
+16 07 09*,True,Wastes containing other hazardous substances
+16 07 99,False,Wastes not otherwise specified
+16 08 01,False,"Spent catalysts containing gold, silver, rhenium, rhodium, palladium, iridium or platinum (except 16 08 07)"
+16 08 02*,True,Spent catalysts containing hazardous transition metals or hazardous transition metal compounds
+16 08 03,False,Spent catalysts containing transition metals or transition metal compounds not otherwise specified
+16 08 04,False,Spent fluid catalytic cracking catalysts (except 16 08 07)
+16 08 05*,True,Spent catalysts containing phosphoric acid
+16 08 06*,True,Spent liquids used as catalysts
+16 08 07*,True,Spent catalysts contaminated with hazardous substances
+16 09 01*,True,"Permanganates, for example potassium permanganate"
+16 09 02*,True,"Chromates, for example potassium chromate, potassium or sodium dichromate"
+16 09 03*,True,"Peroxides, for example hydrogen peroxide"
+16 09 04*,True,"Oxidising substances, not otherwise specified"
+16 10 01*,True,Aqueous liquid wastes containing hazardous substances
+16 10 02,False,Aqueous liquid wastes other than those mentioned in 16 10 01
+16 10 03*,True,Aqueous concentrates containing hazardous substances
+16 10 04,False,Aqueous concentrates other than those mentioned in 16 10 03
+16 11 01*,True,Carbon-based linings and refractories from metallurgical processes containing hazardous substances
+16 11 02,False,Carbon-based linings and refractories from metallurgical processes others than those mentioned in 16 11 01
+16 11 03*,True,Other linings and refractories from metallurgical processes containing hazardous substances
+16 11 04,False,Other linings and refractories from metallurgical processes other than those mentioned in 16 11 03
+16 11 05*,True,Linings and refractories from non-metallurgical processes containing hazardous substances
+16 11 06,False,Linings and refractories from non-metallurgical processes others than those mentioned in 16 11 05
+17 01 01,False,Concrete
+17 01 02,False,Bricks
+17 01 03,False,Tiles and ceramics
+17 01 06*,True,"Mixtures of, or separate fractions of concrete, bricks, tiles and ceramics containing hazardous substances"
+17 01 07,False,"Mixtures of concrete, bricks, tiles and ceramics other than those mentioned in 17 01 06"
+17 02 01,False,Wood
+17 02 02,False,Glass
+17 02 03,False,Plastic
+17 02 04*,True,"Glass, plastic and wood containing or contaminated with hazardous substances"
+17 03 01*,True,Bituminous mixtures containing coal tar
+17 03 02,False,Bituminous mixtures other than those mentioned in 17 03 01
+17 03 03*,True,Coal tar and tarred products
+17 04 01,False,"Copper, bronze, brass"
+17 04 02,False,Aluminium
+17 04 03,False,Lead
+17 04 04,False,Zinc
+17 04 05,False,Iron and steel
+17 04 06,False,Tin
+17 04 07,False,Mixed metals
+17 04 09*,True,Metal waste contaminated with hazardous substances
+17 04 10*,True,"Cables containing oil, coal tar and other hazardous substances"
+17 04 11,False,Cables other than those mentioned in 17 04 10
+17 05 03*,True,Soil and stones containing hazardous substances
+17 05 04,False,Soil and stones other than those mentioned in 17 05 03
+17 05 05*,True,Dredging spoil containing hazardous substances
+17 05 06,False,Dredging spoil other than those mentioned in 17 05 05
+17 05 07*,True,Track ballast containing hazardous substances
+17 05 08,False,Track ballast other than those mentioned in 17 05 07
+17 06 01*,True,Insulation materials containing asbestos
+17 06 03*,True,Other insulation materials consisting of or containing hazardous substances
+17 06 04,False,Insulation materials other than those mentioned in 17 06 01 and 17 06 03
+17 06 05*,True,Construction materials containing asbestos
+17 08 01*,True,Gypsum-based construction materials contaminated with hazardous substances
+17 08 02,False,Gypsum-based construction materials other than those mentioned in 17 08 01
+17 09 01*,True,Construction and demolition wastes containing mercury
+17 09 02*,True,"Construction and demolition wastes containing pcb (for example pcb-containing sealants, pcb-containing resin-based floorings, pcb-containing sealed glazing units, pcb-containing capacitors)"
+17 09 03*,True,Other construction and demolition wastes (including mixed wastes) containing hazardous substances
+17 09 04,False,"Mixed construction and demolition wastes other than those mentioned in 17 09 01, 17 09 02 and 17 09 03 rant wastes not arising from immediate health care)"
+18 01 01,False,Sharps (except 18 01 03)
+18 01 02,False,Body parts and organs including blood bags and blood preserves (except 18 01 03)
+18 01 03*,True,Wastes whose collection and disposal is subject to special requirements in order to prevent infection
+18 01 04,False,"Wastes whose collection and disposal is not subject to special requirements in order to prevent infection (for example dressings, plaster casts, linen, disposable clothing, diapers)"
+18 01 06*,True,Chemicals consisting of or containing hazardous substances
+18 01 07,False,Chemicals other than those mentioned in 18 01 06
+18 01 08*,True,Cytotoxic and cytostatic medicines
+18 01 09,False,Medicines other than those mentioned in 18 01 08
+18 01 10*,True,Amalgam waste from dental care
+18 02 01,False,Sharps (except 18 02 02)
+18 02 02*,True,Wastes whose collection and disposal is subject to special requirements in order to prevent infection
+18 02 03,False,Wastes whose collection and disposal is not subject to special requirements in order to prevent infection
+18 02 05*,True,Chemicals consisting of or containing hazardous substances
+18 02 06,False,Chemicals other than those mentioned in 18 02 05
+18 02 07*,True,Cytotoxic and cytostatic medicines
+18 02 08,False,Medicines other than those mentioned in 18 02 07 preparation of water intended for human consumption and water for industrial use
+19 01 02,False,Ferrous materials removed from bottom ash
+19 01 05*,True,Filter cake from gas treatment
+19 01 06*,True,Aqueous liquid wastes from gas treatment and other aqueous liquid wastes
+19 01 07*,True,Solid wastes from gas treatment
+19 01 10*,True,Spent activated carbon from flue-gas treatment
+19 01 11*,True,Bottom ash and slag containing hazardous substances
+19 01 12,False,Bottom ash and slag other than those mentioned in 19 01 11
+19 01 13*,True,Fly ash containing hazardous substances
+19 01 14,False,Fly ash other than those mentioned in 19 01 13
+19 01 15*,True,Boiler dust containing hazardous substances
+19 01 16,False,Boiler dust other than those mentioned in 19 01 15
+19 01 17*,True,Pyrolysis wastes containing hazardous substances
+19 01 18,False,Pyrolysis wastes other than those mentioned in 19 01 17
+19 01 19,False,Sands from fluidised beds
+19 01 99,False,Wastes not otherwise specified
+19 02 03,False,Premixed wastes composed only of non-hazardous wastes
+19 02 04*,True,Premixed wastes composed of at least one hazardous waste
+19 02 05*,True,Sludges from physico/chemical treatment containing hazardous substances
+19 02 06,False,Sludges from physico/chemical treatment other than those mentioned in 19 02 05
+19 02 07*,True,Oil and concentrates from separation
+19 02 08*,True,Liquid combustible wastes containing hazardous substances
+19 02 09*,True,Solid combustible wastes containing hazardous substances
+19 02 10,False,Combustible wastes other than those mentioned in 19 02 08 and 19 02 09
+19 02 11*,True,Other wastes containing hazardous substances
+19 02 99,False,Wastes not otherwise specified
+19 03 04*,True,"Wastes marked as hazardous, partly stabilised other than 19 03 08"
+19 03 05,False,Stabilised wastes other than those mentioned in 19 03 04
+19 03 06*,True,"Wastes marked as hazardous, solidified"
+19 03 07,False,Solidified wastes other than those mentioned in 19 03 06
+19 03 08*,True,Partly stabilised mercury
+19 04 01,False,Vitrified waste
+19 04 02*,True,Fly ash and other flue-gas treatment wastes
+19 04 03*,True,Non-vitrified solid phase
+19 04 04,False,Aqueous liquid wastes from vitrified waste tempering
+19 05 01,False,Non-composted fraction of municipal and similar wastes
+19 05 02,False,Non-composted fraction of animal and vegetable waste
+19 05 03,False,Off-specification compost
+19 05 99,False,Wastes not otherwise specified
+19 06 03,False,Liquor from anaerobic treatment of municipal waste
+19 06 04,False,Digestate from anaerobic treatment of municipal waste
+19 06 05,False,Liquor from anaerobic treatment of animal and vegetable waste
+19 06 06,False,Digestate from anaerobic treatment of animal and vegetable waste
+19 06 99,False,Wastes not otherwise specified
+19 07 02*,True,Landfill leachate containing hazardous substances
+19 07 03,False,Landfill leachate other than those mentioned in 19 07 02
+19 08 01,False,Screenings
+19 08 02,False,Waste from desanding
+19 08 05,False,Sludges from treatment of urban waste water
+19 08 06*,True,Saturated or spent ion exchange resins
+19 08 07*,True,Solutions and sludges from regeneration of ion exchangers
+19 08 08*,True,Membrane system waste containing heavy metals
+19 08 09,False,Grease and oil mixture from oil/water separation containing only edible oil and fats
+19 08 10*,True,Grease and oil mixture from oil/water separation other than those mentioned in 19 08 09
+19 08 11*,True,Sludges containing hazardous substances from biological treatment of industrial waste water
+19 08 12,False,Sludges from biological treatment of industrial waste water other than those mentioned in 19 08 11
+19 08 13*,True,Sludges containing hazardous substances from other treatment of industrial waste water
+19 08 14,False,Sludges from other treatment of industrial waste water other than those mentioned in 19 08 13
+19 08 99,False,Wastes not otherwise specified
+19 09 01,False,Solid waste from primary filtration and screenings
+19 09 02,False,Sludges from water clarification
+19 09 03,False,Sludges from decarbonation
+19 09 04,False,Spent activated carbon
+19 09 05,False,Saturated or spent ion exchange resins
+19 09 06,False,Solutions and sludges from regeneration of ion exchangers
+19 09 99,False,Wastes not otherwise specified
+19 10 01,False,Iron and steel waste
+19 10 02,False,Non-ferrous waste
+19 10 03*,True,Fluff-light fraction and dust containing hazardous substances
+19 10 04,False,Fluff-light fraction and dust other than those mentioned in 19 10 03
+19 10 05*,True,Other fractions containing hazardous substances
+19 10 06,False,Other fractions other than those mentioned in 19 10 05
+19 11 01*,True,Spent filter clays
+19 11 02*,True,Acid tars
+19 11 03*,True,Aqueous liquid wastes
+19 11 04*,True,Wastes from cleaning of fuel with bases
+19 11 05*,True,Sludges from on-site effluent treatment containing hazardous substances
+19 11 06,False,Sludges from on-site effluent treatment other than those mentioned in 19 11 05
+19 11 07*,True,Wastes from flue-gas cleaning
+19 11 99,False,Wastes not otherwise specified otherwise specified
+19 12 01,False,Paper and cardboard
+19 12 02,False,Ferrous metal
+19 12 03,False,Non-ferrous metal
+19 12 04,False,Plastic and rubber
+19 12 05,False,Glass
+19 12 06*,True,Wood containing hazardous substances
+19 12 07,False,Wood other than that mentioned in 19 12 06
+19 12 08,False,Textiles
+19 12 09,False,"Minerals (for example sand, stones)"
+19 12 10,False,Combustible waste (refuse derived fuel)
+19 12 11*,True,Other wastes (including mixtures of materials) from mechanical treatment of waste containing hazardous substances
+19 12 12,False,Other wastes (including mixtures of materials) from mechanical treatment of wastes other than those mentioned in 19 12 11
+19 13 01*,True,Solid wastes from soil remediation containing hazardous substances
+19 13 02,False,Solid wastes from soil remediation other than those mentioned in 19 13 01
+19 13 03*,True,Sludges from soil remediation containing hazardous substances
+19 13 04,False,Sludges from soil remediation other than those mentioned in 19 13 03
+19 13 05*,True,Sludges from groundwater remediation containing hazardous substances
+19 13 06,False,Sludges from groundwater remediation other than those mentioned in 19 13 05
+19 13 07*,True,Aqueous liquid wastes and aqueous concentrates from groundwater remediation containing hazardous substances
+19 13 08,False,Aqueous liquid wastes and aqueous concentrates from groundwater remediation other than those mentioned in 19 13 07 wastes) including separately collected fractions
+20 01 01,False,Paper and cardboard
+20 01 02,False,Glass
+20 01 08,False,Biodegradable kitchen and canteen waste
+20 01 10,False,Clothes
+20 01 11,False,Textiles
+20 01 13*,True,Solvents
+20 01 14*,True,Acids
+20 01 15*,True,Alkalines
+20 01 17*,True,Photochemicals
+20 01 19*,True,Pesticides
+20 01 21*,True,Fluorescent tubes and other mercury-containing waste
+20 01 23*,True,Discarded equipment containing chlorofluorocarbons
+20 01 25,False,Edible oil and fat
+20 01 26*,True,Oil and fat other than those mentioned in 20 01 25
+20 01 27*,True,"Paint, inks, adhesives and resins containing hazardous substances"
+20 01 28,False,"Paint, inks, adhesives and resins other than those mentioned in 20 01 27"
+20 01 29*,True,Detergents containing hazardous substances
+20 01 30,False,Detergents other than those mentioned in 20 01 29
+20 01 31*,True,Cytotoxic and cytostatic medicines
+20 01 32,False,Medicines other than those mentioned in 20 01 31
+20 01 33*,True,"Batteries and accumulators included in 16 06 01, 16 06 02 or 16 06 03 and unsorted batteries and accu mulators containing these batteries"
+20 01 34,False,Batteries and accumulators other than those mentioned in 20 01 33
+20 01 35*,True,Discarded electrical and electronic equipment other than those mentioned in 20 01 21 and 20 01 23 containing hazardous components
+20 01 36,False,"Discarded electrical and electronic equipment other than those mentioned in 20 01 21, 20 01 23 and 20 01 35"
+20 01 37*,True,Wood containing hazardous substances
+20 01 38,False,Wood other than that mentioned in 20 01 37
+20 01 39,False,Plastics
+20 01 40,False,Metals
+20 01 41,False,Wastes from chimney sweeping
+20 01 99,False,Other fractions not otherwise specified
+20 02 01,False,Biodegradable waste
+20 02 02,False,Soil and stones
+20 02 03,False,Other non-biodegradable wastes
+20 03 01,False,Mixed municipal waste
+20 03 02,False,Waste from markets
+20 03 03,False,Street-cleaning residues
+20 03 04,False,Septic tank sludge
+20 03 06,False,Waste from sewage cleaning
+20 03 07,False,Bulky waste
+20 03 99,False,Municipal wastes not otherwise specified

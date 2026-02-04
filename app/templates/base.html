@@ -11,14 +11,14 @@
     <header class="site-header">
       <div class="brand">Weighbridge Web</div>
       <nav class="site-nav">
-        <a href="/tickets">Tickets</a>
-        <a href="/customers">Customers</a>
-        <a href="/vehicles">Vehicles</a>
-        <a href="/products">Products</a>
-        <a href="/invoices">Invoices</a>
-        <a href="/lookups/hauliers">Lookups</a>
-        <a href="/reports">Reports</a>
-        <a href="/admin">Admin</a>
+        <a href="/tickets" class="{% if request.url.path.startswith('/tickets') %}is-active{% endif %}" {% if request.url.path.startswith('/tickets') %}aria-current="page"{% endif %}>Tickets</a>
+        <a href="/customers" class="{% if request.url.path.startswith('/customers') %}is-active{% endif %}" {% if request.url.path.startswith('/customers') %}aria-current="page"{% endif %}>Customers</a>
+        <a href="/vehicles" class="{% if request.url.path.startswith('/vehicles') %}is-active{% endif %}" {% if request.url.path.startswith('/vehicles') %}aria-current="page"{% endif %}>Vehicles</a>
+        <a href="/products" class="{% if request.url.path.startswith('/products') %}is-active{% endif %}" {% if request.url.path.startswith('/products') %}aria-current="page"{% endif %}>Products</a>
+        <a href="/invoices" class="{% if request.url.path.startswith('/invoices') %}is-active{% endif %}" {% if request.url.path.startswith('/invoices') %}aria-current="page"{% endif %}>Invoices</a>
+        <a href="/lookups/hauliers" class="{% if request.url.path.startswith('/lookups') %}is-active{% endif %}" {% if request.url.path.startswith('/lookups') %}aria-current="page"{% endif %}>Lookups</a>
+        <a href="/reports" class="{% if request.url.path.startswith('/reports') %}is-active{% endif %}" {% if request.url.path.startswith('/reports') %}aria-current="page"{% endif %}>Reports</a>
+        <a href="/admin" class="{% if request.url.path.startswith('/admin') %}is-active{% endif %}" {% if request.url.path.startswith('/admin') %}aria-current="page"{% endif %}>Admin</a>
       </nav>
     </header>
     <main class="container">

@@ -1,10 +1,12 @@
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+import re
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -13,6 +15,8 @@ from ..models import Customer, InvoiceFrequency
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+ACCOUNT_CODE_MAX_LEN = 16
+ACCOUNT_CODE_RE = re.compile(r"^[A-Z0-9-]+$")
 
 
 @router.get("/customers", response_class=HTMLResponse)
@@ -85,7 +89,21 @@ async def customers_create(
         must_have_po=payload["must_have_po"],
     )
     db.add(customer)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        payload["errors"].append("Account code already exists.")
+        return templates.TemplateResponse(request, 
+            "customers/new.html",
+            {
+                "request": request,
+                "errors": payload["errors"],
+                "form": payload["form"],
+                "options": _load_options(db),
+            },
+            status_code=400,
+        )
     return RedirectResponse(url="/customers", status_code=303)
 
 
@@ -157,7 +175,22 @@ async def customers_update(
     customer.do_not_invoice = payload["do_not_invoice"]
     customer.must_have_po = payload["must_have_po"]
     customer.updated_at = utcnow()
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        payload["errors"].append("Account code already exists.")
+        return templates.TemplateResponse(request, 
+            "customers/edit.html",
+            {
+                "request": request,
+                "errors": payload["errors"],
+                "customer": customer,
+                "form": payload["form"],
+                "options": _load_options(db),
+            },
+            status_code=400,
+        )
     return RedirectResponse(url=f"/customers/{customer.id}", status_code=303)
 
 
@@ -175,10 +208,16 @@ def _parse_customer_form(form) -> dict:
         return str(form.get(key, "")).strip()
 
     errors: list[str] = []
-    account_code = value("account_code")
+    account_code = value("account_code").upper()
     name = value("name")
     if not account_code:
         errors.append("Account code is required.")
+    elif len(account_code) > ACCOUNT_CODE_MAX_LEN:
+        errors.append(
+            f"Account code must be {ACCOUNT_CODE_MAX_LEN} characters or fewer."
+        )
+    elif not ACCOUNT_CODE_RE.fullmatch(account_code):
+        errors.append("Account code can only contain A-Z, 0-9, and -.")
     if not name:
         errors.append("Name is required.")
 
@@ -247,7 +286,7 @@ def _empty_form() -> dict:
 
 def _customer_to_form(customer: Customer) -> dict:
     return {
-        "account_code": customer.account_code or "",
+        "account_code": (customer.account_code or "").upper(),
         "name": customer.name or "",
         "invoice_email": customer.invoice_email or "",
         "phone": customer.phone or "",

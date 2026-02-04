@@ -1,0 +1,103 @@
+{% if show_panel and vehicle %}
+  <div class="vehicle-suggestion">
+    <div class="suggestion-note">
+      {% if errors %}
+        <div class="suggestion-status is-error">
+          <ul>
+            {% for error in errors %}
+              <li>{{ error }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      <div class="audit">
+        <div><strong>Known vehicle:</strong> {{ vehicle.registration }}</div>
+        {% if default_customer %}
+          <div><strong>Suggested customer:</strong> {{ default_customer.name }}</div>
+        {% endif %}
+        {% if default_haulier %}
+          <div><strong>Suggested haulier:</strong> {{ default_haulier.name }}</div>
+        {% endif %}
+        {% if not default_customer and not default_haulier %}
+          <div class="muted">No defaults configured for this vehicle.</div>
+        {% endif %}
+      </div>
+      {% if vehicle_mismatch %}
+        <div class="suggestion-status is-warning">
+          Ticket is linked to {{ ticket_vehicle_reg }}. This registration matches {{ vehicle.registration }}.
+        </div>
+      {% endif %}
+
+      <div class="actions suggestion-actions btn-group">
+        {% if can_apply_customer %}
+          <button
+            type="button"
+            class="btn btn--secondary"
+            hx-post="/tickets/{{ ticket.id }}/apply-default-customer"
+            hx-target="#vehicle-suggestions"
+            hx-swap="innerHTML"
+            hx-include="#vehicle_reg"
+          >
+            Apply customer
+          </button>
+        {% endif %}
+        {% if can_apply_haulier %}
+          <button
+            type="button"
+            class="btn btn--secondary"
+            hx-post="/tickets/{{ ticket.id }}/apply-default-haulier"
+            hx-target="#vehicle-suggestions"
+            hx-swap="innerHTML"
+            hx-include="#vehicle_reg"
+          >
+            Apply haulier
+          </button>
+        {% endif %}
+        {% if can_apply_all %}
+          <button
+            type="button"
+            class="btn btn--primary"
+            hx-post="/tickets/{{ ticket.id }}/apply-defaults"
+            hx-target="#vehicle-suggestions"
+            hx-swap="innerHTML"
+            hx-include="#vehicle_reg"
+          >
+            Apply all
+          </button>
+        {% endif %}
+        <button
+          type="button"
+          class="btn btn--ghost"
+          onclick="document.getElementById('vehicle-suggestions').innerHTML = ''"
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  </div>
+{% elif errors %}
+  <div class="alert">
+    <ul>
+      {% for error in errors %}
+        <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+{% if oob_customer_options %}
+  <select id="customer_id" name="customer_id" hx-swap-oob="true">
+    <option value="">Select customer</option>
+    {% for id, label in oob_customer_options %}
+      <option value="{{ id }}" {% if oob_customer_selected|string == id|string %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+{% endif %}
+{% if oob_haulier_options %}
+  <select id="haulier_id" name="haulier_id" hx-swap-oob="true">
+    <option value="">Select haulier</option>
+    {% for id, label in oob_haulier_options %}
+      <option value="{{ id }}" {% if oob_haulier_selected|string == id|string %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+{% endif %}

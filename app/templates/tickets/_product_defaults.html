@@ -1,0 +1,57 @@
+<div class="form-grid">
+  <div class="field">
+    <label for="unit_price">Unit price</label>
+    <input type="number" step="0.01" id="unit_price" name="unit_price" value="{{ unit_price }}" />
+  </div>
+</div>
+
+<div id="ewc-display" hx-swap-oob="true">
+  <div
+    class="readonly ewc-readout{% if ewc_code_display and ewc_description %} {% if ewc_hazardous %}is-hazardous{% else %}is-nonhazardous{% endif %}{% endif %}"
+    title="{% if ewc_code_display and ewc_description %}{{ ewc_code_display }} - {{ ewc_description }}{% endif %}"
+  >
+    {% if ewc_code_display and ewc_description %}
+      {{ ewc_code_display }} - {{ ewc_description }}
+    {% else %}
+      --
+    {% endif %}
+  </div>
+</div>
+
+<input
+  type="hidden"
+  id="ewc_hazardous"
+  value="{% if ewc_hazardous %}1{% else %}0{% endif %}"
+  hx-swap-oob="true"
+/>
+
+<input
+  type="hidden"
+  id="default_destination_id"
+  value="{{ default_destination_id or '' }}"
+  hx-swap-oob="true"
+/>
+
+<input
+  type="hidden"
+  id="unit_type"
+  value="{{ unit_type or '' }}"
+  hx-swap-oob="true"
+/>
+
+<input
+  type="hidden"
+  id="unit_name"
+  value="{{ unit_name or '' }}"
+  hx-swap-oob="true"
+/>
+
+
+<div
+  id="producer-hazard-hint"
+  class="hint"
+  hx-swap-oob="true"
+  {% if ewc_hazardous and transaction_type in ["WASTEIN", "WASTEOUT"] %}style="display:block"{% else %}style="display:none"{% endif %}
+>
+  Hazardous waste requires producer details.
+</div>

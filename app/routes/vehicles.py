@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -78,10 +76,12 @@ async def vehicles_create(
     vehicle = Vehicle(
         registration=payload["registration"],
         owner_customer_id=payload["owner_customer_id"],
+        default_customer_id=payload["default_customer_id"],
         vehicle_type_id=payload["vehicle_type_id"],
         default_tare_kg=payload["default_tare_kg"],
         overweight_threshold_kg=payload["overweight_threshold_kg"],
         haulier_id=payload["haulier_id"],
+        default_haulier_id=payload["default_haulier_id"],
         driver_id=payload["driver_id"],
     )
     db.add(vehicle)
@@ -154,10 +154,12 @@ async def vehicles_update(
 
     vehicle.registration = payload["registration"]
     vehicle.owner_customer_id = payload["owner_customer_id"]
+    vehicle.default_customer_id = payload["default_customer_id"]
     vehicle.vehicle_type_id = payload["vehicle_type_id"]
     vehicle.default_tare_kg = payload["default_tare_kg"]
     vehicle.overweight_threshold_kg = payload["overweight_threshold_kg"]
     vehicle.haulier_id = payload["haulier_id"]
+    vehicle.default_haulier_id = payload["default_haulier_id"]
     vehicle.driver_id = payload["driver_id"]
     vehicle.updated_at = utcnow()
     db.commit()
@@ -231,9 +233,15 @@ def vehicle_tares_delete(
 
 
 def _load_options(db: Session) -> dict[str, list[tuple[str, str]]]:
-    customers = db.execute(select(Customer).order_by(Customer.name)).scalars()
+    customers = db.execute(
+        select(Customer)
+        .where(Customer.on_stop.is_(False))
+        .order_by(Customer.name)
+    ).scalars()
     vehicle_types = db.execute(select(VehicleType).order_by(VehicleType.code)).scalars()
-    hauliers = db.execute(select(Haulier).order_by(Haulier.name)).scalars()
+    hauliers = db.execute(
+        select(Haulier).where(Haulier.is_active.is_(True)).order_by(Haulier.name)
+    ).scalars()
     drivers = db.execute(select(Driver).order_by(Driver.name)).scalars()
     containers = db.execute(select(Container).order_by(Container.name)).scalars()
     return {
@@ -250,7 +258,7 @@ def _parse_vehicle_form(form) -> dict:
         return str(form.get(key, "")).strip()
 
     errors: list[str] = []
-    registration = value("registration")
+    registration = value("registration").upper()
     vehicle_type_id = _parse_int(value("vehicle_type_id"))
 
     if not registration:
@@ -262,18 +270,22 @@ def _parse_vehicle_form(form) -> dict:
         "form": {
             "registration": registration,
             "owner_customer_id": value("owner_customer_id"),
+            "default_customer_id": value("default_customer_id"),
             "vehicle_type_id": value("vehicle_type_id"),
             "default_tare_kg": value("default_tare_kg"),
             "overweight_threshold_kg": value("overweight_threshold_kg"),
             "haulier_id": value("haulier_id"),
+            "default_haulier_id": value("default_haulier_id"),
             "driver_id": value("driver_id"),
         },
         "registration": registration,
         "owner_customer_id": _parse_int(value("owner_customer_id")),
+        "default_customer_id": _parse_int(value("default_customer_id")),
         "vehicle_type_id": vehicle_type_id,
         "default_tare_kg": _parse_float(value("default_tare_kg")),
         "overweight_threshold_kg": _parse_float(value("overweight_threshold_kg")),
         "haulier_id": _parse_int(value("haulier_id")),
+        "default_haulier_id": _parse_int(value("default_haulier_id")),
         "driver_id": _parse_int(value("driver_id")),
     }
 
@@ -282,10 +294,12 @@ def _empty_form() -> dict:
     return {
         "registration": "",
         "owner_customer_id": "",
+        "default_customer_id": "",
         "vehicle_type_id": "",
         "default_tare_kg": "",
         "overweight_threshold_kg": "",
         "haulier_id": "",
+        "default_haulier_id": "",
         "driver_id": "",
     }
 
@@ -294,6 +308,7 @@ def _vehicle_to_form(vehicle: Vehicle) -> dict:
     return {
         "registration": vehicle.registration or "",
         "owner_customer_id": str(vehicle.owner_customer_id or ""),
+        "default_customer_id": str(vehicle.default_customer_id or ""),
         "vehicle_type_id": str(vehicle.vehicle_type_id or ""),
         "default_tare_kg": (
             f"{float(vehicle.default_tare_kg):.0f}"
@@ -306,6 +321,7 @@ def _vehicle_to_form(vehicle: Vehicle) -> dict:
             else ""
         ),
         "haulier_id": str(vehicle.haulier_id or ""),
+        "default_haulier_id": str(vehicle.default_haulier_id or ""),
         "driver_id": str(vehicle.driver_id or ""),
     }
 

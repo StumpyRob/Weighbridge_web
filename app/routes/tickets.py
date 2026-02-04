@@ -1,12 +1,13 @@
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import logging
+import re
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import case, func, or_, select, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from ..db import get_db
 from ..models.base import utcnow
@@ -19,7 +20,6 @@ from ..models import (
     Driver,
     Haulier,
     Invoice,
-    Licence,
     Product,
     Ticket,
     TicketVoid,
@@ -27,8 +27,6 @@ from ..models import (
     TransactionTypeEnum,
     Vehicle,
     VoidReason,
-    WasteCode,
-    WasteProducer,
     Yard,
 )
 
@@ -196,6 +194,7 @@ def ticket_product_defaults(
     request: Request,
     product_id: int | None = Query(None),
     unit_price: str | None = Query(None),
+    transaction_type: str | None = Query(None),
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     if not product_id:
@@ -211,13 +210,23 @@ def ticket_product_defaults(
         current_unit_price if current_unit_price != "" else product.unit_price
     )
 
+    ewc = product.ewc_code if product else None
+    unit_name = product.unit.name if product and product.unit else ""
+    unit_type = product.unit.unit_type if product and product.unit else ""
     return templates.TemplateResponse(request, 
-        "tickets/_pricing_defaults.html",
+        "tickets/_product_defaults.html",
         {
             "request": request,
             "unit_price": f"{unit_price_value:.2f}"
             if unit_price_value is not None
             else "",
+            "ewc_code_display": ewc.code_display if ewc else None,
+            "ewc_description": ewc.description if ewc else None,
+            "ewc_hazardous": bool(ewc.hazardous) if ewc else False,
+            "default_destination_id": product.default_destination_id,
+            "unit_type": unit_type,
+            "unit_name": unit_name,
+            "transaction_type": transaction_type or "",
         },
     )
 
@@ -231,9 +240,77 @@ def tickets_mismatch_warning(
     warning = _direction_transaction_warning(direction, transaction_type)
     if not warning:
         return HTMLResponse("", status_code=200)
-    return templates.TemplateResponse(request, 
+    return templates.TemplateResponse(
+        request,
         "tickets/_mismatch_warning.html",
-        {"request": request},
+        {"request": request, "warning": warning},
+    )
+
+
+def _ticket_direction_options() -> list[tuple[str, str]]:
+    return [
+        ("INWARD", "Inward"),
+        ("OUTWARD", "Outward"),
+    ]
+
+
+def _ticket_transaction_type_options() -> list[tuple[str, str]]:
+    return [
+        ("WASTEIN", "Waste In"),
+        ("WASTEOUT", "Waste Out"),
+        ("SALE", "Sale"),
+    ]
+
+
+def _load_ticket_options_with_enums(db: Session) -> dict:
+    return {
+        **_load_ticket_options(db),
+        "directions": _ticket_direction_options(),
+        "transaction_types": _ticket_transaction_type_options(),
+    }
+
+
+@router.get("/tickets/vehicle-suggest", response_class=HTMLResponse)
+def tickets_vehicle_suggest(
+    request: Request,
+    reg: str | None = Query(None),
+    ticket_id: int | None = Query(None),
+    walk_in: str | None = Query(None),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    if not reg or not ticket_id:
+        return HTMLResponse("", status_code=204)
+    if walk_in and str(walk_in).lower() in ("1", "true", "on", "yes"):
+        return HTMLResponse("", status_code=204)
+
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket or _is_ticket_locked(ticket):
+        return HTMLResponse("", status_code=204)
+    if ticket.walk_in:
+        return HTMLResponse("", status_code=204)
+
+    vehicle = _find_vehicle_by_reg(db, reg)
+    if not vehicle:
+        return HTMLResponse("", status_code=204)
+
+    default_customer = (
+        db.get(Customer, vehicle.default_customer_id)
+        if vehicle.default_customer_id
+        else None
+    )
+    default_haulier = (
+        db.get(Haulier, vehicle.default_haulier_id)
+        if vehicle.default_haulier_id
+        else None
+    )
+
+    return _render_vehicle_suggestions(
+        request,
+        ticket,
+        vehicle,
+        default_customer,
+        default_haulier,
+        ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
     )
 
 
@@ -307,18 +384,6 @@ def _load_ticket_options(db: Session | None) -> dict[str, list[tuple[int, str]]]
             db.execute(select(Area).order_by(Area.code)).scalars().all(),
             lambda row: row.code,
         ),
-        "waste_codes": as_options(
-            db.execute(select(WasteCode).order_by(WasteCode.code)).scalars().all(),
-            lambda row: row.code,
-        ),
-        "waste_producers": as_options(
-            db.execute(select(WasteProducer).order_by(WasteProducer.name)).scalars().all(),
-            lambda row: row.name,
-        ),
-        "licences": as_options(
-            db.execute(select(Licence).order_by(Licence.code)).scalars().all(),
-            lambda row: row.code,
-        ),
         "void_reasons": as_options(
             db.execute(select(VoidReason).order_by(VoidReason.code)).scalars().all(),
             lambda row: row.description or row.code,
@@ -359,6 +424,14 @@ def _active_lookup_options(ticket: Ticket, db: Session) -> dict[str, list[tuple[
     }
 
 
+def _oob_lookup_options(
+    ticket: Ticket, db: Session
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    options = _load_ticket_options(db)
+    active = _active_lookup_options(ticket, db)
+    return options["customers"], active["hauliers"]
+
+
 def _option_keys() -> list[str]:
     return [
         "customers",
@@ -370,11 +443,65 @@ def _option_keys() -> list[str]:
         "destinations",
         "yards",
         "areas",
-        "waste_codes",
-        "waste_producers",
-        "licences",
         "void_reasons",
     ]
+
+
+def _normalize_registration(value: str | None) -> str:
+    if not value:
+        return ""
+    cleaned = re.sub(r"\s+", "", str(value)).upper()
+    return cleaned
+
+
+def _normalize_reg_text(value: str | None) -> str:
+    if not value:
+        return ""
+    cleaned = re.sub(r"\s+", "", str(value)).upper()
+    return cleaned
+
+
+def _find_vehicle_by_reg(db: Session, reg: str) -> Vehicle | None:
+    normalized = _normalize_registration(reg)
+    if not normalized:
+        return None
+    return (
+        db.execute(
+            select(Vehicle).where(
+                func.replace(func.upper(Vehicle.registration), " ", "") == normalized
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
+def _ticket_vehicle_reg(db: Session, ticket: Ticket) -> str:
+    if ticket.vehicle_id:
+        vehicle = db.get(Vehicle, ticket.vehicle_id)
+        if vehicle and vehicle.registration:
+            return vehicle.registration
+    return ticket.vehicle_reg_text or ""
+
+
+async def _resolve_vehicle_for_defaults(
+    request: Request, ticket: Ticket, db: Session
+) -> Vehicle | None:
+    if ticket.vehicle_id:
+        return db.get(Vehicle, ticket.vehicle_id)
+    if ticket.walk_in:
+        return None
+
+    form = await request.form()
+    if _form_value(form, "walk_in") == "on":
+        return None
+    reg = str(form.get("reg", "")).strip()
+    if not reg:
+        return None
+    vehicle = _find_vehicle_by_reg(db, reg)
+    if vehicle:
+        ticket.vehicle_id = vehicle.id
+    return vehicle
 
 
 def _status_value(value) -> str:
@@ -479,6 +606,7 @@ def tickets_edit(
 
     is_admin = True
     invoice = db.get(Invoice, ticket.invoice_id) if ticket.invoice_id else None
+    options = _load_ticket_options_with_enums(db)
     return templates.TemplateResponse(request, 
         "tickets/edit.html",
         {
@@ -495,7 +623,8 @@ def tickets_edit(
                 ticket.direction, ticket.transaction_type
             ),
             "form": _ticket_to_form(ticket),
-            "options": _load_ticket_options(db),
+            "vehicle_reg": _ticket_vehicle_reg(db, ticket),
+            "options": options,
             "enums": _ticket_enums(),
             **_active_lookup_options(ticket, db),
         },
@@ -526,10 +655,18 @@ async def tickets_update(
             status_code=403,
         )
 
+    payload = _parse_ticket_form(
+        form, current_status=ticket.status.value if ticket.status else None
+    )
+    payload["form"]["direction"] = payload["direction"] or ""
+    payload["form"]["transaction_type"] = payload["transaction_type"] or ""
+    if payload["vehicle_id"] is None and ticket.vehicle_id is not None:
+        payload["vehicle_id"] = ticket.vehicle_id
+        payload["form"]["vehicle_id"] = str(ticket.vehicle_id)
+
     if action == "complete":
-        payload = _parse_ticket_form(
-            form, current_status=ticket.status.value if ticket.status else None
-        )
+        ticket.direction = payload["direction"]
+        ticket.transaction_type = payload["transaction_type"]
         weight_warning = _net_negative_values(payload["gross_kg"], payload["tare_kg"])
         direction_warning = _direction_transaction_warning(
             payload["direction"], payload["transaction_type"]
@@ -537,24 +674,108 @@ async def tickets_update(
         lookup_errors = _validate_lookup_fields(ticket, payload, db)
         payload["errors"].extend(lookup_errors)
         _apply_ticket_defaults(db, payload)
-
-        if payload["vehicle_id"] is None:
-            payload["errors"].append("Vehicle is required to complete a ticket.")
-        if payload["product_id"] is None:
-            payload["errors"].append("Product is required to complete a ticket.")
-        if payload["gross_kg"] is None or payload["tare_kg"] is None:
+        product = _validate_product_ewc(payload, db)
+        _apply_destination_default(ticket, payload, product)
+        haulier = _validate_carrier_licence(payload, db)
+        producer_override = _validate_waste_producer_customer(payload, db)
+        is_waste_tx = _is_waste_transaction(payload.get("transaction_type"))
+        if is_waste_tx and haulier and not haulier.carrier_licence_number:
             payload["errors"].append(
-                "Weigh-in and weigh-out are required to complete a ticket."
+                "Selected haulier has no Waste Carrier Licence number. "
+                "Add it in Lookups → Hauliers, then complete the ticket."
+            )
+
+        effective_reg_text = payload["vehicle_reg_text"] or ticket.vehicle_reg_text or ""
+        completion_allowed = (
+            payload["walk_in"]
+            or payload["vehicle_id"] is not None
+            or bool(effective_reg_text)
+        )
+        if is_waste_tx and not completion_allowed:
+            payload["errors"].append(
+                "To complete: enter a registration, select a vehicle, or tick 'No vehicle / Walk-in'."
+            )
+
+        _validate_required_on_complete(payload)
+        has_qty = payload.get("qty") is not None and payload.get("qty") > 0
+        has_gross = payload.get("gross_kg") is not None
+        has_tare = payload.get("tare_kg") is not None
+        if is_waste_tx and has_gross and not has_tare:
+            vehicle = (
+                db.get(Vehicle, payload["vehicle_id"])
+                if payload.get("vehicle_id")
+                else None
+            )
+            if vehicle and vehicle.default_tare_kg is not None:
+                payload["tare_kg"] = vehicle.default_tare_kg
+                payload["form"]["tare_kg"] = f"{vehicle.default_tare_kg:.0f}"
+                payload["net_kg"] = payload["gross_kg"] - payload["tare_kg"]
+                payload["form"]["net_kg"] = f"{payload['net_kg']:.0f}"
+                has_tare = True
+        has_weights = has_gross and has_tare
+        if is_waste_tx and not has_weights:
+            payload["errors"].append(
+                "Weigh-in and weigh-out are required to complete a waste ticket."
             )
         if (
-            payload["gross_kg"] is not None
-            and payload["tare_kg"] is not None
+            not is_waste_tx
+            and payload.get("transaction_type") == TransactionTypeEnum.SALE.value
+        ):
+            allow_sale_weights = bool(
+                has_weights and product and product.unit and product.unit.unit_type == "WEIGHT"
+            )
+            if not (has_qty or allow_sale_weights):
+                payload["errors"].append(
+                    "Enter a quantity or weigh-in and weigh-out to complete a sale."
+                )
+        if (
+            has_weights
             and _net_negative_values(payload["gross_kg"], payload["tare_kg"])
         ):
             payload["errors"].append(
                 "Net weight cannot be negative. Use Swap Weights."
             )
 
+        _validate_product_has_ewc_on_complete(payload, product)
+
+        if payload["errors"]:
+            ticket.vehicle_reg_text = payload["vehicle_reg_text"]
+            ticket.walk_in = payload["walk_in"]
+            ticket.updated_at = utcnow()
+            db.commit()
+            return _render_ticket_edit(
+                request,
+                ticket,
+                db,
+                errors=payload["errors"],
+                form=payload["form"],
+                vehicle_reg=payload["vehicle_reg_text"],
+                weight_warning=weight_warning,
+                direction_warning=direction_warning,
+                status_code=400,
+            )
+
+        _apply_ticket_updates(ticket, payload)
+        pricing_info = _apply_ticket_pricing(ticket, payload, product)
+        if is_waste_tx:
+            _apply_ticket_ewc_snapshot(ticket, product)
+        else:
+            _apply_ticket_ewc_snapshot(ticket, None)
+        _apply_carrier_licence_snapshot(ticket, haulier)
+        producer = producer_override
+        if producer is None and payload.get("customer_id"):
+            producer = db.get(Customer, payload["customer_id"])
+        _apply_waste_producer_snapshot(ticket, producer)
+        is_hazardous = bool(ticket.ewc_hazardous)
+        if is_waste_tx and is_hazardous:
+            if not ticket.customer_id:
+                payload["errors"].append(
+                    "Customer is required for hazardous waste tickets."
+                )
+            if not ticket.waste_producer_name:
+                payload["errors"].append(
+                    "Waste producer details are required for hazardous waste tickets."
+                )
         if payload["errors"]:
             return _render_ticket_edit(
                 request,
@@ -562,12 +783,22 @@ async def tickets_update(
                 db,
                 errors=payload["errors"],
                 form=payload["form"],
+                vehicle_reg=payload["vehicle_reg_text"],
                 weight_warning=weight_warning,
                 direction_warning=direction_warning,
                 status_code=400,
             )
-
-        _apply_ticket_updates(ticket, payload)
+        unit = getattr(product, "unit", None) if product else None
+        ticket.pricing_unit_name = unit.name if unit else None
+        ticket.pricing_unit_type = unit.unit_type if unit else None
+        ticket.pricing_unit_price = ticket.unit_price
+        ticket.pricing_qty_snapshot = ticket.qty
+        ticket.pricing_net_kg_snapshot = (
+            pricing_info.get("net_kg") if pricing_info else None
+        ) or ticket.net_kg
+        ticket.pricing_billable_qty_snapshot = (
+            pricing_info.get("billable_qty") if pricing_info else None
+        )
         ticket.status = TicketStatusEnum.COMPLETE.value
         db.commit()
         return RedirectResponse(url=f"/tickets/{ticket_id}?completed=1", status_code=303)
@@ -603,9 +834,8 @@ async def tickets_update(
         db.commit()
         return RedirectResponse(url=f"/tickets/{ticket_id}", status_code=303)
 
-    payload = _parse_ticket_form(
-        form, current_status=ticket.status.value if ticket.status else None
-    )
+    ticket.direction = payload["direction"]
+    ticket.transaction_type = payload["transaction_type"]
     direction_warning = _direction_transaction_warning(
         payload["direction"], payload["transaction_type"]
     )
@@ -618,21 +848,423 @@ async def tickets_update(
         )
     )
     _apply_ticket_defaults(db, payload)
+    product = _validate_product_ewc(payload, db)
+    _apply_destination_default(ticket, payload, product)
+    haulier = _validate_carrier_licence(payload, db)
+    producer_override = _validate_waste_producer_customer(payload, db)
+    is_waste_tx = _is_waste_transaction(payload.get("transaction_type"))
     if payload["errors"]:
+        ticket.vehicle_reg_text = payload["vehicle_reg_text"]
+        ticket.walk_in = payload["walk_in"]
+        ticket.updated_at = utcnow()
+        db.commit()
         return _render_ticket_edit(
             request,
             ticket,
             db,
             errors=payload["errors"],
             form=payload["form"],
+            vehicle_reg=payload["vehicle_reg_text"],
             weight_warning=weight_warning,
             direction_warning=direction_warning,
             status_code=400,
         )
 
     _apply_ticket_updates(ticket, payload)
+    _apply_ticket_pricing(ticket, payload, product)
+    if is_waste_tx:
+        _apply_ticket_ewc_snapshot(ticket, product)
+    else:
+        _apply_ticket_ewc_snapshot(ticket, None)
+    _apply_carrier_licence_snapshot(ticket, haulier)
+    producer = producer_override
+    if producer is None and payload.get("customer_id"):
+        producer = db.get(Customer, payload["customer_id"])
+    _apply_waste_producer_snapshot(ticket, producer)
     db.commit()
     return RedirectResponse(url=f"/tickets/{ticket_id}?saved=1", status_code=303)
+
+
+@router.post("/tickets/{ticket_id}/apply-default-customer", response_class=HTMLResponse)
+async def tickets_apply_default_customer(
+    ticket_id: int, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        return HTMLResponse("Ticket not found.", status_code=404)
+    if _is_ticket_locked(ticket):
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            None,
+            None,
+            None,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Ticket is locked."],
+            status_code=403,
+        )
+    vehicle = await _resolve_vehicle_for_defaults(request, ticket, db)
+    if not vehicle:
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            None,
+            None,
+            None,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Vehicle must be selected to apply defaults."],
+            status_code=400,
+        )
+
+    default_customer = (
+        db.get(Customer, vehicle.default_customer_id)
+        if vehicle.default_customer_id
+        else None
+    )
+    default_haulier = (
+        db.get(Haulier, vehicle.default_haulier_id)
+        if vehicle.default_haulier_id
+        else None
+    )
+
+    if ticket.customer_id:
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            vehicle,
+            default_customer,
+            default_haulier,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Customer already set."],
+            status_code=400,
+        )
+    if not default_customer:
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            vehicle,
+            default_customer,
+            default_haulier,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Default customer not configured for this vehicle."],
+            status_code=400,
+        )
+    if default_customer.on_stop:
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            vehicle,
+            default_customer,
+            default_haulier,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Default customer is on stop."],
+            status_code=400,
+        )
+
+    ticket.customer_id = default_customer.id
+    ticket.updated_at = utcnow()
+    db.commit()
+    oob_customer_options, oob_haulier_options = _oob_lookup_options(ticket, db)
+    show_panel = not (ticket.haulier_id is not None or default_haulier is None)
+    return _render_vehicle_suggestions(
+        request,
+        ticket,
+        vehicle,
+        default_customer,
+        default_haulier,
+        ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+        oob_customer_options=oob_customer_options,
+        oob_haulier_options=oob_haulier_options,
+        show_panel=show_panel,
+    )
+
+
+@router.post("/tickets/{ticket_id}/apply-default-haulier", response_class=HTMLResponse)
+async def tickets_apply_default_haulier(
+    ticket_id: int, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        return HTMLResponse("Ticket not found.", status_code=404)
+    if _is_ticket_locked(ticket):
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            None,
+            None,
+            None,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Ticket is locked."],
+            status_code=403,
+        )
+    vehicle = await _resolve_vehicle_for_defaults(request, ticket, db)
+    if not vehicle:
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            None,
+            None,
+            None,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Vehicle must be selected to apply defaults."],
+            status_code=400,
+        )
+
+    default_customer = (
+        db.get(Customer, vehicle.default_customer_id)
+        if vehicle.default_customer_id
+        else None
+    )
+    default_haulier = (
+        db.get(Haulier, vehicle.default_haulier_id)
+        if vehicle.default_haulier_id
+        else None
+    )
+
+    if ticket.haulier_id:
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            vehicle,
+            default_customer,
+            default_haulier,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Haulier already set."],
+            status_code=400,
+        )
+    if not default_haulier:
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            vehicle,
+            default_customer,
+            default_haulier,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Default haulier not configured for this vehicle."],
+            status_code=400,
+        )
+    if not default_haulier.is_active:
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            vehicle,
+            default_customer,
+            default_haulier,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Default haulier is inactive."],
+            status_code=400,
+        )
+
+    ticket.haulier_id = default_haulier.id
+    ticket.updated_at = utcnow()
+    db.commit()
+    oob_customer_options, oob_haulier_options = _oob_lookup_options(ticket, db)
+    show_panel = not (ticket.customer_id is not None or default_customer is None)
+    return _render_vehicle_suggestions(
+        request,
+        ticket,
+        vehicle,
+        default_customer,
+        default_haulier,
+        ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+        oob_customer_options=oob_customer_options,
+        oob_haulier_options=oob_haulier_options,
+        show_panel=show_panel,
+    )
+
+
+@router.post("/tickets/{ticket_id}/apply-defaults", response_class=HTMLResponse)
+async def tickets_apply_defaults(
+    ticket_id: int, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        return HTMLResponse("Ticket not found.", status_code=404)
+    if _is_ticket_locked(ticket):
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            None,
+            None,
+            None,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Ticket is locked."],
+            status_code=403,
+        )
+    vehicle = await _resolve_vehicle_for_defaults(request, ticket, db)
+    if not vehicle:
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            None,
+            None,
+            None,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Vehicle must be selected to apply defaults."],
+            status_code=400,
+        )
+
+    default_customer = (
+        db.get(Customer, vehicle.default_customer_id)
+        if vehicle.default_customer_id
+        else None
+    )
+    default_haulier = (
+        db.get(Haulier, vehicle.default_haulier_id)
+        if vehicle.default_haulier_id
+        else None
+    )
+
+    errors: list[str] = []
+    updates = 0
+
+    if ticket.customer_id:
+        errors.append("Customer already set.")
+    elif not default_customer:
+        errors.append("Default customer not configured for this vehicle.")
+    elif default_customer.on_stop:
+        errors.append("Default customer is on stop.")
+    else:
+        ticket.customer_id = default_customer.id
+        updates += 1
+
+    if ticket.haulier_id:
+        errors.append("Haulier already set.")
+    elif not default_haulier:
+        errors.append("Default haulier not configured for this vehicle.")
+    elif not default_haulier.is_active:
+        errors.append("Default haulier is inactive.")
+    else:
+        ticket.haulier_id = default_haulier.id
+        updates += 1
+
+    if updates:
+        ticket.updated_at = utcnow()
+        db.commit()
+        oob_customer_options, oob_haulier_options = _oob_lookup_options(ticket, db)
+        show_panel = bool(errors)
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            vehicle,
+            default_customer,
+            default_haulier,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            oob_customer_options=oob_customer_options,
+            oob_haulier_options=oob_haulier_options,
+            show_panel=show_panel,
+            errors=errors,
+        )
+
+    return _render_vehicle_suggestions(
+        request,
+        ticket,
+        vehicle,
+        default_customer,
+        default_haulier,
+        ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+        errors=errors or ["No defaults applied."],
+        status_code=400,
+    )
+
+
+@router.post("/tickets/{ticket_id}/set-vehicle-from-reg", response_class=HTMLResponse)
+async def tickets_set_vehicle_from_reg(
+    ticket_id: int, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        return HTMLResponse("Ticket not found.", status_code=404)
+    if _is_ticket_locked(ticket):
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            None,
+            None,
+            None,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Ticket is locked."],
+            status_code=403,
+        )
+
+    form = await request.form()
+    reg = str(form.get("reg", "")).strip()
+    if not reg:
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            None,
+            None,
+            None,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Registration is required."],
+            status_code=400,
+        )
+
+    vehicle = _find_vehicle_by_reg(db, reg)
+    if not vehicle:
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            None,
+            None,
+            None,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Vehicle not found."],
+            status_code=404,
+        )
+
+    default_customer = (
+        db.get(Customer, vehicle.default_customer_id)
+        if vehicle.default_customer_id
+        else None
+    )
+    default_haulier = (
+        db.get(Haulier, vehicle.default_haulier_id)
+        if vehicle.default_haulier_id
+        else None
+    )
+
+    if ticket.vehicle_id:
+        current_vehicle = db.get(Vehicle, ticket.vehicle_id)
+        if current_vehicle and current_vehicle.id == vehicle.id:
+            return _render_vehicle_suggestions(
+                request,
+                ticket,
+                vehicle,
+                default_customer,
+                default_haulier,
+                ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+                status_code=200,
+            )
+        current_reg = current_vehicle.registration if current_vehicle else "(unknown)"
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            vehicle,
+            default_customer,
+            default_haulier,
+            ticket_vehicle_reg=current_reg,
+            errors=[
+                (
+                    "Ticket is linked to "
+                    f"{current_reg}. This registration matches {vehicle.registration}."
+                )
+            ],
+            status_code=400,
+        )
+
+    ticket.vehicle_id = vehicle.id
+    ticket.updated_at = utcnow()
+    db.commit()
+    return _render_vehicle_suggestions(
+        request,
+        ticket,
+        vehicle,
+        default_customer,
+        default_haulier,
+        ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+    )
 
 
 @router.post("/tickets/{ticket_id}/weights/gross", response_class=HTMLResponse)
@@ -961,11 +1593,11 @@ def tickets_swap_weights(
 
 def _apply_ticket_updates(ticket: Ticket, payload: dict) -> None:
     ticket.datetime = payload["ticket_datetime"]
-    ticket.direction = payload["direction"]
-    ticket.transaction_type = payload["transaction_type"]
     ticket.status = payload["status"]
     ticket.customer_id = payload["customer_id"]
     ticket.vehicle_id = payload["vehicle_id"]
+    ticket.vehicle_reg_text = payload["vehicle_reg_text"]
+    ticket.walk_in = payload["walk_in"]
     ticket.product_id = payload["product_id"]
     ticket.haulier_id = payload["haulier_id"]
     ticket.driver_id = payload["driver_id"]
@@ -974,8 +1606,7 @@ def _apply_ticket_updates(ticket: Ticket, payload: dict) -> None:
     ticket.yard_id = payload["yard_id"]
     ticket.area_id = payload["area_id"]
     ticket.waste_code_id = payload["waste_code_id"]
-    ticket.waste_producer_id = payload["waste_producer_id"]
-    ticket.licence_id = payload["licence_id"]
+    ticket.waste_producer_customer_id = payload["waste_producer_customer_id"]
     ticket.gross_kg = payload["gross_kg"]
     ticket.tare_kg = payload["tare_kg"]
     ticket.net_kg = payload["net_kg"]
@@ -991,19 +1622,22 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
     errors: list[str] = []
 
     datetime_raw = _form_value(form, "datetime")
-    direction = _form_value(form, "direction")
-    transaction_type = _form_value(form, "transaction_type")
+    direction_raw = _form_value(form, "direction")
+    transaction_type_raw = _form_value(form, "transaction_type")
+    direction = direction_raw or None
+    transaction_type = transaction_type_raw or None
     status = current_status or TicketStatusEnum.OPEN.value
     customer_id = _parse_int(_form_value(form, "customer_id"))
     vehicle_id = _parse_int(_form_value(form, "vehicle_id"))
+    vehicle_reg_text = _normalize_reg_text(_form_value(form, "reg"))
+    walk_in = _form_value(form, "walk_in") == "on"
     product_id = _parse_int(_form_value(form, "product_id"))
+    waste_producer_customer_id = _parse_int(
+        _form_value(form, "waste_producer_customer_id")
+    )
 
     if not datetime_raw:
         errors.append("Date/time is required.")
-    if not direction:
-        errors.append("Direction is required.")
-    if not transaction_type:
-        errors.append("Transaction type is required.")
     # Customer/vehicle/product can be left blank on open tickets.
 
     if direction and direction not in _ticket_enums()["directions"]:
@@ -1039,11 +1673,13 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
 
     form_data = {
         "datetime": datetime_raw,
-        "direction": direction,
-        "transaction_type": transaction_type,
+        "direction": direction or "",
+        "transaction_type": transaction_type or "",
         "status": status,
         "customer_id": _form_value(form, "customer_id"),
         "vehicle_id": _form_value(form, "vehicle_id"),
+        "vehicle_reg_text": vehicle_reg_text,
+        "walk_in": "on" if walk_in else "",
         "product_id": _form_value(form, "product_id"),
         "haulier_id": _form_value(form, "haulier_id"),
         "driver_id": _form_value(form, "driver_id"),
@@ -1052,8 +1688,7 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         "yard_id": _form_value(form, "yard_id"),
         "area_id": _form_value(form, "area_id"),
         "waste_code_id": _form_value(form, "waste_code_id"),
-        "waste_producer_id": _form_value(form, "waste_producer_id"),
-        "licence_id": _form_value(form, "licence_id"),
+        "waste_producer_customer_id": _form_value(form, "waste_producer_customer_id"),
         "gross_kg": gross_raw if gross_kg is None else f"{gross_kg:.0f}",
         "tare_kg": tare_raw if tare_kg is None else f"{tare_kg:.0f}",
         "net_kg": f"{net_kg:.0f}" if net_kg is not None else "",
@@ -1070,9 +1705,13 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         "ticket_datetime": ticket_datetime or utcnow(),
         "direction": direction,
         "transaction_type": transaction_type,
+        "direction_raw": direction_raw,
+        "transaction_type_raw": transaction_type_raw,
         "status": status,
         "customer_id": customer_id,
         "vehicle_id": vehicle_id,
+        "vehicle_reg_text": vehicle_reg_text,
+        "walk_in": walk_in,
         "product_id": product_id,
         "haulier_id": _parse_int(_form_value(form, "haulier_id")),
         "driver_id": _parse_int(_form_value(form, "driver_id")),
@@ -1081,8 +1720,7 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         "yard_id": _parse_int(_form_value(form, "yard_id")),
         "area_id": _parse_int(_form_value(form, "area_id")),
         "waste_code_id": _parse_int(_form_value(form, "waste_code_id")),
-        "waste_producer_id": _parse_int(_form_value(form, "waste_producer_id")),
-        "licence_id": _parse_int(_form_value(form, "licence_id")),
+        "waste_producer_customer_id": waste_producer_customer_id,
         "gross_kg": gross_kg,
         "tare_kg": tare_kg,
         "net_kg": net_kg,
@@ -1105,6 +1743,8 @@ def _ticket_to_form(ticket: Ticket) -> dict:
         "status": ticket.status.value if ticket.status else "",
         "customer_id": str(ticket.customer_id or ""),
         "vehicle_id": str(ticket.vehicle_id or ""),
+        "vehicle_reg_text": ticket.vehicle_reg_text or "",
+        "walk_in": "on" if ticket.walk_in else "",
         "product_id": str(ticket.product_id or ""),
         "haulier_id": str(ticket.haulier_id or ""),
         "driver_id": str(ticket.driver_id or ""),
@@ -1113,8 +1753,7 @@ def _ticket_to_form(ticket: Ticket) -> dict:
         "yard_id": str(ticket.yard_id or ""),
         "area_id": str(ticket.area_id or ""),
         "waste_code_id": str(ticket.waste_code_id or ""),
-        "waste_producer_id": str(ticket.waste_producer_id or ""),
-        "licence_id": str(ticket.licence_id or ""),
+        "waste_producer_customer_id": str(ticket.waste_producer_customer_id or ""),
         "gross_kg": f"{ticket.gross_kg:.0f}" if ticket.gross_kg is not None else "",
         "tare_kg": f"{ticket.tare_kg:.0f}" if ticket.tare_kg is not None else "",
         "net_kg": f"{ticket.net_kg:.0f}" if ticket.net_kg is not None else "",
@@ -1176,6 +1815,211 @@ def _apply_ticket_defaults(db: Session, payload: dict) -> None:
         payload["total"] = Decimal(str(payload["qty"])) * payload["unit_price"]
 
 
+def _apply_destination_default(
+    ticket: Ticket, payload: dict, product: Product | None
+) -> None:
+    if payload.get("destination_id") is not None:
+        return
+    if ticket.destination_id is not None:
+        return
+    if not product or not product.default_destination_id:
+        return
+    payload["destination_id"] = product.default_destination_id
+    payload["form"]["destination_id"] = str(product.default_destination_id)
+
+
+def _apply_ticket_pricing(
+    ticket: Ticket, payload: dict, product: Product | None
+) -> dict:
+    qty = payload.get("qty")
+    unit_price = payload.get("unit_price")
+    has_qty = qty is not None and qty > 0
+    has_weights = (
+        payload.get("gross_kg") is not None and payload.get("tare_kg") is not None
+    )
+    unit = getattr(product, "unit", None) if product else None
+
+    ticket.total = None
+    ticket.pricing_basis = None
+    pricing_info = {"basis": None, "billable_qty": None, "net_kg": None}
+
+    if has_qty and unit_price is not None:
+        ticket.total = Decimal(str(qty)) * unit_price
+        ticket.pricing_basis = "QTY"
+        pricing_info["basis"] = "QTY"
+        pricing_info["billable_qty"] = qty
+        pricing_info["net_kg"] = payload.get("net_kg")
+
+    if (
+        pricing_info["basis"] != "QTY"
+        and has_weights
+        and unit_price is not None
+        and unit
+        and unit.unit_type == "WEIGHT"
+    ):
+        net_kg = payload["gross_kg"] - payload["tare_kg"]
+        ticket.net_kg = net_kg
+        unit_name = (unit.name or "").strip().lower()
+        billable = None
+        if unit_name in ("tonne", "tonnes"):
+            billable = Decimal(str(net_kg)) / Decimal("1000")
+            billable = billable.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+        elif unit_name == "kg":
+            billable = Decimal(str(net_kg)).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+        else:
+            billable = None
+            ticket.total = None
+            ticket.pricing_basis = None
+        if billable is not None:
+            ticket.total = billable * unit_price
+            ticket.pricing_basis = "WEIGHT"
+            pricing_info["basis"] = "WEIGHT"
+            pricing_info["billable_qty"] = billable
+            pricing_info["net_kg"] = net_kg
+    return pricing_info
+
+
+def _validate_product_ewc(payload: dict, db: Session) -> Product | None:
+    product_id = payload.get("product_id")
+    if not product_id:
+        return None
+    product = (
+        db.execute(
+            select(Product)
+            .options(joinedload(Product.unit))
+            .where(Product.id == product_id)
+        )
+        .scalars()
+        .first()
+    )
+    if not product:
+        payload["errors"].append("Product not found.")
+        return None
+    return product
+
+
+def _validate_product_has_ewc_on_complete(
+    payload: dict, product: Product | None
+) -> None:
+    if _is_waste_transaction(payload.get("transaction_type")):
+        if product and product.ewc_code_id is None:
+            payload["errors"].append(
+                "Waste ticket requires an EWC code (set EWC on Product)."
+            )
+
+
+def _validate_required_on_complete(payload: dict) -> None:
+    transaction_type = payload.get("transaction_type")
+    is_waste_tx = _is_waste_transaction(transaction_type)
+    is_sale = transaction_type == TransactionTypeEnum.SALE.value
+
+    if not payload.get("direction"):
+        payload["errors"].append("Direction is required.")
+    if not payload.get("transaction_type"):
+        payload["errors"].append("Transaction type is required.")
+
+    if is_waste_tx:
+        if not payload.get("customer_id"):
+            payload["errors"].append(
+                "Customer is required to complete a waste ticket."
+            )
+        if not payload.get("product_id"):
+            payload["errors"].append("Product is required to complete a ticket.")
+        if not payload.get("destination_id"):
+            payload["errors"].append(
+                "Destination is required to complete a waste ticket."
+            )
+    elif is_sale:
+        if not payload.get("customer_id"):
+            payload["errors"].append(
+                "Customer is required to complete a sale ticket."
+            )
+        if not payload.get("product_id"):
+            payload["errors"].append("Product is required to complete a ticket.")
+
+
+def _is_waste_transaction(transaction_type: str | None) -> bool:
+    return transaction_type in (
+        TransactionTypeEnum.WASTEIN.value,
+        TransactionTypeEnum.WASTEOUT.value,
+    )
+
+
+def _apply_ticket_ewc_snapshot(ticket: Ticket, product: Product | None) -> None:
+    if not product or not product.ewc_code_id:
+        ticket.ewc_code_6 = None
+        ticket.ewc_code_display = None
+        ticket.ewc_description = None
+        ticket.ewc_hazardous = None
+        return
+
+    ewc = product.ewc_code
+    if not ewc:
+        ticket.ewc_code_6 = None
+        ticket.ewc_code_display = None
+        ticket.ewc_description = None
+        ticket.ewc_hazardous = None
+        return
+
+    ticket.ewc_code_6 = ewc.code_6
+    ticket.ewc_code_display = ewc.code_display
+    ticket.ewc_description = ewc.description
+    ticket.ewc_hazardous = ewc.hazardous
+
+
+def _validate_carrier_licence(payload: dict, db: Session) -> Haulier | None:
+    haulier_id = payload.get("haulier_id")
+    if not haulier_id:
+        return None
+    haulier = db.get(Haulier, haulier_id)
+    return haulier
+
+
+def _apply_carrier_licence_snapshot(
+    ticket: Ticket, haulier: Haulier | None
+) -> None:
+    ticket.carrier_licence_number = (
+        haulier.carrier_licence_number if haulier else None
+    )
+
+
+def _validate_waste_producer_customer(payload: dict, db: Session) -> Customer | None:
+    producer_id = payload.get("waste_producer_customer_id")
+    if not producer_id:
+        return None
+    producer = db.get(Customer, producer_id)
+    if not producer:
+        payload["errors"].append("Waste producer not found.")
+        return None
+    return producer
+
+
+def _format_customer_address(customer: Customer) -> str | None:
+    parts = [
+        customer.address_line1,
+        customer.address_line2,
+        customer.city,
+        customer.postcode,
+        customer.country,
+    ]
+    cleaned = [part.strip() for part in parts if part and part.strip()]
+    if not cleaned:
+        return None
+    return ", ".join(cleaned)
+
+
+def _apply_waste_producer_snapshot(
+    ticket: Ticket, producer: Customer | None
+) -> None:
+    if not producer:
+        ticket.waste_producer_name = None
+        ticket.waste_producer_address = None
+        return
+    ticket.waste_producer_name = producer.name
+    ticket.waste_producer_address = _format_customer_address(producer)
+
 def _net_negative(ticket: Ticket) -> bool:
     if ticket.gross_kg is None or ticket.tare_kg is None:
         return False
@@ -1215,6 +2059,59 @@ def _direction_transaction_warning(direction, transaction_type) -> bool:
     return False
 
 
+def _render_vehicle_suggestions(
+    request: Request,
+    ticket: Ticket,
+    vehicle: Vehicle | None,
+    default_customer: Customer | None,
+    default_haulier: Haulier | None,
+    *,
+    ticket_vehicle_reg: str | None = None,
+    oob_customer_options: list[tuple[str, str]] | None = None,
+    oob_haulier_options: list[tuple[str, str]] | None = None,
+    show_panel: bool = True,
+    errors: list[str] | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    has_vehicle_match = (
+        vehicle is not None
+        and (ticket.vehicle_id is None or ticket.vehicle_id == vehicle.id)
+    )
+    can_apply_customer = (
+        has_vehicle_match and default_customer is not None and ticket.customer_id is None
+    )
+    can_apply_haulier = (
+        has_vehicle_match and default_haulier is not None and ticket.haulier_id is None
+    )
+    return templates.TemplateResponse(request, 
+        "tickets/_vehicle_suggestions.html",
+        {
+            "request": request,
+            "ticket": ticket,
+            "vehicle": vehicle,
+            "default_customer": default_customer,
+            "default_haulier": default_haulier,
+            "show_panel": show_panel,
+            "has_vehicle_match": has_vehicle_match,
+            "vehicle_mismatch": (
+                vehicle is not None
+                and ticket.vehicle_id is not None
+                and ticket.vehicle_id != vehicle.id
+            ),
+            "ticket_vehicle_reg": ticket_vehicle_reg or "",
+            "oob_customer_options": oob_customer_options or [],
+            "oob_haulier_options": oob_haulier_options or [],
+            "oob_customer_selected": str(ticket.customer_id or ""),
+            "oob_haulier_selected": str(ticket.haulier_id or ""),
+            "can_apply_customer": can_apply_customer,
+            "can_apply_haulier": can_apply_haulier,
+            "can_apply_all": can_apply_customer and can_apply_haulier,
+            "errors": errors or [],
+        },
+        status_code=status_code,
+    )
+
+
 def _render_ticket_edit(
     request: Request,
     ticket: Ticket,
@@ -1222,11 +2119,25 @@ def _render_ticket_edit(
     *,
     errors: list[str],
     form: dict | None = None,
+    vehicle_reg: str | None = None,
     weight_warning: bool | None = None,
     direction_warning: bool | None = None,
     status_code: int = 400,
 ) -> HTMLResponse:
     invoice = db.get(Invoice, ticket.invoice_id) if ticket.invoice_id else None
+    product_id = None
+    if form and form.get("product_id"):
+        product_id = _parse_int(str(form.get("product_id")))
+    if product_id is None:
+        product_id = ticket.product_id
+    default_destination_id = None
+    unit_type = None
+    if product_id:
+        product = db.get(Product, product_id)
+        if product:
+            default_destination_id = product.default_destination_id
+            unit_type = product.unit.unit_type if product.unit else None
+    options = _load_ticket_options_with_enums(db)
     return templates.TemplateResponse(request, 
         "tickets/edit.html",
         {
@@ -1247,7 +2158,10 @@ def _render_ticket_edit(
             if direction_warning is None
             else direction_warning,
             "form": form or _ticket_to_form(ticket),
-            "options": _load_ticket_options(db),
+            "vehicle_reg": vehicle_reg if vehicle_reg is not None else _ticket_vehicle_reg(db, ticket),
+            "default_destination_id": default_destination_id,
+            "unit_type": unit_type,
+            "options": options,
             "enums": _ticket_enums(),
             **_active_lookup_options(ticket, db),
         },

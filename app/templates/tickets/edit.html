@@ -6,33 +6,29 @@
 <div class="page-header">
   <div>
     <h1>Ticket {{ ticket.ticket_no }}</h1>
-    <p class="muted">Edit ticket details and status.</p>
+    <div class="ticket-meta">
+      <span class="status-text status-{{ form.status | lower }}">{{ form.status }}</span>
+      <span>Created: {{ ticket.created_at.strftime("%d/%m/%Y %H:%M") if ticket.created_at else "" }}</span>
+      <span>Updated: {{ ticket.updated_at.strftime("%d/%m/%Y %H:%M") if ticket.updated_at else "" }}</span>
+    </div>
+    {% if invoice %}
+      <div class="ticket-meta">
+        <span>Invoiced on:</span>
+        <a href="/invoices/{{ invoice.id }}">{{ invoice.invoice_no }}</a>
+      </div>
+    {% endif %}
   </div>
-  <div class="actions">
+  <div class="actions btn-group">
     {% if is_open %}
-      <button type="submit" class="button" form="ticket-form" name="action" value="complete">
+      <button type="submit" class="btn btn--primary" form="ticket-form" name="action" value="complete">
         Mark Complete
       </button>
     {% endif %}
   </div>
 </div>
 
-{% if invoice %}
-  <div class="audit">
-    <div>
-      <strong>Invoiced on:</strong>
-      <a href="/invoices/{{ invoice.id }}">{{ invoice.invoice_no }}</a>
-    </div>
-  </div>
-{% endif %}
-
-<div class="audit">
-  <div><strong>Created:</strong> {{ ticket.created_at.strftime("%d/%m/%Y %H:%M") if ticket.created_at else "" }}</div>
-  <div><strong>Updated:</strong> {{ ticket.updated_at.strftime("%d/%m/%Y %H:%M") if ticket.updated_at else "" }}</div>
-</div>
-
 {% if completed or saved %}
-  <div class="alert alert-success" data-auto-dismiss>
+  <div class="notice" data-auto-dismiss>
     {{ "Ticket completed." if completed else "Saved." }}
   </div>
   <script>
@@ -58,140 +54,117 @@
   </div>
 {% endif %}
 
-<div id="mismatch-warning">
-  {% if direction_warning %}
-    {% include "tickets/_mismatch_warning.html" %}
-  {% endif %}
-</div>
-
-<div id="weight-warning">
-{% if weight_warning %}
-  <div class="alert">
-    Gross is lower than Tare - use Swap Weights.
-  </div>
-{% endif %}
-</div>
-
 <form id="ticket-form" class="ticket-form" method="post" action="/tickets/{{ ticket.id }}">
-  {% if ticket.status in ["COMPLETE", "VOID"] %}
-    <div class="alert">
-      This ticket is locked.
+  <section class="frame">
+    <div class="frame-header">
+      <h2>Ticket Info</h2>
     </div>
-  {% endif %}
-
-  <fieldset {% if ticket.status in ["COMPLETE", "VOID"] %}disabled{% endif %}>
-  <section class="card">
-    <h2>Ticket Info</h2>
-    <div class="form-grid">
-      <div class="field">
-        <label for="datetime">Date/time</label>
-        <input type="datetime-local" id="datetime" name="datetime" value="{{ form.datetime }}" required />
-      </div>
-      <div class="field">
-        <label for="direction">Direction</label>
-        <select
-          id="direction"
-          name="direction"
-          required
-          hx-get="/tickets/mismatch-warning"
-          hx-trigger="change"
-          hx-target="#mismatch-warning"
-          hx-include="#direction,#transaction_type"
-        >
-          <option value="">Select direction</option>
-          {% for value in enums.directions %}
-            <option value="{{ value }}" {% if form.direction|string == value|string %}selected{% endif %}>{{ value }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label for="transaction_type">Transaction type</label>
-        <select
-          id="transaction_type"
-          name="transaction_type"
-          required
-          hx-get="/tickets/mismatch-warning"
-          hx-trigger="change"
-          hx-target="#mismatch-warning"
-          hx-include="#direction,#transaction_type"
-        >
-          <option value="">Select transaction</option>
-          {% for value in enums.transaction_types %}
-            <option value="{{ value }}" {% if form.transaction_type|string == value|string %}selected{% endif %}>{{ value }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label>Status</label>
-        <input
-          type="text"
-          class="status-input status-{{ form.status | lower }}"
-          value="{{ form.status }}"
-          readonly
-        />
-      </div>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>Parties</h2>
-    <p class="help">If you select a vehicle with an owner set, the customer will default automatically.</p>
-    <div class="form-grid">
-      <div class="field">
-        <label for="customer_id">Customer</label>
-        <select id="customer_id" name="customer_id">
-          <option value="">Select customer</option>
-          {% for id, label in options.customers %}
-            <option value="{{ id }}" {% if form.customer_id|string == id|string %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label for="vehicle_id">Vehicle</label>
-        <select id="vehicle_id" name="vehicle_id">
-          <option value="">Select vehicle</option>
-          {% for id, label in options.vehicles %}
-            <option value="{{ id }}" {% if form.vehicle_id|string == id|string %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label for="product_id">Product</label>
-        <select
-          id="product_id"
-          name="product_id"
-          hx-get="/tickets/product-defaults"
-          hx-trigger="change"
-          hx-target="#pricing-defaults"
-          hx-include="[name='unit_price'],[name='product_id']"
-        >
-          <option value="">Select product</option>
-          {% for id, label in options.products %}
-            <option value="{{ id }}" {% if form.product_id|string == id|string %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>Optional Lookups</h2>
-    <div class="form-grid">
-      {% if is_open %}
+    <div class="frame-body">
+      <div class="form-grid">
         <div class="field">
-          <label for="haulier_id">Haulier</label>
-          <select id="haulier_id" name="haulier_id">
-            <option value="">Select haulier</option>
-            {% for id, label in hauliers %}
-              <option value="{{ id }}" {% if form.haulier_id|string == id|string %}selected{% endif %}>{{ label }}</option>
+          <label for="datetime">Date/time</label>
+          <input type="datetime-local" id="datetime" name="datetime" value="{{ form.datetime }}" required />
+        </div>
+        <div class="field">
+          <label for="direction">Direction</label>
+          <select id="direction" name="direction" required hx-get="/tickets/mismatch-warning" hx-trigger="change" hx-target="#mismatch-warning" hx-include="#direction,#transaction_type">
+            <option value="">Select direction</option>
+            {% for value, label in options.directions %}
+              <option value="{{ value }}" {% if form.direction == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
         </div>
         <div class="field">
+          <label for="transaction_type">Transaction type</label>
+          <select id="transaction_type" name="transaction_type" required hx-get="/tickets/mismatch-warning" hx-trigger="change" hx-target="#mismatch-warning" hx-include="#direction,#transaction_type">
+            <option value="">Select transaction</option>
+            {% for value, label in options.transaction_types %}
+              <option value="{{ value }}" {% if form.transaction_type == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <div id="mismatch-warning"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="frame-header">
+      <h2>Participants</h2>
+    </div>
+    <div class="frame-body">
+      <div class="participants">
+        <div class="form-grid">
+          <div class="field">
+            <label for="vehicle_reg">Vehicle reg</label>
+            <input type="text" id="vehicle_reg" name="reg" value="{{ vehicle_reg }}" class="plate-input" oninput="this.value = this.value.toUpperCase()" hx-get="/tickets/vehicle-suggest" hx-trigger="keyup changed delay:400ms" hx-target="#vehicle-suggestions" hx-vals='{"ticket_id":"{{ ticket.id }}"}' />
+            <div class="hint">Vehicle, customer and haulier auto inferred.</div>
+          </div>
+          <div class="field">
+            <label for="customer_id">Customer</label>
+            <select id="customer_id" name="customer_id">
+              <option value="">Select customer</option>
+              {% for id, label in options.customers %}
+                <option value="{{ id }}" {% if form.customer_id|string == id|string %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="haulier_id">Haulier</label>
+            <select id="haulier_id" name="haulier_id">
+              <option value="">Select haulier</option>
+              {% for id, label in options.hauliers %}
+                <option value="{{ id }}" {% if form.haulier_id|string == id|string %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div id="vehicle-suggestions"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="frame compact">
+    <div class="frame-header">
+      <h2>Material</h2>
+    </div>
+    <div class="frame-body">
+      <div class="form-grid">
+        <div class="field">
+          <label for="product_id">Product</label>
+          <select id="product_id" name="product_id" hx-get="/tickets/product-defaults" hx-trigger="change" hx-target="#pricing-defaults" hx-include="[name='unit_price'],[name='product_id']">
+            <option value="">Select product</option>
+            {% for id, label in options.products %}
+              <option value="{{ id }}" {% if form.product_id|string == id|string %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="frame frame-weights">
+    <div class="frame-header">
+      <h2>Weights</h2>
+    </div>
+    <div class="frame-body">
+      <div id="weights-block">
+        {% include "tickets/_weights.html" %}
+      </div>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="frame-header">
+      <h2>Logistics</h2>
+    </div>
+    <div class="frame-body">
+      <div class="form-grid">
+        <div class="field">
           <label for="driver_id">Driver</label>
           <select id="driver_id" name="driver_id">
             <option value="">Select driver</option>
-            {% for id, label in drivers %}
+            {% for id, label in options.drivers %}
               <option value="{{ id }}" {% if form.driver_id|string == id|string %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
@@ -200,7 +173,7 @@
           <label for="container_id">Container</label>
           <select id="container_id" name="container_id">
             <option value="">Select container</option>
-            {% for id, label in containers %}
+            {% for id, label in options.containers %}
               <option value="{{ id }}" {% if form.container_id|string == id|string %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
@@ -209,139 +182,216 @@
           <label for="destination_id">Destination</label>
           <select id="destination_id" name="destination_id">
             <option value="">Select destination</option>
-            {% for id, label in destinations %}
+            {% for id, label in options.destinations %}
               <option value="{{ id }}" {% if form.destination_id|string == id|string %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
         </div>
+        <div class="field">
+          <label for="yard_id">Yard (optional)</label>
+          <input type="hidden" name="yard_id" value="{{ form.yard_id }}" />
+          <input type="text" placeholder="Optional" disabled />
+        </div>
+        <div class="field">
+          <label for="area_id">Area (optional)</label>
+          <input type="hidden" name="area_id" value="{{ form.area_id }}" />
+          <input type="text" placeholder="Optional" disabled />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <details class="frame compliance-frame">
+    <summary class="frame-header">Compliance (for regulated loads)</summary>
+    <div class="frame-body">
+      <div class="form-grid">
+        <div class="field">
+          <label for="waste_code_id">Waste code</label>
+          <input type="hidden" name="waste_code_id" value="{{ form.waste_code_id }}" />
+          <div id="ewc-display">
+            <div class="readonly ewc-readout{% if ticket.ewc_code_display and ticket.ewc_description %} {% if ticket.ewc_hazardous %}is-hazardous{% else %}is-nonhazardous{% endif %}{% endif %}" title="{% if ticket.ewc_code_display and ticket.ewc_description %}{{ ticket.ewc_code_display }} - {{ ticket.ewc_description }}{% endif %}">
+              {% if ticket.ewc_code_display and ticket.ewc_description %}
+                {{ ticket.ewc_code_display }} - {{ ticket.ewc_description }}
+              {% else %}
+                --
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="waste_producer_customer_id">Waste producer</label>
+          <button type="button" class="btn btn--ghost" id="producer-toggle">
+            Producer different to customer?
+          </button>
+          <div
+            id="producer-select"
+            class="producer-select"
+            {% if form.waste_producer_customer_id %}style="display:block"{% else %}style="display:none"{% endif %}
+          >
+            <select id="waste_producer_customer_id" name="waste_producer_customer_id">
+              <option value="">Use customer</option>
+              {% for id, label in options.customers %}
+                <option value="{{ id }}" {% if form.waste_producer_customer_id|string == id|string %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn--ghost" id="producer-clear">Use customer</button>
+          </div>
+          <div
+            id="producer-hazard-hint"
+            class="hint"
+            {% if form.transaction_type in ["WASTEIN", "WASTEOUT"] and ticket.ewc_hazardous %}style="display:block"{% else %}style="display:none"{% endif %}
+          >
+            Hazardous waste requires producer details.
+          </div>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <section class="frame">
+    <div class="frame-header">
+      <h2>Pricing</h2>
+    </div>
+    <div class="frame-body">
+      {% set unit = ticket.product.unit if ticket.product and ticket.product.unit else None %}
+      {% set unit_name = unit.name if unit else "" %}
+      {% set unit_type = unit.unit_type if unit else "" %}
+
+      {% if ticket.status == "COMPLETE" %}
+        <div class="form-grid">
+          <div class="field">
+            <label>Quantity</label>
+            <div class="readonly">
+              {{ ticket.pricing_qty_snapshot if ticket.pricing_qty_snapshot is not none else "—" }}
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Unit</label>
+            <div class="readonly">{{ ticket.pricing_unit_name if ticket.pricing_unit_name else (unit_name if unit_name else "—") }}</div>
+          </div>
+
+          <div class="field">
+            <label>Unit price</label>
+            <div class="readonly">
+              {% if ticket.pricing_unit_price is not none %}
+                {{ "{:.2f}".format(ticket.pricing_unit_price) }}
+              {% else %}
+                —
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Total</label>
+            <div class="readonly">
+              {% if ticket.total is not none %}
+                {{ "{:.2f}".format(ticket.total) }}
+              {% else %}
+                —
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Pricing basis</label>
+            <div class="readonly">{{ ticket.pricing_basis if ticket.pricing_basis else "—" }}</div>
+          </div>
+
+          <div class="field">
+            <label>Billable</label>
+            <div class="readonly">
+              {% if ticket.pricing_billable_qty_snapshot is not none %}
+                {{ "{:.3f}".format(ticket.pricing_billable_qty_snapshot) }}{% if ticket.pricing_unit_name %} {{ ticket.pricing_unit_name }}{% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
       {% else %}
-        <div class="field">
-          <label>Haulier</label>
-          <div>{{ ticket.haulier.name if ticket.haulier else "—" }}</div>
+        <div class="form-grid">
+          <div class="field" id="qty-wrap">
+            <label for="qty">Quantity</label>
+            <input type="number" step="0.001" id="qty" name="qty" value="{{ form.qty }}" />
+            <div id="pricing-hint-count" class="hint" style="display:none">
+              Enter a quantity to price this ticket.
+            </div>
+            <div id="pricing-hint-weight" class="hint" style="display:none"></div>
+          </div>
+
+          <div class="field">
+            <label>Unit</label>
+            <div class="readonly">{{ unit_name if unit_name else "—" }}</div>
+          </div>
+
+          <div id="pricing-defaults">
+            {% with unit_price=form.unit_price, unit_name=unit_name %}
+              {% include "tickets/_pricing_defaults.html" %}
+            {% endwith %}
+          </div>
+
+          <div class="field">
+            <label for="total">Total</label>
+            <input type="text" id="total" name="total" value="{{ form.total }}" placeholder="-" readonly />
+          </div>
         </div>
-        <div class="field">
-          <label>Driver</label>
-          <div>{{ ticket.driver.name if ticket.driver else "—" }}</div>
-        </div>
-        <div class="field">
-          <label>Container</label>
-          <div>{{ ticket.container.name if ticket.container else "—" }}</div>
-        </div>
-        <div class="field">
-          <label>Destination</label>
-          <div>{{ ticket.destination.name if ticket.destination else "—" }}</div>
-        </div>
+
+        <input type="hidden" id="unit_type" value="{{ unit_type }}" />
       {% endif %}
-      <div class="field">
-        <label for="yard_id">Yard <span class="muted">TODO: Not wired yet</span></label>
-        <input type="hidden" name="yard_id" value="{{ form.yard_id }}" />
-        <input type="text" value="TODO: Not wired yet" disabled />
-      </div>
-      <div class="field">
-        <label for="area_id">Area <span class="muted">TODO: Not wired yet</span></label>
-        <input type="hidden" name="area_id" value="{{ form.area_id }}" />
-        <input type="text" value="TODO: Not wired yet" disabled />
-      </div>
-      <div class="field">
-        <label for="waste_code_id">Waste code <span class="muted">TODO: Not wired yet</span></label>
-        <input type="hidden" name="waste_code_id" value="{{ form.waste_code_id }}" />
-        <input type="text" value="TODO: Not wired yet" disabled />
-      </div>
-      <div class="field">
-        <label for="waste_producer_id">Waste producer <span class="muted">TODO: Not wired yet</span></label>
-        <input type="hidden" name="waste_producer_id" value="{{ form.waste_producer_id }}" />
-        <input type="text" value="TODO: Not wired yet" disabled />
-      </div>
-      <div class="field">
-        <label for="licence_id">Licence <span class="muted">TODO: Not wired yet</span></label>
-        <input type="hidden" name="licence_id" value="{{ form.licence_id }}" />
-        <input type="text" value="TODO: Not wired yet" disabled />
+    </div>
+  </section>
+
+  <section class="frame compact">
+    <div class="frame-header">
+      <h2>Flags</h2>
+    </div>
+    <div class="frame-body">
+      <div class="field checkbox">
+        <input type="checkbox" id="dont_invoice" name="dont_invoice" {% if form.dont_invoice %}checked{% endif %} />
+        <label for="dont_invoice">Don't invoice</label>
       </div>
     </div>
   </section>
 
-  <section class="card">
-    <h2>Weights</h2>
-    <div id="weights-block">
-      {% set show_weight_errors = false %}
-      {% include "tickets/_weights_block.html" %}
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>Pricing</h2>
-    <div class="form-grid">
-      <div class="field">
-        <label for="qty">Quantity</label>
-        <input type="number" step="0.001" id="qty" name="qty" value="{{ form.qty }}" />
-      </div>
-      {% if ticket.product and ticket.product.unit %}
-        <div class="field">
-          <label>Unit</label>
-          <div class="readonly">{{ ticket.product.unit.name }}</div>
-        </div>
-      {% endif %}
-      <div id="pricing-defaults">
-        {% with unit_price=form.unit_price %}
-          {% include "tickets/_pricing_defaults.html" %}
-        {% endwith %}
-      </div>
-      <div class="field">
-        <label for="total">Total</label>
-        <input
-          type="text"
-          id="total"
-          name="total"
-          value="{{ form.total }}"
-          placeholder="—"
-          readonly
-        />
-      </div>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>Flags</h2>
-    <div class="field checkbox">
-      <input type="checkbox" id="dont_invoice" name="dont_invoice" {% if form.dont_invoice %}checked{% endif %} />
-      <label for="dont_invoice">Don't invoice</label>
-    </div>
-  </section>
-  </fieldset>
-
-  <div class="actions">
+  <div class="actions btn-group">
     {% if ticket.status not in ["COMPLETE", "VOID"] %}
-      <button type="submit" name="action" value="save">Save</button>
+      <button type="submit" class="btn btn--primary" name="action" value="save">Save</button>
     {% endif %}
-    <a class="link-button" href="/tickets">Cancel</a>
+    <a class="btn btn--secondary" href="/tickets">Cancel</a>
   </div>
 </form>
 
-<section class="card">
-  <h2>Void Ticket</h2>
-  <form method="post" action="/tickets/{{ ticket.id }}">
-    <input type="hidden" name="action" value="void" />
-    <div class="form-grid">
-      <div class="field">
-        <label for="void_reason_id">Void reason</label>
-        <select id="void_reason_id" name="void_reason_id">
-          <option value="">Select reason</option>
-          {% for id, label in options.void_reasons %}
-            <option value="{{ id }}">{{ label }}</option>
-          {% endfor %}
-        </select>
+<section class="frame compact">
+  <div class="frame-header">
+    <h2>Void Ticket</h2>
+  </div>
+  <div class="frame-body">
+    <form method="post" action="/tickets/{{ ticket.id }}">
+      <input type="hidden" name="action" value="void" />
+      <div class="form-grid">
+        <div class="field">
+          <label for="void_reason_id">Void reason</label>
+          <select id="void_reason_id" name="void_reason_id">
+            <option value="">Select reason</option>
+            {% for id, label in options.void_reasons %}
+              <option value="{{ id }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="void_note">Note</label>
+          <input type="text" id="void_note" name="void_note" />
+        </div>
       </div>
-      <div class="field">
-        <label for="void_note">Note</label>
-        <input type="text" id="void_note" name="void_note" />
+      <div class="actions btn-group">
+        {% if ticket.status != "VOID" %}
+          <button type="submit" class="btn btn--danger">Void Ticket</button>
+        {% endif %}
       </div>
-    </div>
-    <div class="actions">
-      {% if ticket.status != "VOID" %}
-        <button type="submit" class="danger">Void Ticket</button>
-      {% endif %}
-    </div>
-  </form>
+    </form>
+  </div>
 </section>
 
 <script>
@@ -402,14 +452,135 @@
       updateTotal();
     }
 
+    function bindPricingMode() {
+      const unitType = document.getElementById("unit_type")?.value;
+      const countHint = document.getElementById("pricing-hint-count");
+      const weightHint = document.getElementById("pricing-hint-weight");
+      const qtyWrap = document.getElementById("qty-wrap");
+      const weightsWrap = document.getElementById("weights-wrap");
+
+      if (unitType === "COUNT") {
+        if (countHint) {
+          countHint.style.display = "block";
+        }
+        if (weightHint) {
+          weightHint.style.display = "none";
+        }
+        if (weightsWrap) {
+          weightsWrap.classList.add("muted");
+        }
+        if (qtyWrap) {
+          qtyWrap.classList.remove("muted");
+        }
+        return;
+      }
+
+      if (unitType === "WEIGHT") {
+        if (weightHint) {
+          weightHint.style.display = "block";
+        }
+        if (countHint) {
+          countHint.style.display = "none";
+        }
+        if (qtyWrap) {
+          qtyWrap.classList.add("muted");
+        }
+        if (weightsWrap) {
+          weightsWrap.classList.remove("muted");
+        }
+        return;
+      }
+
+      if (countHint) {
+        countHint.style.display = "none";
+      }
+      if (weightHint) {
+        weightHint.style.display = "none";
+      }
+      if (qtyWrap) {
+        qtyWrap.classList.remove("muted");
+      }
+      if (weightsWrap) {
+        weightsWrap.classList.remove("muted");
+      }
+    }
+
+    function bindProducerToggle() {
+      const toggle = document.getElementById("producer-toggle");
+      const selectWrap = document.getElementById("producer-select");
+      const select = document.getElementById("waste_producer_customer_id");
+      const clear = document.getElementById("producer-clear");
+
+      if (!toggle || !selectWrap || !select) {
+        return;
+      }
+
+      if (toggle.dataset.bound === "true") {
+        return;
+      }
+
+      toggle.dataset.bound = "true";
+
+      toggle.addEventListener("click", function () {
+        const isHidden = selectWrap.style.display === "none" || !selectWrap.style.display;
+        selectWrap.style.display = isHidden ? "block" : "none";
+        if (isHidden) {
+          select.focus();
+        }
+      });
+
+      clear.addEventListener("click", function () {
+        select.value = "";
+        selectWrap.style.display = "none";
+      });
+    }
+
+    function bindComplianceToggle() {
+      const compliance = document.querySelector("details.compliance-frame");
+      if (!compliance) {
+        return;
+      }
+
+      compliance.addEventListener("toggle", function () {
+        compliance.classList.toggle("is-open", compliance.open);
+      });
+    }
+
+    function applyDefaultDestination() {
+      const destination = document.getElementById("destination_id");
+      const defaultInput = document.getElementById("default_destination_id");
+      if (!destination || !defaultInput) {
+        return;
+      }
+      const defaultValue = defaultInput.value || "";
+      if (!defaultValue || destination.value) {
+        return;
+      }
+      const hasOption = Array.from(destination.options).some(
+        (option) => option.value === defaultValue
+      );
+      if (!hasOption) {
+        return;
+      }
+      destination.value = defaultValue;
+      destination.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
     bindCalculations();
+    bindPricingMode();
+    bindProducerToggle();
+    bindComplianceToggle();
+    applyDefaultDestination();
 
     document.body.addEventListener("htmx:afterSwap", function (event) {
       if (event.target && event.target.id === "weights-block") {
         bindCalculations();
       }
+      if (event.target && event.target.id === "pricing-defaults") {
+        applyDefaultDestination();
+        bindPricingMode();
+      }
     });
   })();
 </script>
-{% endblock %}
-
+{% endblock %}

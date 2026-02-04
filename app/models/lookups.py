@@ -17,6 +17,7 @@ class Haulier(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    carrier_licence_number: Mapped[str | None] = mapped_column(String(100))
     is_active: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.true()
     )
