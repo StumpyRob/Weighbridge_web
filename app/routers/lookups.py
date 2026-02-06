@@ -3,15 +3,14 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, true
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import Container, Destination, Driver, Haulier, Ticket
+from ..templating import templates
 
 router = APIRouter(prefix="/lookups")
-templates = Jinja2Templates(directory="app/templates")
 
 
 def _lookup_redirect_url(request: Request, base_path: str) -> str:

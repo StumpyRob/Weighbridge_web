@@ -4,17 +4,16 @@ import re
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models.base import utcnow
-from ..models import Customer, InvoiceFrequency
+from ..models import Customer
+from ..templating import templates
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 ACCOUNT_CODE_MAX_LEN = 16
 ACCOUNT_CODE_RE = re.compile(r"^[A-Z0-9-]+$")
 
@@ -79,14 +78,7 @@ async def customers_create(
         city=payload["city"],
         postcode=payload["postcode"],
         country=payload["country"],
-        vat_number=payload["vat_number"],
-        invoice_frequency_id=payload["invoice_frequency_id"],
-        payment_terms=payload["payment_terms"],
-        credit_limit=payload["credit_limit"],
         on_stop=payload["on_stop"],
-        cash_account=payload["cash_account"],
-        do_not_invoice=payload["do_not_invoice"],
-        must_have_po=payload["must_have_po"],
     )
     db.add(customer)
     try:
@@ -166,14 +158,7 @@ async def customers_update(
     customer.city = payload["city"]
     customer.postcode = payload["postcode"]
     customer.country = payload["country"]
-    customer.vat_number = payload["vat_number"]
-    customer.invoice_frequency_id = payload["invoice_frequency_id"]
-    customer.payment_terms = payload["payment_terms"]
-    customer.credit_limit = payload["credit_limit"]
     customer.on_stop = payload["on_stop"]
-    customer.cash_account = payload["cash_account"]
-    customer.do_not_invoice = payload["do_not_invoice"]
-    customer.must_have_po = payload["must_have_po"]
     customer.updated_at = utcnow()
     try:
         db.commit()
@@ -195,12 +180,7 @@ async def customers_update(
 
 
 def _load_options(db: Session) -> dict[str, list[tuple[str, str]]]:
-    frequencies = db.execute(
-        select(InvoiceFrequency).order_by(InvoiceFrequency.code)
-    ).scalars()
-    return {
-        "invoice_frequencies": [(str(row.id), row.code) for row in frequencies],
-    }
+    return {}
 
 
 def _parse_customer_form(form) -> dict:

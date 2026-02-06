@@ -1,0 +1,27 @@
+{% macro wip_field(field_id, label, placeholder="", hint="", input_type="text", checked=false) -%}
+  {% if input_type == "checkbox" %}
+    <div class="field wip-field">
+      <div class="checkbox">
+        <input type="checkbox" id="{{ field_id }}" disabled aria-disabled="true" {% if checked %}checked{% endif %} />
+        <label for="{{ field_id }}">
+          {{ label }}
+          <span class="wip-badge" title="Work in progress">WIP</span>
+        </label>
+      </div>
+    </div>
+  {% else %}
+    <div class="field wip-field">
+      <label for="{{ field_id }}">
+        {{ label }}
+        <span class="wip-badge" title="Work in progress">WIP</span>
+      </label>
+      <input
+        type="{{ input_type }}"
+        id="{{ field_id }}"
+        placeholder="{{ placeholder }}"
+        disabled
+        aria-disabled="true"
+      />
+    </div>
+  {% endif %}
+{%- endmacro %}

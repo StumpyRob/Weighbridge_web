@@ -4,7 +4,6 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.orm import Session
 
@@ -21,9 +20,9 @@ from ..models import (
     Ticket,
     VoidReason,
 )
+from ..templating import templates
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
 
 
@@ -273,8 +272,9 @@ async def invoices_generate_confirm(
 
         for ticket, product, tax_rate in ticket_rows:
             net = _money(ticket.total)
-            rate = _decimal(tax_rate.rate_percent) if tax_rate else Decimal("0")
-            vat = _money(net * rate / Decimal("100"))
+            raw_rate = _decimal(tax_rate.rate_percent) if tax_rate else Decimal("0")
+            rate = raw_rate / Decimal("100") if raw_rate > 1 else raw_rate
+            vat = _money(net * rate)
             gross = net + vat
 
             line = InvoiceLine(

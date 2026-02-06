@@ -101,3 +101,11 @@
     {% endfor %}
   </select>
 {% endif %}
+
+{% if oob_weights_form %}
+  <div id="weights-block" hx-swap-oob="innerHTML">
+    {% set form = oob_weights_form %}
+    {% set tare_auto_hint = oob_tare_auto_hint %}
+    {% include "tickets/_weights.html" %}
+  </div>
+{% endif %}

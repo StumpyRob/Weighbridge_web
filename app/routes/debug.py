@@ -1,15 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
 from ..models import Container, Destination, Driver, Haulier, Product, Ticket, Unit
+from ..templating import templates
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 
 
 @router.get("/debug/integrity", response_class=HTMLResponse)

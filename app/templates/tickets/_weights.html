@@ -59,6 +59,12 @@
   </div>
 </div>
 
+{% if tare_auto_hint %}
+  <div class="hint" id="tare-auto-hint">{{ tare_auto_hint }}</div>
+{% else %}
+  <div id="tare-auto-hint"></div>
+{% endif %}
+
 
 <div class="weights-actions btn-group">
   <button

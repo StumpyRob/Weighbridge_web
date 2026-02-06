@@ -10,3 +10,5 @@ app.db
 .mypy_cache/
 .ruff_cache/
 .coverage
+audit_field_usage_report.md
+audit_field_usage_report.csv

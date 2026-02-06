@@ -3,7 +3,6 @@ from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -11,9 +10,7 @@ from ..db import get_db
 from ..models.base import utcnow
 from ..models import (
     Destination,
-    NominalCode,
     Product,
-    ProductGroup,
     TaxRate,
     Unit,
     EwcCode,
@@ -23,14 +20,18 @@ from ..services.unit_rules import (
     is_allowed_weight_unit,
     normalize_unit_name,
 )
+from ..templating import templates
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 UNIT_TYPES = ("WEIGHT", "COUNT")
 SALE_TYPES = ("COUNT", "WEIGHT")
 UNIT_NAME_MAX_LEN = 50
 SYSTEM_WEIGHT_UNIT_NAME = "tonnes"
 SYSTEM_COUNT_UNIT_NAME = "Each"
+SYSTEM_TAX_RATE_STANDARD_CODE = "Standard (20%) \u2013 UK VAT"
+SYSTEM_TAX_RATE_ZERO_CODE = "Zero (0%) \u2013 UK VAT"
+LEGACY_TAX_RATE_STANDARD_CODES = ["Standard (20%)"]
+LEGACY_TAX_RATE_ZERO_CODES = ["Zero (0%)"]
 
 
 @router.get("/products", response_class=HTMLResponse)
@@ -40,6 +41,7 @@ def products_list(
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     _backfill_product_units(db)
+    _backfill_product_tax_rates(db)
     query = select(Product).order_by(Product.code)
     if q:
         like = f"%{q}%"
@@ -54,6 +56,7 @@ def products_list(
 @router.get("/products/new", response_class=HTMLResponse)
 def products_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     _ensure_system_units(db)
+    _ensure_system_tax_rates(db)
     return templates.TemplateResponse(request, 
         "products/new.html",
         {
@@ -72,6 +75,12 @@ async def products_create(
     form = await request.form()
     payload = _parse_product_form(form)
     payload["errors"].extend(_apply_sale_type_unit_selection(db, payload))
+    if not payload["errors"]:
+        tax_rate_error = _validate_tax_rate_selection(
+            db, payload.get("tax_rate_id"), required=True
+        )
+        if tax_rate_error:
+            payload["errors"].append(tax_rate_error)
     if not payload["errors"] and payload["unit_id"]:
         unit = db.get(Unit, payload["unit_id"])
         if unit and unit.unit_type == "WEIGHT" and not is_allowed_weight_unit(unit.name):
@@ -91,21 +100,10 @@ async def products_create(
     product = Product(
         code=payload["code"],
         description=payload["description"],
-        group_id=payload["group_id"],
         unit_id=payload["unit_id"],
         tax_rate_id=payload["tax_rate_id"],
-        nominal_code_id=payload["nominal_code_id"],
         unit_price=payload["unit_price"],
-        account_price=payload["account_price"],
-        cash_price=payload["cash_price"],
-        min_price=payload["min_price"],
-        max_price=payload["max_price"],
-        max_qty=payload["max_qty"],
-        excess_trigger=payload["excess_trigger"],
-        excess_price=payload["excess_price"],
         is_hazardous=payload["is_hazardous"],
-        final_disposal=payload["final_disposal"],
-        used_on_site=payload["used_on_site"],
         ewc_code_id=payload["ewc_code_id"],
         default_destination_id=payload["default_destination_id"],
     )
@@ -343,6 +341,7 @@ def products_edit(
     product_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
     _ensure_system_units(db)
+    _ensure_system_tax_rates(db)
     product = db.get(Product, product_id)
     if not product:
         return templates.TemplateResponse(request, 
@@ -351,6 +350,7 @@ def products_edit(
             status_code=404,
         )
     _backfill_product_units(db)
+    _backfill_product_tax_rates(db)
     return templates.TemplateResponse(request, 
         "products/edit.html",
         {
@@ -387,6 +387,15 @@ async def products_update(
             db, payload, current_unit_id=product.unit_id
         )
     )
+    if not payload["errors"]:
+        tax_rate_error = _validate_tax_rate_selection(
+            db,
+            payload.get("tax_rate_id"),
+            current_tax_rate_id=product.tax_rate_id,
+            required=True,
+        )
+        if tax_rate_error:
+            payload["errors"].append(tax_rate_error)
     if not payload["errors"] and payload["unit_id"]:
         unit = db.get(Unit, payload["unit_id"])
         if unit and unit.unit_type == "WEIGHT" and not is_allowed_weight_unit(unit.name):
@@ -411,21 +420,10 @@ async def products_update(
 
     product.code = payload["code"]
     product.description = payload["description"]
-    product.group_id = payload["group_id"]
     product.unit_id = payload["unit_id"]
     product.tax_rate_id = payload["tax_rate_id"]
-    product.nominal_code_id = payload["nominal_code_id"]
     product.unit_price = payload["unit_price"]
-    product.account_price = payload["account_price"]
-    product.cash_price = payload["cash_price"]
-    product.min_price = payload["min_price"]
-    product.max_price = payload["max_price"]
-    product.max_qty = payload["max_qty"]
-    product.excess_trigger = payload["excess_trigger"]
-    product.excess_price = payload["excess_price"]
     product.is_hazardous = payload["is_hazardous"]
-    product.final_disposal = payload["final_disposal"]
-    product.used_on_site = payload["used_on_site"]
     product.ewc_code_id = payload["ewc_code_id"]
     product.default_destination_id = payload["default_destination_id"]
     product.updated_at = utcnow()
@@ -439,7 +437,6 @@ def _load_options(
     current_ewc_code_id: int | None = None,
     current_default_destination_id: int | None = None,
 ) -> dict[str, list[tuple[str, str]]]:
-    groups = db.execute(select(ProductGroup).order_by(ProductGroup.code)).scalars()
     units = list(
         db.execute(
             select(Unit)
@@ -448,7 +445,6 @@ def _load_options(
         ).scalars()
     )
     tax_rates = db.execute(select(TaxRate).order_by(TaxRate.code)).scalars()
-    nominal_codes = db.execute(select(NominalCode).order_by(NominalCode.code)).scalars()
     ewc_codes = list(
         db.execute(
             select(EwcCode).where(EwcCode.active.is_(True)).order_by(EwcCode.code_6)
@@ -505,10 +501,8 @@ def _load_options(
                 )
                 destination_options = [(str(current.id), label)] + destination_options
     return {
-        "groups": [(str(row.id), row.code) for row in groups],
         "units": unit_options,
         "tax_rates": [(str(row.id), row.code) for row in tax_rates],
-        "nominal_codes": [(str(row.id), row.code) for row in nominal_codes],
         "ewc_codes": ewc_options,
         "destinations": destination_options,
     }
@@ -522,6 +516,8 @@ def _parse_product_form(form) -> dict:
     code = value("code")
     description = value("description")
     sale_type = _normalize_sale_type(value("sale_type"))
+    tax_rate_raw = value("tax_rate_id")
+    tax_rate_id = _parse_int(tax_rate_raw)
     if not code:
         errors.append("Code is required.")
     if not description:
@@ -530,6 +526,8 @@ def _parse_product_form(form) -> dict:
         errors.append("Sale type is required.")
     elif sale_type not in SALE_TYPES:
         errors.append("Sale type must be WEIGHT or COUNT.")
+    if not tax_rate_raw:
+        errors.append("Tax rate is required.")
     unit_price_raw = value("unit_price")
     if not unit_price_raw:
         errors.append("Unit price is required.")
@@ -544,47 +542,25 @@ def _parse_product_form(form) -> dict:
         "form": {
             "code": code,
             "description": description,
-            "group_id": value("group_id"),
             "sale_type": sale_type,
             "unit_id": value("unit_id"),
             "tax_rate_id": value("tax_rate_id"),
-            "nominal_code_id": value("nominal_code_id"),
             "unit_price": unit_price_raw,
-            "account_price": value("account_price"),
-            "cash_price": value("cash_price"),
-            "min_price": value("min_price"),
-            "max_price": value("max_price"),
-            "max_qty": value("max_qty"),
-            "excess_trigger": value("excess_trigger"),
-            "excess_price": value("excess_price"),
             "ewc_code_id": value("ewc_code_id"),
             "ewc_code_label": value("ewc_code_label"),
             "default_destination_id": value("default_destination_id"),
             "is_hazardous": value("is_hazardous"),
-            "final_disposal": value("final_disposal"),
-            "used_on_site": value("used_on_site"),
         },
         "sale_type": sale_type,
         "code": code,
         "description": description,
-        "group_id": _parse_int(value("group_id")),
         "unit_id": _parse_int(value("unit_id")),
-        "tax_rate_id": _parse_int(value("tax_rate_id")),
-        "nominal_code_id": _parse_int(value("nominal_code_id")),
+        "tax_rate_id": tax_rate_id,
         "unit_price": unit_price_value if unit_price_value is not None else Decimal("0.00"),
-        "account_price": _parse_decimal(value("account_price")),
-        "cash_price": _parse_decimal(value("cash_price")),
-        "min_price": _parse_decimal(value("min_price")),
-        "max_price": _parse_decimal(value("max_price")),
-        "max_qty": _parse_float(value("max_qty")),
-        "excess_trigger": _parse_float(value("excess_trigger")),
-        "excess_price": _parse_decimal(value("excess_price")),
         "ewc_code_id": _parse_int(value("ewc_code_id")),
         "ewc_code_label": value("ewc_code_label"),
         "default_destination_id": _parse_int(value("default_destination_id")),
         "is_hazardous": value("is_hazardous") == "on",
-        "final_disposal": value("final_disposal") == "on",
-        "used_on_site": value("used_on_site") == "on",
     }
 
 
@@ -592,25 +568,14 @@ def _empty_form() -> dict:
     return {
         "code": "",
         "description": "",
-        "group_id": "",
         "sale_type": "",
         "unit_id": "",
         "tax_rate_id": "",
-        "nominal_code_id": "",
         "unit_price": "",
-        "account_price": "",
-        "cash_price": "",
-        "min_price": "",
-        "max_price": "",
-        "max_qty": "",
-        "excess_trigger": "",
-        "excess_price": "",
         "ewc_code_id": "",
         "ewc_code_label": "",
         "default_destination_id": "",
         "is_hazardous": "",
-        "final_disposal": "",
-        "used_on_site": "",
     }
 
 
@@ -620,19 +585,10 @@ def _product_to_form(product: Product) -> dict:
     return {
         "code": product.code or "",
         "description": product.description or "",
-        "group_id": str(product.group_id or ""),
         "sale_type": sale_type,
         "unit_id": str(product.unit_id or ""),
         "tax_rate_id": str(product.tax_rate_id or ""),
-        "nominal_code_id": str(product.nominal_code_id or ""),
         "unit_price": _format_decimal(product.unit_price),
-        "account_price": _format_decimal(product.account_price),
-        "cash_price": _format_decimal(product.cash_price),
-        "min_price": _format_decimal(product.min_price),
-        "max_price": _format_decimal(product.max_price),
-        "max_qty": f"{product.max_qty}" if product.max_qty else "",
-        "excess_trigger": f"{product.excess_trigger}" if product.excess_trigger else "",
-        "excess_price": _format_decimal(product.excess_price),
         "ewc_code_id": str(product.ewc_code_id or ""),
         "ewc_code_label": (
             f"{product.ewc_code.code_display} - {product.ewc_code.description}"
@@ -641,8 +597,6 @@ def _product_to_form(product: Product) -> dict:
         ),
         "default_destination_id": str(product.default_destination_id or ""),
         "is_hazardous": "on" if product.is_hazardous else "",
-        "final_disposal": "on" if product.final_disposal else "",
-        "used_on_site": "on" if product.used_on_site else "",
     }
 
 
@@ -696,6 +650,23 @@ def _validate_unit_selection(
     return None
 
 
+def _validate_tax_rate_selection(
+    db: Session,
+    tax_rate_id: int | None,
+    current_tax_rate_id: int | None = None,
+    *,
+    required: bool = False,
+) -> str | None:
+    if tax_rate_id is None:
+        return "Tax rate is required." if required else None
+    tax_rate = db.get(TaxRate, tax_rate_id)
+    if not tax_rate:
+        return "Tax rate not found."
+    if not tax_rate.is_active and tax_rate_id != current_tax_rate_id:
+        return "Tax rate is inactive."
+    return None
+
+
 def _find_unit_by_names(db: Session, names: list[str]) -> Unit | None:
     normalized = [normalize_unit_name(name) for name in names]
     return (
@@ -743,6 +714,109 @@ def _ensure_system_units(db: Session) -> dict[str, Unit]:
         db.refresh(each)
 
     return {"kg": kg, "tonnes": tonnes, "each": each}
+
+
+def _ensure_system_tax_rates(db: Session) -> dict[str, TaxRate]:
+    now = utcnow()
+    updated = False
+
+    def get_or_create(
+        code: str,
+        *,
+        rate_percent: Decimal,
+        description: str,
+        aliases: list[str] | None = None,
+    ) -> TaxRate:
+        nonlocal updated
+
+        search_codes = [code] + (aliases or [])
+        matches = list(
+            db.execute(
+                select(TaxRate).where(
+                    func.lower(TaxRate.code).in_([item.lower() for item in search_codes])
+                )
+            ).scalars()
+        )
+        existing = next(
+            (
+                row
+                for row in matches
+                if row.code.strip().lower() == code.strip().lower()
+            ),
+            None,
+        ) or (matches[0] if matches else None)
+
+        if existing:
+            for other in matches:
+                if other.id == existing.id:
+                    continue
+                impacted_products = list(
+                    db.execute(
+                        select(Product).where(Product.tax_rate_id == other.id)
+                    ).scalars()
+                )
+                for product in impacted_products:
+                    product.tax_rate_id = existing.id
+                    product.updated_at = now
+                if impacted_products:
+                    updated = True
+                db.delete(other)
+                updated = True
+
+            changed = False
+            if existing.code != code:
+                existing.code = code
+                changed = True
+            existing_rate = (
+                Decimal(str(existing.rate_percent))
+                if existing.rate_percent is not None
+                else None
+            )
+            if existing_rate != rate_percent:
+                existing.rate_percent = rate_percent
+                changed = True
+            if existing.description != description:
+                existing.description = description
+                changed = True
+            if not existing.is_active:
+                existing.is_active = True
+                changed = True
+            if changed:
+                existing.updated_at = now
+                updated = True
+            return existing
+
+        tax_rate = TaxRate(
+            code=code,
+            description=description,
+            rate_percent=rate_percent,
+            is_active=True,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(tax_rate)
+        updated = True
+        return tax_rate
+
+    standard = get_or_create(
+        SYSTEM_TAX_RATE_STANDARD_CODE,
+        rate_percent=Decimal("0.20"),
+        description="UK VAT standard rate",
+        aliases=LEGACY_TAX_RATE_STANDARD_CODES,
+    )
+    zero = get_or_create(
+        SYSTEM_TAX_RATE_ZERO_CODE,
+        rate_percent=Decimal("0.00"),
+        description="UK VAT zero rate",
+        aliases=LEGACY_TAX_RATE_ZERO_CODES,
+    )
+
+    if updated:
+        db.commit()
+        db.refresh(standard)
+        db.refresh(zero)
+
+    return {"standard": standard, "zero": zero}
 
 
 def _apply_sale_type_unit_selection(
@@ -798,6 +872,23 @@ def _backfill_product_units(db: Session) -> None:
             product.unit_id = weight_unit_id
             product.updated_at = utcnow()
             updated = True
+
+    if updated:
+        db.commit()
+
+
+def _backfill_product_tax_rates(db: Session) -> None:
+    system_tax_rates = _ensure_system_tax_rates(db)
+    standard_rate = system_tax_rates["standard"]
+
+    updated = False
+    missing_tax_rates = db.execute(
+        select(Product).where(Product.tax_rate_id.is_(None))
+    ).scalars().all()
+    for product in missing_tax_rates:
+        product.tax_rate_id = standard_rate.id
+        product.updated_at = utcnow()
+        updated = True
 
     if updated:
         db.commit()

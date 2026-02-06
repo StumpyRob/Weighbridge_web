@@ -1,8 +1,12 @@
 {% extends "base.html" %}
+{% if DEV_MODE %}
+  {% set has_wip_fields = true %}
+{% endif %}
 
 {% block title %}Edit Ticket {{ ticket.ticket_no }} | Weighbridge Web{% endblock %}
 
 {% block content %}
+{% from "_wip.html" import wip_field %}
 <div class="page-header">
   <div>
     <h1>Ticket {{ ticket.ticket_no }}</h1>
@@ -20,7 +24,7 @@
   </div>
   <div class="actions btn-group">
     {% if is_open %}
-      <button type="submit" class="btn btn--primary" form="ticket-form" name="action" value="complete">
+      <button type="submit" class="btn btn--primary" form="ticket-form" name="action" value="complete" {% if customer_on_stop %}disabled title="Customer is ON STOP"{% endif %}>
         Mark Complete
       </button>
     {% endif %}
@@ -51,6 +55,12 @@
         <li>{{ error }}</li>
       {% endfor %}
     </ul>
+  </div>
+{% endif %}
+
+{% if customer_on_stop and not errors %}
+  <div class="alert">
+    Customer is ON STOP &mdash; ticket cannot be completed.
   </div>
 {% endif %}
 
@@ -97,7 +107,7 @@
         <div class="form-grid">
           <div class="field">
             <label for="vehicle_reg">Vehicle reg</label>
-            <input type="text" id="vehicle_reg" name="reg" value="{{ vehicle_reg }}" class="plate-input" oninput="this.value = this.value.toUpperCase()" hx-get="/tickets/vehicle-suggest" hx-trigger="keyup changed delay:400ms" hx-target="#vehicle-suggestions" hx-vals='{"ticket_id":"{{ ticket.id }}"}' />
+            <input type="text" id="vehicle_reg" name="reg" value="{{ vehicle_reg }}" class="plate-input" oninput="this.value = this.value.toUpperCase()" hx-get="/tickets/vehicle-suggest" hx-trigger="keyup changed delay:400ms, load" hx-target="#vehicle-suggestions" hx-include="#direction,#customer_id,#haulier_id,#gross_kg,#tare_kg,#readout_kg" hx-vals='{"ticket_id":"{{ ticket.id }}"}' />
             <div class="hint">Vehicle, customer and haulier auto inferred.</div>
           </div>
           <div class="field">
@@ -187,16 +197,10 @@
             {% endfor %}
           </select>
         </div>
-        <div class="field">
-          <label for="yard_id">Yard (optional)</label>
-          <input type="hidden" name="yard_id" value="{{ form.yard_id }}" />
-          <input type="text" placeholder="Optional" disabled />
-        </div>
-        <div class="field">
-          <label for="area_id">Area (optional)</label>
-          <input type="hidden" name="area_id" value="{{ form.area_id }}" />
-          <input type="text" placeholder="Optional" disabled />
-        </div>
+        {% if DEV_MODE %}
+          {{ wip_field("yard_id_wip", "Yard (optional)", "Optional", "Midsoft yard integration not implemented yet.") }}
+          {{ wip_field("area_id_wip", "Area (optional)", "Optional", "Midsoft area integration not implemented yet.") }}
+        {% endif %}
       </div>
     </div>
   </section>

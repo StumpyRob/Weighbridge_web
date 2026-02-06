@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,9 +14,9 @@ from ..models import (
     VehicleTare,
     VehicleType,
 )
+from ..templating import templates
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 
 
 @router.get("/vehicles", response_class=HTMLResponse)
@@ -234,9 +233,7 @@ def vehicle_tares_delete(
 
 def _load_options(db: Session) -> dict[str, list[tuple[str, str]]]:
     customers = db.execute(
-        select(Customer)
-        .where(Customer.on_stop.is_(False))
-        .order_by(Customer.name)
+        select(Customer).order_by(Customer.name)
     ).scalars()
     vehicle_types = db.execute(select(VehicleType).order_by(VehicleType.code)).scalars()
     hauliers = db.execute(
@@ -245,7 +242,13 @@ def _load_options(db: Session) -> dict[str, list[tuple[str, str]]]:
     drivers = db.execute(select(Driver).order_by(Driver.name)).scalars()
     containers = db.execute(select(Container).order_by(Container.name)).scalars()
     return {
-        "customers": [(str(row.id), row.name) for row in customers],
+        "customers": [
+            (
+                str(row.id),
+                f"{row.name} (ON STOP)" if row.on_stop else row.name,
+            )
+            for row in customers
+        ],
         "vehicle_types": [(str(row.id), row.code) for row in vehicle_types],
         "hauliers": [(str(row.id), row.name) for row in hauliers],
         "drivers": [(str(row.id), row.name) for row in drivers],

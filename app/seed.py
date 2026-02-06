@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from .models.base import utcnow
 
 from sqlalchemy import select, func
 
 from .db import SessionLocal
-from .models import Unit
+from .models import Product, TaxRate, Unit
 from .services.unit_rules import (
     canonical_weight_unit,
     is_allowed_weight_unit,
@@ -20,10 +22,26 @@ SEED_UNITS = [
     {"name": "Load", "unit_type": "COUNT"},
 ]
 
+SEED_TAX_RATES = [
+    {
+        "code": "Standard (20%) \u2013 UK VAT",
+        "legacy_codes": ["Standard (20%)"],
+        "description": "UK VAT standard rate",
+        "rate_percent": Decimal("0.20"),
+    },
+    {
+        "code": "Zero (0%) \u2013 UK VAT",
+        "legacy_codes": ["Zero (0%)"],
+        "description": "UK VAT zero rate",
+        "rate_percent": Decimal("0.00"),
+    },
+]
+
 
 def seed_units() -> int:
     now = utcnow()
     created = 0
+    dirty = False
     with SessionLocal() as session:
         for entry in SEED_UNITS:
             entry_name = entry["name"]
@@ -49,6 +67,7 @@ def seed_units() -> int:
                     updated = True
                 if updated:
                     exists.updated_at = now
+                    dirty = True
                 continue
             session.add(
                 Unit(
@@ -60,14 +79,102 @@ def seed_units() -> int:
                 )
             )
             created += 1
-        if created:
+            dirty = True
+        if dirty:
             session.commit()
     return created
 
 
+def seed_tax_rates() -> int:
+    now = utcnow()
+    created = 0
+    dirty = False
+
+    with SessionLocal() as session:
+        for entry in SEED_TAX_RATES:
+            canonical_code = entry["code"]
+            legacy_codes = list(entry.get("legacy_codes") or [])
+            match_codes = [canonical_code] + legacy_codes
+            matches = list(
+                session.execute(
+                    select(TaxRate).where(
+                        func.lower(TaxRate.code).in_([code.lower() for code in match_codes])
+                    )
+                ).scalars()
+            )
+            exists = next(
+                (
+                    row
+                    for row in matches
+                    if row.code.strip().lower() == canonical_code.strip().lower()
+                ),
+                None,
+            ) or (matches[0] if matches else None)
+
+            if exists:
+                for other in matches:
+                    if other.id == exists.id:
+                        continue
+                    impacted_products = list(
+                        session.execute(
+                            select(Product).where(Product.tax_rate_id == other.id)
+                        ).scalars()
+                    )
+                    for product in impacted_products:
+                        product.tax_rate_id = exists.id
+                        product.updated_at = now
+                    if impacted_products:
+                        dirty = True
+                    session.delete(other)
+                    dirty = True
+
+                updated = False
+                existing_rate = (
+                    Decimal(str(exists.rate_percent))
+                    if exists.rate_percent is not None
+                    else None
+                )
+                if exists.code != canonical_code:
+                    exists.code = canonical_code
+                    updated = True
+                if existing_rate != entry["rate_percent"]:
+                    exists.rate_percent = entry["rate_percent"]
+                    updated = True
+                if exists.description != entry.get("description"):
+                    exists.description = entry.get("description")
+                    updated = True
+                if not exists.is_active:
+                    exists.is_active = True
+                    updated = True
+                if updated:
+                    exists.updated_at = now
+                    dirty = True
+                continue
+
+            session.add(
+                TaxRate(
+                    code=canonical_code,
+                    description=entry.get("description"),
+                    rate_percent=entry["rate_percent"],
+                    is_active=True,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            created += 1
+            dirty = True
+
+        if dirty:
+            session.commit()
+
+    return created
+
+
 def main() -> None:
-    created = seed_units()
-    print(f"Seeded units: {created}")
+    created_units = seed_units()
+    created_tax_rates = seed_tax_rates()
+    print(f"Seeded units: {created_units}")
+    print(f"Seeded tax rates: {created_tax_rates}")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% if DEV_MODE %}{% set has_wip_fields = true %}{% endif %}
 
 {% block title %}Edit Customer {{ customer.account_code }} | Weighbridge Web{% endblock %}
 

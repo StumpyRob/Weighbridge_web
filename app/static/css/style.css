@@ -21,6 +21,31 @@ body {
   letter-spacing: 0.3px;
 }
 
+.site-header__right {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.dev-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .site-nav {
   display: flex;
   flex-wrap: wrap;
@@ -613,6 +638,38 @@ details.frame:not([open]) .frame-header {
   padding: 0.75rem 1rem;
   border-radius: 8px;
   margin-bottom: 1rem;
+}
+
+.dev-banner {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  color: #92400e;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  margin: 0 0 1rem;
+  font-weight: 600;
+}
+
+.wip-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.4rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: #fde68a;
+  border: 1px solid #f59e0b;
+  color: #92400e;
+}
+
+.wip-field input:disabled {
+  background: #f3f4f6;
+  color: #6b7280;
+  border-color: #e5e7eb;
 }
 
 .hint {

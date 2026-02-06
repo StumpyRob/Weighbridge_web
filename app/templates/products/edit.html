@@ -1,4 +1,7 @@
 {% extends "base.html" %}
+{% if DEV_MODE %}
+  {% set has_wip_fields = true %}
+{% endif %}
 
 {% block title %}Edit Product {{ product.code }} | Weighbridge Web{% endblock %}
 
