@@ -18,6 +18,7 @@ from ..models import (
     Product,
     TaxRate,
     Ticket,
+    Unit,
     VoidReason,
 )
 from ..templating import templates
@@ -758,6 +759,12 @@ def _invoiceable_ticket_filters(
         Ticket.unit_price >= 0,
         Ticket.total.is_not(None),
         Ticket.total > 0,
+        Ticket.product.has(
+            and_(
+                Product.unit_id.is_not(None),
+                Product.unit.has(Unit.is_active.is_(True)),
+            )
+        ),
     ]
     # Date filters are interpreted in server-local time (UTC by default).
     if date_from:

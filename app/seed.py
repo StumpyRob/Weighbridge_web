@@ -35,9 +35,9 @@ SEED_TAX_RATES = [
         "rate_percent": Decimal("0.20"),
     },
     {
-        "code": "Zero (0%) \u2013 UK VAT",
-        "legacy_codes": ["Zero (0%)"],
-        "description": "UK VAT zero rate",
+        "code": "Zero (0%)",
+        "legacy_codes": ["Zero (0%) \u2013 UK VAT"],
+        "description": "VAT zero rate",
         "rate_percent": Decimal("0.00"),
     },
 ]

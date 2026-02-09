@@ -24,6 +24,7 @@ from ..models import (
     TicketVoid,
     TicketStatusEnum,
     TransactionTypeEnum,
+    Unit,
     Vehicle,
     WasteProducerSourceEnum,
     VoidReason,
@@ -39,6 +40,7 @@ LOCKED_STATUSES = {TicketStatusEnum.COMPLETE.value, TicketStatusEnum.VOID.value}
 NEW_TICKET_DEDUP_SECONDS = 5
 WEIGHT_MAX_KG = Decimal("1000000")
 WEIGHT_QUANTIZE = Decimal("1")
+INACTIVE_PRODUCT_UNIT_ERROR = "Product unit is inactive. Choose a different product."
 
 
 @router.get("/tickets", response_class=HTMLResponse)
@@ -220,9 +222,24 @@ def ticket_product_defaults(
     if not parsed_product_id:
         return HTMLResponse("", status_code=204)
 
-    product = db.get(Product, parsed_product_id)
+    product = (
+        db.execute(
+            select(Product)
+            .options(joinedload(Product.unit))
+            .where(Product.id == parsed_product_id)
+        )
+        .scalars()
+        .first()
+    )
     if not product:
         return HTMLResponse("", status_code=204)
+    if not _product_has_active_unit(product):
+        return templates.TemplateResponse(
+            request,
+            "tickets/_product_defaults_error.html",
+            {"request": request, "error": INACTIVE_PRODUCT_UNIT_ERROR},
+            status_code=400,
+        )
 
     current_unit_price = unit_price.strip() if unit_price else ""
     parsed_current_unit_price = (
@@ -477,7 +494,14 @@ def _load_ticket_options(db: Session | None) -> dict[str, list[tuple[int, str]]]
             lambda row: row.registration,
         ),
         "products": as_options(
-            db.execute(select(Product).order_by(Product.description)).scalars().all(),
+            db.execute(
+                select(Product)
+                .join(Unit, Product.unit_id == Unit.id)
+                .where(Unit.is_active.is_(True))
+                .order_by(Product.description)
+            )
+            .scalars()
+            .all(),
             lambda row: row.description,
         ),
         "hauliers": as_options(
@@ -2435,7 +2459,17 @@ def _validate_product_ewc(payload: dict, db: Session) -> Product | None:
     if not product:
         payload["errors"].append("Product not found.")
         return None
+    if not _product_has_active_unit(product):
+        payload["errors"].append(INACTIVE_PRODUCT_UNIT_ERROR)
+        return None
     return product
+
+
+def _product_has_active_unit(product: Product | None) -> bool:
+    if product is None:
+        return False
+    unit = product.unit
+    return bool(unit and unit.is_active)
 
 
 def _validate_product_has_ewc_on_complete(

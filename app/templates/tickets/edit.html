@@ -163,7 +163,7 @@
       <div class="form-grid">
         <div class="field">
           <label for="product_id">Product</label>
-          <select id="product_id" name="product_id" hx-get="/tickets/product-defaults" hx-trigger="change" hx-target="#pricing-defaults" hx-include="#weights-form,#qty,#transaction_type,#unit_price,#product_id">
+          <select id="product_id" name="product_id" hx-get="/tickets/product-defaults" hx-trigger="change" hx-target="#pricing-defaults" hx-include="#weights-form,#qty,#transaction_type,#unit_price">
             <option value="">Select product</option>
             {% for id, label in options.products %}
               {% set product_meta = product_unit_meta.get(id|string, {}) if product_unit_meta is defined else {} %}
@@ -317,7 +317,7 @@
       {% if not is_open %}
         <div class="form-grid">
           <div class="field">
-            <label>Billable</label>
+            <label>Billable quantity</label>
             <div class="readonly">
               {% if ticket.pricing_billable_qty_snapshot is not none %}
                 {{ "{:.3f}".format(ticket.pricing_billable_qty_snapshot) }}{% if ticket.pricing_unit_name %} {{ ticket.pricing_unit_name }}{% endif %}
@@ -388,7 +388,10 @@
 
           <div class="field field-estimated-value">
             <label for="total" class="label-muted">Estimated charge</label>
-            <input type="text" id="total" name="total" value="{{ form.total }}" placeholder="-" class="input-muted estimate-value" readonly />
+            <div class="input-prefix">
+              <span class="input-prefix__symbol" aria-hidden="true">£</span>
+              <input type="text" id="total" name="total" value="{{ form.total }}" placeholder="-" class="input-muted input-with-prefix estimate-value" readonly />
+            </div>
             <div class="hint">Final price confirmed on invoice</div>
           </div>
         </div>
@@ -568,8 +571,20 @@
       recalculateTicketValues();
     }
 
+    function resolvedUnitType() {
+      const productSelect = document.getElementById("product_id");
+      if (productSelect && productSelect.selectedIndex >= 0) {
+        const selectedOption = productSelect.options[productSelect.selectedIndex];
+        const selectedType = (selectedOption?.dataset.unitType || "").trim().toUpperCase();
+        if (selectedType) {
+          return selectedType;
+        }
+      }
+      return (document.getElementById("unit_type")?.value || "").trim().toUpperCase();
+    }
+
     function bindPricingMode() {
-      const unitType = document.getElementById("unit_type")?.value;
+      const unitType = resolvedUnitType();
       const countHint = document.getElementById("pricing-hint-count");
       const weightHint = document.getElementById("pricing-hint-weight");
       const qtyWrap = document.getElementById("qty-wrap");
@@ -764,9 +779,12 @@
 
     document.body.addEventListener("htmx:afterSwap", function (event) {
       if (event.target && event.target.id === "weights-block") {
+        applySelectedProductMeta();
+        bindPricingMode();
         bindCalculations();
       }
       if (event.target && event.target.id === "pricing-defaults") {
+        applySelectedProductMeta();
         applyDefaultDestination();
         bindCalculations();
         bindPricingMode();

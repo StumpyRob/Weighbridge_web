@@ -30,9 +30,9 @@ UNIT_NAME_MAX_LEN = 50
 SYSTEM_WEIGHT_UNIT_NAME = "tonnes"
 SYSTEM_COUNT_UNIT_NAME = "Each"
 SYSTEM_TAX_RATE_STANDARD_CODE = "Standard (20%) \u2013 UK VAT"
-SYSTEM_TAX_RATE_ZERO_CODE = "Zero (0%) \u2013 UK VAT"
+SYSTEM_TAX_RATE_ZERO_CODE = "Zero (0%)"
 LEGACY_TAX_RATE_STANDARD_CODES = ["Standard (20%)"]
-LEGACY_TAX_RATE_ZERO_CODES = ["Zero (0%)"]
+LEGACY_TAX_RATE_ZERO_CODES = ["Zero (0%) \u2013 UK VAT"]
 
 
 @router.get("/products", response_class=HTMLResponse)
@@ -822,7 +822,7 @@ def _ensure_system_tax_rates(db: Session) -> dict[str, TaxRate]:
     zero = get_or_create(
         SYSTEM_TAX_RATE_ZERO_CODE,
         rate_percent=Decimal("0.00"),
-        description="UK VAT zero rate",
+        description="VAT zero rate",
         aliases=LEGACY_TAX_RATE_ZERO_CODES,
     )
 

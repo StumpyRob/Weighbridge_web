@@ -16,7 +16,7 @@
 {% set weights_locked = weights_locked if weights_locked is defined else (resolved_unit_type|string|upper == "COUNT") %}
 
 {% if is_open %}
-<div class="form-grid" id="weights-wrap">
+<div class="form-grid{% if weights_locked %} muted{% endif %}" id="weights-wrap">
   <div class="field">
     <label for="gross_kg">Gross kg</label>
     <input

@@ -61,7 +61,18 @@
       <label for="unit_price">
         {% if selected_unit %}Unit price (per {{ selected_unit }}){% else %}Unit price{% endif %}
       </label>
-      <input type="number" step="0.01" id="unit_price" name="unit_price" value="{{ form.unit_price }}" required />
+      <div class="input-prefix">
+        <span class="input-prefix__symbol" aria-hidden="true">£</span>
+        <input
+          type="number"
+          step="0.01"
+          id="unit_price"
+          name="unit_price"
+          value="{{ form.unit_price }}"
+          class="input-with-prefix"
+          required
+        />
+      </div>
     </div>
     {% if DEV_MODE %}
       {{ wip_field("nominal_code_wip", "Nominal code", "", "Stored on product but not used yet.") }}

@@ -87,6 +87,7 @@ def test_complete_blocks_negative_net(client, db_session):
 def test_complete_allows_walk_in_without_vehicle_or_reg(client, db_session):
     customer = Customer(account_code="C-WALK", name="Walk-in Customer")
     destination = Destination(name="Walk-in Destination")
+    unit = Unit(name="Walk Unit", unit_type="WEIGHT", is_active=True)
     ewc = EwcCode(
         code_6="010101",
         code_display="01 01 01",
@@ -99,6 +100,7 @@ def test_complete_allows_walk_in_without_vehicle_or_reg(client, db_session):
     product = Product(
         code="P-WALK",
         description="Walk-in",
+        unit=unit,
         unit_price=Decimal("5.00"),
         ewc_code=ewc,
     )
@@ -111,7 +113,7 @@ def test_complete_allows_walk_in_without_vehicle_or_reg(client, db_session):
         dont_invoice=False,
         paid=False,
     )
-    db_session.add_all([customer, destination, ewc, product, ticket])
+    db_session.add_all([customer, destination, unit, ewc, product, ticket])
     db_session.commit()
 
     response = client.post(
@@ -140,6 +142,7 @@ def test_complete_allows_walk_in_without_vehicle_or_reg(client, db_session):
 def test_complete_allows_reg_text_without_vehicle(client, db_session):
     customer = Customer(account_code="C-REG", name="Reg Customer")
     destination = Destination(name="Reg Destination")
+    unit = Unit(name="Reg Unit", unit_type="WEIGHT", is_active=True)
     ewc = EwcCode(
         code_6="020202",
         code_display="02 02 02",
@@ -152,6 +155,7 @@ def test_complete_allows_reg_text_without_vehicle(client, db_session):
     product = Product(
         code="P-REG",
         description="Reg ticket",
+        unit=unit,
         unit_price=Decimal("3.50"),
         ewc_code=ewc,
     )
@@ -164,7 +168,7 @@ def test_complete_allows_reg_text_without_vehicle(client, db_session):
         dont_invoice=False,
         paid=False,
     )
-    db_session.add_all([customer, destination, ewc, product, ticket])
+    db_session.add_all([customer, destination, unit, ewc, product, ticket])
     db_session.commit()
 
     response = client.post(
@@ -282,6 +286,7 @@ def test_complete_defaults_tare_from_vehicle_default(client, db_session):
     customer = Customer(account_code="C-DEF", name="Default Customer")
     destination = Destination(name="Default Destination")
     vehicle = Vehicle(registration="ABC123", default_tare_kg=5000)
+    unit = Unit(name="Default Tare Unit", unit_type="WEIGHT", is_active=True)
     ewc = EwcCode(
         code_6="040404",
         code_display="04 04 04",
@@ -294,6 +299,7 @@ def test_complete_defaults_tare_from_vehicle_default(client, db_session):
     product = Product(
         code="P-DEF",
         description="Default tare product",
+        unit=unit,
         unit_price=Decimal("6.00"),
         ewc_code=ewc,
     )
@@ -306,7 +312,7 @@ def test_complete_defaults_tare_from_vehicle_default(client, db_session):
         dont_invoice=False,
         paid=False,
     )
-    db_session.add_all([customer, destination, vehicle, ewc, product, ticket])
+    db_session.add_all([customer, destination, vehicle, unit, ewc, product, ticket])
     db_session.commit()
 
     response = client.post(

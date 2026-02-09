@@ -11,6 +11,7 @@ from app.models import (
     Ticket,
     TicketStatusEnum,
     TransactionTypeEnum,
+    Unit,
 )
 
 
@@ -60,12 +61,14 @@ def test_invoice_generate_confirm_blocks_on_stop_customer(client, db_session):
 
 def test_invoice_generate_confirm_ignores_open_tickets_for_stop_checks(client, db_session):
     customer = Customer(account_code="C-INV-MIX-1", name="Invoice Mixed", on_stop=False)
+    unit = Unit(name="Invoiceable Unit", unit_type="COUNT", is_active=True)
     product = Product(
         code="P-INV-MIX-1",
         description="Invoiceable Product",
+        unit=unit,
         unit_price=Decimal("10.00"),
     )
-    db_session.add_all([customer, product])
+    db_session.add_all([customer, unit, product])
     db_session.flush()
 
     invoiceable_ticket = Ticket(
