@@ -46,7 +46,7 @@
     </div>
   </section>
 
-  <div class="actions btn-group">
+  <div class="actions btn-group invoice-generate-actions">
     <button type="submit" class="btn btn--primary">Preview</button>
     <a class="btn btn--secondary" href="/invoices">Back</a>
   </div>
@@ -91,7 +91,7 @@
       </table>
     </div>
 
-    <form class="actions btn-group" method="post" action="/invoices/generate/confirm">
+    <form class="actions btn-group invoice-generate-actions" method="post" action="/invoices/generate/confirm">
       <input type="hidden" name="customer_id" value="{{ form.customer_id }}" />
       <input type="hidden" name="date_from" value="{{ form.date_from }}" />
       <input type="hidden" name="date_to" value="{{ form.date_to }}" />

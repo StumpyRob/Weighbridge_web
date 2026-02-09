@@ -33,6 +33,10 @@ SALE_TYPES = ("COUNT", "WEIGHT")
 UNIT_NAME_MAX_LEN = 50
 SYSTEM_WEIGHT_UNIT_NAME = "tonnes"
 SYSTEM_COUNT_UNIT_NAME = "Each"
+SYSTEM_TAX_RATE_STANDARD_CODE = "Standard (20%) \u2013 UK VAT"
+SYSTEM_TAX_RATE_ZERO_CODE = "Zero (0%)"
+LEGACY_TAX_RATE_STANDARD_CODES = ["Standard (20%)"]
+LEGACY_TAX_RATE_ZERO_CODES = ["Zero (0%) \u2013 UK VAT"]
 
 
 @router.get("/products", response_class=HTMLResponse)
@@ -761,6 +765,109 @@ def _ensure_system_units(db: Session) -> dict[str, Unit]:
         db.refresh(each)
 
     return {"kg": kg, "tonnes": tonnes, "each": each}
+
+
+def _ensure_system_tax_rates(db: Session) -> dict[str, TaxRate]:
+    now = utcnow()
+    updated = False
+
+    def get_or_create(
+        code: str,
+        *,
+        rate_percent: Decimal,
+        description: str,
+        aliases: list[str] | None = None,
+    ) -> TaxRate:
+        nonlocal updated
+
+        search_codes = [code] + (aliases or [])
+        matches = list(
+            db.execute(
+                select(TaxRate).where(
+                    func.lower(TaxRate.code).in_([item.lower() for item in search_codes])
+                )
+            ).scalars()
+        )
+        existing = next(
+            (
+                row
+                for row in matches
+                if row.code.strip().lower() == code.strip().lower()
+            ),
+            None,
+        ) or (matches[0] if matches else None)
+
+        if existing:
+            for other in matches:
+                if other.id == existing.id:
+                    continue
+                impacted_products = list(
+                    db.execute(
+                        select(Product).where(Product.tax_rate_id == other.id)
+                    ).scalars()
+                )
+                for product in impacted_products:
+                    product.tax_rate_id = existing.id
+                    product.updated_at = now
+                if impacted_products:
+                    updated = True
+                db.delete(other)
+                updated = True
+
+            changed = False
+            if existing.code != code:
+                existing.code = code
+                changed = True
+            existing_rate = (
+                Decimal(str(existing.rate_percent))
+                if existing.rate_percent is not None
+                else None
+            )
+            if existing_rate != rate_percent:
+                existing.rate_percent = rate_percent
+                changed = True
+            if existing.description != description:
+                existing.description = description
+                changed = True
+            if not existing.is_active:
+                existing.is_active = True
+                changed = True
+            if changed:
+                existing.updated_at = now
+                updated = True
+            return existing
+
+        tax_rate = TaxRate(
+            code=code,
+            description=description,
+            rate_percent=rate_percent,
+            is_active=True,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(tax_rate)
+        updated = True
+        return tax_rate
+
+    standard = get_or_create(
+        SYSTEM_TAX_RATE_STANDARD_CODE,
+        rate_percent=Decimal("0.20"),
+        description="UK VAT standard rate",
+        aliases=LEGACY_TAX_RATE_STANDARD_CODES,
+    )
+    zero = get_or_create(
+        SYSTEM_TAX_RATE_ZERO_CODE,
+        rate_percent=Decimal("0.00"),
+        description="VAT zero rate",
+        aliases=LEGACY_TAX_RATE_ZERO_CODES,
+    )
+
+    if updated:
+        db.commit()
+        db.refresh(standard)
+        db.refresh(zero)
+
+    return {"standard": standard, "zero": zero}
 
 
 def _apply_sale_type_unit_selection(
