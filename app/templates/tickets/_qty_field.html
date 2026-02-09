@@ -1,0 +1,21 @@
+{% set resolved_unit_type = (resolved_unit_type or "")|upper %}
+{% set qty_locked = resolved_unit_type == "WEIGHT" %}
+
+<div class="field" id="qty-wrap"{% if oob_qty %} hx-swap-oob="outerHTML"{% endif %}>
+  <label for="qty">Billable</label>
+  <input
+    type="number"
+    step="0.001"
+    id="qty"
+    name="qty"
+    value="{{ qty_value }}"
+    {% if qty_locked %}readonly{% endif %}
+  />
+  <div id="qty-mode-hint" class="hint" {% if qty_locked %}style="display:block"{% else %}style="display:none"{% endif %}>
+    WEIGHT product - qty not used.
+  </div>
+  <div id="pricing-hint-count" class="hint" style="display:none">
+    Enter a billable quantity for this ticket.
+  </div>
+  <div id="pricing-hint-weight" class="hint" style="display:none"></div>
+</div>

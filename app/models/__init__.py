@@ -29,7 +29,13 @@ from .lookups_misc import (
     Yard,
 )
 from .product import Product
-from .ticket import DirectionEnum, Ticket, TicketStatusEnum, TransactionTypeEnum
+from .ticket import (
+    DirectionEnum,
+    Ticket,
+    TicketStatusEnum,
+    TransactionTypeEnum,
+    WasteProducerSourceEnum,
+)
 from .ticket_sequence import TicketSequence
 from .ticket_void import TicketVoid
 from .user import User
@@ -73,6 +79,7 @@ __all__ = [
     "DirectionEnum",
     "TransactionTypeEnum",
     "TicketStatusEnum",
+    "WasteProducerSourceEnum",
     "TicketSequence",
     "TicketVoid",
     "User",

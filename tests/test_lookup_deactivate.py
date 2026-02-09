@@ -66,3 +66,16 @@ def test_lookup_deactivate_guard(client, db_session, lookup_ticket, key, path):
     refreshed = db_session.get(type(record), record.id)
     assert refreshed is not None
     assert refreshed.is_active is True
+
+
+def test_drivers_list_renders_direct_edit_link(client, db_session):
+    driver = Driver(name="Clickable Driver", is_active=True)
+    db_session.add(driver)
+    db_session.commit()
+
+    response = client.get("/lookups/drivers")
+
+    assert response.status_code == 200
+    assert f'<a class="btn btn--ghost" href="/lookups/drivers/{driver.id}/edit">Edit</a>' in response.text
+    assert f'href="/lookups/drivers/{driver.id}"' not in response.text
+    assert "stretch-link" not in response.text

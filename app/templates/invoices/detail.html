@@ -8,6 +8,9 @@
     <h1>{{ invoice.invoice_no }}</h1>
     <p class="muted">{{ customer.name if customer else "" }}</p>
   </div>
+  <div class="actions btn-group">
+    <a class="btn btn--secondary" href="/invoices">Back</a>
+  </div>
 </div>
 
 {% if errors %}
@@ -29,6 +32,18 @@
   </div>
 {% endif %}
 
+{% if paid %}
+  <div class="alert">
+    Invoice {{ invoice.invoice_no }} marked as paid.
+  </div>
+{% endif %}
+
+{% if voided %}
+  <div class="alert">
+    Invoice {{ invoice.invoice_no }} voided.
+  </div>
+{% endif %}
+
 <section class="card">
   <h2>Summary</h2>
   <div class="form-grid">
@@ -43,30 +58,55 @@
 
 <section class="card">
   <h2>Mark Paid</h2>
-  <form class="inline-form btn-group" method="post" action="/invoices/{{ invoice.id }}/paid">
-    <select name="payment_method_id">
-      <option value="">Select payment method</option>
-      {% for method in payment_methods %}
-        <option value="{{ method.id }}">{{ method.code }}</option>
-      {% endfor %}
-    </select>
-    <input type="datetime-local" name="paid_at" />
-    <button type="submit" class="btn btn--primary">Mark Paid</button>
-  </form>
+  {% if invoice.status == "VOID" %}
+    <p class="muted">Invoice is VOID and cannot be modified.</p>
+  {% elif invoice.status == "PAID" %}
+    <p class="muted">Already paid.</p>
+  {% else %}
+    <form class="invoice-action-form form-grid" method="post" action="/invoices/{{ invoice.id }}/paid">
+      <div class="field">
+        <label for="payment_method_id">Payment method</label>
+        <select id="payment_method_id" name="payment_method_id">
+          <option value="">Select payment method</option>
+          {% for method in payment_methods %}
+            <option value="{{ method.id }}">{{ method.code }}</option>
+          {% endfor %}
+        </select>
+        {% if not payment_methods %}
+          <div class="hint">No payment methods configured (run seed)</div>
+        {% endif %}
+      </div>
+      <div class="field">
+        <label for="paid_at">Paid date</label>
+        <input type="datetime-local" id="paid_at" name="paid_at" />
+      </div>
+      <button type="submit" class="btn btn--primary">Mark Paid</button>
+    </form>
+  {% endif %}
 </section>
 
 <section class="card">
   <h2>Void Invoice</h2>
-  <form class="inline-form btn-group" method="post" action="/invoices/{{ invoice.id }}/void">
-    <select name="void_reason_id">
-      <option value="">Select reason</option>
-      {% for reason in void_reasons %}
-        <option value="{{ reason.id }}">{{ reason.code }}</option>
-      {% endfor %}
-    </select>
-    <input type="text" name="void_note" placeholder="Reason note" />
-    <button type="submit" class="btn btn--danger">Void</button>
-  </form>
+  <p class="muted">Void this invoice only when it should no longer be billed.</p>
+  {% if invoice.status == "VOID" %}
+    <p class="muted">Invoice is VOID and cannot be modified.</p>
+  {% elif invoice.status == "PAID" %}
+    <p class="muted">Invoice is PAID and cannot be modified.</p>
+  {% else %}
+    <form class="inline-form btn-group" method="post" action="/invoices/{{ invoice.id }}/void">
+      <select name="void_reason_id">
+        <option value="">Select reason</option>
+        {% for reason in void_reasons %}
+          <option value="{{ reason.id }}">{{ reason.code }}</option>
+        {% endfor %}
+      </select>
+      {% if not void_reasons %}
+        <div class="hint">No void reasons configured (run seed)</div>
+      {% endif %}
+      <input type="text" name="void_note" placeholder="Reason note" />
+      <button type="submit" class="btn btn--danger">Void</button>
+    </form>
+  {% endif %}
 </section>
 
 <section class="card">

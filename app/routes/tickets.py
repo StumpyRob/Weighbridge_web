@@ -25,9 +25,11 @@ from ..models import (
     TicketStatusEnum,
     TransactionTypeEnum,
     Vehicle,
+    WasteProducerSourceEnum,
     VoidReason,
     Yard,
 )
+from ..security import validate_no_html, validate_no_html_fields
 from ..templating import templates
 
 router = APIRouter()
@@ -180,6 +182,7 @@ def tickets_quick_create(request: Request, db: Session = Depends(get_db)) -> HTM
         status=TicketStatusEnum.OPEN.value,
         direction=DirectionEnum.INWARD.value,
         transaction_type=TransactionTypeEnum.WASTEIN.value,
+        waste_producer_source=WasteProducerSourceEnum.CUSTOMER.value,
         dont_invoice=False,
         paid=False,
     )
@@ -191,34 +194,85 @@ def tickets_quick_create(request: Request, db: Session = Depends(get_db)) -> HTM
 @router.get("/tickets/product-defaults", response_class=HTMLResponse)
 def ticket_product_defaults(
     request: Request,
-    product_id: int | None = Query(None),
+    product_id: str | None = Query(None),
+    ticket_id: str | None = Query(None),
+    qty: str | None = Query(None),
+    gross_kg: str | None = Query(None),
+    tare_kg: str | None = Query(None),
+    net_kg: str | None = Query(None),
+    readout_kg: str | None = Query(None),
     unit_price: str | None = Query(None),
     transaction_type: str | None = Query(None),
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    if not product_id:
+    product_id_values = request.query_params.getlist("product_id")
+    parsed_product_id = None
+    for raw in product_id_values:
+        candidate = _parse_int(str(raw).strip())
+        if candidate is not None:
+            parsed_product_id = candidate
+            break
+    if parsed_product_id is None and product_id is not None:
+        parsed_product_id = _parse_int(str(product_id).strip())
+
+    parsed_ticket_id = _parse_int(str(ticket_id).strip()) if ticket_id else None
+
+    if not parsed_product_id:
         return HTMLResponse("", status_code=204)
 
-    product = db.get(Product, product_id)
+    product = db.get(Product, parsed_product_id)
     if not product:
         return HTMLResponse("", status_code=204)
 
     current_unit_price = unit_price.strip() if unit_price else ""
-
-    unit_price_value = (
-        current_unit_price if current_unit_price != "" else product.unit_price
+    parsed_current_unit_price = (
+        _parse_decimal(current_unit_price) if current_unit_price else None
     )
+    if current_unit_price:
+        # Preserve user-entered value during HTMX refresh; format only when numeric.
+        unit_price_display = (
+            f"{parsed_current_unit_price:.2f}"
+            if parsed_current_unit_price is not None
+            else current_unit_price
+        )
+    else:
+        unit_price_display = (
+            f"{product.unit_price:.2f}" if product.unit_price is not None else ""
+        )
 
     ewc = product.ewc_code if product else None
     unit_name = product.unit.name if product and product.unit else ""
     unit_type = product.unit.unit_type if product and product.unit else ""
+    resolved_unit_type = (unit_type or "").upper()
+    qty_value = qty.strip() if qty is not None else ""
+
+    weights_ticket = db.get(Ticket, parsed_ticket_id) if parsed_ticket_id else None
+    weights_form = None
+    weights_is_open = False
+    if weights_ticket is not None:
+        gross_raw = (gross_kg or "").strip()
+        tare_raw = (tare_kg or "").strip()
+        readout_raw = (readout_kg or "").strip()
+        gross_value = _parse_float(gross_raw)
+        tare_value = _parse_float(tare_raw)
+        net_value = _parse_float((net_kg or "").strip())
+        if net_value is None and gross_value is not None and tare_value is not None:
+            net_value = gross_value - tare_value
+        weights_form = _weights_form_from_values(
+            ticket=weights_ticket,
+            gross_raw=gross_raw,
+            tare_raw=tare_raw,
+            readout_raw=readout_raw,
+            net_value=net_value,
+        )
+        weights_form["product_id"] = str(parsed_product_id or weights_ticket.product_id or "")
+        weights_is_open = _is_open_ticket(weights_ticket)
+
     return templates.TemplateResponse(request, 
         "tickets/_product_defaults.html",
         {
             "request": request,
-            "unit_price": f"{unit_price_value:.2f}"
-            if unit_price_value is not None
-            else "",
+            "unit_price": unit_price_display,
             "ewc_code_display": ewc.code_display if ewc else None,
             "ewc_description": ewc.description if ewc else None,
             "ewc_hazardous": bool(ewc.hazardous) if ewc else False,
@@ -226,6 +280,13 @@ def ticket_product_defaults(
             "unit_type": unit_type,
             "unit_name": unit_name,
             "transaction_type": transaction_type or "",
+            "resolved_unit_type": resolved_unit_type,
+            "qty_value": qty_value,
+            "oob_qty": True,
+            "weights_ticket": weights_ticket,
+            "weights_form": weights_form,
+            "weights_is_open": weights_is_open,
+            "weights_locked": resolved_unit_type == "COUNT",
         },
     )
 
@@ -269,6 +330,22 @@ def _load_ticket_options_with_enums(db: Session) -> dict:
     }
 
 
+def _load_product_unit_meta(db: Session | None) -> dict[str, dict[str, str]]:
+    if db is None:
+        return {}
+    products = db.execute(
+        select(Product).options(joinedload(Product.unit)).order_by(Product.id)
+    ).scalars().all()
+    meta: dict[str, dict[str, str]] = {}
+    for product in products:
+        unit = product.unit
+        meta[str(product.id)] = {
+            "unit_type": (unit.unit_type if unit and unit.unit_type else ""),
+            "unit_name": (unit.name if unit and unit.name else ""),
+        }
+    return meta
+
+
 @router.get("/tickets/vehicle-suggest", response_class=HTMLResponse)
 def tickets_vehicle_suggest(
     request: Request,
@@ -278,6 +355,7 @@ def tickets_vehicle_suggest(
     direction: str | None = Query(None),
     customer_id: str | None = Query(None),
     haulier_id: str | None = Query(None),
+    driver_id: str | None = Query(None),
     gross_kg: str | None = Query(None),
     tare_kg: str | None = Query(None),
     readout_kg: str | None = Query(None),
@@ -298,7 +376,6 @@ def tickets_vehicle_suggest(
     if not vehicle:
         return HTMLResponse("", status_code=204)
 
-    has_vehicle_match = ticket.vehicle_id is None or ticket.vehicle_id == vehicle.id
     default_customer = (
         db.get(Customer, vehicle.default_customer_id)
         if vehicle.default_customer_id
@@ -309,78 +386,31 @@ def tickets_vehicle_suggest(
         if vehicle.default_haulier_id
         else None
     )
-
+    default_driver = db.get(Driver, vehicle.driver_id) if vehicle.driver_id else None
     selected_customer_id = _parse_int(str(customer_id or "").strip())
     selected_haulier_id = _parse_int(str(haulier_id or "").strip())
-    gross_raw = str(gross_kg or "").strip()
-    tare_raw = str(tare_kg or "").strip()
-    readout_raw = str(readout_kg or "").strip()
-    gross_value = _parse_float(gross_raw)
-    tare_value = _parse_float(tare_raw)
+    selected_driver_id = _parse_int(str(driver_id or "").strip())
 
-    applied_customer = False
-    applied_haulier = False
-    applied_tare = False
+    suggested_tare_kg = None
+    if vehicle.default_tare_kg is not None:
+        tare_value = Decimal(str(vehicle.default_tare_kg))
+        if tare_value > 0:
+            suggested_tare_kg = tare_value
+
     errors: list[str] = []
-
-    if has_vehicle_match:
-        if (
-            selected_customer_id is None
-            and ticket.customer_id is None
-            and default_customer
-        ):
-            if default_customer.on_stop:
-                errors.append("Default customer is on stop.")
-            else:
-                selected_customer_id = default_customer.id
-                applied_customer = True
-
-        if (
-            selected_haulier_id is None
-            and ticket.haulier_id is None
-            and default_haulier
-        ):
-            if not default_haulier.is_active:
-                errors.append("Default haulier is inactive.")
-            else:
-                selected_haulier_id = default_haulier.id
-                applied_haulier = True
-
-    oob_customer_options = None
-    oob_haulier_options = None
-    if applied_customer or applied_haulier:
-        options = _load_ticket_options(db)
-        if applied_customer:
-            oob_customer_options = options["customers"]
-        if applied_haulier:
-            oob_haulier_options = options["hauliers"]
-
-    oob_weights_form = None
-    oob_tare_auto_hint = None
-    if has_vehicle_match:
-        should_default_tare = tare_value is None or tare_value <= 0
-        vehicle_default_tare = (
-            float(vehicle.default_tare_kg) if vehicle.default_tare_kg is not None else 0.0
+    warnings: list[str] = []
+    if default_customer and default_customer.on_stop:
+        warnings.append(
+            "Customer is ON STOP - allowed to record ticket; cannot complete/invoice."
         )
-        if should_default_tare and vehicle_default_tare > 0:
-            tare_value = vehicle_default_tare
-            tare_raw = f"{tare_value:.0f}"
-            applied_tare = True
-            net_value = (
-                gross_value - tare_value
-                if gross_value is not None and tare_value
-                else None
-            )
-            oob_weights_form = _ticket_to_form(ticket)
-            if gross_kg is not None:
-                oob_weights_form["gross_kg"] = gross_raw
-            oob_weights_form["tare_kg"] = tare_raw
-            if readout_kg is not None:
-                oob_weights_form["readout_kg"] = readout_raw
-            oob_weights_form["net_kg"] = (
-                f"{net_value:.0f}" if net_value is not None else ""
-            )
-            oob_tare_auto_hint = "Tare auto-filled from vehicle default."
+    if default_haulier and _is_haulier_on_stop(default_haulier):
+        warnings.append(
+            "Haulier is ON STOP - allowed to record ticket; cannot complete/invoice."
+        )
+    if default_haulier and not default_haulier.is_active:
+        errors.append("Suggested haulier is inactive.")
+    if default_driver and not default_driver.is_active:
+        errors.append("Suggested driver is inactive.")
 
     return _render_vehicle_suggestions(
         request,
@@ -388,13 +418,18 @@ def tickets_vehicle_suggest(
         vehicle,
         default_customer,
         default_haulier,
+        default_driver,
+        suggested_tare_kg=suggested_tare_kg,
         ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
         current_customer_id=selected_customer_id,
         current_haulier_id=selected_haulier_id,
-        oob_customer_options=oob_customer_options,
-        oob_haulier_options=oob_haulier_options,
-        oob_weights_form=oob_weights_form if applied_tare else None,
-        oob_tare_auto_hint=oob_tare_auto_hint,
+        current_driver_id=selected_driver_id,
+        oob_customer_options=None,
+        oob_haulier_options=None,
+        oob_driver_options=None,
+        oob_weights_form=None,
+        oob_tare_auto_hint=None,
+        warnings=warnings,
         errors=errors,
     )
 
@@ -470,7 +505,13 @@ def _load_ticket_options(db: Session | None) -> dict[str, list[tuple[int, str]]]
             lambda row: row.code,
         ),
         "void_reasons": as_options(
-            db.execute(select(VoidReason).order_by(VoidReason.code)).scalars().all(),
+            db.execute(
+                select(VoidReason)
+                .where(VoidReason.is_active.is_(True))
+                .order_by(VoidReason.code)
+            )
+            .scalars()
+            .all(),
             lambda row: row.description or row.code,
         ),
     }
@@ -599,6 +640,64 @@ def _is_ticket_locked(ticket: Ticket) -> bool:
     return _status_value(ticket.status) in LOCKED_STATUSES
 
 
+def _ticket_locked_message(ticket: Ticket) -> str:
+    if _status_value(ticket.status) == TicketStatusEnum.VOID.value:
+        return "This ticket is void and cannot be edited."
+    return "This ticket is complete and cannot be edited."
+
+
+def _is_haulier_on_stop(haulier: Haulier | None) -> bool:
+    return bool(getattr(haulier, "on_stop", False)) if haulier else False
+
+
+def _is_other_void_reason(reason: VoidReason | None) -> bool:
+    if not reason:
+        return False
+    code = (reason.code or "").strip().lower()
+    description = (reason.description or "").strip().lower()
+    return code == "other" or description == "other"
+
+
+def _on_stop_blockers(
+    db: Session, customer_id: int | None, haulier_id: int | None
+) -> list[str]:
+    blockers: list[str] = []
+    if customer_id:
+        customer = db.get(Customer, customer_id)
+        if customer and customer.on_stop:
+            blockers.append("Customer")
+    if haulier_id:
+        haulier = db.get(Haulier, haulier_id)
+        if _is_haulier_on_stop(haulier):
+            blockers.append("Haulier")
+    return blockers
+
+
+def _on_stop_completion_error(blockers: list[str]) -> str:
+    if not blockers:
+        return ""
+    if len(blockers) == 1:
+        subject = blockers[0]
+    else:
+        subject = "Customer and Haulier"
+    return (
+        f"Cannot complete ticket: {subject} is ON STOP. "
+        "You may record the ticket, but it cannot be completed/invoiced until stop is removed."
+    )
+
+
+def _on_stop_banner_message(blockers: list[str]) -> str:
+    if not blockers:
+        return ""
+    if len(blockers) == 1:
+        subject = blockers[0]
+    else:
+        subject = "Customer and Haulier"
+    return (
+        f"{subject} is ON STOP - allowed to record ticket; cannot complete/invoice."
+    )
+
+
 def _expected_weigh_in_field(direction) -> str:
     direction_value = _status_value(direction)
     return "tare_kg" if direction_value == DirectionEnum.OUTWARD.value else "gross_kg"
@@ -677,7 +776,7 @@ def _validate_lookup_fields(
     return errors
 
 
-@router.get("/tickets/{ticket_id}", response_class=HTMLResponse)
+@router.get("/tickets/{ticket_id:int}", response_class=HTMLResponse)
 def tickets_edit(
     ticket_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
@@ -689,25 +788,28 @@ def tickets_edit(
             status_code=404,
         )
 
-    is_admin = True
+    is_admin = False
     invoice = db.get(Invoice, ticket.invoice_id) if ticket.invoice_id else None
-    customer_on_stop = False
-    if ticket.customer_id:
-        customer = db.get(Customer, ticket.customer_id)
-        customer_on_stop = bool(customer.on_stop) if customer else False
+    stop_blockers = _on_stop_blockers(db, ticket.customer_id, ticket.haulier_id)
     options = _load_ticket_options_with_enums(db)
     return templates.TemplateResponse(request, 
         "tickets/edit.html",
         {
             "request": request,
             "errors": [],
+            "warnings": [],
             "saved": request.query_params.get("saved") == "1",
             "completed": request.query_params.get("completed") == "1",
+            "voided": request.query_params.get("voided") == "1",
             "ticket": ticket,
             "invoice": invoice,
             "is_admin": is_admin,
             "is_open": _is_open_ticket(ticket),
-            "customer_on_stop": customer_on_stop,
+            "locked_message": _ticket_locked_message(ticket)
+            if _is_ticket_locked(ticket)
+            else "",
+            "stop_blocked": bool(stop_blockers),
+            "stop_banner_message": _on_stop_banner_message(stop_blockers),
             "weight_warning": _net_negative(ticket),
             "direction_warning": _direction_transaction_warning(
                 ticket.direction, ticket.transaction_type
@@ -715,13 +817,14 @@ def tickets_edit(
             "form": _ticket_to_form(ticket),
             "vehicle_reg": _ticket_vehicle_reg(db, ticket),
             "options": options,
+            "product_unit_meta": _load_product_unit_meta(db),
             "enums": _ticket_enums(),
             **_active_lookup_options(ticket, db),
         },
     )
 
 
-@router.post("/tickets/{ticket_id}", response_class=HTMLResponse)
+@router.post("/tickets/{ticket_id:int}", response_class=HTMLResponse)
 async def tickets_update(
     ticket_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
@@ -741,8 +844,8 @@ async def tickets_update(
             request,
             ticket,
             db,
-            errors=["Ticket is locked."],
-            status_code=403,
+            errors=[_ticket_locked_message(ticket)],
+            status_code=400,
         )
 
     payload = _parse_ticket_form(
@@ -778,7 +881,12 @@ async def tickets_update(
         product = _validate_product_ewc(payload, db)
         _apply_destination_default(ticket, payload, product)
         haulier = _validate_carrier_licence(payload, db)
-        producer_override = _validate_waste_producer_customer(payload, db)
+        _resolve_waste_producer_snapshot(
+            payload,
+            db,
+            require_customer_when_same=True,
+            require_manual_name=True,
+        )
         is_waste_tx = _is_waste_transaction(payload.get("transaction_type"))
         if is_waste_tx and haulier and not haulier.carrier_licence_number:
             payload["errors"].append(
@@ -798,16 +906,24 @@ async def tickets_update(
             )
 
         _validate_required_on_complete(payload)
-        if payload.get("customer_id"):
-            customer = db.get(Customer, payload["customer_id"])
-            if customer and customer.on_stop:
-                payload["errors"].append(
-                    "Customer is ON STOP \u2014 ticket cannot be completed."
-                )
+        stop_blockers = _on_stop_blockers(
+            db, payload.get("customer_id"), payload.get("haulier_id")
+        )
+        if stop_blockers:
+            payload["errors"].append(_on_stop_completion_error(stop_blockers))
+        product_unit_type = (
+            str(product.unit.unit_type).upper()
+            if product and product.unit and product.unit.unit_type
+            else ""
+        )
         has_qty = payload.get("qty") is not None and payload.get("qty") > 0
+        gross_raw = _form_value(form, "gross_kg")
+        tare_raw = _form_value(form, "tare_kg")
+        readout_raw = _form_value(form, "readout_kg")
+        net_raw = _form_value(form, "net_kg")
         has_gross = payload.get("gross_kg") is not None
         has_tare = payload.get("tare_kg") is not None and payload.get("tare_kg") > 0
-        if is_waste_tx and has_gross and not has_tare:
+        if is_waste_tx and product_unit_type != "COUNT" and has_gross and not has_tare:
             vehicle = (
                 db.get(Vehicle, payload["vehicle_id"])
                 if payload.get("vehicle_id")
@@ -822,22 +938,45 @@ async def tickets_update(
                     payload["form"]["net_kg"] = f"{payload['net_kg']:.0f}"
                     has_tare = True
         has_weights = has_gross and has_tare
-        if is_waste_tx and not has_weights:
-            payload["errors"].append(
-                "Weigh-in and weigh-out are required to complete a waste ticket."
-            )
-        if (
-            not is_waste_tx
-            and payload.get("transaction_type") == TransactionTypeEnum.SALE.value
-        ):
-            allow_sale_weights = bool(
-                has_weights and product and product.unit and product.unit.unit_type == "WEIGHT"
-            )
-            if not (has_qty or allow_sale_weights):
+        has_any_weight_data = bool(
+            gross_raw
+            or tare_raw
+            or readout_raw
+            or net_raw
+            or payload.get("gross_kg") is not None
+            or payload.get("tare_kg") is not None
+            or payload.get("net_kg") is not None
+        )
+
+        if product_unit_type == "COUNT":
+            count_mode_error = "COUNT product: enter Qty only (weights must be blank)."
+            if (not has_qty) or has_any_weight_data:
+                if count_mode_error not in payload["errors"]:
+                    payload["errors"].append(count_mode_error)
+        elif product_unit_type == "WEIGHT":
+            weight_mode_error = "WEIGHT product: enter weights only (Qty must be blank)."
+            if has_qty or not has_weights:
+                if weight_mode_error not in payload["errors"]:
+                    payload["errors"].append(weight_mode_error)
+        else:
+            if is_waste_tx and not has_weights:
                 payload["errors"].append(
-                    "Enter a quantity or weigh-in and weigh-out to complete a sale."
+                    "Weigh-in and weigh-out are required to complete a waste ticket."
                 )
+            if (
+                not is_waste_tx
+                and payload.get("transaction_type") == TransactionTypeEnum.SALE.value
+            ):
+                allow_sale_weights = bool(
+                    has_weights and product and product.unit and product.unit.unit_type == "WEIGHT"
+                )
+                if not (has_qty or allow_sale_weights):
+                    payload["errors"].append(
+                        "Enter a quantity or weigh-in and weigh-out to complete a sale."
+                    )
         if (
+            product_unit_type != "COUNT"
+            and
             has_weights
             and _net_negative_values(payload["gross_kg"], payload["tare_kg"])
         ):
@@ -857,6 +996,7 @@ async def tickets_update(
                 ticket,
                 db,
                 errors=payload["errors"],
+                warnings=payload.get("warnings"),
                 form=payload["form"],
                 vehicle_reg=payload["vehicle_reg_text"],
                 weight_warning=weight_warning,
@@ -871,10 +1011,7 @@ async def tickets_update(
         else:
             _apply_ticket_ewc_snapshot(ticket, None)
         _apply_carrier_licence_snapshot(ticket, haulier)
-        producer = producer_override
-        if producer is None and payload.get("customer_id"):
-            producer = db.get(Customer, payload["customer_id"])
-        _apply_waste_producer_snapshot(ticket, producer)
+        _apply_waste_producer_snapshot(ticket, payload)
         is_hazardous = bool(ticket.ewc_hazardous)
         if is_waste_tx and is_hazardous:
             if not ticket.customer_id:
@@ -891,6 +1028,7 @@ async def tickets_update(
                 ticket,
                 db,
                 errors=payload["errors"],
+                warnings=payload.get("warnings"),
                 form=payload["form"],
                 vehicle_reg=payload["vehicle_reg_text"],
                 weight_warning=weight_warning,
@@ -916,11 +1054,14 @@ async def tickets_update(
         reason_id = _parse_int(str(form.get("void_reason_id", "")).strip())
         note = str(form.get("void_note", "")).strip()
         errors = []
+        validate_no_html(note, "Void note", errors)
         if not reason_id:
             errors.append("Void reason is required.")
         reason = db.get(VoidReason, reason_id) if reason_id else None
-        if reason and reason.code == "OTHER" and not note:
-            errors.append("Void note is required for 'Other'.")
+        if reason_id and (not reason or not reason.is_active):
+            errors.append("Void reason is invalid.")
+        if reason and _is_other_void_reason(reason) and not note:
+            errors.append("Void note is required when reason is Other.")
         if errors:
             return _render_ticket_edit(
                 request,
@@ -935,13 +1076,13 @@ async def tickets_update(
             TicketVoid(
                 ticket_id=ticket.id,
                 reason_id=reason_id,
-                note=note,
+                note=note or "No note provided.",
                 voided_at=utcnow(),
                 voided_by="admin",
             )
         )
         db.commit()
-        return RedirectResponse(url=f"/tickets/{ticket_id}", status_code=303)
+        return RedirectResponse(url=f"/tickets/{ticket_id}?voided=1", status_code=303)
 
     ticket.direction = payload["direction"]
     ticket.transaction_type = payload["transaction_type"]
@@ -970,7 +1111,7 @@ async def tickets_update(
     product = _validate_product_ewc(payload, db)
     _apply_destination_default(ticket, payload, product)
     haulier = _validate_carrier_licence(payload, db)
-    producer_override = _validate_waste_producer_customer(payload, db)
+    _resolve_waste_producer_snapshot(payload, db)
     is_waste_tx = _is_waste_transaction(payload.get("transaction_type"))
     if payload["errors"]:
         ticket.vehicle_reg_text = payload["vehicle_reg_text"]
@@ -982,6 +1123,7 @@ async def tickets_update(
             ticket,
             db,
             errors=payload["errors"],
+            warnings=payload.get("warnings"),
             form=payload["form"],
             vehicle_reg=payload["vehicle_reg_text"],
             weight_warning=weight_warning,
@@ -996,12 +1138,181 @@ async def tickets_update(
     else:
         _apply_ticket_ewc_snapshot(ticket, None)
     _apply_carrier_licence_snapshot(ticket, haulier)
-    producer = producer_override
-    if producer is None and payload.get("customer_id"):
-        producer = db.get(Customer, payload["customer_id"])
-    _apply_waste_producer_snapshot(ticket, producer)
+    _apply_waste_producer_snapshot(ticket, payload)
     db.commit()
     return RedirectResponse(url=f"/tickets/{ticket_id}?saved=1", status_code=303)
+
+
+@router.post("/tickets/vehicle-suggestion/apply", response_class=HTMLResponse)
+async def tickets_apply_vehicle_suggestion(
+    request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    form = await request.form()
+    ticket_id = _parse_int(_form_value(form, "ticket_id"))
+    if not ticket_id:
+        return HTMLResponse("Ticket not found.", status_code=404)
+
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        return HTMLResponse("Ticket not found.", status_code=404)
+    if _is_ticket_locked(ticket):
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            None,
+            None,
+            None,
+            None,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=[_ticket_locked_message(ticket)],
+            status_code=400,
+        )
+
+    reg = _form_value(form, "reg")
+    if not reg:
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            None,
+            None,
+            None,
+            None,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Registration is required."],
+            status_code=400,
+        )
+
+    vehicle = _find_vehicle_by_reg(db, reg)
+    if not vehicle:
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            None,
+            None,
+            None,
+            None,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            errors=["Vehicle not found."],
+            status_code=404,
+        )
+
+    default_customer = (
+        db.get(Customer, vehicle.default_customer_id)
+        if vehicle.default_customer_id
+        else None
+    )
+    default_haulier = (
+        db.get(Haulier, vehicle.default_haulier_id)
+        if vehicle.default_haulier_id
+        else None
+    )
+    default_driver = db.get(Driver, vehicle.driver_id) if vehicle.driver_id else None
+    suggested_tare_kg = None
+    if vehicle.default_tare_kg is not None:
+        candidate_tare = Decimal(str(vehicle.default_tare_kg))
+        if candidate_tare > 0:
+            suggested_tare_kg = candidate_tare
+
+    errors: list[str] = []
+    warnings: list[str] = []
+    applied = False
+    tare_applied = False
+
+    if ticket.vehicle_id != vehicle.id:
+        ticket.vehicle_id = vehicle.id
+        applied = True
+    if (ticket.vehicle_reg_text or "") != vehicle.registration:
+        ticket.vehicle_reg_text = vehicle.registration
+        applied = True
+
+    if default_customer:
+        if ticket.customer_id != default_customer.id:
+            ticket.customer_id = default_customer.id
+            applied = True
+        if default_customer.on_stop:
+            warnings.append(
+                "Customer is ON STOP - allowed to record ticket; cannot complete/invoice."
+            )
+
+    if default_haulier:
+        if not default_haulier.is_active:
+            errors.append("Suggested haulier is inactive.")
+        else:
+            if ticket.haulier_id != default_haulier.id:
+                ticket.haulier_id = default_haulier.id
+                applied = True
+            if _is_haulier_on_stop(default_haulier):
+                warnings.append(
+                    "Haulier is ON STOP - allowed to record ticket; cannot complete/invoice."
+                )
+
+    if default_driver:
+        if not default_driver.is_active:
+            errors.append("Suggested driver is inactive.")
+        elif ticket.driver_id != default_driver.id:
+            ticket.driver_id = default_driver.id
+            applied = True
+
+    if suggested_tare_kg is not None:
+        current_tare = Decimal(str(ticket.tare_kg)) if ticket.tare_kg is not None else None
+        if current_tare is None or current_tare != suggested_tare_kg:
+            ticket.tare_kg = suggested_tare_kg
+            applied = True
+            tare_applied = True
+        gross_value = Decimal(str(ticket.gross_kg)) if ticket.gross_kg is not None else None
+        ticket.net_kg = (
+            gross_value - ticket.tare_kg
+            if gross_value is not None and ticket.tare_kg is not None
+            else None
+        )
+
+    if not applied:
+        return _render_vehicle_suggestions(
+            request,
+            ticket,
+            vehicle,
+            default_customer,
+            default_haulier,
+            default_driver,
+            suggested_tare_kg=suggested_tare_kg,
+            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+            warnings=warnings,
+            errors=errors or ["No defaults available to apply for this vehicle."],
+            status_code=400,
+        )
+
+    ticket.updated_at = utcnow()
+    db.commit()
+
+    options = _load_ticket_options(db)
+    active_options = _active_lookup_options(ticket, db)
+    return _render_vehicle_suggestions(
+        request,
+        ticket,
+        vehicle,
+        default_customer,
+        default_haulier,
+        default_driver,
+        suggested_tare_kg=suggested_tare_kg,
+        ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+        current_customer_id=ticket.customer_id,
+        current_haulier_id=ticket.haulier_id,
+        current_driver_id=ticket.driver_id,
+        oob_customer_options=options["customers"],
+        oob_haulier_options=active_options["hauliers"],
+        oob_driver_options=active_options["drivers"],
+        oob_weights_form=_ticket_to_form(ticket) if tare_applied else None,
+        oob_tare_auto_hint="Tare applied from vehicle default." if tare_applied else None,
+        oob_status_warnings=warnings,
+        show_panel=False,
+        warnings=warnings,
+        errors=errors,
+    )
+
+
+@router.post("/tickets/vehicle-suggestion/dismiss", response_class=HTMLResponse)
+def tickets_dismiss_vehicle_suggestion() -> HTMLResponse:
+    return HTMLResponse("", status_code=200)
 
 
 @router.post("/tickets/{ticket_id}/apply-default-customer", response_class=HTMLResponse)
@@ -1019,8 +1330,8 @@ async def tickets_apply_default_customer(
             None,
             None,
             ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
-            errors=["Ticket is locked."],
-            status_code=403,
+            errors=[_ticket_locked_message(ticket)],
+            status_code=400,
         )
     vehicle = await _resolve_vehicle_for_defaults(request, ticket, db)
     if not vehicle:
@@ -1045,6 +1356,7 @@ async def tickets_apply_default_customer(
         if vehicle.default_haulier_id
         else None
     )
+    warnings: list[str] = []
 
     if ticket.customer_id:
         return _render_vehicle_suggestions(
@@ -1069,15 +1381,8 @@ async def tickets_apply_default_customer(
             status_code=400,
         )
     if default_customer.on_stop:
-        return _render_vehicle_suggestions(
-            request,
-            ticket,
-            vehicle,
-            default_customer,
-            default_haulier,
-            ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
-            errors=["Default customer is on stop."],
-            status_code=400,
+        warnings.append(
+            "Customer is ON STOP - allowed to record ticket; cannot complete/invoice."
         )
 
     ticket.customer_id = default_customer.id
@@ -1094,7 +1399,9 @@ async def tickets_apply_default_customer(
         ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
         oob_customer_options=oob_customer_options,
         oob_haulier_options=oob_haulier_options,
+        oob_status_warnings=warnings,
         show_panel=show_panel,
+        warnings=warnings,
     )
 
 
@@ -1113,8 +1420,8 @@ async def tickets_apply_default_haulier(
             None,
             None,
             ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
-            errors=["Ticket is locked."],
-            status_code=403,
+            errors=[_ticket_locked_message(ticket)],
+            status_code=400,
         )
     vehicle = await _resolve_vehicle_for_defaults(request, ticket, db)
     if not vehicle:
@@ -1174,7 +1481,12 @@ async def tickets_apply_default_haulier(
             status_code=400,
         )
 
+    warnings: list[str] = []
     ticket.haulier_id = default_haulier.id
+    if _is_haulier_on_stop(default_haulier):
+        warnings.append(
+            "Haulier is ON STOP - allowed to record ticket; cannot complete/invoice."
+        )
     ticket.updated_at = utcnow()
     db.commit()
     oob_customer_options, oob_haulier_options = _oob_lookup_options(ticket, db)
@@ -1188,7 +1500,9 @@ async def tickets_apply_default_haulier(
         ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
         oob_customer_options=oob_customer_options,
         oob_haulier_options=oob_haulier_options,
+        oob_status_warnings=warnings,
         show_panel=show_panel,
+        warnings=warnings,
     )
 
 
@@ -1207,8 +1521,8 @@ async def tickets_apply_defaults(
             None,
             None,
             ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
-            errors=["Ticket is locked."],
-            status_code=403,
+            errors=[_ticket_locked_message(ticket)],
+            status_code=400,
         )
     vehicle = await _resolve_vehicle_for_defaults(request, ticket, db)
     if not vehicle:
@@ -1235,6 +1549,7 @@ async def tickets_apply_defaults(
     )
 
     errors: list[str] = []
+    warnings: list[str] = []
     updates = 0
 
     if ticket.customer_id:
@@ -1242,7 +1557,11 @@ async def tickets_apply_defaults(
     elif not default_customer:
         errors.append("Default customer not configured for this vehicle.")
     elif default_customer.on_stop:
-        errors.append("Default customer is on stop.")
+        ticket.customer_id = default_customer.id
+        updates += 1
+        warnings.append(
+            "Customer is ON STOP - allowed to record ticket; cannot complete/invoice."
+        )
     else:
         ticket.customer_id = default_customer.id
         updates += 1
@@ -1256,6 +1575,10 @@ async def tickets_apply_defaults(
     else:
         ticket.haulier_id = default_haulier.id
         updates += 1
+        if _is_haulier_on_stop(default_haulier):
+            warnings.append(
+                "Haulier is ON STOP - allowed to record ticket; cannot complete/invoice."
+            )
 
     if updates:
         ticket.updated_at = utcnow()
@@ -1271,7 +1594,9 @@ async def tickets_apply_defaults(
             ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
             oob_customer_options=oob_customer_options,
             oob_haulier_options=oob_haulier_options,
+            oob_status_warnings=warnings,
             show_panel=show_panel,
+            warnings=warnings,
             errors=errors,
         )
 
@@ -1282,6 +1607,7 @@ async def tickets_apply_defaults(
         default_customer,
         default_haulier,
         ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
+        warnings=warnings,
         errors=errors or ["No defaults applied."],
         status_code=400,
     )
@@ -1302,8 +1628,8 @@ async def tickets_set_vehicle_from_reg(
             None,
             None,
             ticket_vehicle_reg=_ticket_vehicle_reg(db, ticket),
-            errors=["Ticket is locked."],
-            status_code=403,
+            errors=[_ticket_locked_message(ticket)],
+            status_code=400,
         )
 
     form = await request.form()
@@ -1395,7 +1721,10 @@ async def tickets_capture_gross(
         return HTMLResponse("Ticket not found.", status_code=404)
     if _is_ticket_locked(ticket):
         return _render_weights_partial(
-            request, ticket, errors=["Ticket is locked."], status_code=403
+            request,
+            ticket,
+            errors=[_ticket_locked_message(ticket)],
+            status_code=400,
         )
     if ticket.gross_kg is not None:
         return _render_weights_partial(
@@ -1443,7 +1772,10 @@ async def tickets_capture_tare(
         return HTMLResponse("Ticket not found.", status_code=404)
     if _is_ticket_locked(ticket):
         return _render_weights_partial(
-            request, ticket, errors=["Ticket is locked."], status_code=403
+            request,
+            ticket,
+            errors=[_ticket_locked_message(ticket)],
+            status_code=400,
         )
     if ticket.tare_kg is not None:
         return _render_weights_partial(
@@ -1492,54 +1824,18 @@ async def tickets_read_weight(
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         return HTMLResponse("Ticket not found.", status_code=404)
-
-    readout_raw = _form_value(form, "readout_kg")
-    gross_raw = _form_value(form, "gross_kg")
-    tare_raw = _form_value(form, "tare_kg")
-    gross_value = _parse_float(gross_raw)
-    tare_value = _parse_float(tare_raw)
-
-    errors: list[str] = []
-    readout_value = _parse_weight_value(readout_raw, "Readout weight", errors)
-    read_confirm = False
-
-    if readout_value is None:
-        if not errors:
-            errors.append("Please input a weight")
-    elif gross_value is None:
-        gross_value = readout_value
-        gross_raw = readout_raw
-    elif tare_value is None:
-        tare_value = readout_value
-        tare_raw = readout_raw
-    else:
-        read_confirm = True
-
-    net_value = (
-        gross_value - tare_value
-        if gross_value is not None and tare_value is not None
-        else None
-    )
-    form_data = _weights_form_from_values(
+    if _is_ticket_locked(ticket):
+        return _render_weights_partial(
+            request,
+            ticket,
+            errors=[_ticket_locked_message(ticket)],
+            status_code=400,
+        )
+    return _render_weights_partial(
+        request,
         ticket,
-        gross_raw=gross_raw,
-        tare_raw=tare_raw,
-        readout_raw=readout_raw,
-        net_value=net_value,
-    )
-
-    return templates.TemplateResponse(request, 
-        "tickets/_weights_block.html",
-        {
-            "request": request,
-            "ticket": ticket,
-            "errors": errors,
-            "is_admin": True,
-            "form": form_data,
-            "show_weight_errors": True,
-            "read_confirm": read_confirm,
-        },
-        status_code=400 if errors else 200,
+        errors=["Not implemented: live weighbridge readout integration is not wired yet."],
+        status_code=400,
     )
 
 
@@ -1555,57 +1851,21 @@ async def tickets_read_weight_apply(
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         return HTMLResponse("Ticket not found.", status_code=404)
-
-    read_target = _form_value(form, "read_target")
-    readout_raw = _form_value(form, "readout_kg")
-    gross_raw = _form_value(form, "gross_kg")
-    tare_raw = _form_value(form, "tare_kg")
-    gross_value = _parse_float(gross_raw)
-    tare_value = _parse_float(tare_raw)
-
-    errors: list[str] = []
-    readout_value = _parse_weight_value(readout_raw, "Readout weight", errors)
-
-    if readout_value is None:
-        if not errors:
-            errors.append("Please input a weight")
-    elif read_target == "gross":
-        gross_value = readout_value
-        gross_raw = readout_raw
-    elif read_target == "tare":
-        tare_value = readout_value
-        tare_raw = readout_raw
-    else:
-        errors.append("Select a weight to overwrite.")
-
-    net_value = (
-        gross_value - tare_value
-        if gross_value is not None and tare_value is not None
-        else None
-    )
-    form_data = _weights_form_from_values(
+    if _is_ticket_locked(ticket):
+        return _render_weights_partial(
+            request,
+            ticket,
+            errors=[_ticket_locked_message(ticket)],
+            status_code=400,
+        )
+    return _render_weights_partial(
+        request,
         ticket,
-        gross_raw=gross_raw,
-        tare_raw=tare_raw,
-        readout_raw=readout_raw,
-        net_value=net_value,
-    )
-
-    return templates.TemplateResponse(request, 
-        "tickets/_weights_block.html",
-        {
-            "request": request,
-            "ticket": ticket,
-            "errors": errors,
-            "is_admin": True,
-            "form": form_data,
-            "show_weight_errors": True,
-        },
-        status_code=400 if errors else 200,
+        errors=["Not implemented: live weighbridge readout integration is not wired yet."],
+        status_code=400,
     )
 
 
-@router.post("/tickets/swap-weights-preview", response_class=HTMLResponse)
 @router.post("/tickets/weights/swap-preview", response_class=HTMLResponse)
 async def tickets_swap_weights_preview(
     request: Request, db: Session = Depends(get_db)
@@ -1618,96 +1878,122 @@ async def tickets_swap_weights_preview(
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         return HTMLResponse("Ticket not found.", status_code=404)
+    if _is_ticket_locked(ticket):
+        return _render_weights_partial(
+            request,
+            ticket,
+            errors=[_ticket_locked_message(ticket)],
+            status_code=400,
+        )
 
     gross_raw = _form_value(form, "gross_kg")
     tare_raw = _form_value(form, "tare_kg")
+    readout_raw = _form_value(form, "readout_kg")
+    product_id = (
+        _parse_int(_first_non_empty_form_value(form, "product_id"))
+        or _parse_int(_first_non_empty_form_value(form, "weights_product_id"))
+        or ticket.product_id
+    )
+    product = db.get(Product, product_id) if product_id else None
+    unit_type = product.unit.unit_type if product and product.unit else ""
+    weights_locked = str(unit_type or "").upper() == "COUNT"
+    errors: list[str] = []
+
+    gross_value = _parse_weight_value(gross_raw, "Gross weight", errors)
+    tare_value = _parse_weight_value(tare_raw, "Tare weight", errors)
+
+    if weights_locked:
+        net_value = (
+            gross_value - tare_value
+            if gross_value is not None and tare_value is not None
+            else None
+        )
+        form_data = _weights_form_from_values(
+            ticket=ticket,
+            gross_raw=gross_raw,
+            tare_raw=tare_raw,
+            readout_raw=readout_raw,
+            net_value=net_value,
+        )
+        form_data["product_id"] = str(product_id or "")
+        return templates.TemplateResponse(
+            request,
+            "tickets/_weights_preview.html",
+            {
+                "request": request,
+                "ticket": ticket,
+                "errors": ["Swap weights not available for COUNT products."],
+                "is_admin": False,
+                "is_open": _is_open_ticket(ticket),
+                "weights_locked": True,
+                "unit_type": unit_type,
+                "form": form_data,
+                "show_weight_errors": True,
+                "weight_warning": _net_negative_values(gross_value, tare_value),
+            },
+            status_code=400,
+        )
+
+    if gross_value is None and not gross_raw:
+        errors.append("Gross weight is required.")
+    if tare_value is None and not tare_raw:
+        errors.append("Tare weight is required.")
+
+    if errors:
+        form_data = _weights_form_from_values(
+            ticket=ticket,
+            gross_raw=gross_raw,
+            tare_raw=tare_raw,
+            readout_raw=readout_raw,
+            net_value=None,
+        )
+        form_data["product_id"] = str(product_id or "")
+        return templates.TemplateResponse(
+            request,
+            "tickets/_weights_preview.html",
+            {
+                "request": request,
+                "ticket": ticket,
+                "errors": errors,
+                "is_admin": False,
+                "is_open": _is_open_ticket(ticket),
+                "weights_locked": False,
+                "unit_type": unit_type,
+                "form": form_data,
+                "show_weight_errors": True,
+                "weight_warning": _net_negative_values(gross_value, tare_value),
+            },
+            status_code=400,
+        )
+
     swapped_gross = tare_raw
     swapped_tare = gross_raw
-
-    gross_value = _parse_float(swapped_gross)
-    tare_value = _parse_float(swapped_tare)
-    net_value = (
-        gross_value - tare_value
-        if gross_value is not None and tare_value is not None
-        else None
+    net_value = tare_value - gross_value
+    form_data = _weights_form_from_values(
+        ticket=ticket,
+        gross_raw=swapped_gross,
+        tare_raw=swapped_tare,
+        readout_raw=readout_raw,
+        net_value=net_value,
     )
+    form_data["product_id"] = str(product_id or "")
 
-    form_data = _ticket_to_form(ticket)
-    form_data["gross_kg"] = swapped_gross
-    form_data["tare_kg"] = swapped_tare
-    form_data["net_kg"] = f"{net_value:.0f}" if net_value is not None else ""
-
-    return templates.TemplateResponse(request, 
+    return templates.TemplateResponse(
+        request,
         "tickets/_weights_preview.html",
         {
             "request": request,
             "ticket": ticket,
             "errors": [],
-            "is_admin": True,
+            "is_admin": False,
+            "is_open": _is_open_ticket(ticket),
+            "weights_locked": False,
+            "unit_type": unit_type,
             "form": form_data,
             "show_weight_errors": True,
-            "weight_warning": _net_negative_values(gross_value, tare_value),
+            "weight_warning": _net_negative_values(tare_value, gross_value),
         },
     )
-
-
-@router.post("/tickets/{ticket_id}/swap-weights", response_class=HTMLResponse)
-def tickets_swap_weights(
-    ticket_id: int, request: Request, db: Session = Depends(get_db)
-) -> HTMLResponse:
-    ticket = db.get(Ticket, ticket_id)
-    if not ticket:
-        return HTMLResponse("Ticket not found.", status_code=404)
-    if _is_ticket_locked(ticket):
-        if request.headers.get("HX-Request") == "true":
-            return _render_weights_partial(
-                request, ticket, errors=["Ticket is locked."], status_code=403
-            )
-        return _render_ticket_edit(
-            request,
-            ticket,
-            db,
-            errors=["Ticket is locked."],
-            status_code=403,
-        )
-    if ticket.gross_kg is None or ticket.tare_kg is None:
-        if request.headers.get("HX-Request") == "true":
-            return _render_weights_partial(
-                request,
-                ticket,
-                errors=["Gross and tare weights are required to swap."],
-                status_code=400,
-            )
-        return _render_ticket_edit(
-            request,
-            ticket,
-            db,
-            errors=["Gross and tare weights are required to swap."],
-            status_code=400,
-        )
-
-    ticket.gross_kg, ticket.tare_kg = ticket.tare_kg, ticket.gross_kg
-    ticket.net_kg = (
-        ticket.gross_kg - ticket.tare_kg
-        if ticket.gross_kg is not None and ticket.tare_kg is not None
-        else None
-    )
-    ticket.updated_at = utcnow()
-    db.commit()
-    if request.headers.get("HX-Request") == "true":
-        return templates.TemplateResponse(request, 
-            "tickets/_weights_swap.html",
-            {
-                "request": request,
-                "ticket": ticket,
-                "errors": [],
-                "is_admin": True,
-                "form": _ticket_to_form(ticket),
-                "show_weight_errors": True,
-                "weight_warning": _net_negative(ticket),
-            },
-        )
-    return RedirectResponse(url=f"/tickets/{ticket_id}", status_code=303)
 
 
 def _apply_ticket_updates(ticket: Ticket, payload: dict) -> None:
@@ -1727,7 +2013,11 @@ def _apply_ticket_updates(ticket: Ticket, payload: dict) -> None:
     if payload.get("area_id_present"):
         ticket.area_id = payload["area_id"]
     ticket.waste_code_id = payload["waste_code_id"]
-    ticket.waste_producer_customer_id = payload["waste_producer_customer_id"]
+    ticket.waste_producer_customer_id = None
+    source_value = payload.get("waste_producer_source")
+    ticket.waste_producer_source = (
+        WasteProducerSourceEnum(source_value) if source_value else None
+    )
     ticket.gross_kg = payload["gross_kg"]
     ticket.tare_kg = payload["tare_kg"]
     ticket.net_kg = payload["net_kg"]
@@ -1752,12 +2042,42 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
     vehicle_id = _parse_int(_form_value(form, "vehicle_id"))
     vehicle_reg_text = _normalize_reg_text(_form_value(form, "reg"))
     walk_in = _form_value(form, "walk_in") == "on"
-    product_id = _parse_int(_form_value(form, "product_id"))
-    waste_producer_customer_id = _parse_int(
-        _form_value(form, "waste_producer_customer_id")
+    product_id_raw = _first_non_empty_form_value(form, "product_id")
+    product_id = _parse_int(product_id_raw)
+    same_as_customer_present = bool(
+        _form_value(form, "waste_producer_same_as_customer_present")
     )
+    if same_as_customer_present:
+        waste_producer_same_as_customer = (
+            _form_value(form, "waste_producer_same_as_customer").lower()
+            in {"on", "1", "true", "yes"}
+        )
+    else:
+        # Backward compatibility for callers that do not yet send the new UI fields.
+        waste_producer_same_as_customer = True
+    waste_producer_name = _form_value(form, "waste_producer_name")
+    waste_producer_address_line_1 = _form_value(form, "waste_producer_address_line_1")
+    waste_producer_address_line_2 = _form_value(form, "waste_producer_address_line_2")
+    waste_producer_address_line_3 = _form_value(form, "waste_producer_address_line_3")
+    waste_producer_postcode = _form_value(form, "waste_producer_postcode")
     yard_id_present = "yard_id" in form
     area_id_present = "area_id" in form
+    yard_raw = _form_value(form, "yard_id")
+    area_raw = _form_value(form, "area_id")
+
+    validate_no_html_fields(
+        {
+            "Vehicle registration": vehicle_reg_text,
+            "Yard": yard_raw,
+            "Area": area_raw,
+            "Waste producer name": waste_producer_name,
+            "Waste producer address line 1": waste_producer_address_line_1,
+            "Waste producer address line 2": waste_producer_address_line_2,
+            "Waste producer address line 3": waste_producer_address_line_3,
+            "Waste producer postcode": waste_producer_postcode,
+        },
+        errors,
+    )
 
     if not datetime_raw:
         errors.append("Date/time is required.")
@@ -1803,7 +2123,7 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         "vehicle_id": _form_value(form, "vehicle_id"),
         "vehicle_reg_text": vehicle_reg_text,
         "walk_in": "on" if walk_in else "",
-        "product_id": _form_value(form, "product_id"),
+        "product_id": product_id_raw,
         "haulier_id": _form_value(form, "haulier_id"),
         "driver_id": _form_value(form, "driver_id"),
         "container_id": _form_value(form, "container_id"),
@@ -1811,7 +2131,14 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         "yard_id": _form_value(form, "yard_id"),
         "area_id": _form_value(form, "area_id"),
         "waste_code_id": _form_value(form, "waste_code_id"),
-        "waste_producer_customer_id": _form_value(form, "waste_producer_customer_id"),
+        "waste_producer_same_as_customer": "on"
+        if waste_producer_same_as_customer
+        else "",
+        "waste_producer_name": waste_producer_name,
+        "waste_producer_address_line_1": waste_producer_address_line_1,
+        "waste_producer_address_line_2": waste_producer_address_line_2,
+        "waste_producer_address_line_3": waste_producer_address_line_3,
+        "waste_producer_postcode": waste_producer_postcode,
         "gross_kg": gross_raw if gross_kg is None else f"{gross_kg:.0f}",
         "tare_kg": tare_raw if tare_kg is None else f"{tare_kg:.0f}",
         "net_kg": f"{net_kg:.0f}" if net_kg is not None else "",
@@ -1824,6 +2151,7 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
 
     return {
         "errors": errors,
+        "warnings": [],
         "form": form_data,
         "ticket_datetime": ticket_datetime or utcnow(),
         "direction": direction,
@@ -1845,7 +2173,17 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         "yard_id_present": yard_id_present,
         "area_id_present": area_id_present,
         "waste_code_id": _parse_int(_form_value(form, "waste_code_id")),
-        "waste_producer_customer_id": waste_producer_customer_id,
+        "waste_producer_same_as_customer": waste_producer_same_as_customer,
+        "waste_producer_name": waste_producer_name,
+        "waste_producer_address_line_1": waste_producer_address_line_1,
+        "waste_producer_address_line_2": waste_producer_address_line_2,
+        "waste_producer_address_line_3": waste_producer_address_line_3,
+        "waste_producer_postcode": waste_producer_postcode,
+        "waste_producer_source": (
+            WasteProducerSourceEnum.CUSTOMER.value
+            if waste_producer_same_as_customer
+            else WasteProducerSourceEnum.MANUAL.value
+        ),
         "gross_kg": gross_kg,
         "tare_kg": tare_kg,
         "net_kg": net_kg,
@@ -1859,6 +2197,33 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
 
 
 def _ticket_to_form(ticket: Ticket) -> dict:
+    source_value = (
+        ticket.waste_producer_source.value
+        if hasattr(ticket.waste_producer_source, "value")
+        else str(ticket.waste_producer_source or "")
+    )
+    if source_value:
+        same_as_customer = source_value == WasteProducerSourceEnum.CUSTOMER.value
+    elif ticket.waste_producer_customer_id is not None:
+        same_as_customer = True
+    elif ticket.waste_producer_name or ticket.waste_producer_address:
+        same_as_customer = False
+    else:
+        same_as_customer = True
+    if same_as_customer:
+        producer_name = ""
+        producer_line_1 = ""
+        producer_line_2 = ""
+        producer_line_3 = ""
+        producer_postcode = ""
+    else:
+        producer_name = ticket.waste_producer_name or ""
+        (
+            producer_line_1,
+            producer_line_2,
+            producer_line_3,
+            producer_postcode,
+        ) = _split_waste_producer_address(ticket.waste_producer_address)
     return {
         "datetime": ticket.datetime.isoformat(timespec="minutes")
         if ticket.datetime
@@ -1878,7 +2243,12 @@ def _ticket_to_form(ticket: Ticket) -> dict:
         "yard_id": str(ticket.yard_id or ""),
         "area_id": str(ticket.area_id or ""),
         "waste_code_id": str(ticket.waste_code_id or ""),
-        "waste_producer_customer_id": str(ticket.waste_producer_customer_id or ""),
+        "waste_producer_same_as_customer": "on" if same_as_customer else "",
+        "waste_producer_name": producer_name,
+        "waste_producer_address_line_1": producer_line_1,
+        "waste_producer_address_line_2": producer_line_2,
+        "waste_producer_address_line_3": producer_line_3,
+        "waste_producer_postcode": producer_postcode,
         "gross_kg": f"{ticket.gross_kg:.0f}" if ticket.gross_kg is not None else "",
         "tare_kg": f"{ticket.tare_kg:.0f}" if ticket.tare_kg is not None else "",
         "net_kg": f"{ticket.net_kg:.0f}" if ticket.net_kg is not None else "",
@@ -1892,6 +2262,18 @@ def _ticket_to_form(ticket: Ticket) -> dict:
 
 def _form_value(form, key: str) -> str:
     return str(form.get(key, "")).strip()
+
+
+def _first_non_empty_form_value(form, key: str) -> str:
+    if hasattr(form, "getlist"):
+        values = form.getlist(key)
+        for value in values:
+            text = str(value).strip()
+            if text:
+                return text
+        if values:
+            return str(values[-1]).strip()
+    return _form_value(form, key)
 
 
 def _normalize_number(value: str) -> str:
@@ -1919,14 +2301,21 @@ def _parse_weight_value(raw: str, label: str, errors: list[str]) -> float | None
 
 def _apply_ticket_defaults(db: Session, payload: dict) -> None:
     vehicle = db.get(Vehicle, payload["vehicle_id"]) if payload.get("vehicle_id") else None
+    warnings = payload.setdefault("warnings", [])
 
     if payload["customer_id"] is None and vehicle:
         candidate_customer_id = vehicle.default_customer_id or vehicle.owner_customer_id
         if candidate_customer_id:
             customer = db.get(Customer, candidate_customer_id)
-            if customer and not customer.on_stop:
+            if customer:
                 payload["customer_id"] = customer.id
                 payload["form"]["customer_id"] = str(customer.id)
+                if customer.on_stop:
+                    warning = (
+                        "Customer is ON STOP - allowed to record ticket; cannot complete/invoice."
+                    )
+                    if warning not in warnings:
+                        warnings.append(warning)
 
     if payload.get("haulier_id") is None and vehicle and vehicle.default_haulier_id:
         default_haulier = db.get(Haulier, vehicle.default_haulier_id)
@@ -2134,17 +2523,6 @@ def _apply_carrier_licence_snapshot(
     )
 
 
-def _validate_waste_producer_customer(payload: dict, db: Session) -> Customer | None:
-    producer_id = payload.get("waste_producer_customer_id")
-    if not producer_id:
-        return None
-    producer = db.get(Customer, producer_id)
-    if not producer:
-        payload["errors"].append("Waste producer not found.")
-        return None
-    return producer
-
-
 def _format_customer_address(customer: Customer) -> str | None:
     parts = [
         customer.address_line1,
@@ -2159,15 +2537,87 @@ def _format_customer_address(customer: Customer) -> str | None:
     return ", ".join(cleaned)
 
 
-def _apply_waste_producer_snapshot(
-    ticket: Ticket, producer: Customer | None
+def _normalize_optional_text(value: str | None) -> str | None:
+    normalized = (value or "").strip()
+    return normalized or None
+
+
+def _compose_manual_waste_producer_address(payload: dict) -> str | None:
+    parts = [
+        payload.get("waste_producer_address_line_1"),
+        payload.get("waste_producer_address_line_2"),
+        payload.get("waste_producer_address_line_3"),
+        payload.get("waste_producer_postcode"),
+    ]
+    cleaned = [part.strip() for part in parts if part and part.strip()]
+    if not cleaned:
+        return None
+    return ", ".join(cleaned)
+
+
+def _split_waste_producer_address(address: str | None) -> tuple[str, str, str, str]:
+    if not address:
+        return ("", "", "", "")
+    normalized = address.replace("\r", "\n")
+    if "\n" in normalized:
+        parts = [part.strip() for part in normalized.split("\n") if part.strip()]
+    else:
+        parts = [part.strip() for part in normalized.split(",") if part.strip()]
+    line_1 = parts[0] if len(parts) > 0 else ""
+    line_2 = parts[1] if len(parts) > 1 else ""
+    line_3 = parts[2] if len(parts) > 2 else ""
+    postcode = parts[3] if len(parts) > 3 else ""
+    return (line_1, line_2, line_3, postcode)
+
+
+def _resolve_waste_producer_snapshot(
+    payload: dict,
+    db: Session,
+    *,
+    require_customer_when_same: bool = False,
+    require_manual_name: bool = False,
 ) -> None:
-    if not producer:
-        ticket.waste_producer_name = None
-        ticket.waste_producer_address = None
+    same_as_customer = bool(payload.get("waste_producer_same_as_customer"))
+    payload["waste_producer_source"] = (
+        WasteProducerSourceEnum.CUSTOMER.value
+        if same_as_customer
+        else WasteProducerSourceEnum.MANUAL.value
+    )
+
+    if same_as_customer:
+        customer_id = payload.get("customer_id")
+        if not customer_id:
+            if require_customer_when_same:
+                payload["errors"].append(
+                    "Waste producer is set to same as customer - select a customer."
+                )
+            payload["waste_producer_name_snapshot"] = None
+            payload["waste_producer_address_snapshot"] = None
+            return
+        customer = db.get(Customer, customer_id)
+        if not customer:
+            payload["errors"].append("Waste producer customer not found.")
+            payload["waste_producer_name_snapshot"] = None
+            payload["waste_producer_address_snapshot"] = None
+            return
+        payload["waste_producer_name_snapshot"] = _normalize_optional_text(customer.name)
+        payload["waste_producer_address_snapshot"] = _format_customer_address(customer)
         return
-    ticket.waste_producer_name = producer.name
-    ticket.waste_producer_address = _format_customer_address(producer)
+
+    producer_name = _normalize_optional_text(payload.get("waste_producer_name"))
+    if require_manual_name and not producer_name:
+        payload["errors"].append(
+            "Enter waste producer name or tick 'Waste producer same as customer'."
+        )
+    payload["waste_producer_name_snapshot"] = producer_name
+    payload["waste_producer_address_snapshot"] = _compose_manual_waste_producer_address(
+        payload
+    )
+
+
+def _apply_waste_producer_snapshot(ticket: Ticket, payload: dict) -> None:
+    ticket.waste_producer_name = payload.get("waste_producer_name_snapshot")
+    ticket.waste_producer_address = payload.get("waste_producer_address_snapshot")
 
 def _net_negative(ticket: Ticket) -> bool:
     if ticket.gross_kg is None or ticket.tare_kg is None:
@@ -2214,18 +2664,32 @@ def _render_vehicle_suggestions(
     vehicle: Vehicle | None,
     default_customer: Customer | None,
     default_haulier: Haulier | None,
+    default_driver: Driver | None = None,
     *,
+    suggested_tare_kg: float | None = None,
     ticket_vehicle_reg: str | None = None,
     current_customer_id: int | None = None,
     current_haulier_id: int | None = None,
+    current_driver_id: int | None = None,
     oob_customer_options: list[tuple[str, str]] | None = None,
     oob_haulier_options: list[tuple[str, str]] | None = None,
+    oob_driver_options: list[tuple[str, str]] | None = None,
     oob_weights_form: dict | None = None,
     oob_tare_auto_hint: str | None = None,
+    oob_status_warnings: list[str] | None = None,
     show_panel: bool = True,
+    warnings: list[str] | None = None,
     errors: list[str] | None = None,
     status_code: int = 200,
 ) -> HTMLResponse:
+    def _to_decimal(value: object) -> Decimal | None:
+        if value is None:
+            return None
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            return None
+
     has_vehicle_match = (
         vehicle is not None
         and (ticket.vehicle_id is None or ticket.vehicle_id == vehicle.id)
@@ -2237,10 +2701,12 @@ def _render_vehicle_suggestions(
     selected_haulier_id = (
         ticket.haulier_id if current_haulier_id is None else current_haulier_id
     )
+    selected_driver_id = (
+        ticket.driver_id if current_driver_id is None else current_driver_id
+    )
     can_apply_customer = (
         has_vehicle_match
         and default_customer is not None
-        and not default_customer.on_stop
         and selected_customer_id is None
     )
     can_apply_haulier = (
@@ -2249,6 +2715,26 @@ def _render_vehicle_suggestions(
         and default_haulier.is_active
         and selected_haulier_id is None
     )
+    can_apply_driver = (
+        has_vehicle_match
+        and default_driver is not None
+        and default_driver.is_active
+        and selected_driver_id is None
+    )
+    suggested_tare_value = _to_decimal(suggested_tare_kg)
+    current_tare_value = _to_decimal(ticket.tare_kg)
+    can_apply_tare = (
+        has_vehicle_match
+        and suggested_tare_value is not None
+        and suggested_tare_value > 0
+        and (current_tare_value is None or current_tare_value != suggested_tare_value)
+    )
+    can_apply_vehicle = vehicle is not None and ticket.vehicle_id != vehicle.id
+    can_apply_suggestion = (
+        vehicle is not None
+        and (can_apply_vehicle or can_apply_customer or can_apply_haulier or can_apply_driver or can_apply_tare)
+    )
+    should_show_panel = show_panel and (can_apply_suggestion or bool(errors))
     return templates.TemplateResponse(request, 
         "tickets/_vehicle_suggestions.html",
         {
@@ -2257,8 +2743,9 @@ def _render_vehicle_suggestions(
             "vehicle": vehicle,
             "default_customer": default_customer,
             "default_haulier": default_haulier,
-            "show_panel": show_panel,
-            "has_vehicle_match": has_vehicle_match,
+            "default_driver": default_driver,
+            "suggested_tare_kg": suggested_tare_kg,
+            "show_panel": should_show_panel,
             "vehicle_mismatch": (
                 vehicle is not None
                 and ticket.vehicle_id is not None
@@ -2267,14 +2754,17 @@ def _render_vehicle_suggestions(
             "ticket_vehicle_reg": ticket_vehicle_reg or "",
             "oob_customer_options": oob_customer_options or [],
             "oob_haulier_options": oob_haulier_options or [],
+            "oob_driver_options": oob_driver_options or [],
             "oob_customer_selected": str(selected_customer_id or ""),
             "oob_haulier_selected": str(selected_haulier_id or ""),
-            "can_apply_customer": can_apply_customer,
-            "can_apply_haulier": can_apply_haulier,
-            "can_apply_all": can_apply_customer and can_apply_haulier,
+            "oob_driver_selected": str(selected_driver_id or ""),
+            "can_apply_suggestion": can_apply_suggestion,
             "oob_weights_form": oob_weights_form,
             "oob_tare_auto_hint": oob_tare_auto_hint,
+            "oob_status_warnings": oob_status_warnings,
+            "warnings": warnings or [],
             "errors": errors or [],
+            "is_open": _is_open_ticket(ticket),
         },
         status_code=status_code,
     )
@@ -2286,6 +2776,7 @@ def _render_ticket_edit(
     db: Session,
     *,
     errors: list[str],
+    warnings: list[str] | None = None,
     form: dict | None = None,
     vehicle_reg: str | None = None,
     weight_warning: bool | None = None,
@@ -2298,10 +2789,12 @@ def _render_ticket_edit(
         selected_customer_id = _parse_int(str(form.get("customer_id")))
     if selected_customer_id is None:
         selected_customer_id = ticket.customer_id
-    customer_on_stop = False
-    if selected_customer_id:
-        customer = db.get(Customer, selected_customer_id)
-        customer_on_stop = bool(customer.on_stop) if customer else False
+    selected_haulier_id = None
+    if form and form.get("haulier_id"):
+        selected_haulier_id = _parse_int(str(form.get("haulier_id")))
+    if selected_haulier_id is None:
+        selected_haulier_id = ticket.haulier_id
+    stop_blockers = _on_stop_blockers(db, selected_customer_id, selected_haulier_id)
     product_id = None
     if form and form.get("product_id"):
         product_id = _parse_int(str(form.get("product_id")))
@@ -2320,13 +2813,18 @@ def _render_ticket_edit(
         {
             "request": request,
             "errors": errors,
+            "warnings": warnings or [],
             "saved": False,
             "completed": False,
             "ticket": ticket,
             "invoice": invoice,
-            "is_admin": True,
+            "is_admin": False,
             "is_open": _is_open_ticket(ticket),
-            "customer_on_stop": customer_on_stop,
+            "locked_message": _ticket_locked_message(ticket)
+            if _is_ticket_locked(ticket)
+            else "",
+            "stop_blocked": bool(stop_blockers),
+            "stop_banner_message": _on_stop_banner_message(stop_blockers),
             "weight_warning": _net_negative(ticket)
             if weight_warning is None
             else weight_warning,
@@ -2340,6 +2838,7 @@ def _render_ticket_edit(
             "default_destination_id": default_destination_id,
             "unit_type": unit_type,
             "options": options,
+            "product_unit_meta": _load_product_unit_meta(db),
             "enums": _ticket_enums(),
             **_active_lookup_options(ticket, db),
         },
@@ -2356,7 +2855,8 @@ def _render_weights_partial(
             "request": request,
             "ticket": ticket,
             "errors": errors,
-            "is_admin": True,
+            "is_admin": False,
+            "is_open": _is_open_ticket(ticket),
             "form": _ticket_to_form(ticket),
             "show_weight_errors": True,
         },

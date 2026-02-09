@@ -6,12 +6,12 @@
 {% block title %}Tickets | Weighbridge Web{% endblock %}
 
 {% block content %}
-<div class="page-header">
+<div class="page-header tickets-list-header">
   <div>
     <h1>Tickets</h1>
     <p class="muted">Filter and review ticket activity.</p>
   </div>
-  <div>
+  <div class="actions">
     <form method="post" action="/tickets/new/quick">
       <button class="btn btn--primary" type="submit">New Ticket</button>
     </form>

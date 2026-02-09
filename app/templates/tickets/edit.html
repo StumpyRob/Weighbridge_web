@@ -1,12 +1,8 @@
 {% extends "base.html" %}
-{% if DEV_MODE %}
-  {% set has_wip_fields = true %}
-{% endif %}
 
 {% block title %}Edit Ticket {{ ticket.ticket_no }} | Weighbridge Web{% endblock %}
 
 {% block content %}
-{% from "_wip.html" import wip_field %}
 <div class="page-header">
   <div>
     <h1>Ticket {{ ticket.ticket_no }}</h1>
@@ -24,16 +20,22 @@
   </div>
   <div class="actions btn-group">
     {% if is_open %}
-      <button type="submit" class="btn btn--primary" form="ticket-form" name="action" value="complete" {% if customer_on_stop %}disabled title="Customer is ON STOP"{% endif %}>
+      <button type="submit" class="btn btn--primary" form="ticket-form" name="action" value="complete">
         Mark Complete
       </button>
     {% endif %}
   </div>
 </div>
 
-{% if completed or saved %}
-  <div class="notice" data-auto-dismiss>
-    {{ "Ticket completed." if completed else "Saved." }}
+{% if completed or saved or voided %}
+  <div class="alert alert--warning" data-auto-dismiss>
+    {% if completed %}
+      Ticket completed.
+    {% elif voided %}
+      Ticket voided.
+    {% else %}
+      Saved.
+    {% endif %}
   </div>
   <script>
     if (window.history && window.history.replaceState) {
@@ -58,13 +60,33 @@
   </div>
 {% endif %}
 
-{% if customer_on_stop and not errors %}
-  <div class="alert">
-    Customer is ON STOP &mdash; ticket cannot be completed.
+{% set warning_messages = warnings if warnings is defined else [] %}
+<div id="ticket-status-warnings">
+  {% if warning_messages %}
+    <div class="alert alert--warning">
+      <ul>
+        {% for warning in warning_messages %}
+          <li>{{ warning }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {% if stop_blocked and ((stop_banner_message or "") not in warning_messages) %}
+    <div class="alert alert--warning">
+      {{ stop_banner_message or "Allowed to record ticket; cannot complete/invoice." }}
+    </div>
+  {% endif %}
+</div>
+
+{% if not is_open %}
+  <div class="alert alert--warning">
+    {{ locked_message or "This ticket is complete and cannot be edited." }}
   </div>
 {% endif %}
 
 <form id="ticket-form" class="ticket-form" method="post" action="/tickets/{{ ticket.id }}">
+  <fieldset {% if not is_open %}disabled aria-disabled="true"{% endif %}>
   <section class="frame">
     <div class="frame-header">
       <h2>Ticket Info</h2>
@@ -107,8 +129,7 @@
         <div class="form-grid">
           <div class="field">
             <label for="vehicle_reg">Vehicle reg</label>
-            <input type="text" id="vehicle_reg" name="reg" value="{{ vehicle_reg }}" class="plate-input" oninput="this.value = this.value.toUpperCase()" hx-get="/tickets/vehicle-suggest" hx-trigger="keyup changed delay:400ms, load" hx-target="#vehicle-suggestions" hx-include="#direction,#customer_id,#haulier_id,#gross_kg,#tare_kg,#readout_kg" hx-vals='{"ticket_id":"{{ ticket.id }}"}' />
-            <div class="hint">Vehicle, customer and haulier auto inferred.</div>
+            <input type="text" id="vehicle_reg" name="reg" value="{{ vehicle_reg }}" class="plate-input" oninput="this.value = this.value.toUpperCase()" hx-get="/tickets/vehicle-suggest" hx-trigger="keyup changed delay:400ms, load" hx-target="#vehicle-suggestions" hx-include="#direction,#customer_id,#haulier_id,#driver_id,#gross_kg,#tare_kg,#readout_kg" hx-vals='{"ticket_id":"{{ ticket.id }}"}' />
           </div>
           <div class="field">
             <label for="customer_id">Customer</label>
@@ -142,10 +163,16 @@
       <div class="form-grid">
         <div class="field">
           <label for="product_id">Product</label>
-          <select id="product_id" name="product_id" hx-get="/tickets/product-defaults" hx-trigger="change" hx-target="#pricing-defaults" hx-include="[name='unit_price'],[name='product_id']">
+          <select id="product_id" name="product_id" hx-get="/tickets/product-defaults" hx-trigger="change" hx-target="#pricing-defaults" hx-include="#weights-form,#qty,#transaction_type,#unit_price,#product_id">
             <option value="">Select product</option>
             {% for id, label in options.products %}
-              <option value="{{ id }}" {% if form.product_id|string == id|string %}selected{% endif %}>{{ label }}</option>
+              {% set product_meta = product_unit_meta.get(id|string, {}) if product_unit_meta is defined else {} %}
+              <option
+                value="{{ id }}"
+                data-unit-type="{{ product_meta.get('unit_type', '') }}"
+                data-unit-name="{{ product_meta.get('unit_name', '') }}"
+                {% if form.product_id|string == id|string %}selected{% endif %}
+              >{{ label }}</option>
             {% endfor %}
           </select>
         </div>
@@ -159,7 +186,7 @@
     </div>
     <div class="frame-body">
       <div id="weights-block">
-        {% include "tickets/_weights.html" %}
+        {% include "tickets/_weights_block.html" %}
       </div>
     </div>
   </section>
@@ -197,16 +224,22 @@
             {% endfor %}
           </select>
         </div>
-        {% if DEV_MODE %}
-          {{ wip_field("yard_id_wip", "Yard (optional)", "Optional", "Midsoft yard integration not implemented yet.") }}
-          {{ wip_field("area_id_wip", "Area (optional)", "Optional", "Midsoft area integration not implemented yet.") }}
-        {% endif %}
+        <div class="field">
+          <label for="yard_id">Yard (optional)</label>
+          <input type="text" id="yard_id" name="yard_id" value="{{ form.yard_id }}" placeholder="Optional" />
+        </div>
+        <div class="field">
+          <label for="area_id">Area (optional)</label>
+          <input type="text" id="area_id" name="area_id" value="{{ form.area_id }}" placeholder="Optional" />
+        </div>
       </div>
     </div>
   </section>
 
-  <details class="frame compliance-frame">
-    <summary class="frame-header">Compliance (for regulated loads)</summary>
+  <section class="frame compliance-frame">
+    <div class="frame-header">
+      <h2>Compliance</h2>
+    </div>
     <div class="frame-body">
       <div class="form-grid">
         <div class="field">
@@ -223,22 +256,42 @@
           </div>
         </div>
         <div class="field">
-          <label for="waste_producer_customer_id">Waste producer</label>
-          <button type="button" class="btn btn--ghost" id="producer-toggle">
-            Producer different to customer?
-          </button>
+          <label>Waste producer</label>
+          <div class="field checkbox">
+            <input type="hidden" name="waste_producer_same_as_customer_present" value="1" />
+            <input
+              type="checkbox"
+              id="waste_producer_same_as_customer"
+              name="waste_producer_same_as_customer"
+              {% if form.waste_producer_same_as_customer %}checked{% endif %}
+            />
+            <label for="waste_producer_same_as_customer">Waste producer same as customer</label>
+          </div>
           <div
-            id="producer-select"
-            class="producer-select"
-            {% if form.waste_producer_customer_id %}style="display:block"{% else %}style="display:none"{% endif %}
+            id="waste-producer-manual"
+            class="form-grid producer-manual"
+            {% if form.waste_producer_same_as_customer %}style="display:none"{% else %}style="display:grid"{% endif %}
           >
-            <select id="waste_producer_customer_id" name="waste_producer_customer_id">
-              <option value="">Use customer</option>
-              {% for id, label in options.customers %}
-                <option value="{{ id }}" {% if form.waste_producer_customer_id|string == id|string %}selected{% endif %}>{{ label }}</option>
-              {% endfor %}
-            </select>
-            <button type="button" class="btn btn--ghost" id="producer-clear">Use customer</button>
+            <div class="field">
+              <label for="waste_producer_name">Name</label>
+              <input type="text" id="waste_producer_name" name="waste_producer_name" value="{{ form.waste_producer_name }}" />
+            </div>
+            <div class="field">
+              <label for="waste_producer_address_line_1">Address line 1</label>
+              <input type="text" id="waste_producer_address_line_1" name="waste_producer_address_line_1" value="{{ form.waste_producer_address_line_1 }}" />
+            </div>
+            <div class="field">
+              <label for="waste_producer_address_line_2">Address line 2</label>
+              <input type="text" id="waste_producer_address_line_2" name="waste_producer_address_line_2" value="{{ form.waste_producer_address_line_2 }}" />
+            </div>
+            <div class="field">
+              <label for="waste_producer_address_line_3">Address line 3</label>
+              <input type="text" id="waste_producer_address_line_3" name="waste_producer_address_line_3" value="{{ form.waste_producer_address_line_3 }}" />
+            </div>
+            <div class="field">
+              <label for="waste_producer_postcode">Postcode</label>
+              <input type="text" id="waste_producer_postcode" name="waste_producer_postcode" value="{{ form.waste_producer_postcode }}" />
+            </div>
           </div>
           <div
             id="producer-hazard-hint"
@@ -250,19 +303,58 @@
         </div>
       </div>
     </div>
-  </details>
+  </section>
 
   <section class="frame">
     <div class="frame-header">
-      <h2>Pricing</h2>
+      <h2>Billable and Rate</h2>
     </div>
     <div class="frame-body">
       {% set unit = ticket.product.unit if ticket.product and ticket.product.unit else None %}
       {% set unit_name = unit.name if unit else "" %}
       {% set unit_type = unit.unit_type if unit else "" %}
 
-      {% if ticket.status == "COMPLETE" %}
+      {% if not is_open %}
         <div class="form-grid">
+          <div class="field">
+            <label>Billable</label>
+            <div class="readonly">
+              {% if ticket.pricing_billable_qty_snapshot is not none %}
+                {{ "{:.3f}".format(ticket.pricing_billable_qty_snapshot) }}{% if ticket.pricing_unit_name %} {{ ticket.pricing_unit_name }}{% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="field field-secondary">
+            <label>Rate</label>
+            <div class="readonly readonly-secondary">
+              {% if ticket.pricing_unit_price is not none %}
+                {{ "{:.2f}".format(ticket.pricing_unit_price) }}
+              {% else %}
+                —
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="field field-estimated-value">
+            <label class="label-muted">Estimated charge</label>
+            <div class="readonly readonly-muted estimate-value">
+              {% if ticket.total is not none %}
+                {{ "{:.2f}".format(ticket.total) }}
+              {% else %}
+                —
+              {% endif %}
+            </div>
+            <div class="hint">Final price confirmed on invoice</div>
+          </div>
+
+          <div class="field">
+            <label>Billable basis</label>
+            <div class="readonly">{{ ticket.pricing_basis if ticket.pricing_basis else "—" }}</div>
+          </div>
+
           <div class="field">
             <label>Quantity</label>
             <div class="readonly">
@@ -274,56 +366,14 @@
             <label>Unit</label>
             <div class="readonly">{{ ticket.pricing_unit_name if ticket.pricing_unit_name else (unit_name if unit_name else "—") }}</div>
           </div>
-
-          <div class="field">
-            <label>Unit price</label>
-            <div class="readonly">
-              {% if ticket.pricing_unit_price is not none %}
-                {{ "{:.2f}".format(ticket.pricing_unit_price) }}
-              {% else %}
-                —
-              {% endif %}
-            </div>
-          </div>
-
-          <div class="field">
-            <label>Total</label>
-            <div class="readonly">
-              {% if ticket.total is not none %}
-                {{ "{:.2f}".format(ticket.total) }}
-              {% else %}
-                —
-              {% endif %}
-            </div>
-          </div>
-
-          <div class="field">
-            <label>Pricing basis</label>
-            <div class="readonly">{{ ticket.pricing_basis if ticket.pricing_basis else "—" }}</div>
-          </div>
-
-          <div class="field">
-            <label>Billable</label>
-            <div class="readonly">
-              {% if ticket.pricing_billable_qty_snapshot is not none %}
-                {{ "{:.3f}".format(ticket.pricing_billable_qty_snapshot) }}{% if ticket.pricing_unit_name %} {{ ticket.pricing_unit_name }}{% endif %}
-              {% else %}
-                —
-              {% endif %}
-            </div>
-          </div>
         </div>
 
       {% else %}
+        {% set resolved_unit_type = (unit_type or "")|upper %}
         <div class="form-grid">
-          <div class="field" id="qty-wrap">
-            <label for="qty">Quantity</label>
-            <input type="number" step="0.001" id="qty" name="qty" value="{{ form.qty }}" />
-            <div id="pricing-hint-count" class="hint" style="display:none">
-              Enter a quantity to price this ticket.
-            </div>
-            <div id="pricing-hint-weight" class="hint" style="display:none"></div>
-          </div>
+          {% set qty_value = form.qty %}
+          {% set oob_qty = false %}
+          {% include "tickets/_qty_field.html" %}
 
           <div class="field">
             <label>Unit</label>
@@ -336,13 +386,15 @@
             {% endwith %}
           </div>
 
-          <div class="field">
-            <label for="total">Total</label>
-            <input type="text" id="total" name="total" value="{{ form.total }}" placeholder="-" readonly />
+          <div class="field field-estimated-value">
+            <label for="total" class="label-muted">Estimated charge</label>
+            <input type="text" id="total" name="total" value="{{ form.total }}" placeholder="-" class="input-muted estimate-value" readonly />
+            <div class="hint">Final price confirmed on invoice</div>
           </div>
         </div>
 
         <input type="hidden" id="unit_type" value="{{ unit_type }}" />
+        <input type="hidden" id="unit_name" value="{{ unit_name }}" />
       {% endif %}
     </div>
   </section>
@@ -358,102 +410,162 @@
       </div>
     </div>
   </section>
+  </fieldset>
 
   <div class="actions btn-group">
-    {% if ticket.status not in ["COMPLETE", "VOID"] %}
+    {% if is_open %}
       <button type="submit" class="btn btn--primary" name="action" value="save">Save</button>
     {% endif %}
-    <a class="btn btn--secondary" href="/tickets">Cancel</a>
+    <a class="btn btn--secondary" href="/tickets">{{ "Cancel" if is_open else "Back" }}</a>
   </div>
 </form>
 
-<section class="frame compact">
-  <div class="frame-header">
-    <h2>Void Ticket</h2>
-  </div>
-  <div class="frame-body">
-    <form method="post" action="/tickets/{{ ticket.id }}">
-      <input type="hidden" name="action" value="void" />
-      <div class="form-grid">
-        <div class="field">
-          <label for="void_reason_id">Void reason</label>
-          <select id="void_reason_id" name="void_reason_id">
-            <option value="">Select reason</option>
-            {% for id, label in options.void_reasons %}
-              <option value="{{ id }}">{{ label }}</option>
-            {% endfor %}
-          </select>
+{% if is_open %}
+  <section class="frame compact ticket-void-frame">
+    <div class="frame-header">
+      <h2>Void Ticket</h2>
+    </div>
+    <div class="frame-body">
+      <form method="post" action="/tickets/{{ ticket.id }}">
+        <input type="hidden" name="action" value="void" />
+        <div class="form-grid">
+          <div class="field">
+            <label for="void_reason_id">Void reason</label>
+            <select id="void_reason_id" name="void_reason_id">
+              <option value="">Select reason</option>
+              {% for id, label in options.void_reasons %}
+                <option value="{{ id }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+            {% if not options.void_reasons %}
+              <div class="hint">No void reasons configured (run seed)</div>
+            {% endif %}
+          </div>
+          <div class="field">
+            <label for="void_note">Note</label>
+            <input type="text" id="void_note" name="void_note" />
+          </div>
         </div>
-        <div class="field">
-          <label for="void_note">Note</label>
-          <input type="text" id="void_note" name="void_note" />
+        <div class="actions btn-group ticket-void-actions">
+          {% if ticket.status != "VOID" %}
+            <button type="submit" class="btn btn--danger">Void Ticket</button>
+          {% endif %}
         </div>
-      </div>
-      <div class="actions btn-group">
-        {% if ticket.status != "VOID" %}
-          <button type="submit" class="btn btn--danger">Void Ticket</button>
-        {% endif %}
-      </div>
-    </form>
-  </div>
-</section>
+      </form>
+    </div>
+  </section>
+{% endif %}
 
 <script>
   (function () {
     function parseNumber(value) {
-      const parsed = parseFloat(value);
+      if (value === null || value === undefined) {
+        return null;
+      }
+      const parsed = parseFloat(String(value).replace(/,/g, ""));
       return Number.isFinite(parsed) ? parsed : null;
     }
 
-    function bindCalculations() {
-      const grossInput = document.getElementById("gross_kg");
-      const tareInput = document.getElementById("tare_kg");
-      const netInput = document.getElementById("net_kg");
-      const qtyInput = document.getElementById("qty");
-      const unitPriceInput = document.getElementById("unit_price");
-      const totalInput = document.getElementById("total");
+    function formatBillable(value, unitName) {
+      if (value === null) {
+        return "";
+      }
+      const normalized = (unitName || "").trim().toLowerCase();
+      if (normalized === "tonne" || normalized === "tonnes") {
+        return value.toFixed(3);
+      }
+      if (normalized === "kg") {
+        return String(Math.round(value));
+      }
+      return value.toFixed(3);
+    }
 
-      function updateNet() {
-        if (!netInput) {
-          return;
-        }
+    function bindCalculations() {
+      const form = document.getElementById("ticket-form");
+      if (!form || form.dataset.recalcBound === "true") {
+        return;
+      }
+      form.dataset.recalcBound = "true";
+
+      function recalculateTicketValues() {
+        const grossInput = document.getElementById("gross_kg");
+        const tareInput = document.getElementById("tare_kg");
+        const readoutInput = document.getElementById("readout_kg");
+        const netInput = document.getElementById("net_kg");
+        const qtyInput = document.getElementById("qty");
+        const unitPriceInput = document.getElementById("unit_price");
+        const totalInput = document.getElementById("total");
+        const unitTypeInput = document.getElementById("unit_type");
+        const unitNameInput = document.getElementById("unit_name");
+
         const gross = parseNumber(grossInput && grossInput.value);
         const tare = parseNumber(tareInput && tareInput.value);
-        if (gross === null || tare === null) {
-          netInput.value = "";
-          return;
-        }
-        netInput.value = String(Math.round(gross - tare));
-      }
+        const net = gross === null || tare === null ? null : gross - tare;
 
-      function updateTotal() {
+        if (netInput) {
+          netInput.value = net === null ? "" : String(Math.round(net));
+        }
+
+        const unitType = (unitTypeInput && unitTypeInput.value || "").trim().toUpperCase();
+        const unitName = (unitNameInput && unitNameInput.value || "").trim().toLowerCase();
+
+        let billable = null;
+        if (unitType === "WEIGHT") {
+          if (net !== null) {
+            if (unitName === "tonne" || unitName === "tonnes") {
+              billable = net / 1000;
+            } else if (unitName === "kg") {
+              billable = net;
+            }
+          }
+          if (qtyInput) {
+            qtyInput.value = billable === null ? "" : formatBillable(billable, unitName);
+          }
+        } else {
+          billable = parseNumber(qtyInput && qtyInput.value);
+        }
+
+        const unitPrice = parseNumber(unitPriceInput && unitPriceInput.value);
         if (!totalInput) {
           return;
         }
-        const qty = parseNumber(qtyInput && qtyInput.value);
-        const unitPrice = parseNumber(unitPriceInput && unitPriceInput.value);
-        if (qty === null || unitPrice === null) {
+        if (billable === null || unitPrice === null) {
           totalInput.value = "";
           return;
         }
-        totalInput.value = (qty * unitPrice).toFixed(2);
+        totalInput.value = (billable * unitPrice).toFixed(2);
       }
 
-      if (grossInput && tareInput && grossInput.dataset.netBound !== "true") {
-        grossInput.dataset.netBound = "true";
-        tareInput.dataset.netBound = "true";
-        grossInput.addEventListener("input", updateNet);
-        tareInput.addEventListener("input", updateNet);
-      }
-      if (qtyInput && unitPriceInput && qtyInput.dataset.totalBound !== "true") {
-        qtyInput.dataset.totalBound = "true";
-        unitPriceInput.dataset.totalBound = "true";
-        qtyInput.addEventListener("input", updateTotal);
-        unitPriceInput.addEventListener("input", updateTotal);
-      }
+      form.addEventListener("input", function (event) {
+        const target = event.target;
+        if (!target || !target.id) {
+          return;
+        }
+        if (
+          target.id === "gross_kg" ||
+          target.id === "tare_kg" ||
+          target.id === "readout_kg" ||
+          target.id === "qty" ||
+          target.id === "unit_price"
+        ) {
+          recalculateTicketValues();
+        }
+      });
+      form.addEventListener("change", function (event) {
+        const target = event.target;
+        if (!target || !target.id) {
+          return;
+        }
+        if (target.id === "product_id" || target.id === "unit_type" || target.id === "unit_name") {
+          recalculateTicketValues();
+        }
+      });
 
-      updateNet();
-      updateTotal();
+      // Ensure readout-driven values are calculated on initial bind.
+      if (document.getElementById("readout_kg")) {
+        recalculateTicketValues();
+      }
+      recalculateTicketValues();
     }
 
     function bindPricingMode() {
@@ -462,6 +574,12 @@
       const weightHint = document.getElementById("pricing-hint-weight");
       const qtyWrap = document.getElementById("qty-wrap");
       const weightsWrap = document.getElementById("weights-wrap");
+      const qtyInput = document.getElementById("qty");
+      const grossInput = document.getElementById("gross_kg");
+      const tareInput = document.getElementById("tare_kg");
+      const readoutInput = document.getElementById("readout_kg");
+      const swapButton = document.getElementById("swap-weights-button");
+      const countSwapTitle = "Swap weights not available for COUNT products.";
 
       if (unitType === "COUNT") {
         if (countHint) {
@@ -475,6 +593,22 @@
         }
         if (qtyWrap) {
           qtyWrap.classList.remove("muted");
+        }
+        if (qtyInput) {
+          qtyInput.readOnly = false;
+        }
+        if (grossInput) {
+          grossInput.readOnly = true;
+        }
+        if (tareInput) {
+          tareInput.readOnly = true;
+        }
+        if (readoutInput) {
+          readoutInput.readOnly = true;
+        }
+        if (swapButton) {
+          swapButton.disabled = true;
+          swapButton.title = countSwapTitle;
         }
         return;
       }
@@ -492,6 +626,24 @@
         if (weightsWrap) {
           weightsWrap.classList.remove("muted");
         }
+        if (qtyInput) {
+          qtyInput.readOnly = true;
+        }
+        if (grossInput) {
+          grossInput.readOnly = false;
+        }
+        if (tareInput) {
+          tareInput.readOnly = false;
+        }
+        if (readoutInput) {
+          readoutInput.readOnly = false;
+        }
+        if (swapButton) {
+          swapButton.disabled = false;
+          if (swapButton.title === countSwapTitle) {
+            swapButton.removeAttribute("title");
+          }
+        }
         return;
       }
 
@@ -507,47 +659,80 @@
       if (weightsWrap) {
         weightsWrap.classList.remove("muted");
       }
+      if (qtyInput) {
+        qtyInput.readOnly = false;
+      }
+      if (grossInput) {
+        grossInput.readOnly = false;
+      }
+      if (tareInput) {
+        tareInput.readOnly = false;
+      }
+      if (readoutInput) {
+        readoutInput.readOnly = false;
+      }
+      if (swapButton) {
+        swapButton.disabled = false;
+        if (swapButton.title === countSwapTitle) {
+          swapButton.removeAttribute("title");
+        }
+      }
+    }
+
+    function applySelectedProductMeta() {
+      const productSelect = document.getElementById("product_id");
+      const selectedOption =
+        productSelect && productSelect.selectedIndex >= 0
+          ? productSelect.options[productSelect.selectedIndex]
+          : null;
+      const unitTypeInput = document.getElementById("unit_type");
+      const unitNameInput = document.getElementById("unit_name");
+
+      if (!selectedOption) {
+        return;
+      }
+
+      if (unitTypeInput) {
+        unitTypeInput.value = selectedOption.dataset.unitType || "";
+      }
+      if (unitNameInput) {
+        unitNameInput.value = selectedOption.dataset.unitName || "";
+      }
+    }
+
+    function bindProductMetaSync() {
+      const productSelect = document.getElementById("product_id");
+      if (!productSelect || productSelect.dataset.metaBound === "true") {
+        return;
+      }
+      productSelect.dataset.metaBound = "true";
+      productSelect.addEventListener("change", function () {
+        applySelectedProductMeta();
+        bindPricingMode();
+        bindCalculations();
+      });
     }
 
     function bindProducerToggle() {
-      const toggle = document.getElementById("producer-toggle");
-      const selectWrap = document.getElementById("producer-select");
-      const select = document.getElementById("waste_producer_customer_id");
-      const clear = document.getElementById("producer-clear");
+      const sameAsCustomer = document.getElementById("waste_producer_same_as_customer");
+      const manualWrap = document.getElementById("waste-producer-manual");
 
-      if (!toggle || !selectWrap || !select) {
+      if (!sameAsCustomer || !manualWrap) {
         return;
       }
 
-      if (toggle.dataset.bound === "true") {
+      if (sameAsCustomer.dataset.bound === "true") {
         return;
       }
 
-      toggle.dataset.bound = "true";
+      sameAsCustomer.dataset.bound = "true";
 
-      toggle.addEventListener("click", function () {
-        const isHidden = selectWrap.style.display === "none" || !selectWrap.style.display;
-        selectWrap.style.display = isHidden ? "block" : "none";
-        if (isHidden) {
-          select.focus();
-        }
-      });
-
-      clear.addEventListener("click", function () {
-        select.value = "";
-        selectWrap.style.display = "none";
-      });
-    }
-
-    function bindComplianceToggle() {
-      const compliance = document.querySelector("details.compliance-frame");
-      if (!compliance) {
-        return;
+      function updateManualVisibility() {
+        manualWrap.style.display = sameAsCustomer.checked ? "none" : "grid";
       }
 
-      compliance.addEventListener("toggle", function () {
-        compliance.classList.toggle("is-open", compliance.open);
-      });
+      sameAsCustomer.addEventListener("change", updateManualVisibility);
+      updateManualVisibility();
     }
 
     function applyDefaultDestination() {
@@ -571,9 +756,10 @@
     }
 
     bindCalculations();
+    applySelectedProductMeta();
     bindPricingMode();
+    bindProductMetaSync();
     bindProducerToggle();
-    bindComplianceToggle();
     applyDefaultDestination();
 
     document.body.addEventListener("htmx:afterSwap", function (event) {
@@ -582,6 +768,7 @@
       }
       if (event.target && event.target.id === "pricing-defaults") {
         applyDefaultDestination();
+        bindCalculations();
         bindPricingMode();
       }
     });

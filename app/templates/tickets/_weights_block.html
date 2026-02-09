@@ -1,4 +1,9 @@
 <div id="weights-form">
   <input type="hidden" name="ticket_id" value="{{ ticket.id }}" />
+  <input
+    type="hidden"
+    name="weights_product_id"
+    value="{{ form.product_id if form is defined else (ticket.product_id or '') }}"
+  />
   {% include "tickets/_weights.html" %}
 </div>

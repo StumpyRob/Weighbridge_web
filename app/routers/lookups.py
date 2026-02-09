@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import Container, Destination, Driver, Haulier, Ticket
+from ..security import validate_no_html_fields
 from ..templating import templates
 
 router = APIRouter(prefix="/lookups")
@@ -39,6 +40,14 @@ def _resolve_hide_inactive(request: Request, hide_inactive: int | None) -> int:
     if legacy_show is None:
         return 1
     return 0 if _is_truthy(legacy_show) else 1
+
+
+def _html_validation_error(field_values: dict[str, str | None]) -> str | None:
+    errors: list[str] = []
+    validate_no_html_fields(field_values, errors)
+    if not errors:
+        return None
+    return errors[0]
 
 
 def _render_lookup_list(
@@ -119,7 +128,12 @@ async def hauliers_create(
     raw_name = str(form.get("name", ""))
     carrier_licence_number = str(form.get("carrier_licence_number", "")).strip()
     name = re.sub(r"\s+", " ", raw_name.strip())
-    error = None
+    error = _html_validation_error(
+        {
+            "Name": name,
+            "Carrier licence number": carrier_licence_number,
+        }
+    )
     if not name:
         error = "Name is required."
     elif len(name) > 120:
@@ -211,7 +225,12 @@ async def hauliers_update(
     raw_name = str(form.get("name", ""))
     carrier_licence_number = str(form.get("carrier_licence_number", "")).strip()
     name = re.sub(r"\s+", " ", raw_name.strip())
-    error = None
+    error = _html_validation_error(
+        {
+            "Name": name,
+            "Carrier licence number": carrier_licence_number,
+        }
+    )
     if not name:
         error = "Name is required."
     elif len(name) > 120:
@@ -362,7 +381,7 @@ async def drivers_create(
     form = await request.form()
     raw_name = str(form.get("name", ""))
     name = re.sub(r"\s+", " ", raw_name.strip())
-    error = None
+    error = _html_validation_error({"Name": name})
     if not name:
         error = "Name is required."
     elif len(name) > 120:
@@ -449,7 +468,7 @@ async def drivers_update(
     form = await request.form()
     raw_name = str(form.get("name", ""))
     name = re.sub(r"\s+", " ", raw_name.strip())
-    error = None
+    error = _html_validation_error({"Name": name})
     if not name:
         error = "Name is required."
     elif len(name) > 120:
@@ -597,7 +616,7 @@ async def containers_create(
     form = await request.form()
     raw_name = str(form.get("name", ""))
     name = re.sub(r"\s+", " ", raw_name.strip())
-    error = None
+    error = _html_validation_error({"Name": name})
     if not name:
         error = "Name is required."
     elif len(name) > 120:
@@ -684,7 +703,7 @@ async def containers_update(
     form = await request.form()
     raw_name = str(form.get("name", ""))
     name = re.sub(r"\s+", " ", raw_name.strip())
-    error = None
+    error = _html_validation_error({"Name": name})
     if not name:
         error = "Name is required."
     elif len(name) > 120:
@@ -832,7 +851,7 @@ async def destinations_create(
     form = await request.form()
     raw_name = str(form.get("name", ""))
     name = re.sub(r"\s+", " ", raw_name.strip())
-    error = None
+    error = _html_validation_error({"Name": name})
     if not name:
         error = "Name is required."
     elif len(name) > 120:
@@ -921,7 +940,7 @@ async def destinations_update(
     form = await request.form()
     raw_name = str(form.get("name", ""))
     name = re.sub(r"\s+", " ", raw_name.strip())
-    error = None
+    error = _html_validation_error({"Name": name})
     if not name:
         error = "Name is required."
     elif len(name) > 120:

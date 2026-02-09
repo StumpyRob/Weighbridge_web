@@ -4,7 +4,13 @@ This file lists fields/features that are intentionally **not implemented** yet, 
 
 ## Tickets
 
+- Tickets show operational quantities and rates only. Monetary values are indicative; invoices are the source of truth.
+
 - Page: `Tickets -> Edit Ticket` (`app/templates/tickets/edit.html`)
+  - **Readout (kg) / Read button**
+    - Status: NOT IMPLEMENTED (live weighbridge hardware integration via serial/TCP).
+    - `DEV_MODE=true`: shows disabled WIP control and hint.
+    - `DEV_MODE=false`: Read button hidden; Swap Weights remains available.
   - **Yard (optional)** (`yard_id`)
     - `DEV_MODE=true`: shown as disabled WIP field with hint "Midsoft yard integration not implemented yet."
     - `DEV_MODE=false`: hidden.

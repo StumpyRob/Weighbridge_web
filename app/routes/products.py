@@ -20,6 +20,7 @@ from ..services.unit_rules import (
     is_allowed_weight_unit,
     normalize_unit_name,
 )
+from ..security import has_unsafe_markup, validate_no_html_fields
 from ..templating import templates
 
 router = APIRouter()
@@ -49,7 +50,12 @@ def products_list(
     products = db.execute(query).scalars().all()
     return templates.TemplateResponse(request, 
         "products/list.html",
-        {"request": request, "products": products, "q": q or ""},
+        {
+            "request": request,
+            "products": products,
+            "q": q or "",
+            "saved": request.query_params.get("saved") == "1",
+        },
     )
 
 
@@ -109,7 +115,7 @@ async def products_create(
     )
     db.add(product)
     db.commit()
-    return RedirectResponse(url="/products", status_code=303)
+    return RedirectResponse(url="/products?saved=1", status_code=303)
 
 
 @router.get("/products/units", response_class=HTMLResponse)
@@ -428,7 +434,7 @@ async def products_update(
     product.default_destination_id = payload["default_destination_id"]
     product.updated_at = utcnow()
     db.commit()
-    return RedirectResponse(url=f"/products/{product.id}", status_code=303)
+    return RedirectResponse(url="/products?saved=1", status_code=303)
 
 
 def _load_options(
@@ -518,6 +524,15 @@ def _parse_product_form(form) -> dict:
     sale_type = _normalize_sale_type(value("sale_type"))
     tax_rate_raw = value("tax_rate_id")
     tax_rate_id = _parse_int(tax_rate_raw)
+
+    validate_no_html_fields(
+        {
+            "Code": code,
+            "Description": description,
+        },
+        errors,
+    )
+
     if not code:
         errors.append("Code is required.")
     if not description:
@@ -924,6 +939,8 @@ def _validate_unit_name(
 ) -> str | None:
     if not name:
         return "Name is required."
+    if has_unsafe_markup(name):
+        return "HTML is not allowed."
     if len(name) > UNIT_NAME_MAX_LEN:
         return f"Name must be {UNIT_NAME_MAX_LEN} characters or fewer."
     existing = db.execute(

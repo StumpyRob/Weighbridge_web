@@ -12,7 +12,10 @@
 {% set tare_value = form.tare_kg if form is defined else (ticket.tare_kg or '') %}
 {% set net_value = form.net_kg if form is defined else (ticket.net_kg or '') %}
 {% set readout_value = form.readout_kg if form is defined else '' %}
+{% set resolved_unit_type = unit_type if unit_type is defined and unit_type is not none else (ticket.product.unit.unit_type if ticket.product and ticket.product.unit else '') %}
+{% set weights_locked = weights_locked if weights_locked is defined else (resolved_unit_type|string|upper == "COUNT") %}
 
+{% if is_open %}
 <div class="form-grid" id="weights-wrap">
   <div class="field">
     <label for="gross_kg">Gross kg</label>
@@ -22,7 +25,7 @@
       id="gross_kg"
       name="gross_kg"
       value="{{ gross_value }}"
-      {% if ticket.status and ticket.status.value == "COMPLETE" and not is_admin %}readonly{% endif %}
+      {% if weights_locked or (ticket.status and ticket.status.value == "COMPLETE" and not is_admin) %}readonly{% endif %}
     />
   </div>
   <div class="field">
@@ -33,7 +36,7 @@
       id="tare_kg"
       name="tare_kg"
       value="{{ tare_value }}"
-      {% if ticket.status and ticket.status.value == "COMPLETE" and not is_admin %}readonly{% endif %}
+      {% if weights_locked or (ticket.status and ticket.status.value == "COMPLETE" and not is_admin) %}readonly{% endif %}
     />
   </div>
   <div class="field">
@@ -55,9 +58,54 @@
       id="readout_kg"
       name="readout_kg"
       value="{{ readout_value }}"
+      {% if weights_locked %}readonly{% endif %}
     />
+    {% if DEV_MODE %}
+      <div class="hint">
+        <span class="wip-badge" title="Work in progress">WIP</span>
+        Live weighbridge integration not wired yet.
+      </div>
+    {% endif %}
   </div>
 </div>
+{% else %}
+<div class="form-grid" id="weights-wrap">
+  <div class="field">
+    <label>Gross kg</label>
+    <div class="readonly">
+      {% if ticket.gross_kg is not none %}
+        {{ "{:.0f}".format(ticket.gross_kg) }}
+      {% else %}
+        &mdash;
+      {% endif %}
+    </div>
+  </div>
+  <div class="field">
+    <label>Tare kg</label>
+    <div class="readonly">
+      {% if ticket.tare_kg is not none %}
+        {{ "{:.0f}".format(ticket.tare_kg) }}
+      {% else %}
+        &mdash;
+      {% endif %}
+    </div>
+  </div>
+  <div class="field">
+    <label>Net kg</label>
+    <div class="readonly">
+      {% if ticket.net_kg is not none %}
+        {{ "{:.0f}".format(ticket.net_kg) }}
+      {% else %}
+        &mdash;
+      {% endif %}
+    </div>
+  </div>
+  <div class="field">
+    <label>Readout (kg)</label>
+    <div class="readonly">&mdash;</div>
+  </div>
+</div>
+{% endif %}
 
 {% if tare_auto_hint %}
   <div class="hint" id="tare-auto-hint">{{ tare_auto_hint }}</div>
@@ -67,28 +115,37 @@
 
 
 <div class="weights-actions btn-group">
-  <button
-    type="button"
-    class="btn btn--primary"
-    hx-post="/tickets/weights/read"
-    hx-target="#weights-block"
-    hx-swap="innerHTML"
-    hx-include="#weights-form"
-  >
-    Read
-  </button>
-  <button
-    type="button"
-    class="btn btn--secondary"
-    hx-post="/tickets/weights/swap-preview"
-    hx-target="#weights-block"
-    hx-swap="innerHTML"
-  >
-    Swap Weights
-  </button>
+  {% if is_open %}
+    {% if DEV_MODE and not weights_locked %}
+      <button
+        type="button"
+        class="btn btn--primary"
+        hx-post="/tickets/weights/read"
+        hx-target="#weights-block"
+        hx-swap="innerHTML"
+        title="WIP: Live weighbridge integration not wired yet."
+      >
+        Read
+        <span class="wip-badge" title="Work in progress">WIP</span>
+      </button>
+    {% endif %}
+    <button
+      id="swap-weights-button"
+      type="button"
+      class="btn btn--secondary"
+      hx-post="/tickets/weights/swap-preview"
+      hx-include="#weights-form"
+      hx-target="#weights-block"
+      hx-swap="innerHTML"
+      hx-vals='{"ticket_id":"{{ ticket.id }}"}'
+      {% if weights_locked %}disabled title="Swap weights not available for COUNT products."{% endif %}
+    >
+      Swap Weights
+    </button>
+  {% endif %}
 </div>
 
-{% if read_confirm %}
+{% if is_open and read_confirm %}
   <div class="notice overwrite-alert">
     <span>Both weights are already entered. Overwrite Gross or Tare?</span>
     <div class="overwrite-actions btn-group">

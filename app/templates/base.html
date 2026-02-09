@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{% block title %}Weighbridge Web{% endblock %}</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=1" />
+    <link rel="stylesheet" href="/static/css/style.css?v=2" />
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
   </head>
   <body>
@@ -27,12 +27,8 @@
       </div>
     </header>
     <main class="container">
-      {% if DEV_MODE and has_wip_fields %}
-        <div class="dev-banner">
-          Dev Mode enabled — work-in-progress fields are visible on this page.
-        </div>
-      {% endif %}
       {% block content %}{% endblock %}
     </main>
   </body>
 </html>
+
