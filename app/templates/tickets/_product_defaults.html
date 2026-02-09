@@ -1,9 +1,11 @@
 <div class="form-grid">
-  <div class="field">
-    <label for="unit_price">Unit price</label>
-    <input type="number" step="0.01" id="unit_price" name="unit_price" value="{{ unit_price }}" />
+  <div class="field field-secondary">
+    <label for="unit_price">Rate</label>
+    <input type="number" step="0.01" id="unit_price" name="unit_price" value="{{ unit_price }}" class="input-secondary" />
   </div>
 </div>
+
+{% include "tickets/_qty_field.html" %}
 
 <div id="ewc-display" hx-swap-oob="true">
   <div
@@ -55,3 +57,14 @@
 >
   Hazardous waste requires producer details.
 </div>
+
+{% if weights_ticket and weights_form %}
+  <div id="weights-block" hx-swap-oob="innerHTML">
+    {% set ticket = weights_ticket %}
+    {% set form = weights_form %}
+    {% set is_open = weights_is_open %}
+    {% set show_weight_errors = true %}
+    {% set errors = [] %}
+    {% include "tickets/_weights_block.html" %}
+  </div>
+{% endif %}

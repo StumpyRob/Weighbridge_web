@@ -1,4 +1,3 @@
-from datetime import datetime
 from decimal import Decimal, InvalidOperation
 import re
 
@@ -10,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..security import validate_no_html_fields
 from ..models.base import utcnow
 from ..models import Customer, InvoiceFrequency
 
@@ -34,7 +34,12 @@ def customers_list(
     customers = db.execute(query).scalars().all()
     return templates.TemplateResponse(request, 
         "customers/list.html",
-        {"request": request, "customers": customers, "q": q or ""},
+        {
+            "request": request,
+            "customers": customers,
+            "q": q or "",
+            "saved": request.query_params.get("saved") == "1",
+        },
     )
 
 
@@ -104,7 +109,7 @@ async def customers_create(
             },
             status_code=400,
         )
-    return RedirectResponse(url="/customers", status_code=303)
+    return RedirectResponse(url="/customers?saved=1", status_code=303)
 
 
 @router.get("/customers/{customer_id}", response_class=HTMLResponse)
@@ -191,7 +196,7 @@ async def customers_update(
             },
             status_code=400,
         )
-    return RedirectResponse(url=f"/customers/{customer.id}", status_code=303)
+    return RedirectResponse(url="/customers?saved=1", status_code=303)
 
 
 def _load_options(db: Session) -> dict[str, list[tuple[str, str]]]:
@@ -210,6 +215,33 @@ def _parse_customer_form(form) -> dict:
     errors: list[str] = []
     account_code = value("account_code").upper()
     name = value("name")
+    invoice_email = value("invoice_email")
+    phone = value("phone")
+    address_line1 = value("address_line1")
+    address_line2 = value("address_line2")
+    city = value("city")
+    postcode = value("postcode")
+    country = value("country")
+    vat_number = value("vat_number")
+    payment_terms = value("payment_terms")
+
+    validate_no_html_fields(
+        {
+            "Account code": account_code,
+            "Name": name,
+            "Invoice email": invoice_email,
+            "Phone": phone,
+            "Address line 1": address_line1,
+            "Address line 2": address_line2,
+            "City": city,
+            "Postcode": postcode,
+            "Country": country,
+            "VAT number": vat_number,
+            "Payment terms": payment_terms,
+        },
+        errors,
+    )
+
     if not account_code:
         errors.append("Account code is required.")
     elif len(account_code) > ACCOUNT_CODE_MAX_LEN:
@@ -226,16 +258,16 @@ def _parse_customer_form(form) -> dict:
         "form": {
             "account_code": account_code,
             "name": name,
-            "invoice_email": value("invoice_email"),
-            "phone": value("phone"),
-            "address_line1": value("address_line1"),
-            "address_line2": value("address_line2"),
-            "city": value("city"),
-            "postcode": value("postcode"),
-            "country": value("country"),
-            "vat_number": value("vat_number"),
+            "invoice_email": invoice_email,
+            "phone": phone,
+            "address_line1": address_line1,
+            "address_line2": address_line2,
+            "city": city,
+            "postcode": postcode,
+            "country": country,
+            "vat_number": vat_number,
             "invoice_frequency_id": value("invoice_frequency_id"),
-            "payment_terms": value("payment_terms"),
+            "payment_terms": payment_terms,
             "credit_limit": value("credit_limit"),
             "on_stop": value("on_stop"),
             "cash_account": value("cash_account"),
@@ -244,16 +276,16 @@ def _parse_customer_form(form) -> dict:
         },
         "account_code": account_code,
         "name": name,
-        "invoice_email": value("invoice_email") or None,
-        "phone": value("phone") or None,
-        "address_line1": value("address_line1") or None,
-        "address_line2": value("address_line2") or None,
-        "city": value("city") or None,
-        "postcode": value("postcode") or None,
-        "country": value("country") or None,
-        "vat_number": value("vat_number") or None,
+        "invoice_email": invoice_email or None,
+        "phone": phone or None,
+        "address_line1": address_line1 or None,
+        "address_line2": address_line2 or None,
+        "city": city or None,
+        "postcode": postcode or None,
+        "country": country or None,
+        "vat_number": vat_number or None,
         "invoice_frequency_id": _parse_int(value("invoice_frequency_id")),
-        "payment_terms": value("payment_terms") or None,
+        "payment_terms": payment_terms or None,
         "credit_limit": _parse_decimal(value("credit_limit")),
         "on_stop": value("on_stop") == "on",
         "cash_account": value("cash_account") == "on",

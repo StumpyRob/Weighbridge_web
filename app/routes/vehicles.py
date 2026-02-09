@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models.base import utcnow
+from ..security import validate_no_html_fields
 from ..models import (
     Container,
     Customer,
@@ -38,7 +39,12 @@ def vehicles_list(
     rows = db.execute(query).all()
     return templates.TemplateResponse(request, 
         "vehicles/list.html",
-        {"request": request, "rows": rows, "q": q or ""},
+        {
+            "request": request,
+            "rows": rows,
+            "q": q or "",
+            "saved": request.query_params.get("saved") == "1",
+        },
     )
 
 
@@ -86,7 +92,7 @@ async def vehicles_create(
     )
     db.add(vehicle)
     db.commit()
-    return RedirectResponse(url="/vehicles", status_code=303)
+    return RedirectResponse(url="/vehicles?saved=1", status_code=303)
 
 
 @router.get("/vehicles/{vehicle_id}", response_class=HTMLResponse)
@@ -163,7 +169,7 @@ async def vehicles_update(
     vehicle.driver_id = payload["driver_id"]
     vehicle.updated_at = utcnow()
     db.commit()
-    return RedirectResponse(url=f"/vehicles/{vehicle.id}", status_code=303)
+    return RedirectResponse(url="/vehicles?saved=1", status_code=303)
 
 
 @router.post("/vehicles/{vehicle_id}/tares", response_class=HTMLResponse)
@@ -260,6 +266,13 @@ def _parse_vehicle_form(form) -> dict:
     errors: list[str] = []
     registration = value("registration").upper()
     vehicle_type_id = _parse_int(value("vehicle_type_id"))
+
+    validate_no_html_fields(
+        {
+            "Registration": registration,
+        },
+        errors,
+    )
 
     if not registration:
         errors.append("Registration is required.")

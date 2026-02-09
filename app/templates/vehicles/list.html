@@ -13,6 +13,23 @@
   </div>
 </div>
 
+{% if saved %}
+  <div class="alert alert-success" data-auto-dismiss>
+    Saved.
+  </div>
+  <script>
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    window.setTimeout(function () {
+      const banner = document.querySelector("[data-auto-dismiss]");
+      if (banner) {
+        banner.remove();
+      }
+    }, 3000);
+  </script>
+{% endif %}
+
 <form class="filters" method="get" action="/vehicles">
   <div class="field">
     <label for="q">Registration contains</label>

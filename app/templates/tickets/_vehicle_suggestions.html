@@ -1,3 +1,8 @@
+{% set suggested_driver = default_driver if default_driver is defined else none %}
+{% set suggested_tare = suggested_tare_kg if suggested_tare_kg is defined else none %}
+{% set driver_options = oob_driver_options if oob_driver_options is defined else [] %}
+{% set driver_selected = oob_driver_selected if oob_driver_selected is defined else "" %}
+
 {% if show_panel and vehicle %}
   <div class="vehicle-suggestion">
     <div class="suggestion-note">
@@ -19,7 +24,13 @@
         {% if default_haulier %}
           <div><strong>Suggested haulier:</strong> {{ default_haulier.name }}</div>
         {% endif %}
-        {% if not default_customer and not default_haulier %}
+        {% if suggested_driver %}
+          <div><strong>Suggested driver:</strong> {{ suggested_driver.name }}</div>
+        {% endif %}
+        {% if suggested_tare is number %}
+          <div><strong>Suggested tare:</strong> {{ "{:.0f}".format(suggested_tare) }} kg</div>
+        {% endif %}
+        {% if not default_customer and not default_haulier and not suggested_driver and suggested_tare is none %}
           <div class="muted">No defaults configured for this vehicle.</div>
         {% endif %}
       </div>
@@ -30,46 +41,25 @@
       {% endif %}
 
       <div class="actions suggestion-actions btn-group">
-        {% if can_apply_customer %}
-          <button
-            type="button"
-            class="btn btn--secondary"
-            hx-post="/tickets/{{ ticket.id }}/apply-default-customer"
-            hx-target="#vehicle-suggestions"
-            hx-swap="innerHTML"
-            hx-include="#vehicle_reg"
-          >
-            Apply customer
-          </button>
-        {% endif %}
-        {% if can_apply_haulier %}
-          <button
-            type="button"
-            class="btn btn--secondary"
-            hx-post="/tickets/{{ ticket.id }}/apply-default-haulier"
-            hx-target="#vehicle-suggestions"
-            hx-swap="innerHTML"
-            hx-include="#vehicle_reg"
-          >
-            Apply haulier
-          </button>
-        {% endif %}
-        {% if can_apply_all %}
+        {% if can_apply_suggestion %}
           <button
             type="button"
             class="btn btn--primary"
-            hx-post="/tickets/{{ ticket.id }}/apply-defaults"
+            hx-post="/tickets/vehicle-suggestion/apply"
             hx-target="#vehicle-suggestions"
             hx-swap="innerHTML"
-            hx-include="#vehicle_reg"
+            hx-include="#vehicle_reg,#customer_id,#haulier_id,#driver_id,#gross_kg,#tare_kg,#readout_kg"
+            hx-vals='{"ticket_id":"{{ ticket.id }}"}'
           >
-            Apply all
+            Apply
           </button>
         {% endif %}
         <button
           type="button"
           class="btn btn--ghost"
-          onclick="document.getElementById('vehicle-suggestions').innerHTML = ''"
+          hx-post="/tickets/vehicle-suggestion/dismiss"
+          hx-target="#vehicle-suggestions"
+          hx-swap="innerHTML"
         >
           Dismiss
         </button>
@@ -85,6 +75,21 @@
     </ul>
   </div>
 {% endif %}
+
+{% if oob_status_warnings is not none %}
+  <div id="ticket-status-warnings" hx-swap-oob="innerHTML">
+    {% if oob_status_warnings %}
+      <div class="alert alert--warning">
+        <ul>
+          {% for warning in oob_status_warnings %}
+            <li>{{ warning }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
+
 {% if oob_customer_options %}
   <select id="customer_id" name="customer_id" hx-swap-oob="true">
     <option value="">Select customer</option>
@@ -100,4 +105,20 @@
       <option value="{{ id }}" {% if oob_haulier_selected|string == id|string %}selected{% endif %}>{{ label }}</option>
     {% endfor %}
   </select>
+{% endif %}
+{% if driver_options %}
+  <select id="driver_id" name="driver_id" hx-swap-oob="true">
+    <option value="">Select driver</option>
+    {% for id, label in driver_options %}
+      <option value="{{ id }}" {% if driver_selected|string == id|string %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+{% endif %}
+
+{% if oob_weights_form %}
+  <div id="weights-block" hx-swap-oob="innerHTML">
+    {% set form = oob_weights_form %}
+    {% set tare_auto_hint = oob_tare_auto_hint %}
+    {% include "tickets/_weights.html" %}
+  </div>
 {% endif %}

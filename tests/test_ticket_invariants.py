@@ -7,6 +7,7 @@ from app.models import (
     Ticket,
     TicketStatusEnum,
     TransactionTypeEnum,
+    Unit,
     Vehicle,
 )
 
@@ -181,3 +182,200 @@ def test_invalid_complete_preserves_vehicle_reg_text(client, db_session):
     assert 'value="ZZ99ZZZ"' in response.text
     db_session.refresh(ticket)
     assert ticket.vehicle_reg_text == "ZZ99ZZZ"
+
+
+def test_complete_blocks_on_stop_customer(client, db_session):
+    customer = Customer(account_code="C-STOP", name="Stop Customer", on_stop=True)
+    destination = Destination(name="Stop Destination")
+    ewc = EwcCode(
+        code_6="030303",
+        code_display="03 03 03",
+        description="Stop EWC",
+        hazardous=False,
+        active=True,
+        source_file="test",
+        imported_at=datetime(2026, 1, 1, 0, 0, 0),
+    )
+    product = Product(
+        code="P-STOP",
+        description="Stop product",
+        unit_price=Decimal("4.00"),
+        ewc_code=ewc,
+    )
+    ticket = Ticket(
+        ticket_no="T-STOP-1",
+        datetime=datetime(2026, 1, 3, 9, 0, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([customer, destination, ewc, product, ticket])
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "complete",
+            "datetime": "2026-01-03T09:00",
+            "direction": "INWARD",
+            "transaction_type": "WASTEIN",
+            "gross_kg": "2200",
+            "tare_kg": "1200",
+            "customer_id": str(customer.id),
+            "product_id": str(product.id),
+            "destination_id": str(destination.id),
+            "reg": "ZZ99ZZZ",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Cannot complete ticket: Customer is ON STOP." in response.text
+    assert "cannot be completed/invoiced until stop is removed." in response.text
+    assert 'name="action" value="complete"' in response.text
+    assert "ON STOP blocks completion" not in response.text
+    db_session.refresh(ticket)
+    assert _status_value(ticket.status) == TicketStatusEnum.OPEN.value
+
+
+def test_complete_defaults_tare_from_vehicle_default(client, db_session):
+    customer = Customer(account_code="C-DEF", name="Default Customer")
+    destination = Destination(name="Default Destination")
+    vehicle = Vehicle(registration="ABC123", default_tare_kg=5000)
+    ewc = EwcCode(
+        code_6="040404",
+        code_display="04 04 04",
+        description="Default tare EWC",
+        hazardous=False,
+        active=True,
+        source_file="test",
+        imported_at=datetime(2026, 1, 1, 0, 0, 0),
+    )
+    product = Product(
+        code="P-DEF",
+        description="Default tare product",
+        unit_price=Decimal("6.00"),
+        ewc_code=ewc,
+    )
+    ticket = Ticket(
+        ticket_no="T-DEF-1",
+        datetime=datetime(2026, 1, 3, 10, 0, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([customer, destination, vehicle, ewc, product, ticket])
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "complete",
+            "datetime": "2026-01-03T10:00",
+            "direction": "INWARD",
+            "transaction_type": "WASTEIN",
+            "gross_kg": "10000",
+            "customer_id": str(customer.id),
+            "product_id": str(product.id),
+            "destination_id": str(destination.id),
+            "reg": "ABC123",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    db_session.refresh(ticket)
+    assert _status_value(ticket.status) == TicketStatusEnum.COMPLETE.value
+    assert ticket.vehicle_id == vehicle.id
+    assert float(ticket.tare_kg) == 5000.0
+
+
+def test_complete_count_product_blocks_when_weights_present(client, db_session):
+    customer = Customer(account_code="C-COUNT-ONLY", name="Count Only Customer")
+    count_unit = Unit(name="CountOnlyUnit", unit_type="COUNT", is_active=True)
+    ticket = Ticket(
+        ticket_no="T-COUNT-ONLY-1",
+        datetime=datetime(2026, 1, 3, 11, 0, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([customer, count_unit, ticket])
+    db_session.commit()
+    product = Product(
+        code="P-COUNT-ONLY-1",
+        description="Count only product",
+        unit_id=count_unit.id,
+        unit_price=Decimal("10.00"),
+    )
+    db_session.add(product)
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "complete",
+            "datetime": "2026-01-03T11:00",
+            "direction": "INWARD",
+            "transaction_type": "SALE",
+            "customer_id": str(customer.id),
+            "product_id": str(product.id),
+            "qty": "1",
+            "gross_kg": "1000",
+            "tare_kg": "200",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "COUNT product: enter Qty only (weights must be blank)." in response.text
+    db_session.refresh(ticket)
+    assert _status_value(ticket.status) == TicketStatusEnum.OPEN.value
+
+
+def test_complete_weight_product_blocks_when_qty_present(client, db_session):
+    customer = Customer(account_code="C-WEIGHT-ONLY", name="Weight Only Customer")
+    weight_unit = Unit(name="WeightOnlyUnit", unit_type="WEIGHT", is_active=True)
+    ticket = Ticket(
+        ticket_no="T-WEIGHT-ONLY-1",
+        datetime=datetime(2026, 1, 3, 12, 0, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([customer, weight_unit, ticket])
+    db_session.commit()
+    product = Product(
+        code="P-WEIGHT-ONLY-1",
+        description="Weight only product",
+        unit_id=weight_unit.id,
+        unit_price=Decimal("10.00"),
+    )
+    db_session.add(product)
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "complete",
+            "datetime": "2026-01-03T12:00",
+            "direction": "INWARD",
+            "transaction_type": "SALE",
+            "customer_id": str(customer.id),
+            "product_id": str(product.id),
+            "qty": "1",
+            "gross_kg": "1000",
+            "tare_kg": "200",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "WEIGHT product: enter weights only (Qty must be blank)." in response.text
+    db_session.refresh(ticket)
+    assert _status_value(ticket.status) == TicketStatusEnum.OPEN.value

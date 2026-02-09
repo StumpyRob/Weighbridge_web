@@ -35,6 +35,11 @@ class TicketStatusEnum(str, Enum):
     VOID = "VOID"
 
 
+class WasteProducerSourceEnum(str, Enum):
+    CUSTOMER = "CUSTOMER"
+    MANUAL = "MANUAL"
+
+
 class Ticket(Base):
     __tablename__ = "tickets"
     __table_args__ = (
@@ -92,6 +97,10 @@ class Ticket(Base):
     )
     waste_producer_customer_id: Mapped[int | None] = mapped_column(
         ForeignKey("customers.id")
+    )
+    waste_producer_source: Mapped[WasteProducerSourceEnum | None] = mapped_column(
+        SAEnum(WasteProducerSourceEnum, native_enum=False, create_constraint=False),
+        nullable=True,
     )
     waste_producer_name: Mapped[str | None] = mapped_column(String(255))
     waste_producer_address: Mapped[str | None] = mapped_column(Text)

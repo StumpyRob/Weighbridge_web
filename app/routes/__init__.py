@@ -1,7 +1,6 @@
 from fastapi import APIRouter
 
 from .customers import router as customers_router
-from .debug import router as debug_router
 from .items import router as items_router
 from .invoices import router as invoices_router
 from .products import router as products_router
@@ -15,4 +14,3 @@ api_router.include_router(invoices_router, tags=["invoices"])
 api_router.include_router(products_router, tags=["products"])
 api_router.include_router(tickets_router, tags=["tickets"])
 api_router.include_router(vehicles_router, tags=["vehicles"])
-api_router.include_router(debug_router, tags=["debug"])

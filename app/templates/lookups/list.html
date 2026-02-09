@@ -108,21 +108,23 @@
                 <span class="status-pill status-void">Inactive</span>
               {% endif %}
             </td>
-            <td class="actions btn-group">
-              {% if entity_singular == "Unit" and item.unit_type == "WEIGHT" %}
-                &nbsp;
-              {% else %}
-                <a class="btn btn--ghost" href="{{ base_path }}/{{ item.id }}/edit">Edit</a>
-                {% if item.is_active %}
-                  <form method="post" action="{{ base_path }}/{{ item.id }}/deactivate">
-                    <button type="submit" class="btn btn--danger">Deactivate</button>
-                  </form>
-                {% elif not hide_inactive %}
-                  <form method="post" action="{{ base_path }}/{{ item.id }}/reactivate">
-                    <button type="submit" class="btn btn--secondary">Reactivate</button>
-                  </form>
+            <td class="actions-col">
+              <div class="actions btn-group lookup-actions">
+                {% if entity_singular == "Unit" and item.unit_type == "WEIGHT" %}
+                  &nbsp;
+                {% else %}
+                  <a class="btn btn--ghost" href="{{ base_path }}/{{ item.id }}/edit">Edit</a>
+                  {% if item.is_active %}
+                    <form method="post" action="{{ base_path }}/{{ item.id }}/deactivate">
+                      <button type="submit" class="btn btn--danger">Deactivate</button>
+                    </form>
+                  {% elif not hide_inactive %}
+                    <form method="post" action="{{ base_path }}/{{ item.id }}/reactivate">
+                      <button type="submit" class="btn btn--secondary">Reactivate</button>
+                    </form>
+                  {% endif %}
                 {% endif %}
-              {% endif %}
+              </div>
             </td>
           </tr>
         {% else %}
