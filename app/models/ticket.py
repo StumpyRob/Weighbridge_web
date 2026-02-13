@@ -82,6 +82,9 @@ class Ticket(Base):
     ewc_code_display: Mapped[str | None] = mapped_column(String(10), nullable=True)
     ewc_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     ewc_hazardous: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    ewc_manual_override: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id"))
     haulier_id: Mapped[int | None] = mapped_column(ForeignKey("hauliers.id"))
     carrier_licence_number: Mapped[str | None] = mapped_column(String(100))

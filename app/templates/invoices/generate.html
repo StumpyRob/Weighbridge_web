@@ -23,6 +23,14 @@
 <form class="ticket-form" method="post" action="/invoices/generate">
   <section class="card">
     <h2>Selection</h2>
+    <div class="quick-ranges" role="group" aria-label="Quick ranges">
+      <span class="quick-ranges__label">Quick ranges</span>
+      <button type="button" class="btn btn--secondary quick-range-btn" data-quick-range="today">Today</button>
+      <button type="button" class="btn btn--secondary quick-range-btn" data-quick-range="last-7-days">Last 7 days</button>
+      <button type="button" class="btn btn--secondary quick-range-btn" data-quick-range="this-week">This week</button>
+      <button type="button" class="btn btn--secondary quick-range-btn" data-quick-range="this-month">This month</button>
+      <button type="button" class="btn btn--secondary quick-range-btn" data-quick-range="last-month">Last month</button>
+    </div>
     <div class="form-grid">
       <div class="field">
         <label for="customer_id">Customer</label>
@@ -36,12 +44,22 @@
         </select>
       </div>
       <div class="field">
-        <label for="date_from">Date from (dd/mm/yyyy)</label>
-        <input type="date" id="date_from" name="date_from" value="{{ form.date_from }}" />
+        <label for="date_from">Date from</label>
+        <input
+          type="date"
+          id="date_from"
+          name="date_from"
+          value="{{ form.date_from }}"
+        />
       </div>
       <div class="field">
-        <label for="date_to">Date to (dd/mm/yyyy)</label>
-        <input type="date" id="date_to" name="date_to" value="{{ form.date_to }}" />
+        <label for="date_to">Date to</label>
+        <input
+          type="date"
+          id="date_to"
+          name="date_to"
+          value="{{ form.date_to }}"
+        />
       </div>
     </div>
   </section>
@@ -136,4 +154,157 @@
     </div>
   </section>
 {% endif %}
+
+<script>
+  (function () {
+    const dateFromInput = document.getElementById("date_from");
+    const dateToInput = document.getElementById("date_to");
+    const previewForm = document.querySelector('form[action="/invoices/generate"]');
+    const confirmForms = document.querySelectorAll('form[action="/invoices/generate/confirm"]');
+    const quickRangeButtons = document.querySelectorAll("[data-quick-range]");
+    const storageKey = "invoice_generate_last_date_range_v1";
+
+    if (!dateFromInput || !dateToInput || !previewForm) {
+      return;
+    }
+
+    function toIsoDate(dateValue) {
+      const year = dateValue.getFullYear();
+      const month = String(dateValue.getMonth() + 1).padStart(2, "0");
+      const day = String(dateValue.getDate()).padStart(2, "0");
+      return year + "-" + month + "-" + day;
+    }
+
+    function isIsoDate(value) {
+      return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+    }
+
+    function saveRange(fromValue, toValue) {
+      if (!isIsoDate(fromValue) || !isIsoDate(toValue)) {
+        return;
+      }
+      try {
+        localStorage.setItem(
+          storageKey,
+          JSON.stringify({
+            date_from: fromValue,
+            date_to: toValue,
+          })
+        );
+      } catch (error) {
+        // Ignore storage errors (private mode / blocked storage).
+      }
+    }
+
+    function saveCurrentRange() {
+      saveRange(dateFromInput.value, dateToInput.value);
+    }
+
+    function loadStoredRange() {
+      try {
+        const rawValue = localStorage.getItem(storageKey);
+        if (!rawValue) {
+          return null;
+        }
+        const parsed = JSON.parse(rawValue);
+        const dateFrom = parsed && parsed.date_from ? String(parsed.date_from) : "";
+        const dateTo = parsed && parsed.date_to ? String(parsed.date_to) : "";
+        if (!isIsoDate(dateFrom) || !isIsoDate(dateTo)) {
+          return null;
+        }
+        return { dateFrom: dateFrom, dateTo: dateTo };
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function startOfToday() {
+      const now = new Date();
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    }
+
+    function addDays(dateValue, days) {
+      return new Date(dateValue.getFullYear(), dateValue.getMonth(), dateValue.getDate() + days);
+    }
+
+    function startOfWeekMonday(dateValue) {
+      const weekday = (dateValue.getDay() + 6) % 7;
+      return addDays(dateValue, -weekday);
+    }
+
+    function setRange(dateFrom, dateTo, persist) {
+      dateFromInput.value = toIsoDate(dateFrom);
+      dateToInput.value = toIsoDate(dateTo);
+      if (persist) {
+        saveCurrentRange();
+      }
+    }
+
+    function applyRangePreset(rangeKey) {
+      const today = startOfToday();
+      if (rangeKey === "today") {
+        setRange(today, today, true);
+        return;
+      }
+      if (rangeKey === "last-7-days") {
+        setRange(addDays(today, -6), today, true);
+        return;
+      }
+      if (rangeKey === "this-week") {
+        const monday = startOfWeekMonday(today);
+        setRange(monday, addDays(monday, 6), true);
+        return;
+      }
+      if (rangeKey === "this-month") {
+        const start = new Date(today.getFullYear(), today.getMonth(), 1);
+        setRange(start, today, true);
+        return;
+      }
+      if (rangeKey === "last-month") {
+        const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const end = new Date(today.getFullYear(), today.getMonth(), 0);
+        setRange(start, end, true);
+      }
+    }
+
+    function applyInitialRange() {
+      if (dateFromInput.value || dateToInput.value) {
+        return;
+      }
+      const storedRange = loadStoredRange();
+      if (storedRange) {
+        dateFromInput.value = storedRange.dateFrom;
+        dateToInput.value = storedRange.dateTo;
+        return;
+      }
+      const today = startOfToday();
+      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+      setRange(monthStart, today, false);
+    }
+
+    quickRangeButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        applyRangePreset(String(button.dataset.quickRange || ""));
+      });
+    });
+
+    dateFromInput.addEventListener("change", saveCurrentRange);
+    dateToInput.addEventListener("change", saveCurrentRange);
+
+    previewForm.addEventListener("submit", saveCurrentRange);
+
+    confirmForms.forEach(function (form) {
+      form.addEventListener("submit", function () {
+        const hiddenFrom = form.querySelector('input[name="date_from"]');
+        const hiddenTo = form.querySelector('input[name="date_to"]');
+        saveRange(
+          hiddenFrom ? hiddenFrom.value : dateFromInput.value,
+          hiddenTo ? hiddenTo.value : dateToInput.value
+        );
+      });
+    });
+
+    applyInitialRange();
+  })();
+</script>
 {% endblock %}

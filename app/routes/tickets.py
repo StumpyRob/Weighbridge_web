@@ -18,6 +18,7 @@ from ..models import (
     DirectionEnum,
     Destination,
     Driver,
+    EwcCode,
     Haulier,
     Invoice,
     Product,
@@ -32,6 +33,7 @@ from ..models import (
     Yard,
 )
 from ..security import validate_no_html, validate_no_html_fields
+from ..seed import seed_void_reasons
 from ..templating import templates
 
 router = APIRouter()
@@ -43,6 +45,12 @@ NEW_TICKET_DEDUP_SECONDS = 5
 WEIGHT_MAX_KG = Decimal("1000000")
 WEIGHT_QUANTIZE = Decimal("1")
 INACTIVE_PRODUCT_UNIT_ERROR = "Product unit is inactive. Choose a different product."
+SALES_ONLY_WASTE_ERROR = (
+    "This product is sales-only and cannot be used on waste tickets."
+)
+SALES_ONLY_WASTE_WARNING = (
+    "Selected product is sales-only and cannot be used on waste tickets."
+)
 
 
 @router.get("/tickets", response_class=HTMLResponse)
@@ -242,28 +250,26 @@ def ticket_product_defaults(
             {"request": request, "error": INACTIVE_PRODUCT_UNIT_ERROR},
             status_code=400,
         )
+    if _is_waste_transaction((transaction_type or "").strip().upper()) and product.sales_only:
+        return templates.TemplateResponse(
+            request,
+            "tickets/_product_defaults_error.html",
+            {"request": request, "error": SALES_ONLY_WASTE_ERROR},
+            status_code=400,
+        )
 
-    current_unit_price = unit_price.strip() if unit_price else ""
-    parsed_current_unit_price = (
-        _parse_decimal(current_unit_price) if current_unit_price else None
+    # Product switch always resets rate to the selected product's canonical default.
+    unit_price_display = (
+        f"{product.unit_price:.2f}" if product.unit_price is not None else ""
     )
-    if current_unit_price:
-        # Preserve user-entered value during HTMX refresh; format only when numeric.
-        unit_price_display = (
-            f"{parsed_current_unit_price:.2f}"
-            if parsed_current_unit_price is not None
-            else current_unit_price
-        )
-    else:
-        unit_price_display = (
-            f"{product.unit_price:.2f}" if product.unit_price is not None else ""
-        )
 
     ewc = product.ewc_code if product else None
     unit_name = product.unit.name if product and product.unit else ""
     unit_type = product.unit.unit_type if product and product.unit else ""
     resolved_unit_type = (unit_type or "").upper()
     qty_value = qty.strip() if qty is not None else ""
+    if resolved_unit_type == "WEIGHT":
+        qty_value = ""
 
     weights_ticket = db.get(Ticket, parsed_ticket_id) if parsed_ticket_id else None
     weights_form = None
@@ -291,6 +297,7 @@ def ticket_product_defaults(
         "tickets/_product_defaults.html",
         {
             "request": request,
+            "ewc_code_6": ewc.code_6 if ewc else None,
             "unit_price": unit_price_display,
             "ewc_code_display": ewc.code_display if ewc else None,
             "ewc_description": ewc.description if ewc else None,
@@ -326,6 +333,49 @@ def tickets_mismatch_warning(
     )
 
 
+@router.get("/tickets/product-options", response_class=HTMLResponse)
+def tickets_product_options(
+    request: Request,
+    transaction_type: str | None = Query(None),
+    product_id: str | None = Query(None),
+    ticket_id: str | None = Query(None),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    product_id_values = request.query_params.getlist("product_id")
+    parsed_product_id = None
+    for raw in product_id_values:
+        candidate = _parse_int(str(raw).strip())
+        if candidate is not None:
+            parsed_product_id = candidate
+            break
+    if parsed_product_id is None and product_id is not None:
+        parsed_product_id = _parse_int(str(product_id).strip())
+
+    parsed_ticket_id = _parse_int(str(ticket_id).strip()) if ticket_id else None
+    form_data = {"product_id": str(parsed_product_id or "")}
+    options = _load_ticket_options_with_enums(
+        db,
+        transaction_type=transaction_type,
+        selected_product_id=parsed_product_id,
+    )
+    product_usage_warning = _sales_only_selected_product_warning(
+        db, transaction_type, parsed_product_id
+    )
+    return templates.TemplateResponse(
+        request,
+        "tickets/_product_field.html",
+        {
+            "request": request,
+            "ticket_id": parsed_ticket_id or "",
+            "form": form_data,
+            "options": options,
+            "product_unit_meta": _load_product_unit_meta(db),
+            "product_usage_warning": product_usage_warning,
+            "oob_product_warning": True,
+        },
+    )
+
+
 def _ticket_direction_options() -> list[tuple[str, str]]:
     return [
         ("INWARD", "Inward"),
@@ -341,9 +391,18 @@ def _ticket_transaction_type_options() -> list[tuple[str, str]]:
     ]
 
 
-def _load_ticket_options_with_enums(db: Session) -> dict:
+def _load_ticket_options_with_enums(
+    db: Session,
+    *,
+    transaction_type: str | None = None,
+    selected_product_id: int | None = None,
+) -> dict:
     return {
-        **_load_ticket_options(db),
+        **_load_ticket_options(
+            db,
+            transaction_type=transaction_type,
+            selected_product_id=selected_product_id,
+        ),
         "directions": _ticket_direction_options(),
         "transaction_types": _ticket_transaction_type_options(),
     }
@@ -353,14 +412,20 @@ def _load_product_unit_meta(db: Session | None) -> dict[str, dict[str, str]]:
     if db is None:
         return {}
     products = db.execute(
-        select(Product).options(joinedload(Product.unit)).order_by(Product.id)
+        select(Product)
+        .options(joinedload(Product.unit), joinedload(Product.ewc_code))
+        .order_by(Product.id)
     ).scalars().all()
     meta: dict[str, dict[str, str]] = {}
     for product in products:
         unit = product.unit
+        ewc = product.ewc_code
         meta[str(product.id)] = {
             "unit_type": (unit.unit_type if unit and unit.unit_type else ""),
             "unit_name": (unit.name if unit and unit.name else ""),
+            "ewc_code_6": (ewc.code_6 if ewc and ewc.code_6 else ""),
+            "ewc_code_display": (ewc.code_display if ewc and ewc.code_display else ""),
+            "ewc_hazardous": "1" if ewc and ewc.hazardous else "0",
         }
     return meta
 
@@ -479,12 +544,84 @@ def _generate_ticket_no(db: Session, now: datetime | None = None) -> str:
     return f"{str(year)[2:]}-{next_number:05d}"
 
 
-def _load_ticket_options(db: Session | None) -> dict[str, list[tuple[int, str]]]:
+def _load_ticket_options(
+    db: Session | None,
+    *,
+    transaction_type: str | None = None,
+    selected_product_id: int | None = None,
+) -> dict[str, list[tuple[int, str]]]:
     if db is None:
         return {key: [] for key in _option_keys()}
 
     def as_options(rows, label_fn):
         return [(str(row.id), label_fn(row)) for row in rows]
+
+    resolved_transaction_type = _enum_value_or_text(transaction_type).upper()
+    show_sales_only = not _is_waste_transaction(resolved_transaction_type)
+    products_stmt = (
+        select(Product)
+        .options(joinedload(Product.unit))
+        .join(Unit, Product.unit_id == Unit.id)
+        .where(Unit.is_active.is_(True))
+        .order_by(Product.description)
+    )
+    if not show_sales_only:
+        products_stmt = products_stmt.where(Product.sales_only.is_(False))
+    product_rows = db.execute(products_stmt).scalars().all()
+    product_options = as_options(product_rows, lambda row: row.description)
+    selected_product_id_str = str(selected_product_id or "")
+    has_selected_product = any(
+        option_id == selected_product_id_str for option_id, _ in product_options
+    )
+    if (
+        selected_product_id
+        and not has_selected_product
+        and not show_sales_only
+    ):
+        selected_product = (
+            db.execute(
+                select(Product)
+                .options(joinedload(Product.unit))
+                .where(Product.id == selected_product_id)
+            )
+            .scalars()
+            .first()
+        )
+        if (
+            selected_product
+            and selected_product.sales_only
+            and _product_has_active_unit(selected_product)
+        ):
+            product_options = [
+                (
+                    str(selected_product.id),
+                    f"{selected_product.description} (sales only)",
+                )
+            ] + product_options
+
+    def _active_void_reasons_seeded() -> list[VoidReason]:
+        reasons = (
+            db.execute(
+                select(VoidReason)
+                .where(VoidReason.is_active.is_(True))
+                .order_by(VoidReason.code)
+            )
+            .scalars()
+            .all()
+        )
+        if reasons:
+            return reasons
+        # Keep voiding operational in clean databases and long-running dev sessions.
+        seed_void_reasons(db)
+        return (
+            db.execute(
+                select(VoidReason)
+                .where(VoidReason.is_active.is_(True))
+                .order_by(VoidReason.code)
+            )
+            .scalars()
+            .all()
+        )
 
     return {
         "customers": as_options(
@@ -495,17 +632,7 @@ def _load_ticket_options(db: Session | None) -> dict[str, list[tuple[int, str]]]
             db.execute(select(Vehicle).order_by(Vehicle.registration)).scalars().all(),
             lambda row: row.registration,
         ),
-        "products": as_options(
-            db.execute(
-                select(Product)
-                .join(Unit, Product.unit_id == Unit.id)
-                .where(Unit.is_active.is_(True))
-                .order_by(Product.description)
-            )
-            .scalars()
-            .all(),
-            lambda row: row.description,
-        ),
+        "products": product_options,
         "hauliers": as_options(
             db.execute(select(Haulier).order_by(Haulier.name)).scalars().all(),
             lambda row: row.name,
@@ -522,6 +649,16 @@ def _load_ticket_options(db: Session | None) -> dict[str, list[tuple[int, str]]]
             db.execute(select(Destination).order_by(Destination.name)).scalars().all(),
             lambda row: row.name,
         ),
+        "ewc_codes": [
+            (row.code_display, row.description)
+            for row in db.execute(
+                select(EwcCode)
+                .where(EwcCode.active.is_(True))
+                .order_by(EwcCode.code_6)
+            )
+            .scalars()
+            .all()
+        ],
         "yards": as_options(
             db.execute(select(Yard).order_by(Yard.code)).scalars().all(),
             lambda row: row.code,
@@ -531,13 +668,7 @@ def _load_ticket_options(db: Session | None) -> dict[str, list[tuple[int, str]]]
             lambda row: row.code,
         ),
         "void_reasons": as_options(
-            db.execute(
-                select(VoidReason)
-                .where(VoidReason.is_active.is_(True))
-                .order_by(VoidReason.code)
-            )
-            .scalars()
-            .all(),
+            _active_void_reasons_seeded(),
             lambda row: row.description or row.code,
         ),
     }
@@ -593,10 +724,34 @@ def _option_keys() -> list[str]:
         "drivers",
         "containers",
         "destinations",
+        "ewc_codes",
         "yards",
         "areas",
         "void_reasons",
     ]
+
+
+def _enum_value_or_text(value: object) -> str:
+    if value is None:
+        return ""
+    return value.value if hasattr(value, "value") else str(value)
+
+
+def _sales_only_selected_product_warning(
+    db: Session,
+    transaction_type: object,
+    selected_product_id: int | None,
+) -> str | None:
+    if not selected_product_id:
+        return None
+    if not _is_waste_transaction(_enum_value_or_text(transaction_type).upper()):
+        return None
+    selected_product = db.get(Product, selected_product_id)
+    if not selected_product:
+        return None
+    if selected_product.sales_only:
+        return SALES_ONLY_WASTE_WARNING
+    return None
 
 
 def _normalize_registration(value: str | None) -> str:
@@ -666,10 +821,47 @@ def _is_ticket_locked(ticket: Ticket) -> bool:
     return _status_value(ticket.status) in LOCKED_STATUSES
 
 
+def _can_void_ticket(ticket: Ticket) -> bool:
+    return (
+        _status_value(ticket.status) == TicketStatusEnum.COMPLETE.value
+        and ticket.invoice_id is None
+    )
+
+
 def _ticket_locked_message(ticket: Ticket) -> str:
     if _status_value(ticket.status) == TicketStatusEnum.VOID.value:
         return "This ticket is void and cannot be edited."
     return "This ticket is complete and cannot be edited."
+
+
+def _ticket_void_blocked_message(ticket: Ticket) -> str:
+    if ticket.invoice_id is not None:
+        return "Cannot void a ticket that has already been invoiced."
+    if _status_value(ticket.status) == TicketStatusEnum.VOID.value:
+        return "This ticket is void and cannot be edited."
+    if _status_value(ticket.status) != TicketStatusEnum.COMPLETE.value:
+        return "Only complete tickets can be voided."
+    return "Cannot void this ticket."
+
+
+def _ensure_ticket_void_reasons(db: Session) -> None:
+    # Keep ticket voiding operational in clean databases.
+    seed_void_reasons(db)
+
+
+def _latest_ticket_void_with_reason(
+    db: Session, ticket_id: int
+) -> tuple[TicketVoid | None, VoidReason | None]:
+    row = db.execute(
+        select(TicketVoid, VoidReason)
+        .outerjoin(VoidReason, TicketVoid.reason_id == VoidReason.id)
+        .where(TicketVoid.ticket_id == ticket_id)
+        .order_by(TicketVoid.voided_at.desc(), TicketVoid.id.desc())
+        .limit(1)
+    ).first()
+    if not row:
+        return None, None
+    return row[0], row[1]
 
 
 def _is_haulier_on_stop(haulier: Haulier | None) -> bool:
@@ -814,23 +1006,38 @@ def tickets_edit(
             status_code=404,
         )
 
+    _ensure_ticket_void_reasons(db)
     is_admin = False
     invoice = db.get(Invoice, ticket.invoice_id) if ticket.invoice_id else None
+    ticket_void, ticket_void_reason = _latest_ticket_void_with_reason(db, ticket.id)
     stop_blockers = _on_stop_blockers(db, ticket.customer_id, ticket.haulier_id)
-    options = _load_ticket_options_with_enums(db)
+    form = _ticket_to_form(ticket)
+    options = _load_ticket_options_with_enums(
+        db,
+        transaction_type=form.get("transaction_type"),
+        selected_product_id=ticket.product_id,
+    )
+    product_warning = _sales_only_selected_product_warning(
+        db, form.get("transaction_type"), ticket.product_id
+    )
     return templates.TemplateResponse(request, 
         "tickets/edit.html",
         {
             "request": request,
             "errors": [],
             "warnings": [],
+            "product_usage_warning": product_warning,
             "saved": request.query_params.get("saved") == "1",
             "completed": request.query_params.get("completed") == "1",
             "voided": request.query_params.get("voided") == "1",
             "ticket": ticket,
+            "ticket_void": ticket_void,
+            "ticket_void_reason": ticket_void_reason,
             "invoice": invoice,
             "is_admin": is_admin,
             "is_open": _is_open_ticket(ticket),
+            "is_locked": _is_ticket_locked(ticket),
+            "can_void": _can_void_ticket(ticket),
             "locked_message": _ticket_locked_message(ticket)
             if _is_ticket_locked(ticket)
             else "",
@@ -840,7 +1047,7 @@ def tickets_edit(
             "direction_warning": _direction_transaction_warning(
                 ticket.direction, ticket.transaction_type
             ),
-            "form": _ticket_to_form(ticket),
+            "form": form,
             "vehicle_reg": _ticket_vehicle_reg(db, ticket),
             "options": options,
             "product_unit_meta": _load_product_unit_meta(db),
@@ -864,8 +1071,18 @@ async def tickets_update(
 
     form = await request.form()
     action = str(form.get("action", "save"))
+    if action == "void":
+        _ensure_ticket_void_reasons(db)
 
-    if _is_ticket_locked(ticket):
+    if _is_ticket_locked(ticket) and not (action == "void" and _can_void_ticket(ticket)):
+        if action == "void":
+            return _render_ticket_edit(
+                request,
+                ticket,
+                db,
+                errors=[_ticket_void_blocked_message(ticket)],
+                status_code=400,
+            )
         return _render_ticket_edit(
             request,
             ticket,
@@ -894,6 +1111,9 @@ async def tickets_update(
         payload["errors"].extend(lookup_errors)
         _apply_ticket_defaults(db, payload)
         product = _validate_product_ewc(payload, db)
+        ewc_snapshot = _resolve_ticket_ewc_snapshot(payload, db, product)
+        _coerce_mode_fields(payload, product)
+        weight_warning = _net_negative_values(payload["gross_kg"], payload["tare_kg"])
         _apply_destination_default(ticket, payload, product)
         haulier = _validate_carrier_licence(payload, db)
         _resolve_waste_producer_snapshot(
@@ -926,16 +1146,8 @@ async def tickets_update(
         )
         if stop_blockers:
             payload["errors"].append(_on_stop_completion_error(stop_blockers))
-        product_unit_type = (
-            str(product.unit.unit_type).upper()
-            if product and product.unit and product.unit.unit_type
-            else ""
-        )
+        product_unit_type = _product_unit_type(product)
         has_qty = payload.get("qty") is not None and payload.get("qty") > 0
-        gross_raw = _form_value(form, "gross_kg")
-        tare_raw = _form_value(form, "tare_kg")
-        readout_raw = _form_value(form, "readout_kg")
-        net_raw = _form_value(form, "net_kg")
         has_gross = payload.get("gross_kg") is not None
         has_tare = payload.get("tare_kg") is not None and payload.get("tare_kg") > 0
         if is_waste_tx and product_unit_type != "COUNT" and has_gross and not has_tare:
@@ -951,19 +1163,9 @@ async def tickets_update(
                 payload["form"]["net_kg"] = f"{payload['net_kg']:.0f}"
                 has_tare = True
         has_weights = has_gross and has_tare
-        has_any_weight_data = bool(
-            gross_raw
-            or tare_raw
-            or readout_raw
-            or net_raw
-            or payload.get("gross_kg") is not None
-            or payload.get("tare_kg") is not None
-            or payload.get("net_kg") is not None
-        )
-
         if product_unit_type == "COUNT":
             count_mode_error = "COUNT product: enter Qty only (weights must be blank)."
-            if (not has_qty) or has_any_weight_data:
+            if not has_qty:
                 if count_mode_error not in payload["errors"]:
                     payload["errors"].append(count_mode_error)
         elif product_unit_type == "WEIGHT":
@@ -997,7 +1199,7 @@ async def tickets_update(
                 "Net weight cannot be negative. Use Swap Weights."
             )
 
-        _validate_product_has_ewc_on_complete(payload, product)
+        _validate_waste_ewc_on_complete(payload, ewc_snapshot)
 
         if payload["errors"]:
             ticket.vehicle_reg_text = payload["vehicle_reg_text"]
@@ -1019,10 +1221,7 @@ async def tickets_update(
 
         _apply_ticket_updates(ticket, payload)
         pricing_info = _apply_ticket_pricing(ticket, payload, product)
-        if is_waste_tx:
-            _apply_ticket_ewc_snapshot(ticket, product)
-        else:
-            _apply_ticket_ewc_snapshot(ticket, None)
+        _apply_ticket_ewc_snapshot(ticket, ewc_snapshot)
         _apply_carrier_licence_snapshot(ticket, haulier)
         _apply_waste_producer_snapshot(ticket, payload)
         is_hazardous = bool(ticket.ewc_hazardous)
@@ -1064,6 +1263,14 @@ async def tickets_update(
         return RedirectResponse(url=f"/tickets/{ticket_id}?completed=1", status_code=303)
 
     if action == "void":
+        if not _can_void_ticket(ticket):
+            return _render_ticket_edit(
+                request,
+                ticket,
+                db,
+                errors=[_ticket_void_blocked_message(ticket)],
+                status_code=400,
+            )
         reason_id = _parse_int(str(form.get("void_reason_id", "")).strip())
         note = str(form.get("void_note", "")).strip()
         errors = []
@@ -1105,13 +1312,25 @@ async def tickets_update(
     weight_warning = _net_negative_values(payload["gross_kg"], payload["tare_kg"])
     lookup_errors = _validate_lookup_fields(ticket, payload, db)
     payload["errors"].extend(lookup_errors)
-    payload["errors"].extend(
-        _validate_weighing_order(
-            payload["direction"], payload["gross_kg"], payload["tare_kg"]
-        )
-    )
-    _apply_ticket_defaults(db, payload)
     product = _validate_product_ewc(payload, db)
+    ewc_snapshot = _resolve_ticket_ewc_snapshot(payload, db, product)
+    _coerce_mode_fields(payload, product)
+    weight_warning = _net_negative_values(payload["gross_kg"], payload["tare_kg"])
+    weighing_order_errors = _validate_weighing_order(
+        payload["direction"], payload["gross_kg"], payload["tare_kg"]
+    )
+    if (
+        weighing_order_errors == ["Weigh-in (gross) is required before tare."]
+        and payload.get("gross_kg") is None
+        and payload.get("tare_kg") is not None
+        and payload.get("vehicle_id")
+    ):
+        vehicle = db.get(Vehicle, payload["vehicle_id"])
+        if vehicle and vehicle.default_tare_kg is not None:
+            default_tare_kg = float(vehicle.default_tare_kg)
+            if default_tare_kg > 0 and abs(payload["tare_kg"] - default_tare_kg) < 0.0001:
+                weighing_order_errors = []
+    payload["errors"].extend(weighing_order_errors)
     _apply_destination_default(ticket, payload, product)
     haulier = _validate_carrier_licence(payload, db)
     _resolve_waste_producer_snapshot(payload, db)
@@ -1136,10 +1355,7 @@ async def tickets_update(
 
     _apply_ticket_updates(ticket, payload)
     _apply_ticket_pricing(ticket, payload, product)
-    if is_waste_tx:
-        _apply_ticket_ewc_snapshot(ticket, product)
-    else:
-        _apply_ticket_ewc_snapshot(ticket, None)
+    _apply_ticket_ewc_snapshot(ticket, ewc_snapshot)
     _apply_carrier_licence_snapshot(ticket, haulier)
     _apply_waste_producer_snapshot(ticket, payload)
     db.commit()
@@ -2061,6 +2277,18 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
     waste_producer_address_line_2 = _form_value(form, "waste_producer_address_line_2")
     waste_producer_address_line_3 = _form_value(form, "waste_producer_address_line_3")
     waste_producer_postcode = _form_value(form, "waste_producer_postcode")
+    ewc_code_raw = _form_value(form, "ewc_code")
+    ewc_manual_override = _form_value(form, "ewc_manual_override").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    ewc_auto_code_6 = _normalize_ewc_digits(_form_value(form, "ewc_auto_code_6"))
+    ewc_product_default_code_6 = _normalize_ewc_digits(
+        _form_value(form, "ewc_product_default_code_6")
+    )
+    ewc_product_default_display = _form_value(form, "ewc_product_default_display")
     yard_id_present = "yard_id" in form
     area_id_present = "area_id" in form
     yard_raw = _form_value(form, "yard_id")
@@ -2076,6 +2304,7 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
             "Waste producer address line 2": waste_producer_address_line_2,
             "Waste producer address line 3": waste_producer_address_line_3,
             "Waste producer postcode": waste_producer_postcode,
+            "EWC code": ewc_code_raw,
         },
         errors,
     )
@@ -2113,6 +2342,7 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         if qty is not None and unit_price is not None
         else None
     )
+    ewc_code_6 = _parse_ewc_code_value(ewc_code_raw, errors)
     dont_invoice = _form_value(form, "dont_invoice") == "on"
 
     form_data = {
@@ -2140,6 +2370,15 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         "waste_producer_address_line_2": waste_producer_address_line_2,
         "waste_producer_address_line_3": waste_producer_address_line_3,
         "waste_producer_postcode": waste_producer_postcode,
+        "ewc_code": _format_ewc_code_display(ewc_code_6)
+        if ewc_code_6
+        else ewc_code_raw,
+        "ewc_manual_override": "1" if ewc_manual_override else "0",
+        "ewc_auto_code_6": _format_ewc_code_display(ewc_auto_code_6)
+        if ewc_auto_code_6
+        else "",
+        "ewc_product_default_code_6": ewc_product_default_code_6,
+        "ewc_product_default_display": ewc_product_default_display,
         "gross_kg": gross_raw if gross_kg is None else f"{gross_kg:.0f}",
         "tare_kg": tare_raw if tare_kg is None else f"{tare_kg:.0f}",
         "net_kg": f"{net_kg:.0f}" if net_kg is not None else "",
@@ -2178,6 +2417,12 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         "waste_producer_address_line_2": waste_producer_address_line_2,
         "waste_producer_address_line_3": waste_producer_address_line_3,
         "waste_producer_postcode": waste_producer_postcode,
+        "ewc_code_raw": ewc_code_raw,
+        "ewc_code_6": ewc_code_6,
+        "ewc_manual_override": ewc_manual_override,
+        "ewc_auto_code_6": ewc_auto_code_6,
+        "ewc_product_default_code_6": ewc_product_default_code_6,
+        "ewc_product_default_display": ewc_product_default_display,
         "waste_producer_source": (
             WasteProducerSourceEnum.CUSTOMER.value
             if waste_producer_same_as_customer
@@ -2223,6 +2468,30 @@ def _ticket_to_form(ticket: Ticket) -> dict:
             producer_line_3,
             producer_postcode,
         ) = _split_waste_producer_address(ticket.waste_producer_address)
+    ticket_ewc_code_6 = _normalize_ewc_digits(ticket.ewc_code_6)
+    product_ewc = ticket.product.ewc_code if ticket.product and ticket.product.ewc_code else None
+    product_default_ewc_code_6 = _normalize_ewc_digits(
+        product_ewc.code_6 if product_ewc else ""
+    )
+    product_default_ewc_display = (
+        product_ewc.code_display
+        if product_ewc and product_ewc.code_display
+        else _format_ewc_code_display(product_default_ewc_code_6)
+    )
+    ewc_value = ""
+    if ticket_ewc_code_6:
+        ewc_value = (
+            ticket.ewc_code_display
+            or _format_ewc_code_display(ticket_ewc_code_6)
+        )
+    elif product_default_ewc_code_6:
+        ewc_value = product_default_ewc_display
+    ewc_manual_override = bool(ticket.ewc_manual_override)
+    ewc_auto_code_6 = ""
+    if ticket_ewc_code_6 and not ewc_manual_override:
+        ewc_auto_code_6 = ticket_ewc_code_6
+    elif not ticket_ewc_code_6 and product_default_ewc_code_6:
+        ewc_auto_code_6 = product_default_ewc_code_6
     return {
         "datetime": ticket.datetime.isoformat(timespec="minutes")
         if ticket.datetime
@@ -2248,6 +2517,13 @@ def _ticket_to_form(ticket: Ticket) -> dict:
         "waste_producer_address_line_2": producer_line_2,
         "waste_producer_address_line_3": producer_line_3,
         "waste_producer_postcode": producer_postcode,
+        "ewc_code": ewc_value,
+        "ewc_manual_override": "1" if ewc_manual_override else "0",
+        "ewc_auto_code_6": _format_ewc_code_display(ewc_auto_code_6)
+        if ewc_auto_code_6
+        else "",
+        "ewc_product_default_code_6": product_default_ewc_code_6,
+        "ewc_product_default_display": product_default_ewc_display or "",
         "gross_kg": f"{ticket.gross_kg:.0f}" if ticket.gross_kg is not None else "",
         "tare_kg": f"{ticket.tare_kg:.0f}" if ticket.tare_kg is not None else "",
         "net_kg": f"{ticket.net_kg:.0f}" if ticket.net_kg is not None else "",
@@ -2277,6 +2553,27 @@ def _first_non_empty_form_value(form, key: str) -> str:
 
 def _normalize_number(value: str) -> str:
     return str(value).replace(",", "").strip()
+
+
+def _normalize_ewc_digits(value: str | None) -> str:
+    return re.sub(r"\D", "", str(value or ""))[:6]
+
+
+def _format_ewc_code_display(code_6: str | None) -> str:
+    digits = _normalize_ewc_digits(code_6)
+    if len(digits) != 6:
+        return digits
+    return f"{digits[0:2]} {digits[2:4]} {digits[4:6]}"
+
+
+def _parse_ewc_code_value(raw: str, errors: list[str]) -> str | None:
+    normalized = _normalize_ewc_digits(raw)
+    if not raw:
+        return None
+    if len(normalized) != 6:
+        errors.append("EWC code must be 6 digits (for example, 01 01 01).")
+        return None
+    return normalized
 
 
 def _parse_weight_value(raw: str, label: str, errors: list[str]) -> float | None:
@@ -2352,6 +2649,42 @@ def _apply_ticket_defaults(db: Session, payload: dict) -> None:
         payload["total"] = Decimal(str(payload["qty"])) * payload["unit_price"]
 
 
+def _product_unit_type(product: Product | None) -> str:
+    unit = getattr(product, "unit", None) if product is not None else None
+    unit_type = getattr(unit, "unit_type", None) if unit is not None else None
+    return str(unit_type or "").upper()
+
+
+def _coerce_qty_for_weight_product(payload: dict, product: Product | None) -> None:
+    if _product_unit_type(product) != "WEIGHT":
+        return
+    payload["qty"] = None
+    payload["total"] = None
+    form_data = payload.get("form")
+    if isinstance(form_data, dict):
+        form_data["qty"] = ""
+        form_data["total"] = ""
+
+
+def _coerce_weights_for_count_product(payload: dict, product: Product | None) -> None:
+    if _product_unit_type(product) != "COUNT":
+        return
+    payload["gross_kg"] = None
+    payload["tare_kg"] = None
+    payload["net_kg"] = None
+    form_data = payload.get("form")
+    if isinstance(form_data, dict):
+        form_data["gross_kg"] = ""
+        form_data["tare_kg"] = ""
+        form_data["net_kg"] = ""
+        form_data["readout_kg"] = ""
+
+
+def _coerce_mode_fields(payload: dict, product: Product | None) -> None:
+    _coerce_qty_for_weight_product(payload, product)
+    _coerce_weights_for_count_product(payload, product)
+
+
 def _apply_destination_default(
     ticket: Ticket, payload: dict, product: Product | None
 ) -> None:
@@ -2379,6 +2712,12 @@ def _apply_ticket_pricing(
     ticket.total = None
     ticket.pricing_basis = None
     pricing_info = {"basis": None, "billable_qty": None, "net_kg": None}
+    if (
+        product is not None
+        and product.sales_only
+        and _is_waste_transaction(payload.get("transaction_type"))
+    ):
+        return pricing_info
 
     if has_qty and unit_price is not None:
         ticket.total = Decimal(str(qty)) * unit_price
@@ -2425,7 +2764,7 @@ def _validate_product_ewc(payload: dict, db: Session) -> Product | None:
     product = (
         db.execute(
             select(Product)
-            .options(joinedload(Product.unit))
+            .options(joinedload(Product.unit), joinedload(Product.ewc_code))
             .where(Product.id == product_id)
         )
         .scalars()
@@ -2437,6 +2776,9 @@ def _validate_product_ewc(payload: dict, db: Session) -> Product | None:
     if not _product_has_active_unit(product):
         payload["errors"].append(INACTIVE_PRODUCT_UNIT_ERROR)
         return None
+    if _is_waste_transaction(payload.get("transaction_type")) and product.sales_only:
+        payload["errors"].append(SALES_ONLY_WASTE_ERROR)
+        return None
     return product
 
 
@@ -2447,14 +2789,121 @@ def _product_has_active_unit(product: Product | None) -> bool:
     return bool(unit and unit.is_active)
 
 
-def _validate_product_has_ewc_on_complete(
-    payload: dict, product: Product | None
-) -> None:
-    if _is_waste_transaction(payload.get("transaction_type")):
-        if product and product.ewc_code_id is None:
-            payload["errors"].append(
-                "Waste ticket requires an EWC code (set EWC on Product)."
-            )
+def _product_default_ewc(product: Product | None) -> EwcCode | None:
+    if not product or not product.ewc_code_id:
+        return None
+    return product.ewc_code
+
+
+def _sync_form_product_ewc_defaults(payload: dict, product: Product | None) -> None:
+    default_ewc = _product_default_ewc(product)
+    default_code_6 = _normalize_ewc_digits(default_ewc.code_6 if default_ewc else "")
+    default_display = (
+        default_ewc.code_display
+        if default_ewc and default_ewc.code_display
+        else _format_ewc_code_display(default_code_6)
+    )
+    payload["ewc_product_default_code_6"] = default_code_6
+    payload["ewc_product_default_display"] = default_display or ""
+    form_data = payload.get("form")
+    if isinstance(form_data, dict):
+        form_data["ewc_product_default_code_6"] = default_code_6
+        form_data["ewc_product_default_display"] = default_display or ""
+
+
+def _build_ewc_snapshot(db: Session, code_6: str | None) -> dict[str, object]:
+    normalized = _normalize_ewc_digits(code_6)
+    if not normalized:
+        return {
+            "ewc_code_6": None,
+            "ewc_code_display": None,
+            "ewc_description": None,
+            "ewc_hazardous": None,
+        }
+
+    ewc = (
+        db.execute(select(EwcCode).where(EwcCode.code_6 == normalized))
+        .scalars()
+        .first()
+    )
+    if ewc:
+        return {
+            "ewc_code_6": ewc.code_6,
+            "ewc_code_display": ewc.code_display,
+            "ewc_description": ewc.description,
+            "ewc_hazardous": ewc.hazardous,
+        }
+
+    return {
+        "ewc_code_6": normalized,
+        "ewc_code_display": _format_ewc_code_display(normalized),
+        "ewc_description": None,
+        "ewc_hazardous": None,
+    }
+
+
+def _resolve_ticket_ewc_snapshot(
+    payload: dict, db: Session, product: Product | None
+) -> dict[str, object]:
+    _sync_form_product_ewc_defaults(payload, product)
+
+    is_waste_tx = _is_waste_transaction(payload.get("transaction_type"))
+    entered_code_6 = _normalize_ewc_digits(payload.get("ewc_code_6"))
+    auto_code_6 = _normalize_ewc_digits(payload.get("ewc_auto_code_6"))
+    manual_override = bool(payload.get("ewc_manual_override"))
+    default_ewc = _product_default_ewc(product)
+    default_code_6 = _normalize_ewc_digits(default_ewc.code_6 if default_ewc else "")
+
+    resolved_code_6 = entered_code_6
+    if is_waste_tx and default_code_6:
+        should_fill_blank = not entered_code_6
+        should_update_previous_auto = (
+            not manual_override
+            and bool(auto_code_6)
+            and entered_code_6 == auto_code_6
+            and auto_code_6 != default_code_6
+        )
+        should_sync_current_default = (
+            not manual_override and entered_code_6 == default_code_6
+        )
+        if should_fill_blank or should_update_previous_auto or should_sync_current_default:
+            resolved_code_6 = default_code_6
+            manual_override = False
+
+    snapshot = _build_ewc_snapshot(db, resolved_code_6)
+    resolved_code_6 = _normalize_ewc_digits(snapshot.get("ewc_code_6"))
+
+    if not resolved_code_6:
+        manual_override = False
+    elif default_code_6 and resolved_code_6 != default_code_6:
+        manual_override = True
+    elif not default_code_6:
+        manual_override = True
+    else:
+        manual_override = False
+
+    snapshot["ewc_manual_override"] = manual_override
+
+    payload["ewc_code_6"] = resolved_code_6 or None
+    payload["ewc_manual_override"] = manual_override
+    payload["ewc_auto_code_6"] = resolved_code_6 if (resolved_code_6 and not manual_override) else ""
+
+    form_data = payload.get("form")
+    if isinstance(form_data, dict):
+        form_data["ewc_code"] = str(snapshot.get("ewc_code_display") or "")
+        form_data["ewc_manual_override"] = "1" if manual_override else "0"
+        form_data["ewc_auto_code_6"] = _format_ewc_code_display(
+            payload.get("ewc_auto_code_6")
+        )
+
+    return snapshot
+
+
+def _validate_waste_ewc_on_complete(payload: dict, ewc_snapshot: dict[str, object]) -> None:
+    if not _is_waste_transaction(payload.get("transaction_type")):
+        return
+    if not _normalize_ewc_digits(ewc_snapshot.get("ewc_code_6")):
+        payload["errors"].append("EWC code is required to complete a waste ticket.")
 
 
 def _validate_required_on_complete(payload: dict) -> None:
@@ -2494,26 +2943,12 @@ def _is_waste_transaction(transaction_type: str | None) -> bool:
     )
 
 
-def _apply_ticket_ewc_snapshot(ticket: Ticket, product: Product | None) -> None:
-    if not product or not product.ewc_code_id:
-        ticket.ewc_code_6 = None
-        ticket.ewc_code_display = None
-        ticket.ewc_description = None
-        ticket.ewc_hazardous = None
-        return
-
-    ewc = product.ewc_code
-    if not ewc:
-        ticket.ewc_code_6 = None
-        ticket.ewc_code_display = None
-        ticket.ewc_description = None
-        ticket.ewc_hazardous = None
-        return
-
-    ticket.ewc_code_6 = ewc.code_6
-    ticket.ewc_code_display = ewc.code_display
-    ticket.ewc_description = ewc.description
-    ticket.ewc_hazardous = ewc.hazardous
+def _apply_ticket_ewc_snapshot(ticket: Ticket, snapshot: dict[str, object]) -> None:
+    ticket.ewc_code_6 = snapshot.get("ewc_code_6")
+    ticket.ewc_code_display = snapshot.get("ewc_code_display")
+    ticket.ewc_description = snapshot.get("ewc_description")
+    ticket.ewc_hazardous = snapshot.get("ewc_hazardous")
+    ticket.ewc_manual_override = bool(snapshot.get("ewc_manual_override"))
 
 
 def _validate_carrier_licence(payload: dict, db: Session) -> Haulier | None:
@@ -2789,7 +3224,9 @@ def _render_ticket_edit(
     direction_warning: bool | None = None,
     status_code: int = 400,
 ) -> HTMLResponse:
+    _ensure_ticket_void_reasons(db)
     invoice = db.get(Invoice, ticket.invoice_id) if ticket.invoice_id else None
+    ticket_void, ticket_void_reason = _latest_ticket_void_with_reason(db, ticket.id)
     selected_customer_id = None
     if form and form.get("customer_id"):
         selected_customer_id = _parse_int(str(form.get("customer_id")))
@@ -2806,6 +3243,11 @@ def _render_ticket_edit(
         product_id = _parse_int(str(form.get("product_id")))
     if product_id is None:
         product_id = ticket.product_id
+    selected_transaction_type = None
+    if form and form.get("transaction_type"):
+        selected_transaction_type = str(form.get("transaction_type"))
+    if selected_transaction_type is None:
+        selected_transaction_type = _enum_value_or_text(ticket.transaction_type)
     default_destination_id = None
     unit_type = None
     if product_id:
@@ -2813,19 +3255,32 @@ def _render_ticket_edit(
         if product:
             default_destination_id = product.default_destination_id
             unit_type = product.unit.unit_type if product.unit else None
-    options = _load_ticket_options_with_enums(db)
+    options = _load_ticket_options_with_enums(
+        db,
+        transaction_type=selected_transaction_type,
+        selected_product_id=product_id,
+    )
+    resolved_warnings = list(warnings or [])
+    product_warning = _sales_only_selected_product_warning(
+        db, selected_transaction_type, product_id
+    )
     return templates.TemplateResponse(request, 
         "tickets/edit.html",
         {
             "request": request,
             "errors": errors,
-            "warnings": warnings or [],
+            "warnings": resolved_warnings,
+            "product_usage_warning": product_warning,
             "saved": False,
             "completed": False,
             "ticket": ticket,
+            "ticket_void": ticket_void,
+            "ticket_void_reason": ticket_void_reason,
             "invoice": invoice,
             "is_admin": False,
             "is_open": _is_open_ticket(ticket),
+            "is_locked": _is_ticket_locked(ticket),
+            "can_void": _can_void_ticket(ticket),
             "locked_message": _ticket_locked_message(ticket)
             if _is_ticket_locked(ticket)
             else "",

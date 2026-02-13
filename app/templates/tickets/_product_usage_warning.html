@@ -1,0 +1,7 @@
+<div id="ticket-product-usage-warning"{% if oob_product_warning %} hx-swap-oob="outerHTML"{% endif %}>
+  {% if product_usage_warning %}
+    <div class="alert alert--warning">
+      {{ product_usage_warning }}
+    </div>
+  {% endif %}
+</div>

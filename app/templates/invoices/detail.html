@@ -3,173 +3,287 @@
 {% block title %}Invoice {{ invoice.invoice_no }} | Weighbridge Web{% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <div>
-    <h1>{{ invoice.invoice_no }}</h1>
-    <p class="muted">{{ customer.name if customer else "" }}</p>
+<div class="invoice-detail">
+  <div class="page-header">
+    <div>
+      <h1>Invoice {{ invoice.invoice_no }}</h1>
+      <p class="muted">{{ customer.name if customer else "" }}</p>
+      <div class="ticket-meta">
+        <span class="status-text status-{{ invoice.status | lower }}">{{ invoice.status }}</span>
+        <span>Date: {{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "-" }}</span>
+      </div>
+    </div>
+    <div class="actions btn-group">
+      <button type="button" class="btn btn--ghost" disabled title="Print coming soon">Print</button>
+      <a class="btn btn--secondary" href="/invoices">Back</a>
+    </div>
   </div>
-  <div class="actions btn-group">
-    <a class="btn btn--secondary" href="/invoices">Back</a>
-  </div>
+
+  {% if errors %}
+    <div class="alert">
+      <ul>
+        {% for error in errors %}
+          <li>{{ error }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {% if created %}
+    <div class="alert">
+      Invoice {{ invoice.invoice_no }} created successfully.
+    </div>
+    <div class="actions btn-group">
+      <a class="btn btn--ghost" href="/invoices/generate">Back to Generate Invoices</a>
+    </div>
+  {% endif %}
+
+  {% if paid %}
+    <div class="alert">
+      Invoice {{ invoice.invoice_no }} marked as paid.
+    </div>
+  {% endif %}
+
+  {% if voided %}
+    <div class="alert">
+      Invoice {{ invoice.invoice_no }} voided.
+    </div>
+  {% endif %}
+
+  <section class="card">
+    <header class="card-header">Summary</header>
+    <div class="card-body">
+      <div class="invoice-summary-grid">
+        <div class="summary-item">
+          <span class="summary-label">Status</span>
+          <span class="summary-value">
+            <span class="invoice-status-badge invoice-status-badge--{{ invoice.status | lower }}">{{ invoice.status }}</span>
+          </span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Date</span>
+          <span class="summary-value">{{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "-" }}</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Invoice No</span>
+          <span class="summary-value">{{ invoice.invoice_no }}</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Net</span>
+          <span class="summary-value">&pound;{{ "{:,.2f}".format(invoice.net_total or 0) }}</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">VAT</span>
+          <span class="summary-value">&pound;{{ "{:,.2f}".format(invoice.vat_total or 0) }}</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Gross</span>
+          <span class="summary-value">&pound;{{ "{:,.2f}".format(invoice.gross_total or 0) }}</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Paid Status</span>
+          <span class="summary-value">{{ "PAID" if invoice.status == "PAID" else "UNPAID" }}</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Paid Date</span>
+          <span class="summary-value">{{ invoice.paid_at.strftime("%d/%m/%y") if invoice.paid_at else "-" }}</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Payment Method</span>
+          <span class="summary-value">{{ payment_method.code if payment_method else "-" }}</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <header class="card-header">Mark Paid</header>
+    <div class="card-body">
+      {% if invoice.status == "VOID" %}
+        <p class="muted">Invoice is VOID and cannot be modified.</p>
+      {% elif invoice.status == "PAID" %}
+        <p class="muted">Already paid.</p>
+      {% else %}
+        <form
+          id="mark-paid-form"
+          class="invoice-action-form invoice-mark-paid-grid"
+          method="post"
+          action="/invoices/{{ invoice.id }}/paid"
+        >
+          <div class="field">
+            <label for="payment_method_id">Payment method</label>
+            <select id="payment_method_id" name="payment_method_id" required>
+              <option value="">Select payment method</option>
+              {% for method in payment_methods %}
+                <option value="{{ method.id }}">{{ method.code }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="paid_at">Paid date</label>
+            <input type="date" id="paid_at" name="paid_at" required />
+          </div>
+          <div class="field invoice-mark-paid-action">
+            <label for="mark-paid-submit">Action</label>
+            <button type="submit" id="mark-paid-submit" class="btn btn--primary" disabled>Mark Paid</button>
+          </div>
+        </form>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card">
+    <header class="card-header">Line Items</header>
+    <div class="card-body">
+      <div class="table-wrap">
+        <table class="data-table invoice-lines-table">
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th class="align-right">Qty</th>
+              <th class="align-right">Unit price</th>
+              <th class="align-right">Net</th>
+              <th class="align-right">VAT</th>
+              <th class="align-right">Gross</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for line in lines %}
+              <tr>
+                <td class="line-description">{{ line.description }}</td>
+                <td class="align-right">{{ line.quantity }}</td>
+                <td class="align-right">&pound;{{ "{:,.2f}".format(line.unit_price or 0) }}</td>
+                <td class="align-right">&pound;{{ "{:,.2f}".format(line.net or 0) }}</td>
+                <td class="align-right">&pound;{{ "{:,.2f}".format(line.vat or 0) }}</td>
+                <td class="align-right">&pound;{{ "{:,.2f}".format(line.gross or 0) }}</td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="6" class="empty">No lines found.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="4"></td>
+              <td class="invoice-total-label">Subtotal:</td>
+              <td class="align-right invoice-total-value">&pound;{{ "{:,.2f}".format(invoice.net_total or 0) }}</td>
+            </tr>
+            <tr>
+              <td colspan="4"></td>
+              <td class="invoice-total-label">VAT:</td>
+              <td class="align-right invoice-total-value">&pound;{{ "{:,.2f}".format(invoice.vat_total or 0) }}</td>
+            </tr>
+            <tr>
+              <td colspan="4"></td>
+              <td class="invoice-total-label">Total:</td>
+              <td class="align-right invoice-total-value">&pound;{{ "{:,.2f}".format(invoice.gross_total or 0) }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <header class="card-header">Linked Tickets</header>
+    <div class="card-body">
+      <div class="table-wrap">
+        <table class="data-table invoice-linked-table">
+          <thead>
+            <tr>
+              <th>Ticket no</th>
+              <th>Date/time</th>
+              <th>Status</th>
+              <th class="align-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ticket in tickets %}
+              <tr>
+                <td>
+                  <a class="ticket-link-badge" href="/tickets/{{ ticket.id }}">{{ ticket.ticket_no }}</a>
+                </td>
+                <td>{{ ticket.datetime.strftime("%d/%m/%Y %H:%M") if ticket.datetime else "-" }}</td>
+                <td>
+                  {% if ticket.status %}
+                    <span class="status-text status-{{ ticket.status.value | lower }}">{{ ticket.status.value }}</span>
+                  {% endif %}
+                </td>
+                <td class="align-right">
+                  {% if ticket.total is not none %}&pound;{{ "{:,.2f}".format(ticket.total) }}{% else %}&mdash;{% endif %}
+                </td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="4" class="empty">No linked tickets.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="card invoice-void-card">
+    <header class="card-header">Void Invoice</header>
+    <div class="card-body">
+      <p class="muted invoice-warning-text">This action cannot be undone.</p>
+      {% if invoice.status == "VOID" %}
+        <p class="muted">Invoice is VOID and cannot be modified.</p>
+      {% elif invoice.status == "PAID" %}
+        <p class="muted">Invoice is PAID and cannot be modified.</p>
+      {% else %}
+        <form method="post" action="/invoices/{{ invoice.id }}/void">
+          <div class="invoice-void-grid">
+            <div class="field">
+              <label for="void_reason_id">Void reason</label>
+              <select id="void_reason_id" name="void_reason_id">
+                <option value="">Select reason</option>
+                {% for reason in void_reasons %}
+                  <option value="{{ reason.id }}">{{ reason.code }}</option>
+                {% endfor %}
+              </select>
+              {% if not void_reasons %}
+                <div class="hint">No void reasons configured (run seed)</div>
+              {% endif %}
+            </div>
+            <div class="field">
+              <label for="void_note">Reason note</label>
+              <input type="text" id="void_note" name="void_note" placeholder="Optional unless reason is Other" />
+            </div>
+          </div>
+          <div class="actions btn-group invoice-void-actions">
+            <button type="submit" class="btn btn--danger">Void Invoice</button>
+          </div>
+        </form>
+      {% endif %}
+    </div>
+  </section>
 </div>
 
-{% if errors %}
-  <div class="alert">
-    <ul>
-      {% for error in errors %}
-        <li>{{ error }}</li>
-      {% endfor %}
-    </ul>
-  </div>
-{% endif %}
+<script>
+  (function () {
+    const form = document.getElementById("mark-paid-form");
+    if (!form) {
+      return;
+    }
 
-{% if created %}
-  <div class="alert">
-    Invoice {{ invoice.invoice_no }} created successfully.
-  </div>
-  <div class="actions btn-group">
-    <a class="btn btn--ghost" href="/invoices/generate">Back to Generate Invoices</a>
-  </div>
-{% endif %}
+    const paymentMethod = document.getElementById("payment_method_id");
+    const paidAt = document.getElementById("paid_at");
+    const submitButton = document.getElementById("mark-paid-submit");
+    if (!paymentMethod || !paidAt || !submitButton) {
+      return;
+    }
 
-{% if paid %}
-  <div class="alert">
-    Invoice {{ invoice.invoice_no }} marked as paid.
-  </div>
-{% endif %}
+    function syncButtonState() {
+      submitButton.disabled = !(paymentMethod.value && paidAt.value);
+    }
 
-{% if voided %}
-  <div class="alert">
-    Invoice {{ invoice.invoice_no }} voided.
-  </div>
-{% endif %}
-
-<section class="card">
-  <h2>Summary</h2>
-  <div class="form-grid">
-    <div><strong>Status:</strong> {{ invoice.status }}</div>
-    <div><strong>Date:</strong> {{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "" }}</div>
-    <div><strong>Net:</strong> {{ "{:.2f}".format(invoice.net_total) }}</div>
-    <div><strong>VAT:</strong> {{ "{:.2f}".format(invoice.vat_total) }}</div>
-    <div><strong>Gross:</strong> {{ "{:.2f}".format(invoice.gross_total) }}</div>
-    <div><strong>Paid at:</strong> {{ invoice.paid_at.strftime("%d/%m/%Y %H:%M") if invoice.paid_at else "" }}</div>
-  </div>
-</section>
-
-<section class="card">
-  <h2>Mark Paid</h2>
-  {% if invoice.status == "VOID" %}
-    <p class="muted">Invoice is VOID and cannot be modified.</p>
-  {% elif invoice.status == "PAID" %}
-    <p class="muted">Already paid.</p>
-  {% else %}
-    <form class="invoice-action-form form-grid" method="post" action="/invoices/{{ invoice.id }}/paid">
-      <div class="field">
-        <label for="payment_method_id">Payment method</label>
-        <select id="payment_method_id" name="payment_method_id">
-          <option value="">Select payment method</option>
-          {% for method in payment_methods %}
-            <option value="{{ method.id }}">{{ method.code }}</option>
-          {% endfor %}
-        </select>
-        {% if not payment_methods %}
-          <div class="hint">No payment methods configured (run seed)</div>
-        {% endif %}
-      </div>
-      <div class="field">
-        <label for="paid_at">Paid date</label>
-        <input type="datetime-local" id="paid_at" name="paid_at" />
-      </div>
-      <button type="submit" class="btn btn--primary">Mark Paid</button>
-    </form>
-  {% endif %}
-</section>
-
-<section class="card">
-  <h2>Void Invoice</h2>
-  <p class="muted">Void this invoice only when it should no longer be billed.</p>
-  {% if invoice.status == "VOID" %}
-    <p class="muted">Invoice is VOID and cannot be modified.</p>
-  {% elif invoice.status == "PAID" %}
-    <p class="muted">Invoice is PAID and cannot be modified.</p>
-  {% else %}
-    <form class="inline-form btn-group" method="post" action="/invoices/{{ invoice.id }}/void">
-      <select name="void_reason_id">
-        <option value="">Select reason</option>
-        {% for reason in void_reasons %}
-          <option value="{{ reason.id }}">{{ reason.code }}</option>
-        {% endfor %}
-      </select>
-      {% if not void_reasons %}
-        <div class="hint">No void reasons configured (run seed)</div>
-      {% endif %}
-      <input type="text" name="void_note" placeholder="Reason note" />
-      <button type="submit" class="btn btn--danger">Void</button>
-    </form>
-  {% endif %}
-</section>
-
-<section class="card">
-  <h2>Line Items</h2>
-  <div class="table-wrap">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Description</th>
-          <th>Qty</th>
-          <th>Unit price</th>
-          <th>Net</th>
-          <th>VAT</th>
-          <th>Gross</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for line in lines %}
-          <tr>
-            <td>{{ line.description }}</td>
-            <td>{{ line.quantity }}</td>
-            <td>{{ "{:.2f}".format(line.unit_price) }}</td>
-            <td>{{ "{:.2f}".format(line.net) }}</td>
-            <td>{{ "{:.2f}".format(line.vat) }}</td>
-            <td>{{ "{:.2f}".format(line.gross) }}</td>
-          </tr>
-        {% else %}
-          <tr>
-            <td colspan="6" class="empty">No lines found.</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
-
-<section class="card">
-  <h2>Linked Tickets</h2>
-  <div class="table-wrap">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Ticket no</th>
-          <th>Date/time</th>
-          <th>Status</th>
-          <th>Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for ticket in tickets %}
-          <tr>
-            <td><a href="/tickets/{{ ticket.id }}">{{ ticket.ticket_no }}</a></td>
-            <td>{{ ticket.datetime.strftime("%d/%m/%Y %H:%M") if ticket.datetime else "" }}</td>
-            <td>{{ ticket.status.value if ticket.status else "" }}</td>
-            <td>{{ ticket.total or "" }}</td>
-          </tr>
-        {% else %}
-          <tr>
-            <td colspan="4" class="empty">No linked tickets.</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
+    paymentMethod.addEventListener("change", syncButtonState);
+    paidAt.addEventListener("change", syncButtonState);
+    paidAt.addEventListener("input", syncButtonState);
+    syncButtonState();
+  })();
+</script>
 {% endblock %}

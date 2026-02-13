@@ -233,4 +233,4 @@ def test_weight_product_edit_view_locks_qty_input(client, db_session):
     response = client.get(f"/tickets/{ticket.id}")
 
     assert response.status_code == 200
-    assert re.search(r'<input[^>]*id="qty"[^>]*readonly', response.text)
+    assert re.search(r'<input[^>]*id="qty"[^>]*disabled', response.text)

@@ -27,6 +27,25 @@
   </div>
 </div>
 
+{% if is_locked %}
+  <div class="alert alert--warning">
+    {{ locked_message or "This ticket is complete and cannot be edited." }}
+  </div>
+{% endif %}
+
+{% if form.status == "VOID" and ticket_void %}
+  <div class="notice">
+    <strong>Void reason:</strong>
+    {{ (ticket_void_reason.description if ticket_void_reason and ticket_void_reason.description else (ticket_void_reason.code if ticket_void_reason else "")) or "Unknown" }}
+    {% if ticket_void.note %}
+      | <strong>Note:</strong> {{ ticket_void.note }}
+    {% endif %}
+    {% if ticket_void.voided_at %}
+      | <strong>Voided:</strong> {{ ticket_void.voided_at.strftime("%d/%m/%Y %H:%M") }}
+    {% endif %}
+  </div>
+{% endif %}
+
 {% if completed or saved or voided %}
   <div class="alert alert--warning" data-auto-dismiss>
     {% if completed %}
@@ -61,32 +80,36 @@
 {% endif %}
 
 {% set warning_messages = warnings if warnings is defined else [] %}
-<div id="ticket-status-warnings">
-  {% if warning_messages %}
-    <div class="alert alert--warning">
-      <ul>
-        {% for warning in warning_messages %}
-          <li>{{ warning }}</li>
-        {% endfor %}
-      </ul>
-    </div>
-  {% endif %}
+{% if not is_locked %}
+  <div id="ticket-status-warnings">
+    {% if warning_messages %}
+      <div class="alert alert--warning">
+        <ul>
+          {% for warning in warning_messages %}
+            <li>{{ warning }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
 
-  {% if stop_blocked and ((stop_banner_message or "") not in warning_messages) %}
-    <div class="alert alert--warning">
-      {{ stop_banner_message or "Allowed to record ticket; cannot complete/invoice." }}
-    </div>
-  {% endif %}
-</div>
+    {% include "tickets/_product_usage_warning.html" %}
 
-{% if not is_open %}
-  <div class="alert alert--warning">
-    {{ locked_message or "This ticket is complete and cannot be edited." }}
+    {% if stop_blocked and ((stop_banner_message or "") not in warning_messages) %}
+      <div class="alert alert--warning">
+        {{ stop_banner_message or "Allowed to record ticket; cannot complete/invoice." }}
+      </div>
+    {% endif %}
   </div>
 {% endif %}
 
-<form id="ticket-form" class="ticket-form" method="post" action="/tickets/{{ ticket.id }}">
-  <fieldset {% if not is_open %}disabled aria-disabled="true"{% endif %}>
+<form
+  id="ticket-form"
+  class="ticket-form"
+  method="post"
+  action="/tickets/{{ ticket.id }}"
+  {% if is_locked %}hx-disable="true"{% endif %}
+>
+  <fieldset {% if is_locked %}disabled aria-disabled="true"{% endif %}>
   <section class="frame">
     <div class="frame-header">
       <h2>Ticket Info</h2>
@@ -160,24 +183,12 @@
       <h2>Material</h2>
     </div>
     <div class="frame-body">
-      <div class="form-grid">
-        <div class="field">
-          <label for="product_id">Product</label>
-          <select id="product_id" name="product_id" hx-get="/tickets/product-defaults" hx-trigger="change" hx-target="#pricing-defaults" hx-include="#weights-form,#qty,#transaction_type,#unit_price">
-            <option value="">Select product</option>
-            {% for id, label in options.products %}
-              {% set product_meta = product_unit_meta.get(id|string, {}) if product_unit_meta is defined else {} %}
-              <option
-                value="{{ id }}"
-                data-unit-type="{{ product_meta.get('unit_type', '') }}"
-                data-unit-name="{{ product_meta.get('unit_name', '') }}"
-                {% if form.product_id|string == id|string %}selected{% endif %}
-              >{{ label }}</option>
-            {% endfor %}
-          </select>
+        <div class="form-grid">
+          {% set ticket_id = ticket.id %}
+          {% set oob_product_warning = false %}
+          {% include "tickets/_product_field.html" %}
         </div>
       </div>
-    </div>
   </section>
 
   <section class="frame frame-weights">
@@ -242,17 +253,72 @@
     </div>
     <div class="frame-body">
       <div class="form-grid">
-        <div class="field">
-          <label for="waste_code_id">Waste code</label>
+        {% set is_waste_tx = form.transaction_type in ["WASTEIN", "WASTEOUT"] %}
+        <div
+          class="field ewc-ticket-field{% if is_waste_tx and not form.ewc_code %} is-required{% endif %}"
+          id="ewc-ticket-field"
+          {% if not is_waste_tx %}style="display:none"{% endif %}
+        >
+          <label for="ewc_code">EWC code</label>
           <input type="hidden" name="waste_code_id" value="{{ form.waste_code_id }}" />
-          <div id="ewc-display">
-            <div class="readonly ewc-readout{% if ticket.ewc_code_display and ticket.ewc_description %} {% if ticket.ewc_hazardous %}is-hazardous{% else %}is-nonhazardous{% endif %}{% endif %}" title="{% if ticket.ewc_code_display and ticket.ewc_description %}{{ ticket.ewc_code_display }} - {{ ticket.ewc_description }}{% endif %}">
-              {% if ticket.ewc_code_display and ticket.ewc_description %}
-                {{ ticket.ewc_code_display }} - {{ ticket.ewc_description }}
-              {% else %}
-                --
-              {% endif %}
-            </div>
+          <input
+            type="text"
+            id="ewc_code"
+            name="ewc_code"
+            list="ewc_code_list"
+            value="{{ form.ewc_code }}"
+            placeholder="e.g. 01 01 01"
+            inputmode="numeric"
+            maxlength="10"
+            autocomplete="off"
+          />
+          <datalist id="ewc_code_list">
+            {% for code_display, description in options.ewc_codes %}
+              <option value="{{ code_display }}" label="{{ description }}"></option>
+            {% endfor %}
+          </datalist>
+          <input
+            type="hidden"
+            id="ewc_manual_override"
+            name="ewc_manual_override"
+            value="{{ form.ewc_manual_override or '0' }}"
+          />
+          <input
+            type="hidden"
+            id="ewc_auto_code_6"
+            name="ewc_auto_code_6"
+            value="{{ form.ewc_auto_code_6 or '' }}"
+          />
+          <input
+            type="hidden"
+            id="ewc_product_default_code_6"
+            name="ewc_product_default_code_6"
+            value="{{ form.ewc_product_default_code_6 or '' }}"
+          />
+          <input
+            type="hidden"
+            id="ewc_product_default_display"
+            name="ewc_product_default_display"
+            value="{{ form.ewc_product_default_display or '' }}"
+          />
+          <input
+            type="hidden"
+            id="ewc_hazardous"
+            value="{% if ticket.ewc_hazardous %}1{% else %}0{% endif %}"
+          />
+          <div id="ewc-default-hint" class="hint">
+            {% if form.ewc_product_default_display %}
+              Product default: {{ form.ewc_product_default_display }}
+            {% else %}
+              No default EWC on selected product.
+            {% endif %}
+          </div>
+          <div
+            id="ewc-required-hint"
+            class="hint ewc-required-hint"
+            {% if is_waste_tx and not form.ewc_code %}style="display:block"{% else %}style="display:none"{% endif %}
+          >
+            Required for waste tickets.
           </div>
         </div>
         <div class="field">
@@ -421,9 +487,14 @@
     {% endif %}
     <a class="btn btn--secondary" href="/tickets">{{ "Cancel" if is_open else "Back" }}</a>
   </div>
+  {% if is_open %}
+    <div id="unsaved-changes-indicator" class="hint unsaved-changes-indicator" style="display:none">
+      Unsaved changes.
+    </div>
+  {% endif %}
 </form>
 
-{% if is_open %}
+{% if can_void %}
   <section class="frame compact ticket-void-frame">
     <div class="frame-header">
       <h2>Void Ticket</h2>
@@ -469,20 +540,6 @@
       return Number.isFinite(parsed) ? parsed : null;
     }
 
-    function formatBillable(value, unitName) {
-      if (value === null) {
-        return "";
-      }
-      const normalized = (unitName || "").trim().toLowerCase();
-      if (normalized === "tonne" || normalized === "tonnes") {
-        return value.toFixed(3);
-      }
-      if (normalized === "kg") {
-        return String(Math.round(value));
-      }
-      return value.toFixed(3);
-    }
-
     function bindCalculations() {
       const form = document.getElementById("ticket-form");
       if (!form || form.dataset.recalcBound === "true") {
@@ -500,17 +557,16 @@
         const totalInput = document.getElementById("total");
         const unitTypeInput = document.getElementById("unit_type");
         const unitNameInput = document.getElementById("unit_name");
+        const unitType = (unitTypeInput && unitTypeInput.value || "").trim().toUpperCase();
+        const unitName = (unitNameInput && unitNameInput.value || "").trim().toLowerCase();
 
         const gross = parseNumber(grossInput && grossInput.value);
         const tare = parseNumber(tareInput && tareInput.value);
         const net = gross === null || tare === null ? null : gross - tare;
 
         if (netInput) {
-          netInput.value = net === null ? "" : String(Math.round(net));
+          netInput.value = unitType === "WEIGHT" && net !== null ? String(Math.round(net)) : "";
         }
-
-        const unitType = (unitTypeInput && unitTypeInput.value || "").trim().toUpperCase();
-        const unitName = (unitNameInput && unitNameInput.value || "").trim().toLowerCase();
 
         let billable = null;
         if (unitType === "WEIGHT") {
@@ -522,7 +578,7 @@
             }
           }
           if (qtyInput) {
-            qtyInput.value = billable === null ? "" : formatBillable(billable, unitName);
+            qtyInput.value = "";
           }
         } else {
           billable = parseNumber(qtyInput && qtyInput.value);
@@ -538,6 +594,7 @@
         }
         totalInput.value = (billable * unitPrice).toFixed(2);
       }
+      form._recalculateTicketValues = recalculateTicketValues;
 
       form.addEventListener("input", function (event) {
         const target = event.target;
@@ -571,6 +628,14 @@
       recalculateTicketValues();
     }
 
+    function runRecalculateTicketValues() {
+      const form = document.getElementById("ticket-form");
+      if (!form || typeof form._recalculateTicketValues !== "function") {
+        return;
+      }
+      form._recalculateTicketValues();
+    }
+
     function resolvedUnitType() {
       const productSelect = document.getElementById("product_id");
       if (productSelect && productSelect.selectedIndex >= 0) {
@@ -583,7 +648,16 @@
       return (document.getElementById("unit_type")?.value || "").trim().toUpperCase();
     }
 
-    function bindPricingMode() {
+    function clearHiddenQtyMirrors() {
+      document
+        .querySelectorAll('input[type="hidden"][name="qty"]')
+        .forEach(function (input) {
+          input.value = "";
+          input.remove();
+        });
+    }
+
+    function applyPricingRules() {
       const unitType = resolvedUnitType();
       const countHint = document.getElementById("pricing-hint-count");
       const weightHint = document.getElementById("pricing-hint-weight");
@@ -592,6 +666,7 @@
       const qtyInput = document.getElementById("qty");
       const grossInput = document.getElementById("gross_kg");
       const tareInput = document.getElementById("tare_kg");
+      const netInput = document.getElementById("net_kg");
       const readoutInput = document.getElementById("readout_kg");
       const swapButton = document.getElementById("swap-weights-button");
       const countSwapTitle = "Swap weights not available for COUNT products.";
@@ -610,15 +685,21 @@
           qtyWrap.classList.remove("muted");
         }
         if (qtyInput) {
-          qtyInput.readOnly = false;
+          qtyInput.disabled = false;
         }
         if (grossInput) {
+          grossInput.value = "";
           grossInput.readOnly = true;
         }
         if (tareInput) {
+          tareInput.value = "";
           tareInput.readOnly = true;
         }
+        if (netInput) {
+          netInput.value = "";
+        }
         if (readoutInput) {
+          readoutInput.value = "";
           readoutInput.readOnly = true;
         }
         if (swapButton) {
@@ -642,8 +723,10 @@
           weightsWrap.classList.remove("muted");
         }
         if (qtyInput) {
-          qtyInput.readOnly = true;
+          qtyInput.value = "";
+          qtyInput.disabled = true;
         }
+        clearHiddenQtyMirrors();
         if (grossInput) {
           grossInput.readOnly = false;
         }
@@ -675,7 +758,7 @@
         weightsWrap.classList.remove("muted");
       }
       if (qtyInput) {
-        qtyInput.readOnly = false;
+        qtyInput.disabled = false;
       }
       if (grossInput) {
         grossInput.readOnly = false;
@@ -694,6 +777,153 @@
       }
     }
 
+    function normalizeEwcDigits(value) {
+      return String(value || "").replace(/\D/g, "").slice(0, 6);
+    }
+
+    function formatEwcDisplay(value) {
+      const digits = normalizeEwcDigits(value);
+      if (digits.length !== 6) {
+        return String(value || "").trim();
+      }
+      return digits.slice(0, 2) + " " + digits.slice(2, 4) + " " + digits.slice(4, 6);
+    }
+
+    function isWasteTransaction() {
+      const transactionType = (document.getElementById("transaction_type")?.value || "")
+        .trim()
+        .toUpperCase();
+      return transactionType === "WASTEIN" || transactionType === "WASTEOUT";
+    }
+
+    function updateManualEwcState() {
+      const ewcInput = document.getElementById("ewc_code");
+      const manualInput = document.getElementById("ewc_manual_override");
+      const autoInput = document.getElementById("ewc_auto_code_6");
+      const defaultCodeInput = document.getElementById("ewc_product_default_code_6");
+      const defaultDisplayInput = document.getElementById("ewc_product_default_display");
+      if (!ewcInput || !manualInput || !autoInput) {
+        return;
+      }
+
+      const enteredDigits = normalizeEwcDigits(ewcInput.value);
+      const autoDigits = normalizeEwcDigits(autoInput.value);
+      const defaultDigits = normalizeEwcDigits(
+        (defaultCodeInput && defaultCodeInput.value) ||
+          (defaultDisplayInput && defaultDisplayInput.value) ||
+          ""
+      );
+
+      if (!enteredDigits) {
+        manualInput.value = "0";
+        autoInput.value = "";
+        return;
+      }
+      if (defaultDigits && enteredDigits === defaultDigits) {
+        manualInput.value = "0";
+        autoInput.value = formatEwcDisplay(defaultDigits);
+        return;
+      }
+      if (autoDigits && enteredDigits === autoDigits) {
+        manualInput.value = "0";
+        return;
+      }
+      manualInput.value = "1";
+    }
+
+    function syncEwcUi() {
+      const ewcWrap = document.getElementById("ewc-ticket-field");
+      const ewcInput = document.getElementById("ewc_code");
+      const manualInput = document.getElementById("ewc_manual_override");
+      const autoInput = document.getElementById("ewc_auto_code_6");
+      const defaultCodeInput = document.getElementById("ewc_product_default_code_6");
+      const defaultDisplayInput = document.getElementById("ewc_product_default_display");
+      const requiredHint = document.getElementById("ewc-required-hint");
+      const defaultHint = document.getElementById("ewc-default-hint");
+      const producerHazardHint = document.getElementById("producer-hazard-hint");
+      const hazardousInput = document.getElementById("ewc_hazardous");
+
+      if (!ewcWrap || !ewcInput || !manualInput || !autoInput) {
+        return;
+      }
+
+      const wasteTx = isWasteTransaction();
+      ewcWrap.style.display = wasteTx ? "" : "none";
+      ewcInput.required = wasteTx;
+
+      const defaultDigits = normalizeEwcDigits(
+        (defaultCodeInput && defaultCodeInput.value) ||
+          (defaultDisplayInput && defaultDisplayInput.value) ||
+          ""
+      );
+      const defaultDisplay = (defaultDisplayInput && defaultDisplayInput.value)
+        ? defaultDisplayInput.value
+        : formatEwcDisplay(defaultDigits);
+
+      const enteredDigits = normalizeEwcDigits(ewcInput.value);
+      const autoDigits = normalizeEwcDigits(autoInput.value);
+      const manualOverride = manualInput.value === "1";
+
+      if (wasteTx && defaultDigits) {
+        const shouldFillBlank = !enteredDigits;
+        const shouldUpdatePreviousAuto =
+          !manualOverride &&
+          autoDigits &&
+          enteredDigits === autoDigits &&
+          autoDigits !== defaultDigits;
+        const shouldSyncCurrentDefault =
+          !manualOverride && enteredDigits === defaultDigits;
+
+        if (shouldFillBlank || shouldUpdatePreviousAuto || shouldSyncCurrentDefault) {
+          ewcInput.value = defaultDisplay || formatEwcDisplay(defaultDigits);
+          manualInput.value = "0";
+          autoInput.value = defaultDisplay || formatEwcDisplay(defaultDigits);
+        }
+      }
+
+      const hasEwcCode = normalizeEwcDigits(ewcInput.value).length === 6;
+      if (requiredHint) {
+        requiredHint.style.display = wasteTx && !hasEwcCode ? "block" : "none";
+      }
+      ewcWrap.classList.toggle("is-required", wasteTx && !hasEwcCode);
+
+      if (defaultHint) {
+        defaultHint.textContent = defaultDisplay
+          ? "Product default: " + defaultDisplay
+          : "No default EWC on selected product.";
+      }
+
+      if (producerHazardHint && hazardousInput) {
+        producerHazardHint.style.display =
+          wasteTx && hazardousInput.value === "1" ? "block" : "none";
+      }
+    }
+
+    function bindEwcField() {
+      const ewcInput = document.getElementById("ewc_code");
+      if (!ewcInput || ewcInput.dataset.bound === "true") {
+        return;
+      }
+      ewcInput.dataset.bound = "true";
+
+      ewcInput.addEventListener("input", function () {
+        updateManualEwcState();
+        syncEwcUi();
+      });
+      ewcInput.addEventListener("change", function () {
+        updateManualEwcState();
+        syncEwcUi();
+      });
+      ewcInput.addEventListener("blur", function () {
+        const digits = normalizeEwcDigits(ewcInput.value);
+        if (digits.length === 6) {
+          ewcInput.value = formatEwcDisplay(digits);
+        }
+        updateManualEwcState();
+        syncEwcUi();
+      });
+    }
+
     function applySelectedProductMeta() {
       const productSelect = document.getElementById("product_id");
       const selectedOption =
@@ -702,8 +932,26 @@
           : null;
       const unitTypeInput = document.getElementById("unit_type");
       const unitNameInput = document.getElementById("unit_name");
+      const ewcDefaultCodeInput = document.getElementById("ewc_product_default_code_6");
+      const ewcDefaultDisplayInput = document.getElementById("ewc_product_default_display");
+      const ewcHazardousInput = document.getElementById("ewc_hazardous");
 
       if (!selectedOption) {
+        if (unitTypeInput) {
+          unitTypeInput.value = "";
+        }
+        if (unitNameInput) {
+          unitNameInput.value = "";
+        }
+        if (ewcDefaultCodeInput) {
+          ewcDefaultCodeInput.value = "";
+        }
+        if (ewcDefaultDisplayInput) {
+          ewcDefaultDisplayInput.value = "";
+        }
+        if (ewcHazardousInput) {
+          ewcHazardousInput.value = "0";
+        }
         return;
       }
 
@@ -713,6 +961,31 @@
       if (unitNameInput) {
         unitNameInput.value = selectedOption.dataset.unitName || "";
       }
+      if (ewcDefaultCodeInput) {
+        ewcDefaultCodeInput.value =
+          selectedOption.dataset.ewcCode6 ||
+          "";
+      }
+      if (ewcDefaultDisplayInput) {
+        ewcDefaultDisplayInput.value =
+          selectedOption.dataset.ewcCodeDisplay ||
+          formatEwcDisplay(selectedOption.dataset.ewcCode6 || "");
+      }
+      if (ewcHazardousInput) {
+        ewcHazardousInput.value = selectedOption.dataset.ewcHazardous === "1" ? "1" : "0";
+      }
+    }
+
+    function applyTicketRules() {
+      applySelectedProductMeta();
+      applyPricingRules();
+      syncEwcUi();
+      runRecalculateTicketValues();
+    }
+
+    function scheduleApplyTicketRules() {
+      applyTicketRules();
+      window.setTimeout(applyTicketRules, 0);
     }
 
     function bindProductMetaSync() {
@@ -722,9 +995,74 @@
       }
       productSelect.dataset.metaBound = "true";
       productSelect.addEventListener("change", function () {
-        applySelectedProductMeta();
-        bindPricingMode();
-        bindCalculations();
+        scheduleApplyTicketRules();
+      });
+    }
+
+    function bindTransactionTypeSync() {
+      const transactionTypeSelect = document.getElementById("transaction_type");
+      if (!transactionTypeSelect || transactionTypeSelect.dataset.modeBound === "true") {
+        return;
+      }
+      transactionTypeSelect.dataset.modeBound = "true";
+      transactionTypeSelect.addEventListener("change", function () {
+        scheduleApplyTicketRules();
+      });
+    }
+
+    function bindDirectionSync() {
+      const directionSelect = document.getElementById("direction");
+      if (!directionSelect || directionSelect.dataset.modeBound === "true") {
+        return;
+      }
+      directionSelect.dataset.modeBound = "true";
+      directionSelect.addEventListener("change", function () {
+        scheduleApplyTicketRules();
+      });
+    }
+
+    function bindUnsavedChangesGuard() {
+      const ticketForm = document.getElementById("ticket-form");
+      if (!ticketForm || ticketForm.dataset.unsavedBound === "true") {
+        return;
+      }
+      ticketForm.dataset.unsavedBound = "true";
+
+      let dirty = false;
+      const unsavedIndicator = document.getElementById("unsaved-changes-indicator");
+
+      function setDirty(value) {
+        dirty = value;
+        if (unsavedIndicator) {
+          unsavedIndicator.style.display = dirty ? "block" : "none";
+        }
+      }
+
+      function markDirty(event) {
+        const target = event.target;
+        if (!target || target.type === "hidden") {
+          return;
+        }
+        setDirty(true);
+      }
+
+      ticketForm.addEventListener("input", markDirty);
+      ticketForm.addEventListener("change", markDirty);
+
+      document
+        .querySelectorAll('form[action^="/tickets/"]')
+        .forEach(function (formElement) {
+          formElement.addEventListener("submit", function () {
+            setDirty(false);
+          });
+        });
+
+      window.addEventListener("beforeunload", function (event) {
+        if (!dirty) {
+          return;
+        }
+        event.preventDefault();
+        event.returnValue = "";
       });
     }
 
@@ -770,24 +1108,130 @@
       destination.dispatchEvent(new Event("change", { bubbles: true }));
     }
 
+    function ticketRulesRequestPath(event) {
+      const detail = event && event.detail ? event.detail : {};
+      const pathInfo = detail.pathInfo || {};
+      return String(pathInfo.requestPath || "");
+    }
+
+    function isTicketRulesHtmxRequest(event) {
+      const requestPath = ticketRulesRequestPath(event);
+      if (
+        requestPath.indexOf("/tickets/product-defaults") !== -1 ||
+        requestPath.indexOf("/tickets/product-options") !== -1 ||
+        requestPath.indexOf("/tickets/weights/") !== -1
+      ) {
+        return true;
+      }
+      const targetId = event && event.target && event.target.id ? String(event.target.id) : "";
+      return targetId === "weights-block" || targetId === "pricing-defaults" || targetId === "product-field";
+    }
+
+    let ticketRulesBusyCount = 0;
+
+    function setTicketRulesBusy(isBusy) {
+      if (isBusy) {
+        ticketRulesBusyCount += 1;
+      } else {
+        ticketRulesBusyCount = Math.max(0, ticketRulesBusyCount - 1);
+      }
+      if (isBusy && ticketRulesBusyCount > 1) {
+        return;
+      }
+      if (!isBusy && ticketRulesBusyCount > 0) {
+        return;
+      }
+      const elements = document.querySelectorAll(
+        '#weights-block input, #weights-block select, #weights-block button, #qty-wrap input, #qty-wrap select, #qty-wrap button'
+      );
+      elements.forEach(function (element) {
+        if (isBusy) {
+          if (!element.dataset.busyPrevDisabled) {
+            element.dataset.busyPrevDisabled = element.disabled ? "1" : "0";
+          }
+          element.disabled = true;
+          return;
+        }
+        if (!element.dataset.busyPrevDisabled) {
+          return;
+        }
+        const wasDisabled = element.dataset.busyPrevDisabled === "1";
+        element.disabled = wasDisabled;
+        delete element.dataset.busyPrevDisabled;
+      });
+    }
+
+    const isLocked = {{ "true" if is_locked else "false" }};
+    if (isLocked) {
+      return;
+    }
+
     bindCalculations();
-    applySelectedProductMeta();
-    bindPricingMode();
+    applyTicketRules();
     bindProductMetaSync();
+    bindTransactionTypeSync();
+    bindDirectionSync();
+    bindUnsavedChangesGuard();
     bindProducerToggle();
+    bindEwcField();
     applyDefaultDestination();
 
-    document.body.addEventListener("htmx:afterSwap", function (event) {
-      if (event.target && event.target.id === "weights-block") {
-        applySelectedProductMeta();
-        bindPricingMode();
-        bindCalculations();
+    document.addEventListener("htmx:beforeRequest", function (event) {
+      if (!isTicketRulesHtmxRequest(event)) {
+        return;
       }
-      if (event.target && event.target.id === "pricing-defaults") {
-        applySelectedProductMeta();
+      setTicketRulesBusy(true);
+    });
+
+    document.addEventListener("htmx:afterSwap", function (event) {
+      if (!event.target || !event.target.id) {
+        return;
+      }
+      if (event.target.id === "product-field") {
+        bindProductMetaSync();
+        bindDirectionSync();
+        bindEwcField();
+        applyTicketRules();
+        return;
+      }
+      if (event.target.id === "weights-block" || event.target.id === "pricing-defaults") {
         applyDefaultDestination();
-        bindCalculations();
-        bindPricingMode();
+        bindEwcField();
+        applyTicketRules();
+      }
+    });
+
+    document.addEventListener("htmx:afterSettle", function (event) {
+      if (isTicketRulesHtmxRequest(event)) {
+        setTicketRulesBusy(false);
+      }
+      if (!event.target || !event.target.id) {
+        return;
+      }
+      if (
+        event.target.id === "product-field" ||
+        event.target.id === "weights-block" ||
+        event.target.id === "pricing-defaults"
+      ) {
+        bindProductMetaSync();
+        bindDirectionSync();
+        bindEwcField();
+        applyTicketRules();
+      }
+    });
+
+    document.addEventListener("htmx:afterRequest", function (event) {
+      const detail = event.detail || {};
+      const pathInfo = detail.pathInfo || {};
+      const requestPath = pathInfo.requestPath || "";
+      if (
+        requestPath.indexOf("/tickets/product-defaults") !== -1 ||
+        requestPath.indexOf("/tickets/product-options") !== -1
+      ) {
+        bindProductMetaSync();
+        bindDirectionSync();
+        bindEwcField();
+        scheduleApplyTicketRules();
       }
     });
   })();

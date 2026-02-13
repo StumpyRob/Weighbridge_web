@@ -88,15 +88,10 @@ async def invoices_generate(
     errors: list[str] = []
     if not customer_id:
         errors.append("Customer is required.")
-
-    date_from = _parse_date(date_from_raw)
-    date_to = _parse_date(date_to_raw)
-    if date_from_raw and not date_from:
-        errors.append("Start date must be valid.")
-    if date_to_raw and not date_to:
-        errors.append("End date must be valid.")
-    if date_from and date_to and date_to < date_from:
-        errors.append("Date range invalid.")
+    date_from, date_to, date_errors = _validate_invoice_date_range(
+        date_from_raw, date_to_raw
+    )
+    errors.extend(date_errors)
 
     customers = db.execute(select(Customer).order_by(Customer.name)).scalars().all()
     if errors:
@@ -198,18 +193,14 @@ async def invoices_generate_confirm(
     customer_id = _parse_int(str(form.get("customer_id", "")).strip())
     date_from_raw = str(form.get("date_from", "")).strip()
     date_to_raw = str(form.get("date_to", "")).strip()
-    date_from = _parse_date(date_from_raw)
-    date_to = _parse_date(date_to_raw)
+    date_from, date_to, date_errors = _validate_invoice_date_range(
+        date_from_raw, date_to_raw
+    )
 
     errors: list[str] = []
     if not customer_id:
         errors.append("Customer is required.")
-    if date_from_raw and not date_from:
-        errors.append("Start date must be valid.")
-    if date_to_raw and not date_to:
-        errors.append("End date must be valid.")
-    if date_from and date_to and date_to < date_from:
-        errors.append("Date range invalid.")
+    errors.extend(date_errors)
 
     customers = db.execute(select(Customer).order_by(Customer.name)).scalars().all()
     if errors:
@@ -594,6 +585,13 @@ def _generate_invoice_no(db: Session) -> str:
 def _parse_date(value: str) -> date | None:
     if not value:
         return None
+    text = value.strip()
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
 
 
 def _parse_datetime(value: str) -> datetime | None:
@@ -609,14 +607,31 @@ def _parse_datetime(value: str) -> datetime | None:
         except ValueError:
             continue
     return None
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        pass
-    try:
-        return datetime.strptime(value, "%d/%m/%Y").date()
-    except ValueError:
-        return None
+
+
+def _validate_invoice_date_range(
+    date_from_raw: str, date_to_raw: str
+) -> tuple[date | None, date | None, list[str]]:
+    errors: list[str] = []
+    date_from_text = (date_from_raw or "").strip()
+    date_to_text = (date_to_raw or "").strip()
+
+    if not date_from_text:
+        errors.append("Date from is required.")
+    if not date_to_text:
+        errors.append("Date to is required.")
+
+    date_from = _parse_date(date_from_text)
+    date_to = _parse_date(date_to_text)
+
+    if date_from_text and not date_from:
+        errors.append("Date from must be valid (dd/mm/yyyy).")
+    if date_to_text and not date_to:
+        errors.append("Date to must be valid (dd/mm/yyyy).")
+    if date_from and date_to and date_from > date_to:
+        errors.append("Date from must be on or before date to.")
+
+    return date_from, date_to, errors
 
 
 def _parse_int(value: str) -> int | None:
@@ -673,6 +688,11 @@ def _invoice_detail_context(
     voided: bool = False,
 ) -> dict:
     customer = db.get(Customer, invoice.customer_id)
+    payment_method = (
+        db.get(PaymentMethod, invoice.payment_method_id)
+        if invoice.payment_method_id
+        else None
+    )
     lines = db.execute(
         select(InvoiceLine).where(InvoiceLine.invoice_id == invoice.id).order_by(InvoiceLine.id)
     ).scalars().all()
@@ -683,6 +703,7 @@ def _invoice_detail_context(
         "request": request,
         "invoice": invoice,
         "customer": customer,
+        "payment_method": payment_method,
         "lines": lines,
         "tickets": tickets,
         "payment_methods": _active_payment_methods(db),
@@ -724,7 +745,13 @@ def _invoice_on_stop_error(blockers: list[str]) -> str:
 def _fetch_ticket_candidates(
     db: Session, customer_id: int, date_from: date | None, date_to: date | None
 ) -> list[Ticket]:
-    filters = [Ticket.customer_id == customer_id]
+    filters = [
+        Ticket.customer_id == customer_id,
+        Ticket.status == "COMPLETE",
+        Ticket.invoice_id.is_(None),
+        Ticket.dont_invoice.is_(False),
+        Ticket.paid.is_(False),
+    ]
     # Date filters are interpreted in server-local time (UTC by default).
     if date_from:
         filters.append(Ticket.datetime >= datetime.combine(date_from, time.min))
@@ -749,9 +776,9 @@ def _invoiceable_ticket_filters(
     filters = [
         Ticket.customer_id == customer_id,
         Ticket.status == "COMPLETE",
-        Ticket.status != "VOID",
-        Ticket.dont_invoice.is_(False),
         Ticket.invoice_id.is_(None),
+        Ticket.dont_invoice.is_(False),
+        Ticket.paid.is_(False),
         Ticket.qty.is_not(None),
         Ticket.qty > 0,
         Ticket.unit_price.is_not(None),

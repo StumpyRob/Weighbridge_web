@@ -308,6 +308,10 @@
   <h2>Flags</h2>
   <div class="form-grid">
     <div class="field checkbox">
+      <input type="checkbox" id="sales_only" name="sales_only" {% if form.sales_only %}checked{% endif %} />
+      <label for="sales_only">Sales-only (SALE tickets only)</label>
+    </div>
+    <div class="field checkbox">
       <input type="checkbox" id="is_hazardous" name="is_hazardous" {% if form.is_hazardous %}checked{% endif %} />
       <label for="is_hazardous">Hazardous</label>
     </div>

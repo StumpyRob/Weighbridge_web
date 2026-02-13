@@ -161,7 +161,8 @@ def test_invoice_detail_shows_void_heading_and_mark_paid_labels(client, db_sessi
     response = client.get(f"/invoices/{invoice.id}")
 
     assert response.status_code == 200
-    assert "<h2>Void Invoice</h2>" in response.text
-    assert f'<form class="invoice-action-form form-grid" method="post" action="/invoices/{invoice.id}/paid">' in response.text
+    assert '<header class="card-header">Void Invoice</header>' in response.text
+    assert 'id="mark-paid-form"' in response.text
+    assert f'action="/invoices/{invoice.id}/paid"' in response.text
     assert '<label for="payment_method_id">Payment method</label>' in response.text
     assert '<label for="paid_at">Paid date</label>' in response.text

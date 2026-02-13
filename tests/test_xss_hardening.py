@@ -86,7 +86,7 @@ def test_ticket_void_note_rejects_script_payload(client, db_session):
     ticket = Ticket(
         ticket_no="T-XSS-1",
         datetime=datetime(2026, 1, 5, 10, 0, 0),
-        status=TicketStatusEnum.OPEN.value,
+        status=TicketStatusEnum.COMPLETE.value,
         direction=DirectionEnum.INWARD.value,
         transaction_type=TransactionTypeEnum.WASTEIN.value,
         dont_invoice=False,
@@ -107,7 +107,7 @@ def test_ticket_void_note_rejects_script_payload(client, db_session):
     assert response.status_code == 400
     assert "HTML is not allowed." in response.text
     db_session.refresh(ticket)
-    assert _status_value(ticket.status) == TicketStatusEnum.OPEN.value
+    assert _status_value(ticket.status) == TicketStatusEnum.COMPLETE.value
     ticket_void = db_session.execute(
         select(TicketVoid).where(TicketVoid.ticket_id == ticket.id)
     ).scalars().first()

@@ -42,8 +42,8 @@ def test_invoice_generate_confirm_blocks_on_stop_customer(client, db_session):
         "/invoices/generate/confirm",
         data={
             "customer_id": str(customer.id),
-            "date_from": "",
-            "date_to": "",
+            "date_from": "01/01/2026",
+            "date_to": "31/01/2026",
         },
     )
 
@@ -104,8 +104,8 @@ def test_invoice_generate_confirm_ignores_open_tickets_for_stop_checks(client, d
         "/invoices/generate/confirm",
         data={
             "customer_id": str(customer.id),
-            "date_from": "",
-            "date_to": "",
+            "date_from": "01/01/2026",
+            "date_to": "31/01/2026",
         },
         follow_redirects=False,
     )
