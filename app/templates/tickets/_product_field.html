@@ -1,0 +1,38 @@
+<div
+  class="field"
+  id="product-field"
+  hx-get="/tickets/product-options"
+  hx-trigger="change from:#transaction_type"
+  hx-target="#product-field"
+  hx-swap="outerHTML"
+  hx-include="#transaction_type,#product_id"
+  hx-vals='{"ticket_id":"{{ ticket_id }}"}'
+>
+  <label for="product_id">Product</label>
+  <select
+    id="product_id"
+    name="product_id"
+    hx-get="/tickets/product-defaults"
+    hx-trigger="change"
+    hx-target="#pricing-defaults"
+    hx-include="#weights-form,#qty,#transaction_type"
+  >
+    <option value="">Select product</option>
+    {% for id, label in options.products %}
+      {% set product_meta = product_unit_meta.get(id|string, {}) if product_unit_meta is defined else {} %}
+      <option
+        value="{{ id }}"
+        data-unit-type="{{ product_meta.get('unit_type', '') }}"
+        data-unit-name="{{ product_meta.get('unit_name', '') }}"
+        data-ewc-code-6="{{ product_meta.get('ewc_code_6', '') }}"
+        data-ewc-code-display="{{ product_meta.get('ewc_code_display', '') }}"
+        data-ewc-hazardous="{{ product_meta.get('ewc_hazardous', '0') }}"
+        {% if form.product_id|string == id|string %}selected{% endif %}
+      >{{ label }}</option>
+    {% endfor %}
+  </select>
+</div>
+
+{% if oob_product_warning %}
+  {% include "tickets/_product_usage_warning.html" %}
+{% endif %}

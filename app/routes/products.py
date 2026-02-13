@@ -4,6 +4,7 @@ from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -80,6 +81,9 @@ async def products_create(
 ) -> HTMLResponse:
     form = await request.form()
     payload = _parse_product_form(form)
+    duplicate_error = _validate_product_code_unique(db, payload.get("code"))
+    if duplicate_error:
+        payload["errors"].append(duplicate_error)
     payload["errors"].extend(_apply_sale_type_unit_selection(db, payload))
     if not payload["errors"]:
         tax_rate_error = _validate_tax_rate_selection(
@@ -106,6 +110,7 @@ async def products_create(
     product = Product(
         code=payload["code"],
         description=payload["description"],
+        sales_only=payload["sales_only"],
         unit_id=payload["unit_id"],
         tax_rate_id=payload["tax_rate_id"],
         unit_price=payload["unit_price"],
@@ -114,7 +119,22 @@ async def products_create(
         default_destination_id=payload["default_destination_id"],
     )
     db.add(product)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        payload["errors"].append("Product code already exists.")
+        return templates.TemplateResponse(
+            request,
+            "products/new.html",
+            {
+                "request": request,
+                "errors": payload["errors"],
+                "form": payload["form"],
+                "options": _load_options(db),
+            },
+            status_code=400,
+        )
     return RedirectResponse(url="/products?saved=1", status_code=303)
 
 
@@ -388,6 +408,11 @@ async def products_update(
 
     form = await request.form()
     payload = _parse_product_form(form)
+    duplicate_error = _validate_product_code_unique(
+        db, payload.get("code"), current_product_id=product.id
+    )
+    if duplicate_error:
+        payload["errors"].append(duplicate_error)
     payload["errors"].extend(
         _apply_sale_type_unit_selection(
             db, payload, current_unit_id=product.unit_id
@@ -426,6 +451,7 @@ async def products_update(
 
     product.code = payload["code"]
     product.description = payload["description"]
+    product.sales_only = payload["sales_only"]
     product.unit_id = payload["unit_id"]
     product.tax_rate_id = payload["tax_rate_id"]
     product.unit_price = payload["unit_price"]
@@ -433,7 +459,28 @@ async def products_update(
     product.ewc_code_id = payload["ewc_code_id"]
     product.default_destination_id = payload["default_destination_id"]
     product.updated_at = utcnow()
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        payload["errors"].append("Product code already exists.")
+        return templates.TemplateResponse(
+            request,
+            "products/edit.html",
+            {
+                "request": request,
+                "errors": payload["errors"],
+                "product": product,
+                "form": payload["form"],
+                "options": _load_options(
+                    db,
+                    current_unit_id=product.unit_id,
+                    current_ewc_code_id=product.ewc_code_id,
+                    current_default_destination_id=product.default_destination_id,
+                ),
+            },
+            status_code=400,
+        )
     return RedirectResponse(url="/products?saved=1", status_code=303)
 
 
@@ -519,7 +566,7 @@ def _parse_product_form(form) -> dict:
         return str(form.get(key, "")).strip()
 
     errors: list[str] = []
-    code = value("code")
+    code = value("code").upper()
     description = value("description")
     sale_type = _normalize_sale_type(value("sale_type"))
     tax_rate_raw = value("tax_rate_id")
@@ -557,6 +604,7 @@ def _parse_product_form(form) -> dict:
         "form": {
             "code": code,
             "description": description,
+            "sales_only": "on" if value("sales_only") == "on" else "",
             "sale_type": sale_type,
             "unit_id": value("unit_id"),
             "tax_rate_id": value("tax_rate_id"),
@@ -569,6 +617,7 @@ def _parse_product_form(form) -> dict:
         "sale_type": sale_type,
         "code": code,
         "description": description,
+        "sales_only": value("sales_only") == "on",
         "unit_id": _parse_int(value("unit_id")),
         "tax_rate_id": tax_rate_id,
         "unit_price": unit_price_value if unit_price_value is not None else Decimal("0.00"),
@@ -583,6 +632,7 @@ def _empty_form() -> dict:
     return {
         "code": "",
         "description": "",
+        "sales_only": "",
         "sale_type": "",
         "unit_id": "",
         "tax_rate_id": "",
@@ -600,6 +650,7 @@ def _product_to_form(product: Product) -> dict:
     return {
         "code": product.code or "",
         "description": product.description or "",
+        "sales_only": "on" if product.sales_only else "",
         "sale_type": sale_type,
         "unit_id": str(product.unit_id or ""),
         "tax_rate_id": str(product.tax_rate_id or ""),
@@ -932,6 +983,21 @@ def _normalize_unit_type(raw: str | None) -> str:
 
 def _normalize_sale_type(raw: str | None) -> str:
     return str(raw or "").strip().upper()
+
+
+def _validate_product_code_unique(
+    db: Session, code: str | None, current_product_id: int | None = None
+) -> str | None:
+    normalized = str(code or "").strip().upper()
+    if not normalized:
+        return None
+    existing_query = select(Product.id).where(func.upper(Product.code) == normalized)
+    if current_product_id is not None:
+        existing_query = existing_query.where(Product.id != current_product_id)
+    existing_id = db.execute(existing_query.limit(1)).scalar_one_or_none()
+    if existing_id is not None:
+        return "Product code already exists."
+    return None
 
 
 def _validate_unit_name(

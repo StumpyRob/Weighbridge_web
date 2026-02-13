@@ -43,8 +43,9 @@ SEED_TAX_RATES = [
 ]
 
 SEED_VOID_REASONS = [
-    {"code": "Customer cancelled", "description": "Customer cancelled"},
+    {"code": "Entered in error", "description": "Entered in error"},
     {"code": "Duplicate ticket", "description": "Duplicate ticket"},
+    {"code": "Customer cancelled", "description": "Customer cancelled"},
     {"code": "Incorrect weights", "description": "Incorrect weights"},
     {"code": "Wrong customer", "description": "Wrong customer"},
     {"code": "Other", "description": "Other"},

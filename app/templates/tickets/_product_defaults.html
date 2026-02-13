@@ -1,24 +1,21 @@
-<div class="form-grid">
-  <div class="field field-secondary">
-    <label for="unit_price">Rate</label>
-    <input type="number" step="0.01" id="unit_price" name="unit_price" value="{{ unit_price }}" class="input-secondary" />
-  </div>
-</div>
-
 {% include "tickets/_qty_field.html" %}
+{% include "tickets/_unit_price_oob.html" %}
 
-<div id="ewc-display" hx-swap-oob="true">
-  <div
-    class="readonly ewc-readout{% if ewc_code_display and ewc_description %} {% if ewc_hazardous %}is-hazardous{% else %}is-nonhazardous{% endif %}{% endif %}"
-    title="{% if ewc_code_display and ewc_description %}{{ ewc_code_display }} - {{ ewc_description }}{% endif %}"
-  >
-    {% if ewc_code_display and ewc_description %}
-      {{ ewc_code_display }} - {{ ewc_description }}
-    {% else %}
-      --
-    {% endif %}
-  </div>
-</div>
+<input
+  type="hidden"
+  id="ewc_product_default_code_6"
+  name="ewc_product_default_code_6"
+  value="{{ ewc_code_6 or '' }}"
+  hx-swap-oob="true"
+/>
+
+<input
+  type="hidden"
+  id="ewc_product_default_display"
+  name="ewc_product_default_display"
+  value="{{ ewc_code_display or '' }}"
+  hx-swap-oob="true"
+/>
 
 <input
   type="hidden"

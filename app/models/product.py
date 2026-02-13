@@ -14,6 +14,7 @@ class Product(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     description: Mapped[str] = mapped_column(String(255), nullable=False)
+    sales_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("product_groups.id"))
     unit_id: Mapped[int | None] = mapped_column(ForeignKey("units.id"), nullable=True)
     unit: Mapped["Unit | None"] = relationship("Unit")

@@ -1,5 +1,6 @@
 {% set resolved_unit_type = (resolved_unit_type or "")|upper %}
 {% set qty_locked = resolved_unit_type == "WEIGHT" %}
+{% set qty_input_value = "" if qty_locked else qty_value %}
 
 <div class="field{% if qty_locked %} muted{% endif %}" id="qty-wrap"{% if oob_qty %} hx-swap-oob="outerHTML"{% endif %}>
   <label for="qty">Billable quantity</label>
@@ -8,11 +9,11 @@
     step="0.001"
     id="qty"
     name="qty"
-    value="{{ qty_value }}"
-    {% if qty_locked %}readonly{% endif %}
+    value="{{ qty_input_value }}"
+    {% if qty_locked %}disabled{% endif %}
   />
   <div id="qty-mode-hint" class="hint" {% if qty_locked %}style="display:block"{% else %}style="display:none"{% endif %}>
-    WEIGHT product - qty not used.
+    Quantity only applies to COUNT products.
   </div>
   <div id="pricing-hint-weight" class="hint" style="display:none"></div>
 </div>

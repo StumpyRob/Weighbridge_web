@@ -338,7 +338,7 @@ def test_complete_defaults_tare_from_vehicle_default(client, db_session):
     assert float(ticket.tare_kg) == 5000.0
 
 
-def test_complete_count_product_blocks_when_weights_present(client, db_session):
+def test_complete_count_product_ignores_weights_and_completes(client, db_session):
     customer = Customer(account_code="C-COUNT-ONLY", name="Count Only Customer")
     count_unit = Unit(name="CountOnlyUnit", unit_type="COUNT", is_active=True)
     ticket = Ticket(
@@ -374,15 +374,19 @@ def test_complete_count_product_blocks_when_weights_present(client, db_session):
             "gross_kg": "1000",
             "tare_kg": "200",
         },
+        follow_redirects=False,
     )
 
-    assert response.status_code == 400
-    assert "COUNT product: enter Qty only (weights must be blank)." in response.text
+    assert response.status_code == 303
     db_session.refresh(ticket)
-    assert _status_value(ticket.status) == TicketStatusEnum.OPEN.value
+    assert _status_value(ticket.status) == TicketStatusEnum.COMPLETE.value
+    assert float(ticket.qty) == 1.0
+    assert ticket.gross_kg is None
+    assert ticket.tare_kg is None
+    assert ticket.net_kg is None
 
 
-def test_complete_weight_product_blocks_when_qty_present(client, db_session):
+def test_complete_weight_product_ignores_qty_and_completes(client, db_session):
     customer = Customer(account_code="C-WEIGHT-ONLY", name="Weight Only Customer")
     weight_unit = Unit(name="WeightOnlyUnit", unit_type="WEIGHT", is_active=True)
     ticket = Ticket(
@@ -418,9 +422,99 @@ def test_complete_weight_product_blocks_when_qty_present(client, db_session):
             "gross_kg": "1000",
             "tare_kg": "200",
         },
+        follow_redirects=False,
     )
 
-    assert response.status_code == 400
-    assert "WEIGHT product: enter weights only (Qty must be blank)." in response.text
+    assert response.status_code == 303
     db_session.refresh(ticket)
-    assert _status_value(ticket.status) == TicketStatusEnum.OPEN.value
+    assert _status_value(ticket.status) == TicketStatusEnum.COMPLETE.value
+    assert ticket.qty is None
+
+
+def test_save_weight_product_ignores_submitted_qty(client, db_session):
+    weight_unit = Unit(name="kg", unit_type="WEIGHT", is_active=True)
+    ticket = Ticket(
+        ticket_no="T-WEIGHT-SAVE-1",
+        datetime=datetime(2026, 1, 3, 12, 30, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([weight_unit, ticket])
+    db_session.commit()
+    product = Product(
+        code="P-WEIGHT-SAVE-1",
+        description="Weight save product",
+        unit_id=weight_unit.id,
+        unit_price=Decimal("10.00"),
+    )
+    db_session.add(product)
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "save",
+            "datetime": "2026-01-03T12:30",
+            "direction": "INWARD",
+            "transaction_type": "SALE",
+            "product_id": str(product.id),
+            "qty": "7",
+            "gross_kg": "1200",
+            "tare_kg": "200",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    db_session.refresh(ticket)
+    assert ticket.product_id == product.id
+    assert ticket.qty is None
+
+
+def test_save_count_product_ignores_submitted_weights(client, db_session):
+    count_unit = Unit(name="Count Save Unit", unit_type="COUNT", is_active=True)
+    ticket = Ticket(
+        ticket_no="T-COUNT-SAVE-1",
+        datetime=datetime(2026, 1, 3, 13, 0, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([count_unit, ticket])
+    db_session.commit()
+    product = Product(
+        code="P-COUNT-SAVE-1",
+        description="Count save product",
+        unit_id=count_unit.id,
+        unit_price=Decimal("8.00"),
+    )
+    db_session.add(product)
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "save",
+            "datetime": "2026-01-03T13:00",
+            "direction": "INWARD",
+            "transaction_type": "SALE",
+            "product_id": str(product.id),
+            "qty": "5",
+            "gross_kg": "1800",
+            "tare_kg": "400",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    db_session.refresh(ticket)
+    assert ticket.product_id == product.id
+    assert float(ticket.qty) == 5.0
+    assert ticket.gross_kg is None
+    assert ticket.tare_kg is None
+    assert ticket.net_kg is None

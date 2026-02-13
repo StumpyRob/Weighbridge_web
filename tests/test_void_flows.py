@@ -29,7 +29,7 @@ def test_ticket_void_post_with_reason_succeeds(client, db_session):
     ticket = Ticket(
         ticket_no="T-VOID-OK-1",
         datetime=datetime(2026, 1, 5, 9, 0, 0),
-        status=TicketStatusEnum.OPEN.value,
+        status=TicketStatusEnum.COMPLETE.value,
         direction=DirectionEnum.INWARD.value,
         transaction_type=TransactionTypeEnum.WASTEIN.value,
         dont_invoice=False,
@@ -62,7 +62,7 @@ def test_ticket_void_post_without_reason_fails(client, db_session):
     ticket = Ticket(
         ticket_no="T-VOID-FAIL-1",
         datetime=datetime(2026, 1, 5, 9, 0, 0),
-        status=TicketStatusEnum.OPEN.value,
+        status=TicketStatusEnum.COMPLETE.value,
         direction=DirectionEnum.INWARD.value,
         transaction_type=TransactionTypeEnum.WASTEIN.value,
         dont_invoice=False,
@@ -76,7 +76,7 @@ def test_ticket_void_post_without_reason_fails(client, db_session):
     assert response.status_code == 400
     assert "Void reason is required." in response.text
     db_session.refresh(ticket)
-    assert _status_value(ticket.status) == TicketStatusEnum.OPEN.value
+    assert _status_value(ticket.status) == TicketStatusEnum.COMPLETE.value
 
 
 def test_invoice_void_post_with_reason_succeeds(client, db_session):
@@ -181,7 +181,7 @@ def test_ticket_void_other_requires_note(client, db_session):
     ticket = Ticket(
         ticket_no="T-VOID-OTHER-1",
         datetime=datetime(2026, 1, 5, 9, 0, 0),
-        status=TicketStatusEnum.OPEN.value,
+        status=TicketStatusEnum.COMPLETE.value,
         direction=DirectionEnum.INWARD.value,
         transaction_type=TransactionTypeEnum.WASTEIN.value,
         dont_invoice=False,
@@ -198,7 +198,7 @@ def test_ticket_void_other_requires_note(client, db_session):
     assert response.status_code == 400
     assert "Void note is required when reason is Other." in response.text
     db_session.refresh(ticket)
-    assert _status_value(ticket.status) == TicketStatusEnum.OPEN.value
+    assert _status_value(ticket.status) == TicketStatusEnum.COMPLETE.value
 
 
 def test_invoice_void_other_requires_note(client, db_session):
