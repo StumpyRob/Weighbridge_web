@@ -2,6 +2,15 @@
 
 {% block title %}Products | Weighbridge Web{% endblock %}
 
+{% block toast_messages %}
+  {% if saved %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Saved.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
   <div>
@@ -15,26 +24,9 @@
 
 {% include "products/_subnav.html" %}
 
-{% if saved %}
-  <div class="alert alert-success" data-auto-dismiss>
-    Saved.
-  </div>
-  <script>
-    if (window.history && window.history.replaceState) {
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-    window.setTimeout(function () {
-      const banner = document.querySelector("[data-auto-dismiss]");
-      if (banner) {
-        banner.remove();
-      }
-    }, 3000);
-  </script>
-{% endif %}
-
 <form class="filters" method="get" action="/products">
   <div class="field">
-    <label for="q">Search code or description</label>
+    <label for="q">Search code, description, or EWC</label>
     <input type="text" id="q" name="q" value="{{ q }}" />
   </div>
   <div class="actions btn-group">
@@ -49,11 +41,11 @@
       <tr>
         <th>Code</th>
         <th>Description</th>
+        <th>Group</th>
         <th>Unit</th>
         <th>Tax rate</th>
+        <th>Nominal code</th>
         <th>Unit price</th>
-        <th>Account price</th>
-        <th>Cash price</th>
       </tr>
     </thead>
     <tbody>
@@ -61,11 +53,11 @@
         <tr>
           <td><a href="/products/{{ product.id }}">{{ product.code }}</a></td>
           <td>{{ product.description }}</td>
-          <td>{{ product.unit_id or "" }}</td>
-          <td>{{ product.tax_rate_id or "" }}</td>
+          <td>{{ product.product_group.name if product.product_group else "" }}</td>
+          <td>{{ product.unit.name if product.unit else "" }}</td>
+          <td>{{ product.tax_rate.code if product.tax_rate else "" }}</td>
+          <td>{{ product.nominal_code or (product.product_group.nominal_code_default if product.product_group and product.product_group.nominal_code_default else "") }}</td>
           <td>{{ "{:.2f}".format(product.unit_price) if product.unit_price is not none else "" }}</td>
-          <td>{{ "{:.2f}".format(product.account_price) if product.account_price is not none else "" }}</td>
-          <td>{{ "{:.2f}".format(product.cash_price) if product.cash_price is not none else "" }}</td>
         </tr>
       {% else %}
         <tr>

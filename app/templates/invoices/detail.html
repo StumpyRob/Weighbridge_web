@@ -2,6 +2,42 @@
 
 {% block title %}Invoice {{ invoice.invoice_no }} | Weighbridge Web{% endblock %}
 
+{% block toast_messages %}
+  {% if errors %}
+    <div class="flash-toast flash-toast--error" data-flash-toast>
+      <div class="flash-toast__content">
+        <ul>
+          {% for error in errors %}
+            <li>{{ error }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+
+  {% if created %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Invoice {{ invoice.invoice_no }} created.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+
+  {% if paid %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Invoice {{ invoice.invoice_no }} marked paid.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+
+  {% if voided %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Invoice {{ invoice.invoice_no }} voided.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
 {% block content %}
 <div class="invoice-detail">
   <div class="page-header">
@@ -19,34 +55,9 @@
     </div>
   </div>
 
-  {% if errors %}
-    <div class="alert">
-      <ul>
-        {% for error in errors %}
-          <li>{{ error }}</li>
-        {% endfor %}
-      </ul>
-    </div>
-  {% endif %}
-
   {% if created %}
-    <div class="alert">
-      Invoice {{ invoice.invoice_no }} created successfully.
-    </div>
     <div class="actions btn-group">
       <a class="btn btn--ghost" href="/invoices/generate">Back to Generate Invoices</a>
-    </div>
-  {% endif %}
-
-  {% if paid %}
-    <div class="alert">
-      Invoice {{ invoice.invoice_no }} marked as paid.
-    </div>
-  {% endif %}
-
-  {% if voided %}
-    <div class="alert">
-      Invoice {{ invoice.invoice_no }} voided.
     </div>
   {% endif %}
 

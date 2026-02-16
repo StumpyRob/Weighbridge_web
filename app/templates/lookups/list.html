@@ -2,6 +2,15 @@
 
 {% block title %}{{ entity_plural }} | Weighbridge Web{% endblock %}
 
+{% block toast_messages %}
+  {% if saved %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Saved.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
 {% block content %}
   <div class="page-header">
     <div>
@@ -24,23 +33,6 @@
       <a class="btn btn--ghost{% if base_path == '/lookups/containers' %} is-active{% endif %}" href="/lookups/containers">Containers</a>
       <a class="btn btn--ghost{% if base_path == '/lookups/destinations' %} is-active{% endif %}" href="/lookups/destinations">Destinations</a>
     </div>
-  {% endif %}
-
-  {% if saved %}
-    <div class="alert alert-success" data-auto-dismiss>
-      Saved.
-    </div>
-    <script>
-      if (window.history && window.history.replaceState) {
-        window.history.replaceState({}, "", window.location.pathname);
-      }
-      window.setTimeout(function () {
-        const banner = document.querySelector("[data-auto-dismiss]");
-        if (banner) {
-          banner.remove();
-        }
-      }, 3000);
-    </script>
   {% endif %}
 
   {% if error %}
