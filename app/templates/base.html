@@ -21,9 +21,20 @@
         <a href="/admin" class="{% if request.url.path.startswith('/admin') %}is-active{% endif %}" {% if request.url.path.startswith('/admin') %}aria-current="page"{% endif %}>Admin</a>
       </nav>
     </header>
+    {% block toasts %}
+      {% set toast_messages_markup %}
+        {% block toast_messages %}{% endblock %}
+      {% endset %}
+      {% if toast_messages_markup | trim %}
+        <div id="flash-toasts" class="flash-toasts" aria-live="polite">
+          {{ toast_messages_markup | safe }}
+        </div>
+      {% endif %}
+    {% endblock %}
     <main class="container">
       {% block content %}{% endblock %}
     </main>
+    <script src="/static/js/toasts.js" defer></script>
   </body>
 </html>
 

@@ -2,6 +2,15 @@
 
 {% block title %}Edit Customer {{ customer.account_code }} | Weighbridge Web{% endblock %}
 
+{% block toast_messages %}
+  {% if saved %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Saved.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
   <div>
