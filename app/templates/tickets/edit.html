@@ -2,6 +2,25 @@
 
 {% block title %}Edit Ticket {{ ticket.ticket_no }} | Weighbridge Web{% endblock %}
 
+{% block toast_messages %}
+  {% if completed or saved or voided %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">
+        {% if completed %}
+          Ticket completed.
+        {% elif voided %}
+          Ticket voided.
+        {% elif form.status == "COMPLETE" %}
+          PO saved.
+        {% else %}
+          Saved.
+        {% endif %}
+      </div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
   <div>
@@ -44,29 +63,6 @@
       | <strong>Voided:</strong> {{ ticket_void.voided_at.strftime("%d/%m/%Y %H:%M") }}
     {% endif %}
   </div>
-{% endif %}
-
-{% if completed or saved or voided %}
-  <div class="alert alert--warning" data-auto-dismiss>
-    {% if completed %}
-      Ticket completed.
-    {% elif voided %}
-      Ticket voided.
-    {% else %}
-      Saved.
-    {% endif %}
-  </div>
-  <script>
-    if (window.history && window.history.replaceState) {
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-    window.setTimeout(function () {
-      const banner = document.querySelector("[data-auto-dismiss]");
-      if (banner) {
-        banner.remove();
-      }
-    }, 3000);
-  </script>
 {% endif %}
 
 {% if errors %}

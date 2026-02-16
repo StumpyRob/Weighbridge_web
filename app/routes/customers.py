@@ -120,6 +120,7 @@ def customers_edit(
         {
             "request": request,
             "errors": [],
+            "saved": request.query_params.get("saved") == "1",
             "customer": customer,
             "form": _customer_to_form(customer),
             "options": _load_options(db),
