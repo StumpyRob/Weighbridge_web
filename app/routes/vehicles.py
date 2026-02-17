@@ -4,6 +4,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..constants import REG_MAX
 from ..db import get_db
 from ..models.base import utcnow
 from ..security import validate_no_html_fields
@@ -276,6 +277,8 @@ def _parse_vehicle_form(form) -> dict:
 
     if not registration:
         errors.append("Registration is required.")
+    elif len(registration) > REG_MAX:
+        errors.append(f"Registration must be {REG_MAX} characters or fewer.")
     # vehicle_type_id is optional
 
     return {

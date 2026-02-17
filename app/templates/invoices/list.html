@@ -45,8 +45,8 @@
       <tbody>
         {% for invoice, customer in rows %}
           <tr>
-            <td><a href="/invoices/{{ invoice.id }}">{{ invoice.invoice_no }}</a></td>
-            <td>{{ customer.name }}</td>
+            <td><a href="/invoices/{{ invoice.id }}" class="truncate truncate--sm" title="{{ invoice.invoice_no }}">{{ invoice.invoice_no }}</a></td>
+            <td><span class="truncate truncate--md" title="{{ customer.name if customer else '' }}">{{ customer.name if customer else "" }}</span></td>
             <td>{{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "" }}</td>
             <td>{{ invoice.status }}</td>
             <td>{{ "{:.2f}".format(invoice.net_total) }}</td>

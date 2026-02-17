@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}
+  {% if mode == "edit" %}
+    Edit Product Group | Weighbridge Web
+  {% else %}
+    New Product Group | Weighbridge Web
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    {% if mode == "edit" %}
+      <h1>Edit Product Group</h1>
+    {% else %}
+      <h1>New Product Group</h1>
+    {% endif %}
+    <p class="muted">Maintain product group defaults used by products.</p>
+  </div>
+</div>
+
+{% include "products/_subnav.html" %}
+
+{% if errors %}
+  <div class="alert">
+    <ul>
+      {% for error in errors %}
+        <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+{% if mode == "edit" %}
+  {% set action_url = "/products/groups/" ~ group.id ~ "/edit" %}
+{% else %}
+  {% set action_url = "/products/groups/new" %}
+{% endif %}
+
+<form class="ticket-form" method="post" action="{{ action_url }}">
+  <section class="card">
+    <h2>Details</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" value="{{ form.name }}" maxlength="{{ limits.NAME_MAX }}" required />
+      </div>
+      <div class="field">
+        <label for="nominal_code_default">Default nominal code</label>
+        <input type="text" id="nominal_code_default" name="nominal_code_default" value="{{ form.nominal_code_default }}" maxlength="{{ limits.NOMINAL_CODE_MAX }}" />
+      </div>
+      <div class="field">
+        <label for="description">Description</label>
+        <input type="text" id="description" name="description" value="{{ form.description }}" maxlength="{{ limits.DESC_MAX }}" />
+        <div class="hint">Max {{ limits.DESC_MAX }} characters.</div>
+      </div>
+    </div>
+  </section>
+  <div class="actions btn-group">
+    <button type="submit" class="btn btn--primary">Save</button>
+    <a class="btn btn--secondary" href="/products/groups">Back</a>
+  </div>
+</form>
+{% endblock %}

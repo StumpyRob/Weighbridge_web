@@ -13,6 +13,7 @@ from app.models import (
     Unit,
     VoidReason,
 )
+from app.seed import VOID_REASON_TYPE_TICKET
 
 
 def _status_value(value) -> str:
@@ -61,7 +62,13 @@ def test_void_ticket_is_excluded_from_invoice_preview(client, db_session):
     # Ensure default reasons exist in clean DB and void the ticket.
     client.get(f"/tickets/{ticket.id}")
     reason = db_session.execute(
-        select(VoidReason).where(VoidReason.is_active.is_(True)).limit(1)
+        select(VoidReason)
+        .where(
+            VoidReason.is_active.is_(True),
+            VoidReason.reason_type == VOID_REASON_TYPE_TICKET,
+        )
+        .order_by(VoidReason.id)
+        .limit(1)
     ).scalar_one()
     void_response = client.post(
         f"/tickets/{ticket.id}",

@@ -8,24 +8,24 @@
         id="account_code"
         name="account_code"
         value="{{ form.account_code }}"
-        maxlength="16"
+        maxlength="{{ limits.CODE_MAX }}"
         pattern="[A-Z0-9-]+"
-        title="Use A-Z, 0-9, and - only (max 16 characters)."
+        title="Use A-Z, 0-9, and - only (max {{ limits.CODE_MAX }} characters)."
         class="account-code"
         required
       />
     </div>
     <div class="field">
       <label for="name">Name</label>
-      <input type="text" id="name" name="name" value="{{ form.name }}" required />
+      <input type="text" id="name" name="name" value="{{ form.name }}" maxlength="{{ limits.NAME_MAX }}" required />
     </div>
     <div class="field">
       <label for="invoice_email">Invoice email</label>
-      <input type="email" id="invoice_email" name="invoice_email" value="{{ form.invoice_email }}" />
+      <input type="email" id="invoice_email" name="invoice_email" value="{{ form.invoice_email }}" maxlength="{{ limits.DESC_MAX }}" />
     </div>
     <div class="field">
       <label for="phone">Phone</label>
-      <input type="text" id="phone" name="phone" value="{{ form.phone }}" />
+      <input type="text" id="phone" name="phone" value="{{ form.phone }}" maxlength="{{ limits.CODE_MAX }}" />
     </div>
   </div>
 </section>
@@ -50,23 +50,23 @@
   <div class="form-grid">
     <div class="field">
       <label for="address_line1">Address line 1</label>
-      <input type="text" id="address_line1" name="address_line1" value="{{ form.address_line1 }}" />
+      <input type="text" id="address_line1" name="address_line1" value="{{ form.address_line1 }}" maxlength="{{ limits.ADDRESS_LINE_MAX }}" />
     </div>
     <div class="field">
       <label for="address_line2">Address line 2</label>
-      <input type="text" id="address_line2" name="address_line2" value="{{ form.address_line2 }}" />
+      <input type="text" id="address_line2" name="address_line2" value="{{ form.address_line2 }}" maxlength="{{ limits.ADDRESS_LINE_MAX }}" />
     </div>
     <div class="field">
       <label for="city">City</label>
-      <input type="text" id="city" name="city" value="{{ form.city }}" />
+      <input type="text" id="city" name="city" value="{{ form.city }}" maxlength="{{ limits.NAME_MAX }}" />
     </div>
     <div class="field">
       <label for="postcode">Postcode</label>
-      <input type="text" id="postcode" name="postcode" value="{{ form.postcode }}" />
+      <input type="text" id="postcode" name="postcode" value="{{ form.postcode }}" maxlength="{{ limits.POSTCODE_MAX }}" />
     </div>
     <div class="field">
       <label for="country">Country</label>
-      <input type="text" id="country" name="country" value="{{ form.country }}" />
+      <input type="text" id="country" name="country" value="{{ form.country }}" maxlength="{{ limits.NAME_MAX }}" />
     </div>
   </div>
 </section>
@@ -75,26 +75,41 @@
   <h2>Billing</h2>
   <div class="form-grid">
     <div class="field">
-      <label for="vat_number">VAT number</label>
-      <input type="text" id="vat_number" name="vat_number" value="{{ form.vat_number }}" />
-    </div>
-    <div class="field">
-      <label for="invoice_frequency_id">Invoice frequency</label>
-      <select id="invoice_frequency_id" name="invoice_frequency_id">
-        <option value="">Select frequency</option>
-        {% for id, label in options.invoice_frequencies %}
-          <option value="{{ id }}" {% if form.invoice_frequency_id == id %}selected{% endif %}>{{ label }}</option>
+      <label for="invoice_frequency">Invoice frequency</label>
+      <select id="invoice_frequency" name="invoice_frequency">
+        <option value="">Not set</option>
+        {% for value, label in options.invoice_frequencies %}
+          <option value="{{ value }}" {% if form.invoice_frequency == value %}selected{% endif %}>
+            {{ label }}
+          </option>
         {% endfor %}
       </select>
     </div>
     <div class="field">
-      <label for="payment_terms">Payment terms</label>
-      <input type="text" id="payment_terms" name="payment_terms" value="{{ form.payment_terms }}" />
+      <label for="payment_terms_days">Payment terms (days)</label>
+      <input
+        type="number"
+        id="payment_terms_days"
+        name="payment_terms_days"
+        value="{{ form.payment_terms_days }}"
+        min="0"
+        step="1"
+      />
     </div>
     <div class="field">
-      <label for="credit_limit">Credit limit</label>
-      <input type="number" step="0.01" id="credit_limit" name="credit_limit" value="{{ form.credit_limit }}" />
+      <label for="payment_terms">Payment terms</label>
+      <input
+        type="text"
+        id="payment_terms"
+        name="payment_terms"
+        value="{{ form.payment_terms }}"
+        maxlength="{{ limits.NAME_MAX }}"
+      />
     </div>
+    {% if DEV_MODE %}
+      {{ wip_field("vat_number_wip", "VAT number", "", "Not implemented yet.") }}
+      {{ wip_field("credit_limit_wip", "Credit limit", "", "Not implemented yet.", input_type="number") }}
+    {% endif %}
   </div>
 </section>
 
@@ -106,16 +121,25 @@
       <label for="on_stop">On stop</label>
     </div>
     <div class="field checkbox">
-      <input type="checkbox" id="cash_account" name="cash_account" {% if form.cash_account %}checked{% endif %} />
-      <label for="cash_account">Cash account</label>
-    </div>
-    <div class="field checkbox">
-      <input type="checkbox" id="do_not_invoice" name="do_not_invoice" {% if form.do_not_invoice %}checked{% endif %} />
+      <input
+        type="checkbox"
+        id="do_not_invoice"
+        name="do_not_invoice"
+        {% if form.do_not_invoice %}checked{% endif %}
+      />
       <label for="do_not_invoice">Do not invoice</label>
     </div>
     <div class="field checkbox">
-      <input type="checkbox" id="must_have_po" name="must_have_po" {% if form.must_have_po %}checked{% endif %} />
+      <input
+        type="checkbox"
+        id="must_have_po"
+        name="must_have_po"
+        {% if form.must_have_po %}checked{% endif %}
+      />
       <label for="must_have_po">Must have PO</label>
     </div>
+    {% if DEV_MODE %}
+      {{ wip_field("cash_account_wip", "Cash account", "", "Not implemented yet.", input_type="checkbox") }}
+    {% endif %}
   </div>
 </section>

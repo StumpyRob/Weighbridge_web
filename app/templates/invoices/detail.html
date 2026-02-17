@@ -40,24 +40,57 @@
 
 {% block content %}
 <div class="invoice-detail">
-  <div class="page-header">
-    <div>
+  <div class="invoice-header">
+    <div class="invoice-header__left">
       <h1>Invoice {{ invoice.invoice_no }}</h1>
       <p class="muted">{{ customer.name if customer else "" }}</p>
-      <div class="ticket-meta">
-        <span class="status-text status-{{ invoice.status | lower }}">{{ invoice.status }}</span>
-        <span>Date: {{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "-" }}</span>
-      </div>
+      {% if customer and customer.account_code %}
+        <p class="muted">Account: {{ customer.account_code }}</p>
+      {% endif %}
+      {% if customer_billing_lines %}
+        <div class="muted invoice-billing-address">
+          {% for line in customer_billing_lines %}
+            <div>{{ line }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
     </div>
-    <div class="actions btn-group">
-      <button type="button" class="btn btn--ghost" disabled title="Print coming soon">Print</button>
-      <a class="btn btn--secondary" href="/invoices">Back</a>
+    <div class="invoice-header__right">
+      <!-- TODO: add dedicated /invoices/{id}/print template (no operator controls). -->
+      <div class="invoice-header__actions">
+        {% if created %}
+          <a class="btn btn--ghost" href="/invoices/generate">Back to Generate Invoices</a>
+        {% endif %}
+        <button type="button" class="btn btn--ghost" disabled title="Print coming soon">Print</button>
+        <a class="btn btn--secondary" href="/invoices">Back</a>
+      </div>
+      <div class="invoice-header__meta">
+        <div class="invoice-header__meta-item">
+          <span class="summary-label">Status</span>
+          <span class="summary-value"><span class="invoice-status-badge invoice-status-badge--{{ invoice.status | lower }}">{{ invoice.status }}</span></span>
+        </div>
+        <div class="invoice-header__meta-item">
+          <span class="summary-label">Invoice Date</span>
+          <span class="summary-value">{{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "-" }}</span>
+        </div>
+        <div class="invoice-header__meta-item">
+          <span class="summary-label">Due Date</span>
+          <span class="summary-value">{{ invoice.due_date.strftime("%d/%m/%Y") if invoice.due_date else "-" }}</span>
+        </div>
+      </div>
     </div>
   </div>
 
-  {% if created %}
-    <div class="actions btn-group">
-      <a class="btn btn--ghost" href="/invoices/generate">Back to Generate Invoices</a>
+  {% if invoice.status == "VOID" and invoice_void %}
+    <div class="notice">
+      <strong>Void reason:</strong>
+      {{ (invoice_void_reason.description if invoice_void_reason and invoice_void_reason.description else (invoice_void_reason.code if invoice_void_reason else "")) or "Unknown" }}
+      {% if invoice_void.note %}
+        | <strong>Note:</strong> {{ invoice_void.note }}
+      {% endif %}
+      {% if invoice_void.voided_at %}
+        | <strong>Voided:</strong> {{ invoice_void.voided_at.strftime("%d/%m/%Y %H:%M") }}
+      {% endif %}
     </div>
   {% endif %}
 
@@ -66,18 +99,16 @@
     <div class="card-body">
       <div class="invoice-summary-grid">
         <div class="summary-item">
-          <span class="summary-label">Status</span>
-          <span class="summary-value">
-            <span class="invoice-status-badge invoice-status-badge--{{ invoice.status | lower }}">{{ invoice.status }}</span>
-          </span>
-        </div>
-        <div class="summary-item">
           <span class="summary-label">Date</span>
           <span class="summary-value">{{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "-" }}</span>
         </div>
         <div class="summary-item">
           <span class="summary-label">Invoice No</span>
           <span class="summary-value">{{ invoice.invoice_no }}</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Due</span>
+          <span class="summary-value">{{ invoice.due_date.strftime("%d/%m/%Y") if invoice.due_date else "-" }}</span>
         </div>
         <div class="summary-item">
           <span class="summary-label">Net</span>
@@ -161,12 +192,12 @@
           <tbody>
             {% for line in lines %}
               <tr>
-                <td class="line-description">{{ line.description }}</td>
-                <td class="align-right">{{ line.quantity }}</td>
-                <td class="align-right">&pound;{{ "{:,.2f}".format(line.unit_price or 0) }}</td>
-                <td class="align-right">&pound;{{ "{:,.2f}".format(line.net or 0) }}</td>
-                <td class="align-right">&pound;{{ "{:,.2f}".format(line.vat or 0) }}</td>
-                <td class="align-right">&pound;{{ "{:,.2f}".format(line.gross or 0) }}</td>
+                <td class="line-description" data-label="Description">{{ line.description }}</td>
+                <td class="align-right" data-label="Qty">{{ line.quantity }}</td>
+                <td class="align-right" data-label="Unit price">&pound;{{ "{:,.2f}".format(line.unit_price or 0) }}</td>
+                <td class="align-right" data-label="Net">&pound;{{ "{:,.2f}".format(line.net or 0) }}</td>
+                <td class="align-right" data-label="VAT">&pound;{{ "{:,.2f}".format(line.vat or 0) }}</td>
+                <td class="align-right" data-label="Gross">&pound;{{ "{:,.2f}".format(line.gross or 0) }}</td>
               </tr>
             {% else %}
               <tr>
@@ -201,33 +232,69 @@
     <div class="card-body">
       <div class="table-wrap">
         <table class="data-table invoice-linked-table">
+          <colgroup>
+            <col class="invoice-linked-col-ticket">
+            <col class="invoice-linked-col-date">
+            <col class="invoice-linked-col-product">
+            {% if has_waste_tickets %}
+              <col class="invoice-linked-col-compliance">
+            {% endif %}
+            <col class="invoice-linked-col-netqty">
+            <col class="invoice-linked-col-total">
+          </colgroup>
           <thead>
             <tr>
-              <th>Ticket no</th>
-              <th>Date/time</th>
-              <th>Status</th>
+              <th>Ticket</th>
+              <th>Date</th>
+              <th>Product</th>
+              {% if has_waste_tickets %}
+                <th>Compliance</th>
+              {% endif %}
+              <th>Net/Qty</th>
               <th class="align-right">Total</th>
             </tr>
           </thead>
           <tbody>
-            {% for ticket in tickets %}
+            {% for row in linked_tickets %}
+              {% set ticket = row.ticket %}
               <tr>
-                <td>
+                <td data-label="Ticket">
                   <a class="ticket-link-badge" href="/tickets/{{ ticket.id }}">{{ ticket.ticket_no }}</a>
                 </td>
-                <td>{{ ticket.datetime.strftime("%d/%m/%Y %H:%M") if ticket.datetime else "-" }}</td>
-                <td>
-                  {% if ticket.status %}
-                    <span class="status-text status-{{ ticket.status.value | lower }}">{{ ticket.status.value }}</span>
-                  {% endif %}
-                </td>
-                <td class="align-right">
+                <td data-label="Date">{{ ticket.datetime.strftime("%d/%m/%Y") if ticket.datetime else "-" }}</td>
+                <td class="invoice-linked-product" data-label="Product">{% if row.product_display %}{{ row.product_display }}{% else %}&mdash;{% endif %}</td>
+                {% if has_waste_tickets %}
+                  <td class="invoice-linked-compliance" data-label="Compliance">
+                    <div class="invoice-linked-compliance__line">
+                      <span class="invoice-linked-compliance__label">EWC:</span>
+                      {% if row.is_waste_ticket and row.ewc_code_display %}{{ row.ewc_code_display }}{% else %}&mdash;{% endif %}
+                    </div>
+                    <div class="invoice-linked-compliance__line">
+                      <span class="invoice-linked-compliance__label">Hazard:</span>
+                      {% if row.is_waste_ticket %}
+                        {% if row.is_hazardous %}
+                          Yes
+                        {% else %}
+                          No
+                        {% endif %}
+                      {% else %}
+                        No
+                      {% endif %}
+                    </div>
+                    <div class="invoice-linked-compliance__line">
+                      <span class="invoice-linked-compliance__label">Producer:</span>
+                      {% if row.is_waste_ticket and row.waste_producer_display %}{{ row.waste_producer_display }}{% else %}&mdash;{% endif %}
+                    </div>
+                  </td>
+                {% endif %}
+                <td data-label="Net/Qty">{% if row.billable_display %}{{ row.billable_display }}{% else %}&mdash;{% endif %}</td>
+                <td class="align-right" data-label="Total">
                   {% if ticket.total is not none %}&pound;{{ "{:,.2f}".format(ticket.total) }}{% else %}&mdash;{% endif %}
                 </td>
               </tr>
             {% else %}
               <tr>
-                <td colspan="4" class="empty">No linked tickets.</td>
+                <td colspan="{% if has_waste_tickets %}6{% else %}5{% endif %}" class="empty">No linked tickets.</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -236,14 +303,14 @@
     </div>
   </section>
 
-  <section class="card invoice-void-card">
-    <header class="card-header">Void Invoice</header>
+  <details class="card invoice-void-card invoice-void-disclosure">
+    <summary class="card-header">Void Invoice</summary>
     <div class="card-body">
       <p class="muted invoice-warning-text">This action cannot be undone.</p>
       {% if invoice.status == "VOID" %}
         <p class="muted">Invoice is VOID and cannot be modified.</p>
       {% elif invoice.status == "PAID" %}
-        <p class="muted">Invoice is PAID and cannot be modified.</p>
+        <p class="muted">Cannot void a paid invoice.</p>
       {% else %}
         <form method="post" action="/invoices/{{ invoice.id }}/void">
           <div class="invoice-void-grid">
@@ -252,16 +319,14 @@
               <select id="void_reason_id" name="void_reason_id">
                 <option value="">Select reason</option>
                 {% for reason in void_reasons %}
-                  <option value="{{ reason.id }}">{{ reason.code }}</option>
+                  <option value="{{ reason.id }}">{{ reason.description if reason.description else reason.code }}</option>
                 {% endfor %}
               </select>
-              {% if not void_reasons %}
-                <div class="hint">No void reasons configured (run seed)</div>
-              {% endif %}
             </div>
             <div class="field">
               <label for="void_note">Reason note</label>
-              <input type="text" id="void_note" name="void_note" placeholder="Optional unless reason is Other" />
+              <input type="text" id="void_note" name="void_note" maxlength="{{ limits.NOTES_MAX }}" placeholder="Optional note" />
+              <div class="hint">Max {{ limits.NOTES_MAX }} characters.</div>
             </div>
           </div>
           <div class="actions btn-group invoice-void-actions">
@@ -270,7 +335,7 @@
         </form>
       {% endif %}
     </div>
-  </section>
+  </details>
 </div>
 
 <script>

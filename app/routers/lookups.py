@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, true
 from sqlalchemy.orm import Session
 
+from ..constants import CODE_MAX, NAME_MAX
 from ..db import get_db
 from ..models import Container, Destination, Driver, Haulier, Ticket
 from ..security import validate_no_html_fields
@@ -138,8 +139,10 @@ async def hauliers_create(
     )
     if not name:
         error = "Name is required."
-    elif len(name) > 120:
-        error = "Name must be 120 characters or fewer."
+    elif len(name) > NAME_MAX:
+        error = f"Name must be {NAME_MAX} characters or fewer."
+    elif carrier_licence_number and len(carrier_licence_number) > CODE_MAX:
+        error = f"Carrier licence number must be {CODE_MAX} characters or fewer."
     else:
         existing = db.execute(
             select(Haulier).where(func.lower(Haulier.name) == func.lower(name))
@@ -235,8 +238,10 @@ async def hauliers_update(
     )
     if not name:
         error = "Name is required."
-    elif len(name) > 120:
-        error = "Name must be 120 characters or fewer."
+    elif len(name) > NAME_MAX:
+        error = f"Name must be {NAME_MAX} characters or fewer."
+    elif carrier_licence_number and len(carrier_licence_number) > CODE_MAX:
+        error = f"Carrier licence number must be {CODE_MAX} characters or fewer."
     else:
         existing = db.execute(
             select(Haulier).where(
@@ -386,8 +391,8 @@ async def drivers_create(
     error = _html_validation_error({"Name": name})
     if not name:
         error = "Name is required."
-    elif len(name) > 120:
-        error = "Name must be 120 characters or fewer."
+    elif len(name) > NAME_MAX:
+        error = f"Name must be {NAME_MAX} characters or fewer."
     else:
         existing = db.execute(
             select(Driver).where(func.lower(Driver.name) == func.lower(name))
@@ -473,8 +478,8 @@ async def drivers_update(
     error = _html_validation_error({"Name": name})
     if not name:
         error = "Name is required."
-    elif len(name) > 120:
-        error = "Name must be 120 characters or fewer."
+    elif len(name) > NAME_MAX:
+        error = f"Name must be {NAME_MAX} characters or fewer."
     else:
         existing = db.execute(
             select(Driver).where(
@@ -621,8 +626,8 @@ async def containers_create(
     error = _html_validation_error({"Name": name})
     if not name:
         error = "Name is required."
-    elif len(name) > 120:
-        error = "Name must be 120 characters or fewer."
+    elif len(name) > NAME_MAX:
+        error = f"Name must be {NAME_MAX} characters or fewer."
     else:
         existing = db.execute(
             select(Container).where(func.lower(Container.name) == func.lower(name))
@@ -708,8 +713,8 @@ async def containers_update(
     error = _html_validation_error({"Name": name})
     if not name:
         error = "Name is required."
-    elif len(name) > 120:
-        error = "Name must be 120 characters or fewer."
+    elif len(name) > NAME_MAX:
+        error = f"Name must be {NAME_MAX} characters or fewer."
     else:
         existing = db.execute(
             select(Container).where(
@@ -856,8 +861,8 @@ async def destinations_create(
     error = _html_validation_error({"Name": name})
     if not name:
         error = "Name is required."
-    elif len(name) > 120:
-        error = "Name must be 120 characters or fewer."
+    elif len(name) > NAME_MAX:
+        error = f"Name must be {NAME_MAX} characters or fewer."
     else:
         existing = db.execute(
             select(Destination).where(
@@ -945,8 +950,8 @@ async def destinations_update(
     error = _html_validation_error({"Name": name})
     if not name:
         error = "Name is required."
-    elif len(name) > 120:
-        error = "Name must be 120 characters or fewer."
+    elif len(name) > NAME_MAX:
+        error = f"Name must be {NAME_MAX} characters or fewer."
     else:
         existing = db.execute(
             select(Destination).where(

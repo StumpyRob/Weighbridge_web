@@ -79,7 +79,7 @@
         {% for item in items %}
           <tr>
             <td>
-              {{ item.name }}
+              <span class="truncate truncate--md" title="{{ item.name }}">{{ item.name }}</span>
             </td>
             {% if entity_singular == "Unit" %}
               <td class="type-col">

@@ -1,3 +1,4 @@
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -32,7 +33,7 @@ def test_invoice_detail_shows_payment_method_options(client, db_session):
     response = client.get(f"/invoices/{invoice.id}")
 
     assert response.status_code == 200
-    assert "Bank transfer" in response.text
+    assert "BACS" in response.text
 
 
 def test_mark_paid_succeeds_with_valid_method_and_datetime(client, db_session):
@@ -54,6 +55,50 @@ def test_mark_paid_succeeds_with_valid_method_and_datetime(client, db_session):
     assert invoice.status == "PAID"
     assert invoice.payment_method_id == payment_method.id
     assert invoice.paid_at is not None
+
+
+def test_mark_paid_succeeds_with_valid_method_and_iso_date_only(client, db_session):
+    seed_payment_methods(db_session)
+    payment_method = db_session.execute(
+        select(PaymentMethod).where(PaymentMethod.is_active.is_(True)).limit(1)
+    ).scalar_one()
+    invoice = _make_invoice(db_session)
+
+    response = client.post(
+        f"/invoices/{invoice.id}/paid",
+        data={"payment_method_id": str(payment_method.id), "paid_at": "2026-01-11"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"].endswith(f"/invoices/{invoice.id}?paid=1")
+    db_session.refresh(invoice)
+    assert invoice.status == "PAID"
+    assert invoice.payment_method_id == payment_method.id
+    assert invoice.paid_at is not None
+    assert invoice.paid_at.date() == date(2026, 1, 11)
+
+
+def test_mark_paid_succeeds_with_valid_method_and_uk_date_only(client, db_session):
+    seed_payment_methods(db_session)
+    payment_method = db_session.execute(
+        select(PaymentMethod).where(PaymentMethod.is_active.is_(True)).limit(1)
+    ).scalar_one()
+    invoice = _make_invoice(db_session)
+
+    response = client.post(
+        f"/invoices/{invoice.id}/paid",
+        data={"payment_method_id": str(payment_method.id), "paid_at": "11/01/2026"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"].endswith(f"/invoices/{invoice.id}?paid=1")
+    db_session.refresh(invoice)
+    assert invoice.status == "PAID"
+    assert invoice.payment_method_id == payment_method.id
+    assert invoice.paid_at is not None
+    assert invoice.paid_at.date() == date(2026, 1, 11)
 
 
 def test_mark_paid_fails_without_method(client, db_session):
@@ -139,8 +184,10 @@ def test_invoice_detail_hides_void_form_when_paid(client, db_session):
     response = client.get(f"/invoices/{invoice.id}")
 
     assert response.status_code == 200
+    assert f'action="/invoices/{invoice.id}/paid"' not in response.text
     assert f'action="/invoices/{invoice.id}/void"' not in response.text
-    assert "Invoice is PAID and cannot be modified." in response.text
+    assert "Already paid." in response.text
+    assert "Cannot void a paid invoice." in response.text
 
 
 def test_invoice_detail_hides_paid_and_void_forms_when_void(client, db_session):
@@ -154,6 +201,29 @@ def test_invoice_detail_hides_paid_and_void_forms_when_void(client, db_session):
     assert "Invoice is VOID and cannot be modified." in response.text
 
 
+def test_mark_paid_followup_shows_paid_summary_and_blocks_repeat_pay(client, db_session):
+    seed_payment_methods(db_session)
+    payment_method = db_session.execute(
+        select(PaymentMethod).where(PaymentMethod.is_active.is_(True)).limit(1)
+    ).scalar_one()
+    invoice = _make_invoice(db_session)
+
+    response = client.post(
+        f"/invoices/{invoice.id}/paid",
+        data={"payment_method_id": str(payment_method.id), "paid_at": "2026-01-11"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    follow = client.get(response.headers["location"])
+
+    assert follow.status_code == 200
+    assert payment_method.code in follow.text
+    assert re.search(r"\b11/01/(26|2026)\b", follow.text)
+    assert 'id="mark-paid-form"' not in follow.text
+    assert "Already paid." in follow.text
+
+
 def test_invoice_detail_shows_void_heading_and_mark_paid_labels(client, db_session):
     seed_payment_methods(db_session)
     invoice = _make_invoice(db_session, status="DRAFT")
@@ -161,7 +231,7 @@ def test_invoice_detail_shows_void_heading_and_mark_paid_labels(client, db_sessi
     response = client.get(f"/invoices/{invoice.id}")
 
     assert response.status_code == 200
-    assert '<header class="card-header">Void Invoice</header>' in response.text
+    assert '<summary class="card-header">Void Invoice</summary>' in response.text
     assert 'id="mark-paid-form"' in response.text
     assert f'action="/invoices/{invoice.id}/paid"' in response.text
     assert '<label for="payment_method_id">Payment method</label>' in response.text

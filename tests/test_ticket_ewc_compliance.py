@@ -104,6 +104,151 @@ def test_waste_complete_requires_ticket_ewc_when_missing_everywhere(client, db_s
     assert _status_value(ticket.status) == TicketStatusEnum.OPEN.value
 
 
+def test_waste_complete_requires_producer_name_when_manual_source_selected(
+    client, db_session
+):
+    customer = Customer(account_code="C-EWC-PROD-REQ", name="Producer Required Customer")
+    destination = Destination(name="Producer Required Destination")
+    unit = Unit(name="Producer Required Unit", unit_type="WEIGHT", is_active=True)
+    manual_ewc = _make_ewc("121212", "Producer Required EWC")
+    product = _make_weight_product(
+        code="P-EWC-PROD-REQ",
+        description="Producer Required Product",
+        unit=unit,
+        unit_price=Decimal("15.00"),
+    )
+    ticket = Ticket(
+        ticket_no="T-EWC-PROD-REQ-1",
+        datetime=datetime(2026, 2, 12, 9, 2, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([customer, destination, unit, manual_ewc, product, ticket])
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            **_waste_complete_payload(
+                customer_id=customer.id,
+                destination_id=destination.id,
+                product_id=product.id,
+                ewc_code="12 12 12",
+                ewc_manual_override="1",
+            ),
+            "waste_producer_same_as_customer_present": "1",
+            "waste_producer_name": "   ",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Waste producer name is required to complete a waste ticket." in response.text
+    db_session.refresh(ticket)
+    assert _status_value(ticket.status) == TicketStatusEnum.OPEN.value
+
+
+def test_waste_save_allows_missing_producer_name_when_manual_source_selected(
+    client, db_session
+):
+    customer = Customer(account_code="C-EWC-PROD-SAVE", name="Producer Save Customer")
+    destination = Destination(name="Producer Save Destination")
+    unit = Unit(name="Producer Save Unit", unit_type="WEIGHT", is_active=True)
+    product = _make_weight_product(
+        code="P-EWC-PROD-SAVE",
+        description="Producer Save Product",
+        unit=unit,
+        unit_price=Decimal("15.00"),
+    )
+    ticket = Ticket(
+        ticket_no="T-EWC-PROD-SAVE-1",
+        datetime=datetime(2026, 2, 12, 9, 3, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([customer, destination, unit, product, ticket])
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "save",
+            "datetime": "2026-02-12T09:03",
+            "direction": "INWARD",
+            "transaction_type": "WASTEIN",
+            "customer_id": str(customer.id),
+            "destination_id": str(destination.id),
+            "product_id": str(product.id),
+            "gross_kg": "2500",
+            "tare_kg": "1400",
+            "reg": "AB12CDE",
+            "waste_producer_same_as_customer_present": "1",
+            "waste_producer_name": "   ",
+            "ewc_code": "",
+            "ewc_manual_override": "0",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"].endswith(f"/tickets/{ticket.id}?saved=1")
+    db_session.refresh(ticket)
+    assert _status_value(ticket.status) == TicketStatusEnum.OPEN.value
+
+
+def test_waste_save_allows_missing_ewc_when_missing_everywhere(client, db_session):
+    customer = Customer(account_code="C-EWC-SAVE-MISS", name="EWC Save Missing Customer")
+    destination = Destination(name="EWC Save Missing Destination")
+    unit = Unit(name="EWC Save Missing Unit", unit_type="WEIGHT", is_active=True)
+    product = _make_weight_product(
+        code="P-EWC-SAVE-MISS",
+        description="No default EWC save product",
+        unit=unit,
+        unit_price=Decimal("15.00"),
+    )
+    ticket = Ticket(
+        ticket_no="T-EWC-SAVE-MISS-1",
+        datetime=datetime(2026, 2, 12, 9, 5, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([customer, destination, unit, product, ticket])
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "save",
+            "datetime": "2026-02-12T09:05",
+            "direction": "INWARD",
+            "transaction_type": "WASTEIN",
+            "customer_id": str(customer.id),
+            "destination_id": str(destination.id),
+            "product_id": str(product.id),
+            "gross_kg": "2500",
+            "tare_kg": "1400",
+            "reg": "AB12CDE",
+            "ewc_code": "",
+            "ewc_manual_override": "0",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"].endswith(f"/tickets/{ticket.id}?saved=1")
+    db_session.refresh(ticket)
+    assert _status_value(ticket.status) == TicketStatusEnum.OPEN.value
+    assert ticket.ewc_code_6 is None
+
+
 def test_waste_complete_allows_manual_ticket_ewc_when_product_has_none(client, db_session):
     customer = Customer(account_code="C-EWC-MAN", name="EWC Manual Customer")
     destination = Destination(name="EWC Manual Destination")
@@ -234,6 +379,88 @@ def test_waste_save_autofills_ticket_ewc_from_product_default(client, db_session
     assert ticket.ewc_manual_override is False
 
 
+def test_waste_save_does_not_block_invalid_ewc_format(client, db_session):
+    unit = Unit(name="EWC Save Invalid Unit", unit_type="WEIGHT", is_active=True)
+    default_ewc = _make_ewc("777777", "Save invalid format default EWC")
+    product = _make_weight_product(
+        code="P-EWC-SAVE-INVALID",
+        description="Save invalid EWC format product",
+        unit=unit,
+        unit_price=Decimal("10.00"),
+        ewc=default_ewc,
+    )
+    ticket = Ticket(
+        ticket_no="T-EWC-SAVE-INVALID-1",
+        datetime=datetime(2026, 2, 12, 9, 35, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([unit, default_ewc, product, ticket])
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "save",
+            "datetime": "2026-02-12T09:35",
+            "direction": "INWARD",
+            "transaction_type": "WASTEIN",
+            "product_id": str(product.id),
+            "ewc_code": "12",
+            "ewc_manual_override": "1",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    db_session.refresh(ticket)
+    assert _status_value(ticket.status) == TicketStatusEnum.OPEN.value
+    assert ticket.ewc_code_6 == "777777"
+    assert ticket.ewc_code_display == "77 77 77"
+
+
+def test_waste_complete_blocks_invalid_ewc_format(client, db_session):
+    customer = Customer(account_code="C-EWC-FMT", name="EWC Format Customer")
+    destination = Destination(name="EWC Format Destination")
+    unit = Unit(name="EWC Format Unit", unit_type="WEIGHT", is_active=True)
+    product = _make_weight_product(
+        code="P-EWC-FMT",
+        description="Format check product",
+        unit=unit,
+        unit_price=Decimal("20.00"),
+    )
+    ticket = Ticket(
+        ticket_no="T-EWC-FMT-1",
+        datetime=datetime(2026, 2, 12, 9, 36, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([customer, destination, unit, product, ticket])
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data=_waste_complete_payload(
+            customer_id=customer.id,
+            destination_id=destination.id,
+            product_id=product.id,
+            ewc_code="12",
+            ewc_manual_override="1",
+        ),
+    )
+
+    assert response.status_code == 400
+    assert "EWC code must be 6 digits (for example, 01 01 01)." in response.text
+    db_session.refresh(ticket)
+    assert _status_value(ticket.status) == TicketStatusEnum.OPEN.value
+
+
 def test_sale_complete_does_not_require_ewc(client, db_session):
     customer = Customer(account_code="C-EWC-SALE", name="Sale EWC Customer")
     count_unit = Unit(name="Each", unit_type="COUNT", is_active=True)
@@ -343,12 +570,12 @@ def test_ticket_edit_hides_ewc_field_for_sale(client, db_session):
 
     assert response.status_code == 200
     assert re.search(
-        r'id="ewc-ticket-field"[^>]*style="display:none"',
+        r'id="waste-compliance-section"[^>]*style="display:none"',
         response.text,
     )
 
 
-def test_ticket_edit_shows_ewc_required_hint_for_waste(client, db_session):
+def test_ticket_edit_does_not_show_ewc_required_hint_for_waste(client, db_session):
     ticket = Ticket(
         ticket_no="T-EWC-UI-WASTE-1",
         datetime=datetime(2026, 2, 12, 10, 5, 0),
@@ -365,7 +592,31 @@ def test_ticket_edit_shows_ewc_required_hint_for_waste(client, db_session):
 
     assert response.status_code == 200
     assert 'id="ewc-ticket-field"' in response.text
-    assert "Required for waste tickets." in response.text
+    assert "Required for waste tickets." not in response.text
+    assert "No default EWC on selected product." not in response.text
+
+
+def test_ticket_edit_ewc_datalist_allows_description_prefix_search(client, db_session):
+    ewc = _make_ewc("888888", "Acids and alkalis")
+    ticket = Ticket(
+        ticket_no="T-EWC-UI-LIST-1",
+        datetime=datetime(2026, 2, 12, 10, 6, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([ewc, ticket])
+    db_session.commit()
+
+    response = client.get(f"/tickets/{ticket.id}")
+
+    assert response.status_code == 200
+    assert 'id="ewc_code_list"' in response.text
+    assert 'value="88 88 88"' in response.text
+    assert 'value="Acids and alkalis - 88 88 88"' in response.text
+    assert 'data-code-display="88 88 88"' in response.text
 
 
 def test_ticket_edit_hidden_default_ewc_code_uses_digits_only(client, db_session):

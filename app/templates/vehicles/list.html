@@ -47,9 +47,9 @@
     <tbody>
       {% for vehicle, owner, vtype in rows %}
         <tr>
-          <td><a href="/vehicles/{{ vehicle.id }}">{{ vehicle.registration }}</a></td>
-          <td>{{ owner.name if owner else "" }}</td>
-          <td>{{ vtype.code if vtype else "" }}</td>
+          <td><a href="/vehicles/{{ vehicle.id }}" class="truncate truncate--sm" title="{{ vehicle.registration }}">{{ vehicle.registration }}</a></td>
+          <td><span class="truncate truncate--md" title="{{ owner.name if owner else '' }}">{{ owner.name if owner else "" }}</span></td>
+          <td><span class="truncate truncate--sm" title="{{ vtype.code if vtype else '' }}">{{ vtype.code if vtype else "" }}</span></td>
           <td>
             {{ "{:.0f}".format(vehicle.default_tare_kg) if vehicle.default_tare_kg is not none else "" }}
           </td>

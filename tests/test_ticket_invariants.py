@@ -424,6 +424,56 @@ def test_complete_weight_product_ignores_qty_and_completes(client, db_session):
     assert ticket.qty is None
 
 
+def test_complete_weight_product_sets_billable_snapshot(client, db_session):
+    customer = Customer(account_code="C-WEIGHT-SNAPSHOT", name="Weight Snapshot Customer")
+    weight_unit = Unit(name="kg", unit_type="WEIGHT", is_active=True)
+    ticket = Ticket(
+        ticket_no="T-WEIGHT-SNAPSHOT-1",
+        datetime=datetime(2026, 1, 3, 12, 15, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([customer, weight_unit, ticket])
+    db_session.commit()
+    product = Product(
+        code="P-WEIGHT-SNAPSHOT-1",
+        description="Weight snapshot product",
+        unit_id=weight_unit.id,
+        unit_price=Decimal("10.00"),
+    )
+    db_session.add(product)
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "complete",
+            "datetime": "2026-01-03T12:15",
+            "direction": "INWARD",
+            "transaction_type": "SALE",
+            "customer_id": str(customer.id),
+            "product_id": str(product.id),
+            "qty": "",
+            "gross_kg": "1200",
+            "tare_kg": "200",
+            "unit_price": "10.00",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    db_session.refresh(ticket)
+    assert _status_value(ticket.status) == TicketStatusEnum.COMPLETE.value
+    assert ticket.qty is None
+    assert float(ticket.net_kg) == 1000.0
+    assert ticket.pricing_basis == "WEIGHT"
+    assert float(ticket.pricing_billable_qty_snapshot) == 1000.0
+    assert float(ticket.total) == 10000.0
+
+
 def test_save_weight_product_ignores_submitted_qty(client, db_session):
     weight_unit = Unit(name="kg", unit_type="WEIGHT", is_active=True)
     ticket = Ticket(

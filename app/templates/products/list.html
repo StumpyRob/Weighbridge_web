@@ -51,11 +51,19 @@
     <tbody>
       {% for product in products %}
         <tr>
-          <td><a href="/products/{{ product.id }}">{{ product.code }}</a></td>
-          <td>{{ product.description }}</td>
-          <td>{{ product.product_group.name if product.product_group else "" }}</td>
+          <td><a href="/products/{{ product.id }}" class="truncate truncate--sm" title="{{ product.code }}">{{ product.code }}</a></td>
+          <td><span class="truncate truncate--lg" title="{{ product.description }}">{{ product.description }}</span></td>
+          <td><span class="truncate truncate--md" title="{{ product.product_group.name if product.product_group else '' }}">{{ product.product_group.name if product.product_group else "" }}</span></td>
           <td>{{ product.unit.name if product.unit else "" }}</td>
-          <td>{{ product.tax_rate.code if product.tax_rate else "" }}</td>
+          <td>
+            {% if product.tax_rate and product.tax_rate.rate_percent is not none %}
+              {% set raw_rate = product.tax_rate.rate_percent %}
+              {% set percent = (raw_rate * 100) if raw_rate <= 1 else raw_rate %}
+              {{ "{:f}".format(percent).rstrip("0").rstrip(".") or "0" }}%
+            {% else %}
+              {{ product.tax_rate.code if product.tax_rate else "" }}
+            {% endif %}
+          </td>
           <td>{{ product.nominal_code or (product.product_group.nominal_code_default if product.product_group and product.product_group.nominal_code_default else "") }}</td>
           <td>{{ "{:.2f}".format(product.unit_price) if product.unit_price is not none else "" }}</td>
         </tr>

@@ -47,9 +47,9 @@
     <tbody>
       {% for customer in customers %}
         <tr>
-          <td>{{ customer.account_code }}</td>
-          <td><a href="/customers/{{ customer.id }}">{{ customer.name }}</a></td>
-          <td>{{ customer.invoice_email or "" }}</td>
+          <td><span class="truncate truncate--sm" title="{{ customer.account_code }}">{{ customer.account_code }}</span></td>
+          <td><a href="/customers/{{ customer.id }}" class="truncate truncate--md" title="{{ customer.name }}">{{ customer.name }}</a></td>
+          <td><span class="truncate truncate--md" title="{{ customer.invoice_email or '' }}">{{ customer.invoice_email or "" }}</span></td>
           <td>{{ customer.phone or "" }}</td>
           <td>{% if customer.on_stop %}On stop{% else %}Active{% endif %}</td>
         </tr>

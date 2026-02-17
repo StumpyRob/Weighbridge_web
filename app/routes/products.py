@@ -1,13 +1,14 @@
 import re
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
+from ..constants import CODE_MAX, DESC_MAX, NAME_MAX, NOMINAL_CODE_MAX
 from ..db import get_db
 from ..models.base import utcnow
 from ..models import (
@@ -19,6 +20,7 @@ from ..models import (
     Unit,
     EwcCode,
 )
+from ..services.pricing import product_effective_nominal_code
 from ..services.unit_rules import (
     canonical_weight_unit,
     is_allowed_weight_unit,
@@ -31,13 +33,17 @@ router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 UNIT_TYPES = ("WEIGHT", "COUNT")
 SALE_TYPES = ("COUNT", "WEIGHT")
-UNIT_NAME_MAX_LEN = 50
+UNIT_NAME_MAX_LEN = NAME_MAX
 SYSTEM_WEIGHT_UNIT_NAME = "tonnes"
 SYSTEM_COUNT_UNIT_NAME = "Each"
 SYSTEM_TAX_RATE_STANDARD_CODE = "Standard (20%) \u2013 UK VAT"
 SYSTEM_TAX_RATE_ZERO_CODE = "Zero (0%)"
 LEGACY_TAX_RATE_STANDARD_CODES = ["Standard (20%)"]
 LEGACY_TAX_RATE_ZERO_CODES = ["Zero (0%) \u2013 UK VAT"]
+PRODUCT_SEARCH_MAX_LEN = 100
+PRODUCT_GROUP_NAME_MAX_LEN = NAME_MAX
+PRODUCT_GROUP_DESCRIPTION_MAX_LEN = DESC_MAX
+NOMINAL_CODE_MAX_LEN = NOMINAL_CODE_MAX
 
 
 @router.get("/products", response_class=HTMLResponse)
@@ -47,17 +53,36 @@ def products_list(
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     _backfill_product_units(db)
-    query = select(Product).order_by(Product.code)
-    if q:
-        like = f"%{q}%"
-        query = query.where(or_(Product.code.ilike(like), Product.description.ilike(like)))
+    _backfill_product_tax_rates(db)
+    search_query = _normalize_search_query(q)
+    query = (
+        select(Product)
+        .options(
+            joinedload(Product.unit),
+            joinedload(Product.product_group),
+            joinedload(Product.ewc_code),
+            joinedload(Product.tax_rate),
+        )
+        .order_by(Product.code)
+    )
+    if search_query:
+        like = _contains_like_pattern(search_query)
+        query = query.outerjoin(EwcCode, Product.ewc_code_id == EwcCode.id).where(
+            or_(
+                Product.code.ilike(like, escape="\\"),
+                Product.description.ilike(like, escape="\\"),
+                EwcCode.code_display.ilike(like, escape="\\"),
+                EwcCode.code_6.ilike(like, escape="\\"),
+                EwcCode.description.ilike(like, escape="\\"),
+            )
+        )
     products = db.execute(query).scalars().all()
     return templates.TemplateResponse(request, 
         "products/list.html",
         {
             "request": request,
             "products": products,
-            "q": q or "",
+            "q": search_query,
             "saved": request.query_params.get("saved") == "1",
         },
     )
@@ -66,15 +91,17 @@ def products_list(
 @router.get("/products/new", response_class=HTMLResponse)
 def products_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     _ensure_system_units(db)
-    return templates.TemplateResponse(request, 
+    _ensure_system_tax_rates(db)
+    return templates.TemplateResponse(
+        request,
         "products/new.html",
         {
             "request": request,
             "errors": [],
             "form": _empty_form(),
-        "options": _load_options(db),
-    },
-)
+            "options": _load_options(db),
+        },
+    )
 
 
 @router.post("/products/new", response_class=HTMLResponse)
@@ -91,14 +118,21 @@ async def products_create(
         unit = db.get(Unit, payload["unit_id"])
         if unit and unit.unit_type == "WEIGHT" and not is_allowed_weight_unit(unit.name):
             payload["errors"].append("Selected WEIGHT unit is not supported.")
+    if not payload["errors"]:
+        group_error = _validate_product_group_selection(
+            db, payload.get("group_id"), required=False
+        )
+        if group_error:
+            payload["errors"].append(group_error)
     if payload["errors"]:
+        _hydrate_effective_nominal_code_form(db, payload["form"])
         return templates.TemplateResponse(request, 
             "products/new.html",
             {
                 "request": request,
                 "errors": payload["errors"],
                 "form": payload["form"],
-                "options": _load_options(db),
+                "options": _load_options(db, current_group_id=payload.get("group_id")),
             },
             status_code=400,
         )
@@ -107,9 +141,10 @@ async def products_create(
         code=payload["code"],
         description=payload["description"],
         sales_only=payload["sales_only"],
+        group_id=payload["group_id"],
         unit_id=payload["unit_id"],
         tax_rate_id=payload["tax_rate_id"],
-        nominal_code_id=payload["nominal_code_id"],
+        nominal_code=payload["nominal_code"],
         unit_price=payload["unit_price"],
         account_price=payload["account_price"],
         cash_price=payload["cash_price"],
@@ -130,6 +165,7 @@ async def products_create(
     except IntegrityError:
         db.rollback()
         payload["errors"].append("Product code already exists.")
+        _hydrate_effective_nominal_code_form(db, payload["form"])
         return templates.TemplateResponse(
             request,
             "products/new.html",
@@ -137,11 +173,255 @@ async def products_create(
                 "request": request,
                 "errors": payload["errors"],
                 "form": payload["form"],
-                "options": _load_options(db),
+                "options": _load_options(db, current_group_id=payload.get("group_id")),
             },
             status_code=400,
         )
     return RedirectResponse(url="/products?saved=1", status_code=303)
+
+
+@router.get("/products/groups", response_class=HTMLResponse)
+def product_groups_list(
+    request: Request,
+    q: str | None = None,
+    hide_inactive: int | None = Query(None),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    resolved_hide = _resolve_hide_inactive(request, hide_inactive)
+    query = select(ProductGroup)
+    if resolved_hide:
+        query = query.where(ProductGroup.is_active.is_(True))
+    if q:
+        like = f"%{q.lower()}%"
+        query = query.where(
+            or_(
+                func.lower(ProductGroup.name).like(like),
+                func.lower(ProductGroup.code).like(like),
+                func.lower(func.coalesce(ProductGroup.description, "")).like(like),
+                func.lower(func.coalesce(ProductGroup.nominal_code_default, "")).like(
+                    like
+                ),
+            )
+        )
+    groups = db.execute(query.order_by(ProductGroup.name.asc())).scalars().all()
+    return templates.TemplateResponse(
+        request,
+        "products/groups_list.html",
+        {
+            "request": request,
+            "groups": groups,
+            "q": q or "",
+            "hide_inactive": bool(resolved_hide),
+            "saved": request.query_params.get("saved") == "1",
+            "error": request.query_params.get("error") or "",
+        },
+    )
+
+
+@router.get("/products/groups/new", response_class=HTMLResponse)
+def product_groups_new(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "products/group_form.html",
+        {
+            "request": request,
+            "errors": [],
+            "mode": "new",
+            "group": None,
+            "form": _empty_product_group_form(),
+        },
+    )
+
+
+@router.post("/products/groups/new", response_class=HTMLResponse)
+async def product_groups_create(
+    request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    form = await request.form()
+    payload = _parse_product_group_form(form)
+    duplicate_error = _validate_product_group_name_unique(
+        db,
+        payload.get("name"),
+    )
+    if duplicate_error:
+        payload["errors"].append(duplicate_error)
+    if payload["errors"]:
+        return templates.TemplateResponse(
+            request,
+            "products/group_form.html",
+            {
+                "request": request,
+                "errors": payload["errors"],
+                "mode": "new",
+                "group": None,
+                "form": payload["form"],
+            },
+            status_code=400,
+        )
+
+    group = ProductGroup(
+        code=_build_product_group_code(db, payload["name"]),
+        name=payload["name"],
+        description=payload["description"],
+        nominal_code_default=payload["nominal_code_default"],
+        is_active=True,
+    )
+    db.add(group)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        payload["errors"].append("Product group name already exists.")
+        return templates.TemplateResponse(
+            request,
+            "products/group_form.html",
+            {
+                "request": request,
+                "errors": payload["errors"],
+                "mode": "new",
+                "group": None,
+                "form": payload["form"],
+            },
+            status_code=400,
+        )
+    return RedirectResponse(url="/products/groups?saved=1", status_code=303)
+
+
+@router.get("/products/groups/{group_id:int}/edit", response_class=HTMLResponse)
+def product_groups_edit(
+    group_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    group = db.get(ProductGroup, group_id)
+    if not group:
+        return templates.TemplateResponse(
+            request,
+            "products/not_found.html",
+            {"request": request, "product_id": group_id},
+            status_code=404,
+        )
+    return templates.TemplateResponse(
+        request,
+        "products/group_form.html",
+        {
+            "request": request,
+            "errors": [],
+            "mode": "edit",
+            "group": group,
+            "form": _product_group_to_form(group),
+        },
+    )
+
+
+@router.post("/products/groups/{group_id:int}/edit", response_class=HTMLResponse)
+async def product_groups_update(
+    group_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    group = db.get(ProductGroup, group_id)
+    if not group:
+        return templates.TemplateResponse(
+            request,
+            "products/not_found.html",
+            {"request": request, "product_id": group_id},
+            status_code=404,
+        )
+    form = await request.form()
+    payload = _parse_product_group_form(form)
+    duplicate_error = _validate_product_group_name_unique(
+        db,
+        payload.get("name"),
+        current_group_id=group.id,
+    )
+    if duplicate_error:
+        payload["errors"].append(duplicate_error)
+    if payload["errors"]:
+        return templates.TemplateResponse(
+            request,
+            "products/group_form.html",
+            {
+                "request": request,
+                "errors": payload["errors"],
+                "mode": "edit",
+                "group": group,
+                "form": payload["form"],
+            },
+            status_code=400,
+        )
+
+    group.name = payload["name"]
+    group.description = payload["description"]
+    group.nominal_code_default = payload["nominal_code_default"]
+    group.updated_at = utcnow()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        payload["errors"].append("Product group name already exists.")
+        return templates.TemplateResponse(
+            request,
+            "products/group_form.html",
+            {
+                "request": request,
+                "errors": payload["errors"],
+                "mode": "edit",
+                "group": group,
+                "form": payload["form"],
+            },
+            status_code=400,
+        )
+    return RedirectResponse(url="/products/groups?saved=1", status_code=303)
+
+
+@router.post("/products/groups/{group_id:int}/deactivate", response_class=HTMLResponse)
+def product_groups_deactivate(
+    group_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    group = db.get(ProductGroup, group_id)
+    if not group:
+        return templates.TemplateResponse(
+            request,
+            "products/not_found.html",
+            {"request": request, "product_id": group_id},
+            status_code=404,
+        )
+    in_use = db.execute(
+        select(func.count(Product.id)).where(Product.group_id == group.id)
+    ).scalar()
+    if in_use and in_use > 0:
+        return RedirectResponse(
+            url="/products/groups?error=Cannot+deactivate:+in+use+by+products.",
+            status_code=303,
+        )
+
+    group.is_active = False
+    group.updated_at = utcnow()
+    db.commit()
+    return RedirectResponse(url="/products/groups?saved=1", status_code=303)
+
+
+@router.post("/products/groups/{group_id:int}/reactivate", response_class=HTMLResponse)
+def product_groups_reactivate(
+    group_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    group = db.get(ProductGroup, group_id)
+    if not group:
+        return templates.TemplateResponse(
+            request,
+            "products/not_found.html",
+            {"request": request, "product_id": group_id},
+            status_code=404,
+        )
+    group.is_active = True
+    group.updated_at = utcnow()
+    db.commit()
+    return RedirectResponse(url="/products/groups?saved=1", status_code=303)
 
 
 @router.get("/products/units", response_class=HTMLResponse)
@@ -390,6 +670,7 @@ def products_edit(
             "form": _product_to_form(product),
             "options": _load_options(
                 db,
+                current_group_id=product.group_id,
                 current_unit_id=product.unit_id,
                 current_ewc_code_id=product.ewc_code_id,
                 current_default_destination_id=product.default_destination_id,
@@ -426,7 +707,17 @@ async def products_update(
         unit = db.get(Unit, payload["unit_id"])
         if unit and unit.unit_type == "WEIGHT" and not is_allowed_weight_unit(unit.name):
             payload["errors"].append("Selected WEIGHT unit is not supported.")
+    if not payload["errors"]:
+        group_error = _validate_product_group_selection(
+            db,
+            payload.get("group_id"),
+            current_group_id=product.group_id,
+            required=False,
+        )
+        if group_error:
+            payload["errors"].append(group_error)
     if payload["errors"]:
+        _hydrate_effective_nominal_code_form(db, payload["form"])
         return templates.TemplateResponse(request, 
             "products/edit.html",
             {
@@ -436,6 +727,9 @@ async def products_update(
                 "form": payload["form"],
                 "options": _load_options(
                     db,
+                    current_group_id=payload.get("group_id")
+                    if payload.get("group_id") is not None
+                    else product.group_id,
                     current_unit_id=product.unit_id,
                     current_ewc_code_id=product.ewc_code_id,
                     current_default_destination_id=product.default_destination_id,
@@ -447,9 +741,10 @@ async def products_update(
     product.code = payload["code"]
     product.description = payload["description"]
     product.sales_only = payload["sales_only"]
+    product.group_id = payload["group_id"]
     product.unit_id = payload["unit_id"]
     product.tax_rate_id = payload["tax_rate_id"]
-    product.nominal_code_id = payload["nominal_code_id"]
+    product.nominal_code = payload["nominal_code"]
     product.unit_price = payload["unit_price"]
     product.account_price = payload["account_price"]
     product.cash_price = payload["cash_price"]
@@ -469,6 +764,7 @@ async def products_update(
     except IntegrityError:
         db.rollback()
         payload["errors"].append("Product code already exists.")
+        _hydrate_effective_nominal_code_form(db, payload["form"])
         return templates.TemplateResponse(
             request,
             "products/edit.html",
@@ -479,6 +775,9 @@ async def products_update(
                 "form": payload["form"],
                 "options": _load_options(
                     db,
+                    current_group_id=payload.get("group_id")
+                    if payload.get("group_id") is not None
+                    else product.group_id,
                     current_unit_id=product.unit_id,
                     current_ewc_code_id=product.ewc_code_id,
                     current_default_destination_id=product.default_destination_id,
@@ -491,11 +790,18 @@ async def products_update(
 
 def _load_options(
     db: Session,
+    current_group_id: int | None = None,
     current_unit_id: int | None = None,
     current_ewc_code_id: int | None = None,
     current_default_destination_id: int | None = None,
 ) -> dict[str, list[tuple[str, str]]]:
-    groups = db.execute(select(ProductGroup).order_by(ProductGroup.code)).scalars()
+    groups = list(
+        db.execute(
+            select(ProductGroup)
+            .where(ProductGroup.is_active.is_(True))
+            .order_by(ProductGroup.name)
+        ).scalars()
+    )
     units = list(
         db.execute(
             select(Unit)
@@ -517,6 +823,17 @@ def _load_options(
             .order_by(Destination.name)
         ).scalars()
     )
+    group_options = [(str(row.id), row.name) for row in groups]
+    if current_group_id:
+        if not any(str(row.id) == str(current_group_id) for row in groups):
+            current_group = db.get(ProductGroup, current_group_id)
+            if current_group:
+                label = (
+                    f"{current_group.name} (inactive)"
+                    if not current_group.is_active
+                    else current_group.name
+                )
+                group_options = [(str(current_group.id), label)] + group_options
     unit_options = [(str(row.id), row.name) for row in units]
     if current_unit_id:
         if not any(str(row.id) == str(current_unit_id) for row in units):
@@ -531,7 +848,8 @@ def _load_options(
     ewc_options = [
         (
             str(row.id),
-            f"{row.code_display} - {row.description}",
+            row.code_display,
+            row.description,
             row.hazardous,
             row.code_6,
         )
@@ -541,11 +859,17 @@ def _load_options(
         if not any(str(row.id) == str(current_ewc_code_id) for row in ewc_codes):
             current = db.get(EwcCode, current_ewc_code_id)
             if current:
-                label = f"{current.code_display} - {current.description}"
+                description = current.description
                 if not current.active:
-                    label = f"{label} (inactive)"
+                    description = f"{description} (inactive)"
                 ewc_options = [
-                    (str(current.id), label, current.hazardous, current.code_6)
+                    (
+                        str(current.id),
+                        current.code_display,
+                        description,
+                        current.hazardous,
+                        current.code_6,
+                    )
                 ] + ewc_options
     destination_options = [(str(row.id), row.name) for row in destinations]
     if current_default_destination_id:
@@ -561,10 +885,12 @@ def _load_options(
                 )
                 destination_options = [(str(current.id), label)] + destination_options
     return {
-        "groups": [(str(row.id), row.code) for row in groups],
+        "groups": group_options,
         "units": unit_options,
-        "tax_rates": [(str(row.id), row.code) for row in tax_rates],
-        "nominal_codes": [(str(row.id), row.code) for row in nominal_codes],
+        "tax_rates": [
+            (str(row.id), _format_tax_rate_select_label(row.rate_percent, row.code))
+            for row in tax_rates
+        ],
         "ewc_codes": ewc_options,
         "destinations": destination_options,
     }
@@ -577,6 +903,9 @@ def _parse_product_form(form) -> dict:
     errors: list[str] = []
     code = value("code").upper()
     description = value("description")
+    group_id_raw = value("group_id")
+    group_id = _parse_int(group_id_raw)
+    nominal_code = _normalize_nominal_code(value("nominal_code"))
     sale_type = _normalize_sale_type(value("sale_type"))
     tax_rate_raw = value("tax_rate_id")
     tax_rate_id = _parse_int(tax_rate_raw)
@@ -585,14 +914,19 @@ def _parse_product_form(form) -> dict:
         {
             "Code": code,
             "Description": description,
+            "Nominal code": nominal_code,
         },
         errors,
     )
 
     if not code:
         errors.append("Code is required.")
+    elif len(code) > CODE_MAX:
+        errors.append(f"Code must be {CODE_MAX} characters or fewer.")
     if not description:
         errors.append("Description is required.")
+    elif len(description) > DESC_MAX:
+        errors.append(f"Description must be {DESC_MAX} characters or fewer.")
     if not sale_type:
         errors.append("Sale type is required.")
     elif sale_type not in SALE_TYPES:
@@ -605,12 +939,17 @@ def _parse_product_form(form) -> dict:
         errors.append("Unit price must be a number.")
     if unit_price_value is not None and unit_price_value < 0:
         errors.append("Unit price must be 0 or greater.")
+    if nominal_code and len(nominal_code) > NOMINAL_CODE_MAX_LEN:
+        errors.append(f"Nominal code must be {NOMINAL_CODE_MAX_LEN} characters or fewer.")
 
     return {
         "errors": errors,
         "form": {
             "code": code,
             "description": description,
+            "group_id": group_id_raw,
+            "nominal_code": nominal_code,
+            "effective_nominal_code": nominal_code,
             "sales_only": "on" if value("sales_only") == "on" else "",
             "sale_type": sale_type,
             "unit_id": value("unit_id"),
@@ -634,6 +973,8 @@ def _parse_product_form(form) -> dict:
         "sale_type": sale_type,
         "code": code,
         "description": description,
+        "group_id": group_id,
+        "nominal_code": nominal_code or None,
         "sales_only": value("sales_only") == "on",
         "unit_id": _parse_int(value("unit_id")),
         "tax_rate_id": _parse_int(value("tax_rate_id")),
@@ -659,6 +1000,9 @@ def _empty_form() -> dict:
     return {
         "code": "",
         "description": "",
+        "group_id": "",
+        "nominal_code": "",
+        "effective_nominal_code": "",
         "sales_only": "",
         "sale_type": "",
         "unit_id": "",
@@ -684,9 +1028,13 @@ def _empty_form() -> dict:
 def _product_to_form(product: Product) -> dict:
     unit_type = product.unit.unit_type if product.unit else None
     sale_type = "WEIGHT" if unit_type == "WEIGHT" else "COUNT"
+    effective_nominal_code = product_effective_nominal_code(product) or ""
     return {
         "code": product.code or "",
         "description": product.description or "",
+        "group_id": str(product.group_id or ""),
+        "nominal_code": product.nominal_code or "",
+        "effective_nominal_code": effective_nominal_code,
         "sales_only": "on" if product.sales_only else "",
         "sale_type": sale_type,
         "unit_id": str(product.unit_id or ""),
@@ -711,6 +1059,22 @@ def _product_to_form(product: Product) -> dict:
         "final_disposal": "on" if product.final_disposal else "",
         "used_on_site": "on" if product.used_on_site else "",
     }
+
+
+def _hydrate_effective_nominal_code_form(db: Session, form_data: dict) -> None:
+    nominal_code = _normalize_nominal_code(str(form_data.get("nominal_code", "")))
+    if nominal_code:
+        form_data["effective_nominal_code"] = nominal_code
+        return
+    group_id = _parse_int(str(form_data.get("group_id", "")))
+    if not group_id:
+        form_data["effective_nominal_code"] = ""
+        return
+    group = db.get(ProductGroup, group_id)
+    if group and group.nominal_code_default:
+        form_data["effective_nominal_code"] = group.nominal_code_default
+    else:
+        form_data["effective_nominal_code"] = ""
 
 
 def _parse_int(value: str) -> int | None:
@@ -744,6 +1108,40 @@ def _format_decimal(value: Decimal | None) -> str:
     if value is None:
         return ""
     return f"{value:.2f}"
+
+
+def _format_tax_rate_select_label(rate_percent: Decimal | float | None, fallback: str) -> str:
+    if rate_percent is None:
+        return fallback
+    try:
+        raw_rate = Decimal(str(rate_percent))
+    except (InvalidOperation, ValueError):
+        return fallback
+    if raw_rate <= Decimal("1"):
+        percent = raw_rate * Decimal("100")
+    else:
+        percent = raw_rate
+    percent_text = format(percent, "f")
+    if "." in percent_text:
+        percent_text = percent_text.rstrip("0").rstrip(".")
+    if not percent_text:
+        percent_text = "0"
+    return f"{percent_text}%"
+
+
+def _normalize_search_query(raw: str | None) -> str:
+    if raw is None:
+        return ""
+    collapsed = re.sub(r"\s+", " ", str(raw).strip())
+    return collapsed[:PRODUCT_SEARCH_MAX_LEN]
+
+
+def _escape_like_term(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _contains_like_pattern(value: str) -> str:
+    return f"%{_escape_like_term(value)}%"
 
 
 def _validate_unit_selection(
@@ -996,6 +1394,133 @@ def _normalize_unit_type(raw: str | None) -> str:
 
 def _normalize_sale_type(raw: str | None) -> str:
     return str(raw or "").strip().upper()
+
+
+def _normalize_product_group_name(raw: str | None) -> str:
+    collapsed = re.sub(r"\s+", " ", str(raw or "").strip())
+    return collapsed
+
+
+def _normalize_nominal_code(raw: str | None) -> str:
+    return str(raw or "").strip()
+
+
+def _empty_product_group_form() -> dict[str, str]:
+    return {
+        "name": "",
+        "description": "",
+        "nominal_code_default": "",
+    }
+
+
+def _product_group_to_form(group: ProductGroup) -> dict[str, str]:
+    return {
+        "name": group.name or "",
+        "description": group.description or "",
+        "nominal_code_default": group.nominal_code_default or "",
+    }
+
+
+def _parse_product_group_form(form) -> dict:
+    def value(key: str) -> str:
+        return str(form.get(key, "")).strip()
+
+    errors: list[str] = []
+    name = _normalize_product_group_name(value("name"))
+    description = value("description")
+    nominal_code_default = _normalize_nominal_code(value("nominal_code_default"))
+
+    validate_no_html_fields(
+        {
+            "Name": name,
+            "Description": description,
+            "Default nominal code": nominal_code_default,
+        },
+        errors,
+    )
+
+    if not name:
+        errors.append("Name is required.")
+    elif len(name) > PRODUCT_GROUP_NAME_MAX_LEN:
+        errors.append(f"Name must be {PRODUCT_GROUP_NAME_MAX_LEN} characters or fewer.")
+    if description and len(description) > PRODUCT_GROUP_DESCRIPTION_MAX_LEN:
+        errors.append(
+            f"Description must be {PRODUCT_GROUP_DESCRIPTION_MAX_LEN} characters or fewer."
+        )
+    if nominal_code_default and len(nominal_code_default) > NOMINAL_CODE_MAX_LEN:
+        errors.append(
+            f"Default nominal code must be {NOMINAL_CODE_MAX_LEN} characters or fewer."
+        )
+
+    return {
+        "errors": errors,
+        "form": {
+            "name": name,
+            "description": description,
+            "nominal_code_default": nominal_code_default,
+        },
+        "name": name,
+        "description": description or None,
+        "nominal_code_default": nominal_code_default or None,
+    }
+
+
+def _validate_product_group_name_unique(
+    db: Session,
+    name: str | None,
+    current_group_id: int | None = None,
+) -> str | None:
+    normalized = _normalize_product_group_name(name)
+    if not normalized:
+        return None
+    query = select(ProductGroup.id).where(
+        func.lower(ProductGroup.name) == normalized.lower()
+    )
+    if current_group_id is not None:
+        query = query.where(ProductGroup.id != current_group_id)
+    existing_id = db.execute(query.limit(1)).scalar_one_or_none()
+    if existing_id is not None:
+        return "Name already exists."
+    return None
+
+
+def _slugify_product_group_code(name: str) -> str:
+    slug = re.sub(r"[^A-Z0-9]+", "-", str(name or "").upper())
+    slug = slug.strip("-")
+    return slug[:CODE_MAX] or "GROUP"
+
+
+def _build_product_group_code(db: Session, name: str) -> str:
+    base = _slugify_product_group_code(name)
+    candidate = base
+    suffix = 2
+    while True:
+        existing = db.execute(
+            select(ProductGroup.id).where(func.upper(ProductGroup.code) == candidate)
+        ).scalar_one_or_none()
+        if existing is None:
+            return candidate
+        suffix_token = f"-{suffix}"
+        max_base_len = CODE_MAX - len(suffix_token)
+        candidate = f"{base[:max_base_len]}{suffix_token}"
+        suffix += 1
+
+
+def _validate_product_group_selection(
+    db: Session,
+    group_id: int | None,
+    current_group_id: int | None = None,
+    *,
+    required: bool = False,
+) -> str | None:
+    if group_id is None:
+        return "Product group is required." if required else None
+    group = db.get(ProductGroup, group_id)
+    if not group:
+        return "Product group not found."
+    if not group.is_active and group_id != current_group_id:
+        return "Product group is inactive."
+    return None
 
 
 def _validate_product_code_unique(

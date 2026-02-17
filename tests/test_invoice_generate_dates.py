@@ -43,11 +43,12 @@ def test_invoice_generate_renders_quick_range_buttons(client):
     response = client.get("/invoices/generate")
 
     assert response.status_code == 200
-    assert 'data-quick-range="today"' in response.text
-    assert 'data-quick-range="last-7-days"' in response.text
     assert 'data-quick-range="this-week"' in response.text
+    assert "This week (Mon-Sun)" in response.text
+    assert 'data-quick-range="last-week"' in response.text
     assert 'data-quick-range="this-month"' in response.text
     assert 'data-quick-range="last-month"' in response.text
+    assert 'data-quick-range="clear"' in response.text
 
 
 def test_invoice_generate_preview_accepts_single_uk_date(client, db_session):

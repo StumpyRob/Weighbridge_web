@@ -9,6 +9,15 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import case, func, or_, select, text
 from sqlalchemy.orm import Session, joinedload
 
+from ..constants import (
+    ADDRESS_LINE_MAX,
+    CODE_MAX,
+    NAME_MAX,
+    NOTES_MAX,
+    PO_NUMBER_MAX,
+    POSTCODE_MAX,
+    REG_MAX,
+)
 from ..db import get_db
 from ..models.base import utcnow
 from ..models import (
@@ -21,6 +30,7 @@ from ..models import (
     EwcCode,
     Haulier,
     Invoice,
+    InvoiceLine,
     Product,
     Ticket,
     TicketVoid,
@@ -33,6 +43,7 @@ from ..models import (
     Yard,
 )
 from ..security import validate_no_html, validate_no_html_fields
+from ..services.pricing import resolve_unit_price_for_customer_product
 from ..seed import seed_void_reasons
 from ..templating import templates
 
@@ -51,6 +62,19 @@ SALES_ONLY_WASTE_ERROR = (
 SALES_ONLY_WASTE_WARNING = (
     "Selected product is sales-only and cannot be used on waste tickets."
 )
+VOID_REASON_TYPE_TICKET = "TICKET"
+PO_NUMBER_MAX_LENGTH = PO_NUMBER_MAX
+PO_REQUIRED_INVOICE_BANNER = (
+    "PO required for invoicing. Add PO to release this ticket for invoicing."
+)
+COMPLIANCE_LOCKED_INVOICED_MESSAGE = (
+    "Cannot update waste compliance because this ticket has already been invoiced."
+)
+PO_UPDATE_ALLOWED_STATUSES = {
+    TicketStatusEnum.OPEN.value,
+    TicketStatusEnum.COMPLETE.value,
+}
+TICKET_SEARCH_MAX_LEN = 100
 
 
 @router.get("/tickets", response_class=HTMLResponse)
@@ -70,6 +94,7 @@ def tickets_list(
 ) -> HTMLResponse:
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
+    search_query = _normalize_ticket_search_query(q)
 
     filters = []
     # Date filters are interpreted in server-local time (UTC by default).
@@ -86,12 +111,28 @@ def tickets_list(
         filters.append(Ticket.direction == direction)
     if transaction_type:
         filters.append(Ticket.transaction_type == transaction_type)
-    if q:
-        like = f"%{q.lower()}%"
+    if search_query:
+        like = _ticket_contains_like_pattern(search_query)
         filters.append(
             or_(
-                func.lower(Ticket.ticket_no).like(like),
-                func.lower(Vehicle.registration).like(like),
+                Ticket.ticket_no.ilike(like, escape="\\"),
+                Vehicle.registration.ilike(like, escape="\\"),
+                Customer.name.ilike(like, escape="\\"),
+                Customer.account_code.ilike(like, escape="\\"),
+                Product.code.ilike(like, escape="\\"),
+                Product.description.ilike(like, escape="\\"),
+                Ticket.ewc_code_display.ilike(like, escape="\\"),
+                Ticket.ewc_code_6.ilike(like, escape="\\"),
+                Ticket.ewc_description.ilike(like, escape="\\"),
+                Ticket.product.has(
+                    Product.ewc_code.has(
+                        or_(
+                            EwcCode.code_display.ilike(like, escape="\\"),
+                            EwcCode.code_6.ilike(like, escape="\\"),
+                            EwcCode.description.ilike(like, escape="\\"),
+                        )
+                    )
+                ),
             )
         )
     elif ticket_no:
@@ -99,14 +140,18 @@ def tickets_list(
         filters.append(func.lower(Ticket.ticket_no).like(ticket_like))
 
     base_stmt = (
-        select(Ticket, Vehicle)
+        select(Ticket, Vehicle, Customer, Product)
         .outerjoin(Vehicle, Ticket.vehicle_id == Vehicle.id)
+        .outerjoin(Customer, Ticket.customer_id == Customer.id)
+        .outerjoin(Product, Ticket.product_id == Product.id)
         .where(*filters)
     )
     count_stmt = (
         select(func.count(func.distinct(Ticket.id)))
         .select_from(Ticket)
         .outerjoin(Vehicle, Ticket.vehicle_id == Vehicle.id)
+        .outerjoin(Customer, Ticket.customer_id == Customer.id)
+        .outerjoin(Product, Ticket.product_id == Product.id)
         .where(*filters)
     )
     total_count = db.execute(count_stmt).scalar() or 0
@@ -145,7 +190,7 @@ def tickets_list(
                 "direction": direction or "",
                 "transaction_type": transaction_type or "",
                 "ticket_no": ticket_no or "",
-                "q": q or "",
+                "q": search_query,
             },
         },
     )
@@ -208,6 +253,7 @@ def ticket_product_defaults(
     request: Request,
     product_id: str | None = Query(None),
     ticket_id: str | None = Query(None),
+    customer_id: str | None = Query(None),
     qty: str | None = Query(None),
     gross_kg: str | None = Query(None),
     tare_kg: str | None = Query(None),
@@ -228,6 +274,7 @@ def ticket_product_defaults(
         parsed_product_id = _parse_int(str(product_id).strip())
 
     parsed_ticket_id = _parse_int(str(ticket_id).strip()) if ticket_id else None
+    parsed_customer_id = _parse_int(str(customer_id).strip()) if customer_id else None
 
     if not parsed_product_id:
         return HTMLResponse("", status_code=204)
@@ -258,9 +305,19 @@ def ticket_product_defaults(
             status_code=400,
         )
 
-    # Product switch always resets rate to the selected product's canonical default.
+    weights_ticket = db.get(Ticket, parsed_ticket_id) if parsed_ticket_id else None
+    effective_customer_id = (
+        parsed_customer_id
+        if parsed_customer_id is not None
+        else (weights_ticket.customer_id if weights_ticket else None)
+    )
+    resolved_unit_price, using_price_override = resolve_unit_price_for_customer_product(
+        db,
+        customer_id=effective_customer_id,
+        product=product,
+    )
     unit_price_display = (
-        f"{product.unit_price:.2f}" if product.unit_price is not None else ""
+        f"{resolved_unit_price:.2f}" if resolved_unit_price is not None else ""
     )
 
     ewc = product.ewc_code if product else None
@@ -271,7 +328,6 @@ def ticket_product_defaults(
     if resolved_unit_type == "WEIGHT":
         qty_value = ""
 
-    weights_ticket = db.get(Ticket, parsed_ticket_id) if parsed_ticket_id else None
     weights_form = None
     weights_is_open = False
     if weights_ticket is not None:
@@ -299,6 +355,8 @@ def ticket_product_defaults(
             "request": request,
             "ewc_code_6": ewc.code_6 if ewc else None,
             "unit_price": unit_price_display,
+            "price_override_active": using_price_override,
+            "price_override_unit_price": resolved_unit_price,
             "ewc_code_display": ewc.code_display if ewc else None,
             "ewc_description": ewc.description if ewc else None,
             "ewc_hazardous": bool(ewc.hazardous) if ewc else False,
@@ -603,7 +661,10 @@ def _load_ticket_options(
         reasons = (
             db.execute(
                 select(VoidReason)
-                .where(VoidReason.is_active.is_(True))
+                .where(
+                    VoidReason.is_active.is_(True),
+                    func.upper(VoidReason.reason_type) == VOID_REASON_TYPE_TICKET,
+                )
                 .order_by(VoidReason.code)
             )
             .scalars()
@@ -616,7 +677,10 @@ def _load_ticket_options(
         return (
             db.execute(
                 select(VoidReason)
-                .where(VoidReason.is_active.is_(True))
+                .where(
+                    VoidReason.is_active.is_(True),
+                    func.upper(VoidReason.reason_type) == VOID_REASON_TYPE_TICKET,
+                )
                 .order_by(VoidReason.code)
             )
             .scalars()
@@ -650,7 +714,7 @@ def _load_ticket_options(
             lambda row: row.name,
         ),
         "ewc_codes": [
-            (row.code_display, row.description)
+            (row.code_display, row.description, row.code_6, bool(row.hazardous))
             for row in db.execute(
                 select(EwcCode)
                 .where(EwcCode.active.is_(True))
@@ -916,6 +980,27 @@ def _on_stop_banner_message(blockers: list[str]) -> str:
     )
 
 
+def _customer_invoice_warning_flags(
+    db: Session,
+    customer_id: int | None,
+    po_number: str | None,
+    *,
+    ticket_status: str | None = None,
+) -> tuple[bool, bool]:
+    if not customer_id:
+        return False, False
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        return False, False
+    status_value = _status_value(ticket_status)
+    if status_value == TicketStatusEnum.VOID.value:
+        return bool(customer.do_not_invoice), False
+    if status_value != TicketStatusEnum.COMPLETE.value:
+        return bool(customer.do_not_invoice), False
+    po_text = (po_number or "").strip()
+    return bool(customer.do_not_invoice), bool(customer.must_have_po and not po_text)
+
+
 def _expected_weigh_in_field(direction) -> str:
     direction_value = _status_value(direction)
     return "tare_kg" if direction_value == DirectionEnum.OUTWARD.value else "gross_kg"
@@ -937,6 +1022,77 @@ def _validate_weighing_order(
 
 def _is_open_ticket(ticket: Ticket) -> bool:
     return _status_value(ticket.status) == TicketStatusEnum.OPEN.value
+
+
+def _is_ticket_invoiced(ticket: Ticket, db: Session | None = None) -> bool:
+    if ticket.invoice_id is not None:
+        return True
+    if not db or ticket.id is None:
+        return False
+    return (
+        db.execute(
+            select(InvoiceLine.id)
+            .where(InvoiceLine.ticket_id == ticket.id)
+            .limit(1)
+        ).scalar_one_or_none()
+        is not None
+    )
+
+
+def _can_update_po(ticket: Ticket, db: Session | None = None) -> bool:
+    status_value = _status_value(ticket.status)
+    return (
+        status_value in PO_UPDATE_ALLOWED_STATUSES
+        and status_value != TicketStatusEnum.VOID.value
+        and not _is_ticket_invoiced(ticket, db)
+    )
+
+
+def _can_edit_complete_po(ticket: Ticket, db: Session | None = None) -> bool:
+    return (
+        _status_value(ticket.status) == TicketStatusEnum.COMPLETE.value
+        and _can_update_po(ticket, db)
+    )
+
+
+def _po_locked_invoiced(ticket: Ticket, db: Session | None = None) -> bool:
+    return (
+        _status_value(ticket.status) == TicketStatusEnum.COMPLETE.value
+        and _is_ticket_invoiced(ticket, db)
+    )
+
+
+def _compliance_locked_invoiced(ticket: Ticket, db: Session | None = None) -> bool:
+    return _is_ticket_invoiced(ticket, db)
+
+
+def _is_ticket_compliance_hazardous(ticket: Ticket) -> bool:
+    ewc_display = str(ticket.ewc_code_display or "").strip()
+    if "*" in ewc_display:
+        return True
+    if bool(ticket.ewc_hazardous):
+        return True
+    product_ewc = ticket.product.ewc_code if ticket.product else None
+    return bool(getattr(product_ewc, "hazardous", False))
+
+
+def _compliance_fields_present_in_form(form) -> bool:
+    compliance_keys = (
+        "ewc_code",
+        "ewc_manual_override",
+        "ewc_auto_code_6",
+        "ewc_product_default_code_6",
+        "ewc_product_default_display",
+        "ewc_hazardous",
+        "waste_producer_same_as_customer",
+        "waste_producer_same_as_customer_present",
+        "waste_producer_name",
+        "waste_producer_address_line_1",
+        "waste_producer_address_line_2",
+        "waste_producer_address_line_3",
+        "waste_producer_postcode",
+    )
+    return any(key in form for key in compliance_keys)
 
 
 def _freeze_lookup_fields(ticket: Ticket, payload: dict) -> None:
@@ -1011,6 +1167,9 @@ def tickets_edit(
     invoice = db.get(Invoice, ticket.invoice_id) if ticket.invoice_id else None
     ticket_void, ticket_void_reason = _latest_ticket_void_with_reason(db, ticket.id)
     stop_blockers = _on_stop_blockers(db, ticket.customer_id, ticket.haulier_id)
+    do_not_invoice_warning, po_required_warning = _customer_invoice_warning_flags(
+        db, ticket.customer_id, ticket.po_number, ticket_status=ticket.status
+    )
     form = _ticket_to_form(ticket)
     options = _load_ticket_options_with_enums(
         db,
@@ -1019,6 +1178,15 @@ def tickets_edit(
     )
     product_warning = _sales_only_selected_product_warning(
         db, form.get("transaction_type"), ticket.product_id
+    )
+    selected_customer_id = _parse_int(str(form.get("customer_id") or ""))
+    (
+        price_override_active,
+        price_override_unit_price,
+    ) = _ticket_price_override_context(
+        db,
+        customer_id=selected_customer_id,
+        product_id=ticket.product_id,
     )
     return templates.TemplateResponse(request, 
         "tickets/edit.html",
@@ -1038,23 +1206,97 @@ def tickets_edit(
             "is_open": _is_open_ticket(ticket),
             "is_locked": _is_ticket_locked(ticket),
             "can_void": _can_void_ticket(ticket),
+            "void_blocked_message": _ticket_void_blocked_message(ticket)
+            if _status_value(ticket.status) != TicketStatusEnum.VOID.value
+            and not _can_void_ticket(ticket)
+            else "",
             "locked_message": _ticket_locked_message(ticket)
             if _is_ticket_locked(ticket)
             else "",
             "stop_blocked": bool(stop_blockers),
             "stop_banner_message": _on_stop_banner_message(stop_blockers),
+            "customer_do_not_invoice_warning": do_not_invoice_warning,
+            "customer_po_required_warning": po_required_warning,
+            "po_required_banner_text": PO_REQUIRED_INVOICE_BANNER,
+            "po_number_max_length": PO_NUMBER_MAX_LENGTH,
+            "compliance_locked_invoiced": _compliance_locked_invoiced(ticket, db),
+            "compliance_locked_invoiced_message": COMPLIANCE_LOCKED_INVOICED_MESSAGE,
+            "ticket_compliance_hazardous": _is_ticket_compliance_hazardous(ticket),
             "weight_warning": _net_negative(ticket),
             "direction_warning": _direction_transaction_warning(
                 ticket.direction, ticket.transaction_type
             ),
             "form": form,
             "vehicle_reg": _ticket_vehicle_reg(db, ticket),
+            "can_edit_complete_po": _can_edit_complete_po(ticket, db),
+            "po_locked_invoiced": _po_locked_invoiced(ticket, db),
+            "price_override_active": price_override_active,
+            "price_override_unit_price": price_override_unit_price,
             "options": options,
             "product_unit_meta": _load_product_unit_meta(db),
             "enums": _ticket_enums(),
             **_active_lookup_options(ticket, db),
         },
     )
+
+
+@router.post("/tickets/{ticket_id:int}/po", response_class=HTMLResponse)
+async def tickets_update_po(
+    ticket_id: int, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        return templates.TemplateResponse(request, 
+            "tickets/not_found.html",
+            {"request": request, "ticket_id": ticket_id},
+            status_code=404,
+        )
+
+    if _status_value(ticket.status) == TicketStatusEnum.VOID.value:
+        return _render_ticket_edit(
+            request,
+            ticket,
+            db,
+            errors=["Cannot update PO on a void ticket."],
+            status_code=400,
+        )
+    if _is_ticket_invoiced(ticket, db):
+        return _render_ticket_edit(
+            request,
+            ticket,
+            db,
+            errors=["Cannot update PO because this ticket has already been invoiced."],
+            status_code=400,
+        )
+    if not _can_update_po(ticket, db):
+        return _render_ticket_edit(
+            request,
+            ticket,
+            db,
+            errors=["PO can only be updated on open or complete tickets."],
+            status_code=400,
+        )
+
+    form = await request.form()
+    po_number_raw = _form_value(form, "po_number")
+    errors: list[str] = []
+    po_number = _parse_po_number(po_number_raw, errors)
+    if errors:
+        form_data = _ticket_to_form(ticket)
+        form_data["po_number"] = po_number_raw
+        return _render_ticket_edit(
+            request,
+            ticket,
+            db,
+            errors=errors,
+            form=form_data,
+            status_code=400,
+        )
+
+    ticket.po_number = po_number
+    ticket.updated_at = utcnow()
+    db.commit()
+    return RedirectResponse(url=f"/tickets/{ticket_id}?saved=1", status_code=303)
 
 
 @router.post("/tickets/{ticket_id:int}", response_class=HTMLResponse)
@@ -1091,8 +1333,23 @@ async def tickets_update(
             status_code=400,
         )
 
+    if (
+        action in {"save", "complete"}
+        and _compliance_locked_invoiced(ticket, db)
+        and _compliance_fields_present_in_form(form)
+    ):
+        return _render_ticket_edit(
+            request,
+            ticket,
+            db,
+            errors=[COMPLIANCE_LOCKED_INVOICED_MESSAGE],
+            status_code=400,
+        )
+
     payload = _parse_ticket_form(
-        form, current_status=ticket.status.value if ticket.status else None
+        form,
+        current_status=ticket.status.value if ticket.status else None,
+        validate_ewc=action == "complete",
     )
     payload["form"]["direction"] = payload["direction"] or ""
     payload["form"]["transaction_type"] = payload["transaction_type"] or ""
@@ -1115,14 +1372,15 @@ async def tickets_update(
         _coerce_mode_fields(payload, product)
         weight_warning = _net_negative_values(payload["gross_kg"], payload["tare_kg"])
         _apply_destination_default(ticket, payload, product)
-        haulier = _validate_carrier_licence(payload, db)
+        haulier = _validate_carrier_licence(payload, db, errors=payload["errors"])
+        is_waste_tx = _is_waste_transaction(payload.get("transaction_type"))
         _resolve_waste_producer_snapshot(
             payload,
             db,
-            require_customer_when_same=True,
-            require_manual_name=True,
+            require_customer_when_same=is_waste_tx,
+            require_manual_name=False,
         )
-        is_waste_tx = _is_waste_transaction(payload.get("transaction_type"))
+        _validate_waste_producer_on_complete(payload)
         if is_waste_tx and haulier and not haulier.carrier_licence_number:
             payload["errors"].append(
                 "Selected haulier has no Waste Carrier Licence number. "
@@ -1230,10 +1488,6 @@ async def tickets_update(
                 payload["errors"].append(
                     "Customer is required for hazardous waste tickets."
                 )
-            if not ticket.waste_producer_name:
-                payload["errors"].append(
-                    "Waste producer details are required for hazardous waste tickets."
-                )
         if payload["errors"]:
             return _render_ticket_edit(
                 request,
@@ -1275,10 +1529,16 @@ async def tickets_update(
         note = str(form.get("void_note", "")).strip()
         errors = []
         validate_no_html(note, "Void note", errors)
+        if note and len(note) > NOTES_MAX:
+            errors.append(f"Void note must be {NOTES_MAX} characters or fewer.")
         if not reason_id:
             errors.append("Void reason is required.")
         reason = db.get(VoidReason, reason_id) if reason_id else None
-        if reason_id and (not reason or not reason.is_active):
+        if reason_id and (
+            not reason
+            or not reason.is_active
+            or (reason.reason_type or "").strip().upper() != VOID_REASON_TYPE_TICKET
+        ):
             errors.append("Void reason is invalid.")
         if reason and _is_other_void_reason(reason) and not note:
             errors.append("Void note is required when reason is Other.")
@@ -1332,7 +1592,7 @@ async def tickets_update(
                 weighing_order_errors = []
     payload["errors"].extend(weighing_order_errors)
     _apply_destination_default(ticket, payload, product)
-    haulier = _validate_carrier_licence(payload, db)
+    haulier = _validate_carrier_licence(payload, db, errors=payload["errors"])
     _resolve_waste_producer_snapshot(payload, db)
     is_waste_tx = _is_waste_transaction(payload.get("transaction_type"))
     if payload["errors"]:
@@ -2242,11 +2502,17 @@ def _apply_ticket_updates(ticket: Ticket, payload: dict) -> None:
     ticket.unit_id = payload["unit_id"]
     ticket.unit_price = payload["unit_price"]
     ticket.total = payload["total"]
+    ticket.po_number = payload["po_number"]
     ticket.dont_invoice = payload["dont_invoice"]
     ticket.updated_at = utcnow()
 
 
-def _parse_ticket_form(form, current_status: str | None = None) -> dict:
+def _parse_ticket_form(
+    form,
+    current_status: str | None = None,
+    *,
+    validate_ewc: bool = True,
+) -> dict:
     errors: list[str] = []
 
     datetime_raw = _form_value(form, "datetime")
@@ -2256,6 +2522,7 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
     transaction_type = transaction_type_raw or None
     status = current_status or TicketStatusEnum.OPEN.value
     customer_id = _parse_int(_form_value(form, "customer_id"))
+    po_number_raw = _form_value(form, "po_number")
     vehicle_id = _parse_int(_form_value(form, "vehicle_id"))
     vehicle_reg_text = _normalize_reg_text(_form_value(form, "reg"))
     walk_in = _form_value(form, "walk_in") == "on"
@@ -2284,6 +2551,7 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         "yes",
         "on",
     }
+    ewc_hazardous = _form_value(form, "ewc_hazardous") == "1"
     ewc_auto_code_6 = _normalize_ewc_digits(_form_value(form, "ewc_auto_code_6"))
     ewc_product_default_code_6 = _normalize_ewc_digits(
         _form_value(form, "ewc_product_default_code_6")
@@ -2308,6 +2576,27 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         },
         errors,
     )
+
+    if vehicle_reg_text and len(vehicle_reg_text) > REG_MAX:
+        errors.append(f"Vehicle registration must be {REG_MAX} characters or fewer.")
+    if waste_producer_name and len(waste_producer_name) > NAME_MAX:
+        errors.append(f"Waste producer name must be {NAME_MAX} characters or fewer.")
+    if waste_producer_address_line_1 and len(waste_producer_address_line_1) > ADDRESS_LINE_MAX:
+        errors.append(
+            f"Waste producer address line 1 must be {ADDRESS_LINE_MAX} characters or fewer."
+        )
+    if waste_producer_address_line_2 and len(waste_producer_address_line_2) > ADDRESS_LINE_MAX:
+        errors.append(
+            f"Waste producer address line 2 must be {ADDRESS_LINE_MAX} characters or fewer."
+        )
+    if waste_producer_address_line_3 and len(waste_producer_address_line_3) > ADDRESS_LINE_MAX:
+        errors.append(
+            f"Waste producer address line 3 must be {ADDRESS_LINE_MAX} characters or fewer."
+        )
+    if waste_producer_postcode and len(waste_producer_postcode) > POSTCODE_MAX:
+        errors.append(
+            f"Waste producer postcode must be {POSTCODE_MAX} characters or fewer."
+        )
 
     if not datetime_raw:
         errors.append("Date/time is required.")
@@ -2342,8 +2631,13 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         if qty is not None and unit_price is not None
         else None
     )
-    ewc_code_6 = _parse_ewc_code_value(ewc_code_raw, errors)
+    if validate_ewc:
+        ewc_code_6 = _parse_ewc_code_value(ewc_code_raw, errors)
+    else:
+        normalized_ewc_code = _normalize_ewc_digits(ewc_code_raw)
+        ewc_code_6 = normalized_ewc_code if len(normalized_ewc_code) == 6 else None
     dont_invoice = _form_value(form, "dont_invoice") == "on"
+    po_number = _parse_po_number(po_number_raw, errors)
 
     form_data = {
         "datetime": datetime_raw,
@@ -2351,6 +2645,7 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         "transaction_type": transaction_type or "",
         "status": status,
         "customer_id": _form_value(form, "customer_id"),
+        "po_number": po_number_raw,
         "vehicle_id": _form_value(form, "vehicle_id"),
         "vehicle_reg_text": vehicle_reg_text,
         "walk_in": "on" if walk_in else "",
@@ -2374,6 +2669,7 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         if ewc_code_6
         else ewc_code_raw,
         "ewc_manual_override": "1" if ewc_manual_override else "0",
+        "ewc_hazardous": "1" if ewc_hazardous else "0",
         "ewc_auto_code_6": _format_ewc_code_display(ewc_auto_code_6)
         if ewc_auto_code_6
         else "",
@@ -2400,6 +2696,7 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         "transaction_type_raw": transaction_type_raw,
         "status": status,
         "customer_id": customer_id,
+        "po_number": po_number,
         "vehicle_id": vehicle_id,
         "vehicle_reg_text": vehicle_reg_text,
         "walk_in": walk_in,
@@ -2420,6 +2717,7 @@ def _parse_ticket_form(form, current_status: str | None = None) -> dict:
         "ewc_code_raw": ewc_code_raw,
         "ewc_code_6": ewc_code_6,
         "ewc_manual_override": ewc_manual_override,
+        "ewc_hazardous": ewc_hazardous,
         "ewc_auto_code_6": ewc_auto_code_6,
         "ewc_product_default_code_6": ewc_product_default_code_6,
         "ewc_product_default_display": ewc_product_default_display,
@@ -2500,6 +2798,7 @@ def _ticket_to_form(ticket: Ticket) -> dict:
         "transaction_type": ticket.transaction_type.value if ticket.transaction_type else "",
         "status": ticket.status.value if ticket.status else "",
         "customer_id": str(ticket.customer_id or ""),
+        "po_number": ticket.po_number or "",
         "vehicle_id": str(ticket.vehicle_id or ""),
         "vehicle_reg_text": ticket.vehicle_reg_text or "",
         "walk_in": "on" if ticket.walk_in else "",
@@ -2519,6 +2818,7 @@ def _ticket_to_form(ticket: Ticket) -> dict:
         "waste_producer_postcode": producer_postcode,
         "ewc_code": ewc_value,
         "ewc_manual_override": "1" if ewc_manual_override else "0",
+        "ewc_hazardous": "1" if _is_ticket_compliance_hazardous(ticket) else "0",
         "ewc_auto_code_6": _format_ewc_code_display(ewc_auto_code_6)
         if ewc_auto_code_6
         else "",
@@ -2533,6 +2833,29 @@ def _ticket_to_form(ticket: Ticket) -> dict:
         "total": f"{ticket.total:.2f}" if ticket.total is not None else "",
         "dont_invoice": "on" if ticket.dont_invoice else "",
     }
+
+
+def _parse_po_number(raw: str, errors: list[str]) -> str | None:
+    po_number = str(raw or "").strip()
+    validate_no_html(po_number, "PO number", errors)
+    if po_number and len(po_number) > PO_NUMBER_MAX_LENGTH:
+        errors.append(f"PO number must be {PO_NUMBER_MAX_LENGTH} characters or fewer.")
+    return po_number or None
+
+
+def _normalize_ticket_search_query(raw: str | None) -> str:
+    if raw is None:
+        return ""
+    collapsed = re.sub(r"\s+", " ", str(raw).strip())
+    return collapsed[:TICKET_SEARCH_MAX_LEN]
+
+
+def _escape_like_term(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _ticket_contains_like_pattern(value: str) -> str:
+    return f"%{_escape_like_term(value)}%"
 
 
 def _form_value(form, key: str) -> str:
@@ -2636,13 +2959,26 @@ def _apply_ticket_defaults(db: Session, payload: dict) -> None:
     if payload.get("unit_price_raw") in ("", None) or payload.get("unit_price") is None:
         product_id = payload.get("product_id")
         if product_id:
-            product = db.get(Product, product_id)
-            if product and product.unit_price is not None:
-                payload["unit_price"] = product.unit_price
+            product = (
+                db.execute(
+                    select(Product)
+                    .options(joinedload(Product.unit))
+                    .where(Product.id == product_id)
+                )
+                .scalars()
+                .first()
+            )
+            resolved_unit_price, _using_override = resolve_unit_price_for_customer_product(
+                db,
+                customer_id=payload.get("customer_id"),
+                product=product,
+            )
+            if resolved_unit_price is not None:
+                payload["unit_price"] = resolved_unit_price
                 logger.info(
                     "Defaulted unit_price from product_id=%s to %s",
                     product_id,
-                    product.unit_price,
+                    resolved_unit_price,
                 )
 
     if payload.get("qty") is not None and payload.get("unit_price") is not None:
@@ -2887,11 +3223,13 @@ def _resolve_ticket_ewc_snapshot(
     payload["ewc_code_6"] = resolved_code_6 or None
     payload["ewc_manual_override"] = manual_override
     payload["ewc_auto_code_6"] = resolved_code_6 if (resolved_code_6 and not manual_override) else ""
+    payload["ewc_hazardous"] = bool(snapshot.get("ewc_hazardous"))
 
     form_data = payload.get("form")
     if isinstance(form_data, dict):
         form_data["ewc_code"] = str(snapshot.get("ewc_code_display") or "")
         form_data["ewc_manual_override"] = "1" if manual_override else "0"
+        form_data["ewc_hazardous"] = "1" if bool(snapshot.get("ewc_hazardous")) else "0"
         form_data["ewc_auto_code_6"] = _format_ewc_code_display(
             payload.get("ewc_auto_code_6")
         )
@@ -2904,6 +3242,16 @@ def _validate_waste_ewc_on_complete(payload: dict, ewc_snapshot: dict[str, objec
         return
     if not _normalize_ewc_digits(ewc_snapshot.get("ewc_code_6")):
         payload["errors"].append("EWC code is required to complete a waste ticket.")
+
+
+def _validate_waste_producer_on_complete(payload: dict) -> None:
+    if not _is_waste_transaction(payload.get("transaction_type")):
+        return
+    producer_name = _normalize_optional_text(payload.get("waste_producer_name_snapshot"))
+    if not producer_name:
+        payload["errors"].append(
+            "Waste producer name is required to complete a waste ticket."
+        )
 
 
 def _validate_required_on_complete(payload: dict) -> None:
@@ -2951,11 +3299,25 @@ def _apply_ticket_ewc_snapshot(ticket: Ticket, snapshot: dict[str, object]) -> N
     ticket.ewc_manual_override = bool(snapshot.get("ewc_manual_override"))
 
 
-def _validate_carrier_licence(payload: dict, db: Session) -> Haulier | None:
+def _validate_carrier_licence(
+    payload: dict,
+    db: Session,
+    *,
+    errors: list[str] | None = None,
+) -> Haulier | None:
     haulier_id = payload.get("haulier_id")
     if not haulier_id:
         return None
     haulier = db.get(Haulier, haulier_id)
+    if (
+        errors is not None
+        and haulier
+        and haulier.carrier_licence_number
+        and len(haulier.carrier_licence_number) > CODE_MAX
+    ):
+        errors.append(
+            f"Carrier licence number must be {CODE_MAX} characters or fewer."
+        )
     return haulier
 
 
@@ -3007,10 +3369,8 @@ def _split_waste_producer_address(address: str | None) -> tuple[str, str, str, s
         parts = [part.strip() for part in normalized.split("\n") if part.strip()]
     else:
         parts = [part.strip() for part in normalized.split(",") if part.strip()]
-    line_1 = parts[0] if len(parts) > 0 else ""
-    line_2 = parts[1] if len(parts) > 1 else ""
-    line_3 = parts[2] if len(parts) > 2 else ""
-    postcode = parts[3] if len(parts) > 3 else ""
+    padded_parts = parts[:4] + [""] * (4 - min(len(parts), 4))
+    line_1, line_2, line_3, postcode = padded_parts
     return (line_1, line_2, line_3, postcode)
 
 
@@ -3232,6 +3592,11 @@ def _render_ticket_edit(
         selected_customer_id = _parse_int(str(form.get("customer_id")))
     if selected_customer_id is None:
         selected_customer_id = ticket.customer_id
+    selected_po_number = (
+        str(form.get("po_number", "")).strip()
+        if form
+        else (ticket.po_number or "")
+    )
     selected_haulier_id = None
     if form and form.get("haulier_id"):
         selected_haulier_id = _parse_int(str(form.get("haulier_id")))
@@ -3264,6 +3629,20 @@ def _render_ticket_edit(
     product_warning = _sales_only_selected_product_warning(
         db, selected_transaction_type, product_id
     )
+    do_not_invoice_warning, po_required_warning = _customer_invoice_warning_flags(
+        db,
+        selected_customer_id,
+        selected_po_number,
+        ticket_status=ticket.status,
+    )
+    (
+        price_override_active,
+        price_override_unit_price,
+    ) = _ticket_price_override_context(
+        db,
+        customer_id=selected_customer_id,
+        product_id=product_id,
+    )
     return templates.TemplateResponse(request, 
         "tickets/edit.html",
         {
@@ -3281,11 +3660,19 @@ def _render_ticket_edit(
             "is_open": _is_open_ticket(ticket),
             "is_locked": _is_ticket_locked(ticket),
             "can_void": _can_void_ticket(ticket),
+            "void_blocked_message": _ticket_void_blocked_message(ticket)
+            if _status_value(ticket.status) != TicketStatusEnum.VOID.value
+            and not _can_void_ticket(ticket)
+            else "",
             "locked_message": _ticket_locked_message(ticket)
             if _is_ticket_locked(ticket)
             else "",
             "stop_blocked": bool(stop_blockers),
             "stop_banner_message": _on_stop_banner_message(stop_blockers),
+            "customer_do_not_invoice_warning": do_not_invoice_warning,
+            "customer_po_required_warning": po_required_warning,
+            "po_required_banner_text": PO_REQUIRED_INVOICE_BANNER,
+            "po_number_max_length": PO_NUMBER_MAX_LENGTH,
             "weight_warning": _net_negative(ticket)
             if weight_warning is None
             else weight_warning,
@@ -3296,6 +3683,13 @@ def _render_ticket_edit(
             else direction_warning,
             "form": form or _ticket_to_form(ticket),
             "vehicle_reg": vehicle_reg if vehicle_reg is not None else _ticket_vehicle_reg(db, ticket),
+            "can_edit_complete_po": _can_edit_complete_po(ticket, db),
+            "po_locked_invoiced": _po_locked_invoiced(ticket, db),
+            "compliance_locked_invoiced": _compliance_locked_invoiced(ticket, db),
+            "compliance_locked_invoiced_message": COMPLIANCE_LOCKED_INVOICED_MESSAGE,
+            "ticket_compliance_hazardous": _is_ticket_compliance_hazardous(ticket),
+            "price_override_active": price_override_active,
+            "price_override_unit_price": price_override_unit_price,
             "default_destination_id": default_destination_id,
             "unit_type": unit_type,
             "options": options,
@@ -3305,6 +3699,35 @@ def _render_ticket_edit(
         },
         status_code=status_code,
     )
+
+
+def _ticket_price_override_context(
+    db: Session,
+    *,
+    customer_id: int | None,
+    product_id: int | None,
+) -> tuple[bool, Decimal | None]:
+    if not customer_id or not product_id:
+        return False, None
+    product = (
+        db.execute(
+            select(Product)
+            .options(joinedload(Product.unit))
+            .where(Product.id == product_id)
+        )
+        .scalars()
+        .first()
+    )
+    if product is None:
+        return False, None
+    resolved_unit_price, using_override = resolve_unit_price_for_customer_product(
+        db,
+        customer_id=customer_id,
+        product=product,
+    )
+    if not using_override:
+        return False, None
+    return True, resolved_unit_price
 
 
 def _render_weights_partial(

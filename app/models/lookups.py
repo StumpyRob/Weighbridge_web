@@ -4,6 +4,7 @@ import sqlalchemy as sa
 from sqlalchemy import DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
+from ..constants import CODE_MAX, NAME_MAX
 from .base import Base
 
 
@@ -16,8 +17,8 @@ class Haulier(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    carrier_licence_number: Mapped[str | None] = mapped_column(String(100))
+    name: Mapped[str] = mapped_column(String(NAME_MAX), nullable=False)
+    carrier_licence_number: Mapped[str | None] = mapped_column(String(CODE_MAX))
     is_active: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.true()
     )
@@ -38,7 +39,7 @@ class Driver(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    name: Mapped[str] = mapped_column(String(NAME_MAX), nullable=False)
     is_active: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.true()
     )
@@ -59,7 +60,7 @@ class Container(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    name: Mapped[str] = mapped_column(String(NAME_MAX), nullable=False)
     is_active: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.true()
     )
@@ -80,7 +81,7 @@ class Destination(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    name: Mapped[str] = mapped_column(String(NAME_MAX), nullable=False)
     is_active: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.true()
     )

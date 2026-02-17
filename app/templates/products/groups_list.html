@@ -59,7 +59,7 @@
     <tbody>
       {% for group in groups %}
         <tr>
-          <td>{{ group.name }}</td>
+          <td><span class="truncate truncate--md" title="{{ group.name }}">{{ group.name }}</span></td>
           <td>{{ group.nominal_code_default or "—" }}</td>
           <td>
             {% if group.is_active %}

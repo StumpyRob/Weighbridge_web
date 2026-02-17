@@ -15,6 +15,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from ..constants import CODE_MAX, NAME_MAX, NOTES_MAX, PO_NUMBER_MAX, REG_MAX
 from .base import Base, utcnow
 
 
@@ -75,7 +76,7 @@ class Ticket(Base):
     )
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"))
     vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"))
-    vehicle_reg_text: Mapped[str | None] = mapped_column(String(50))
+    vehicle_reg_text: Mapped[str | None] = mapped_column(String(REG_MAX))
     walk_in: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
     ewc_code_6: Mapped[str | None] = mapped_column(String(6), nullable=True)
@@ -87,7 +88,7 @@ class Ticket(Base):
     )
     invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id"))
     haulier_id: Mapped[int | None] = mapped_column(ForeignKey("hauliers.id"))
-    carrier_licence_number: Mapped[str | None] = mapped_column(String(100))
+    carrier_licence_number: Mapped[str | None] = mapped_column(String(CODE_MAX))
     driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"))
     container_id: Mapped[int | None] = mapped_column(ForeignKey("containers.id"))
     destination_id: Mapped[int | None] = mapped_column(
@@ -105,8 +106,8 @@ class Ticket(Base):
         SAEnum(WasteProducerSourceEnum, native_enum=False, create_constraint=False),
         nullable=True,
     )
-    waste_producer_name: Mapped[str | None] = mapped_column(String(255))
-    waste_producer_address: Mapped[str | None] = mapped_column(Text)
+    waste_producer_name: Mapped[str | None] = mapped_column(String(NAME_MAX))
+    waste_producer_address: Mapped[str | None] = mapped_column(String(NOTES_MAX))
     gross_kg: Mapped[float | None] = mapped_column(Numeric(12, 3))
     tare_kg: Mapped[float | None] = mapped_column(Numeric(12, 3))
     net_kg: Mapped[float | None] = mapped_column(Numeric(12, 3))
@@ -115,12 +116,13 @@ class Ticket(Base):
     unit_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     total: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     pricing_basis: Mapped[str | None] = mapped_column(String(10))
-    pricing_unit_name: Mapped[str | None] = mapped_column(String(50))
+    pricing_unit_name: Mapped[str | None] = mapped_column(String(NAME_MAX))
     pricing_unit_type: Mapped[str | None] = mapped_column(String(10))
     pricing_unit_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     pricing_qty_snapshot: Mapped[float | None] = mapped_column(Numeric(12, 3))
     pricing_net_kg_snapshot: Mapped[float | None] = mapped_column(Numeric(12, 3))
     pricing_billable_qty_snapshot: Mapped[float | None] = mapped_column(Numeric(12, 3))
+    po_number: Mapped[str | None] = mapped_column(String(PO_NUMBER_MAX))
     dont_invoice: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     paid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     payment_method_id: Mapped[int | None] = mapped_column(Integer)

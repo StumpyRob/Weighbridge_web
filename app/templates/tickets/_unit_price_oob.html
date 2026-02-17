@@ -7,3 +7,14 @@
   class="input-secondary input-with-prefix"
   hx-swap-oob="true"
 />
+
+<div
+  id="customer-price-override-hint"
+  class="hint"
+  hx-swap-oob="true"
+  {% if not price_override_active %}style="display:none"{% endif %}
+>
+  {% if price_override_active and price_override_unit_price is not none %}
+    Using customer price override: &pound;{{ "{:.2f}".format(price_override_unit_price) }}
+  {% endif %}
+</div>

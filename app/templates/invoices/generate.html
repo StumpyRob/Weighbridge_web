@@ -25,11 +25,11 @@
     <h2>Selection</h2>
     <div class="quick-ranges" role="group" aria-label="Quick ranges">
       <span class="quick-ranges__label">Quick ranges</span>
-      <button type="button" class="btn btn--secondary quick-range-btn" data-quick-range="today">Today</button>
-      <button type="button" class="btn btn--secondary quick-range-btn" data-quick-range="last-7-days">Last 7 days</button>
-      <button type="button" class="btn btn--secondary quick-range-btn" data-quick-range="this-week">This week</button>
+      <button type="button" class="btn btn--secondary quick-range-btn" data-quick-range="this-week">This week (Mon-Sun)</button>
+      <button type="button" class="btn btn--secondary quick-range-btn" data-quick-range="last-week">Last week</button>
       <button type="button" class="btn btn--secondary quick-range-btn" data-quick-range="this-month">This month</button>
       <button type="button" class="btn btn--secondary quick-range-btn" data-quick-range="last-month">Last month</button>
+      <button type="button" class="btn btn--secondary quick-range-btn" data-quick-range="clear">Clear</button>
     </div>
     <div class="form-grid">
       <div class="field">
@@ -37,7 +37,11 @@
         <select id="customer_id" name="customer_id" required>
           <option value="">Select customer</option>
           {% for customer in customers %}
-            <option value="{{ customer.id }}" {% if form.customer_id == customer.id|string %}selected{% endif %}>
+            <option
+              value="{{ customer.id }}"
+              data-invoice-frequency="{{ customer.invoice_frequency or '' }}"
+              {% if form.customer_id == customer.id|string %}selected{% endif %}
+            >
               {{ customer.name }}
             </option>
           {% endfor %}
@@ -62,6 +66,7 @@
         />
       </div>
     </div>
+    <p id="invoice-frequency-status" class="invoice-frequency-status" aria-live="polite" hidden></p>
   </section>
 
   <div class="actions btn-group invoice-generate-actions">
@@ -142,7 +147,12 @@
               <td>{{ ticket.datetime.strftime("%d/%m/%Y %H:%M") if ticket.datetime else "" }}</td>
               <td>{{ ticket.status.value if ticket.status else "" }}</td>
               <td>{{ "{:.2f}".format(ticket.total) if ticket.total is not none else "" }}</td>
-              <td><span class="tag">{{ reason }}</span></td>
+              <td>
+                <span class="tag">{{ reason }}</span>
+                {% if reason == "Missing PO" %}
+                  <a class="muted" href="/tickets/{{ ticket.id }}#po">Fix PO</a>
+                {% endif %}
+              </td>
             </tr>
           {% else %}
             <tr>
@@ -159,9 +169,11 @@
   (function () {
     const dateFromInput = document.getElementById("date_from");
     const dateToInput = document.getElementById("date_to");
+    const customerSelect = document.getElementById("customer_id");
     const previewForm = document.querySelector('form[action="/invoices/generate"]');
     const confirmForms = document.querySelectorAll('form[action="/invoices/generate/confirm"]');
     const quickRangeButtons = document.querySelectorAll("[data-quick-range]");
+    const invoiceFrequencyStatus = document.getElementById("invoice-frequency-status");
     const storageKey = "invoice_generate_last_date_range_v1";
 
     if (!dateFromInput || !dateToInput || !previewForm) {
@@ -175,8 +187,49 @@
       return year + "-" + month + "-" + day;
     }
 
+    function toDisplayDate(isoDate) {
+      if (!isIsoDate(isoDate)) {
+        return "";
+      }
+      const parts = String(isoDate).split("-");
+      if (parts.length !== 3) {
+        return "";
+      }
+      return parts[2] + "/" + parts[1] + "/" + parts[0];
+    }
+
     function isIsoDate(value) {
       return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+    }
+
+    function hideInvoiceFrequencyStatus() {
+      if (!invoiceFrequencyStatus) {
+        return;
+      }
+      invoiceFrequencyStatus.hidden = true;
+      invoiceFrequencyStatus.textContent = "";
+    }
+
+    function showInvoiceFrequencyStatus(preset) {
+      if (!invoiceFrequencyStatus) {
+        return;
+      }
+      const dateFrom = String(dateFromInput.value || "");
+      const dateTo = String(dateToInput.value || "");
+      if (!isIsoDate(dateFrom) || !isIsoDate(dateTo)) {
+        hideInvoiceFrequencyStatus();
+        return;
+      }
+      const frequencyLabel = preset === "this-week" ? "Weekly" : "Monthly";
+      invoiceFrequencyStatus.textContent =
+        "Applied " +
+        frequencyLabel +
+        " range: " +
+        toDisplayDate(dateFrom) +
+        " to " +
+        toDisplayDate(dateTo) +
+        ". (Customer Preference)";
+      invoiceFrequencyStatus.hidden = false;
     }
 
     function saveRange(fromValue, toValue) {
@@ -191,6 +244,14 @@
             date_to: toValue,
           })
         );
+      } catch (error) {
+        // Ignore storage errors (private mode / blocked storage).
+      }
+    }
+
+    function clearStoredRange() {
+      try {
+        localStorage.removeItem(storageKey);
       } catch (error) {
         // Ignore storage errors (private mode / blocked storage).
       }
@@ -242,17 +303,15 @@
 
     function applyRangePreset(rangeKey) {
       const today = startOfToday();
-      if (rangeKey === "today") {
-        setRange(today, today, true);
-        return;
-      }
-      if (rangeKey === "last-7-days") {
-        setRange(addDays(today, -6), today, true);
-        return;
-      }
       if (rangeKey === "this-week") {
         const monday = startOfWeekMonday(today);
         setRange(monday, addDays(monday, 6), true);
+        return;
+      }
+      if (rangeKey === "last-week") {
+        const thisWeekMonday = startOfWeekMonday(today);
+        const lastWeekMonday = addDays(thisWeekMonday, -7);
+        setRange(lastWeekMonday, addDays(lastWeekMonday, 6), true);
         return;
       }
       if (rangeKey === "this-month") {
@@ -264,11 +323,54 @@
         const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
         const end = new Date(today.getFullYear(), today.getMonth(), 0);
         setRange(start, end, true);
+        return;
       }
+      if (rangeKey === "clear") {
+        dateFromInput.value = "";
+        dateToInput.value = "";
+        clearStoredRange();
+      }
+    }
+
+    function selectedCustomerFrequency() {
+      if (!customerSelect) {
+        return "";
+      }
+      const selectedOption = customerSelect.options[customerSelect.selectedIndex];
+      if (!selectedOption) {
+        return "";
+      }
+      return String(selectedOption.dataset.invoiceFrequency || "").toUpperCase();
+    }
+
+    function suggestedPresetForFrequency() {
+      const frequency = selectedCustomerFrequency();
+      if (frequency === "WEEKLY") {
+        return "this-week";
+      }
+      if (frequency === "MONTHLY") {
+        return "this-month";
+      }
+      return "";
+    }
+
+    function applyFrequencySuggestionIfEmpty() {
+      if (dateFromInput.value || dateToInput.value) {
+        return false;
+      }
+      const preset = suggestedPresetForFrequency();
+      if (!preset) {
+        return false;
+      }
+      applyRangePreset(preset);
+      return true;
     }
 
     function applyInitialRange() {
       if (dateFromInput.value || dateToInput.value) {
+        return;
+      }
+      if (applyFrequencySuggestionIfEmpty()) {
         return;
       }
       const storedRange = loadStoredRange();
@@ -284,12 +386,31 @@
 
     quickRangeButtons.forEach(function (button) {
       button.addEventListener("click", function () {
+        hideInvoiceFrequencyStatus();
         applyRangePreset(String(button.dataset.quickRange || ""));
       });
     });
 
-    dateFromInput.addEventListener("change", saveCurrentRange);
-    dateToInput.addEventListener("change", saveCurrentRange);
+    if (customerSelect) {
+      customerSelect.addEventListener("change", function () {
+        const preset = suggestedPresetForFrequency();
+        if (!preset) {
+          hideInvoiceFrequencyStatus();
+          return;
+        }
+        applyRangePreset(preset);
+        showInvoiceFrequencyStatus(preset);
+      });
+    }
+
+    dateFromInput.addEventListener("change", function () {
+      hideInvoiceFrequencyStatus();
+      saveCurrentRange();
+    });
+    dateToInput.addEventListener("change", function () {
+      hideInvoiceFrequencyStatus();
+      saveCurrentRange();
+    });
 
     previewForm.addEventListener("submit", saveCurrentRange);
 

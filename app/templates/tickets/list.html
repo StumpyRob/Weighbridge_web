@@ -1,6 +1,3 @@
-{# Ticket list is intentionally minimal (scan view).
-   Extra fields belong on the ticket detail/edit page.
-   Do not re-add lookups/customer/product here unless requested. #}
 {% extends "base.html" %}
 
 {% block title %}Tickets | Weighbridge Web{% endblock %}
@@ -35,7 +32,7 @@
       id="q"
       name="q"
       value="{{ filters.q }}"
-      placeholder="Ticket, vehicle"
+      placeholder="Ticket, vehicle, customer, product, EWC"
     />
   </div>
   <div class="field">
@@ -74,6 +71,8 @@
         <th>Date / Time</th>
         <th>Direction</th>
         <th>Vehicle</th>
+        <th>Customer</th>
+        <th>Product</th>
         <th class="status-col">Status</th>
         <th class="weights-col">Net</th>
       </tr>
@@ -96,7 +95,25 @@
             {% endif %}
           </td>
           <td>
-            {{ row.Vehicle.registration if row.Vehicle else "&mdash;" | safe }}
+            {% if row.Vehicle and row.Vehicle.registration %}
+              <span class="truncate truncate--sm" title="{{ row.Vehicle.registration }}">{{ row.Vehicle.registration }}</span>
+            {% else %}
+              &mdash;
+            {% endif %}
+          </td>
+          <td>
+            {% if row.Customer and row.Customer.name %}
+              <span class="truncate truncate--md" title="{{ row.Customer.name }}">{{ row.Customer.name }}</span>
+            {% else %}
+              &mdash;
+            {% endif %}
+          </td>
+          <td>
+            {% if row.Product and row.Product.description %}
+              <span class="truncate truncate--lg" title="{{ row.Product.description }}">{{ row.Product.description }}</span>
+            {% else %}
+              &mdash;
+            {% endif %}
           </td>
           <td class="status-col">
             {% if row.Ticket.status %}
@@ -111,7 +128,7 @@
         </tr>
       {% else %}
         <tr>
-          <td colspan="6" class="empty">No tickets found.</td>
+          <td colspan="8" class="empty">No tickets found.</td>
         </tr>
       {% endfor %}
     </tbody>

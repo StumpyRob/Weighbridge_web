@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
+from ..constants import REG_MAX
 from .base import Base, utcnow
 
 
@@ -10,7 +11,7 @@ class Vehicle(Base):
     __tablename__ = "vehicles"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    registration: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    registration: Mapped[str] = mapped_column(String(REG_MAX), unique=True, nullable=False)
     owner_customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"))
     default_customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"))
     vehicle_type_id: Mapped[int | None] = mapped_column(

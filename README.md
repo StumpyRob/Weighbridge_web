@@ -37,6 +37,26 @@ Start the app:
 uvicorn app.main:app --reload
 ```
 
+## Release checklist
+
+Run these checks before deployment:
+
+```bash
+python scripts/migration_smoke.py
+```
+
+This executes:
+
+- `alembic downgrade base`
+- `alembic upgrade head`
+- `alembic downgrade -1`
+- `alembic upgrade head`
+
+It verifies `void_reasons` uniqueness transitions correctly between:
+
+- previous revision: unique on `code`
+- head: unique on (`code`, `reason_type`)
+
 ## Debug tooling
 
 - `/debug/integrity` is available only when `DEBUG=true`.

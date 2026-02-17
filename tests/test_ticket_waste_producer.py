@@ -4,6 +4,7 @@ import re
 
 from app.models import (
     Customer,
+    Destination,
     DirectionEnum,
     Product,
     Ticket,
@@ -73,15 +74,18 @@ def test_complete_requires_customer_when_waste_producer_same_as_customer(
     client, db_session
 ):
     product = _create_count_product(db_session, "P-WP-COMPLETE-1")
+    destination = Destination(name="WP Complete Destination 1")
     ticket = Ticket(
         ticket_no="T-WP-COMPLETE-1",
         datetime=datetime(2026, 2, 9, 10, 0, 0),
         status=TicketStatusEnum.OPEN.value,
         direction=DirectionEnum.INWARD.value,
-        transaction_type=TransactionTypeEnum.SALE.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
         dont_invoice=False,
         paid=False,
     )
+    db_session.add(destination)
+    db_session.commit()
     db_session.add(ticket)
     db_session.commit()
 
@@ -91,9 +95,12 @@ def test_complete_requires_customer_when_waste_producer_same_as_customer(
             "action": "complete",
             "datetime": "2026-02-09T10:00",
             "direction": "INWARD",
-            "transaction_type": "SALE",
+            "transaction_type": "WASTEIN",
             "product_id": str(product.id),
+            "destination_id": str(destination.id),
             "qty": "1",
+            "ewc_code": "01 01 01",
+            "ewc_manual_override": "1",
             "waste_producer_same_as_customer": "on",
         },
     )
@@ -108,17 +115,18 @@ def test_complete_requires_manual_waste_producer_name_when_not_same_as_customer(
     client, db_session
 ):
     customer = Customer(account_code="C-WP-1", name="Waste Producer Customer")
+    destination = Destination(name="WP Complete Destination 2")
     product = _create_count_product(db_session, "P-WP-COMPLETE-2")
     ticket = Ticket(
         ticket_no="T-WP-COMPLETE-2",
         datetime=datetime(2026, 2, 9, 11, 0, 0),
         status=TicketStatusEnum.OPEN.value,
         direction=DirectionEnum.INWARD.value,
-        transaction_type=TransactionTypeEnum.SALE.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
         dont_invoice=False,
         paid=False,
     )
-    db_session.add(customer)
+    db_session.add_all([customer, destination])
     db_session.commit()
     db_session.add(ticket)
     db_session.commit()
@@ -129,10 +137,13 @@ def test_complete_requires_manual_waste_producer_name_when_not_same_as_customer(
             "action": "complete",
             "datetime": "2026-02-09T11:00",
             "direction": "INWARD",
-            "transaction_type": "SALE",
+            "transaction_type": "WASTEIN",
             "customer_id": str(customer.id),
+            "destination_id": str(destination.id),
             "product_id": str(product.id),
             "qty": "1",
+            "ewc_code": "01 01 01",
+            "ewc_manual_override": "1",
             "waste_producer_same_as_customer_present": "1",
             "waste_producer_name": "",
             "waste_producer_address_line_1": "",
@@ -143,7 +154,7 @@ def test_complete_requires_manual_waste_producer_name_when_not_same_as_customer(
     )
 
     assert response.status_code == 400
-    assert "Enter waste producer name or tick" in response.text
+    assert "Waste producer name is required to complete a waste ticket." in response.text
     db_session.refresh(ticket)
     assert _status_value(ticket.status) == TicketStatusEnum.OPEN.value
 

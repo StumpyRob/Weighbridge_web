@@ -34,6 +34,7 @@
           type="text"
           id="name"
           name="name"
+          maxlength="{{ limits.NAME_MAX }}"
           value="{% if prefill_name is defined and prefill_name is not none %}{{ prefill_name }}{% elif item %}{{ item.name }}{% else %}{% endif %}"
           required
         />
@@ -52,7 +53,7 @@
           type="text"
           id="unit_name_count"
           name="name"
-          maxlength="50"
+          maxlength="{{ limits.NAME_MAX }}"
           value="{{ unit_name_value }}"
           required
         />
@@ -68,6 +69,7 @@
           type="text"
           id="carrier_licence_number"
           name="carrier_licence_number"
+          maxlength="{{ limits.CODE_MAX }}"
           value="{% if item %}{{ item.carrier_licence_number or "" }}{% endif %}"
         />
       </div>

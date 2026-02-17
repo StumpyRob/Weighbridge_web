@@ -5,6 +5,7 @@ from decimal import Decimal
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from ..constants import CODE_MAX, DESC_MAX, NOMINAL_CODE_MAX
 from .base import Base, utcnow
 
 
@@ -12,14 +13,17 @@ class Product(Base):
     __tablename__ = "products"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    description: Mapped[str] = mapped_column(String(255), nullable=False)
+    code: Mapped[str] = mapped_column(String(CODE_MAX), unique=True, nullable=False)
+    description: Mapped[str] = mapped_column(String(DESC_MAX), nullable=False)
     sales_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("product_groups.id"))
+    product_group: Mapped["ProductGroup | None"] = relationship("ProductGroup")
     unit_id: Mapped[int | None] = mapped_column(ForeignKey("units.id"), nullable=True)
     unit: Mapped["Unit | None"] = relationship("Unit")
     tax_rate_id: Mapped[int | None] = mapped_column(ForeignKey("tax_rates.id"))
+    tax_rate: Mapped["TaxRate | None"] = relationship("TaxRate")
     nominal_code_id: Mapped[int | None] = mapped_column(ForeignKey("nominal_codes.id"))
+    nominal_code: Mapped[str | None] = mapped_column(String(NOMINAL_CODE_MAX), nullable=True)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     account_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     cash_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))

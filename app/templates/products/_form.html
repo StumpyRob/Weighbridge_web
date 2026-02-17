@@ -1,18 +1,20 @@
-<section class="card">
+{% from "_wip.html" import wip_field %}
+
+<section class="card product-main-card">
   <h2>Product</h2>
   <div class="form-grid">
     <div class="field">
       <label for="code">Code</label>
-      <input type="text" id="code" name="code" value="{{ form.code }}" required />
+      <input type="text" id="code" name="code" value="{{ form.code }}" maxlength="{{ limits.CODE_MAX }}" required />
     </div>
     <div class="field">
       <label for="description">Description</label>
-      <input type="text" id="description" name="description" value="{{ form.description }}" required />
+      <input type="text" id="description" name="description" value="{{ form.description }}" maxlength="{{ limits.DESC_MAX }}" required />
     </div>
     <div class="field">
-      <label for="group_id">Group</label>
+      <label for="group_id">Product group</label>
       <select id="group_id" name="group_id">
-        <option value="">Select group</option>
+        <option value="">No group</option>
         {% for id, label in options.groups %}
           <option value="{{ id }}" {% if form.group_id == id %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
@@ -44,8 +46,8 @@
     </div>
     <div class="field">
       <label for="tax_rate_id">Tax rate</label>
-      <select id="tax_rate_id" name="tax_rate_id">
-        <option value="">Select rate</option>
+      <select id="tax_rate_id" name="tax_rate_id" required>
+        <option value="" {% if not form.tax_rate_id %}selected{% endif %} disabled hidden></option>
         {% for id, label in options.tax_rates %}
           <option value="{{ id }}" {% if form.tax_rate_id == id %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
@@ -79,36 +81,61 @@
       </div>
     </div>
     <div class="field">
-      <label for="nominal_code_id">Nominal code</label>
-      <select id="nominal_code_id" name="nominal_code_id">
-        <option value="">Select nominal code</option>
-        {% for id, label in options.nominal_codes %}
-          <option value="{{ id }}" {% if form.nominal_code_id == id %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
+      <label for="nominal_code">Nominal code</label>
+      <input
+        type="text"
+        id="nominal_code"
+        name="nominal_code"
+        value="{{ form.nominal_code }}"
+        maxlength="{{ limits.NOMINAL_CODE_MAX }}"
+      />
+      <div class="help">If blank, will use Product Group default (if set).</div>
+      {% if not form.nominal_code and form.effective_nominal_code %}
+        <div class="hint">Effective nominal code: {{ form.effective_nominal_code }}</div>
+      {% endif %}
     </div>
-    <div class="field">
+    <div class="field ewc-search-field">
       <label for="ewc_code_input">EWC code</label>
       <input
         type="text"
         id="ewc_code_input"
         name="ewc_code_label"
-        list="ewc_code_list"
         value="{{ form.ewc_code_label }}"
         placeholder="Search by code or description"
         autocomplete="off"
       />
       <datalist id="ewc_code_list">
-        {% for id, label, hazardous, code_6 in options.ewc_codes %}
+        {% for id, code_display, description, hazardous, code_6 in options.ewc_codes %}
+          {% set canonical_label = code_display %}
+          {% if description %}
+            {% set canonical_label = code_display ~ " - " ~ description %}
+          {% endif %}
           <option
-            value="{{ label }}"
+            value="{{ canonical_label }}"
             data-id="{{ id }}"
             data-hazardous="{{ "1" if hazardous else "0" }}"
             data-code-6="{{ code_6 }}"
+            data-canonical="{{ canonical_label }}"
           ></option>
+          {% if description %}
+            {% set description_first = description ~ " - " ~ code_display %}
+            {% if description_first != canonical_label %}
+              <option
+                value="{{ description_first }}"
+                data-id="{{ id }}"
+                data-hazardous="{{ "1" if hazardous else "0" }}"
+                data-code-6="{{ code_6 }}"
+                data-canonical="{{ canonical_label }}"
+              ></option>
+            {% endif %}
+          {% endif %}
         {% endfor %}
       </datalist>
+      <div id="ewc_code_search_results" class="ewc-search-results" hidden></div>
       <input type="hidden" id="ewc_code_id" name="ewc_code_id" value="{{ form.ewc_code_id }}" />
+      {% if not options.ewc_codes %}
+        <div class="help">No EWC codes loaded. Run `python scripts/import_ewc_codes.py ewc_codes_regulatory_format_2026.csv`.</div>
+      {% endif %}
     </div>
     <div class="field">
       <label for="default_destination_id">Default destination</label>
@@ -146,53 +173,30 @@
   })();
 </script>
 
-<section class="card">
-  <h2>Pricing</h2>
-  <div class="form-grid">
-    <div class="field">
-      <label for="account_price">Account price</label>
-      <input type="number" step="0.01" id="account_price" name="account_price" value="{{ form.account_price }}" />
-    </div>
-    <div class="field">
-      <label for="cash_price">Cash price</label>
-      <input type="number" step="0.01" id="cash_price" name="cash_price" value="{{ form.cash_price }}" />
-    </div>
-    <div class="field">
-      <label for="min_price">Min price</label>
-      <input type="number" step="0.01" id="min_price" name="min_price" value="{{ form.min_price }}" />
-    </div>
-    <div class="field">
-      <label for="max_price">Max price</label>
-      <input type="number" step="0.01" id="max_price" name="max_price" value="{{ form.max_price }}" />
-    </div>
-    <div class="field">
-      <label for="max_qty">Max qty</label>
-      <input type="number" step="0.001" id="max_qty" name="max_qty" value="{{ form.max_qty }}" />
-    </div>
-    <div class="field">
-      <label for="excess_trigger">Excess trigger</label>
-      <input type="number" step="0.001" id="excess_trigger" name="excess_trigger" value="{{ form.excess_trigger }}" />
-    </div>
-    <div class="field">
-      <label for="excess_price">Excess price</label>
-      <input type="number" step="0.01" id="excess_price" name="excess_price" value="{{ form.excess_price }}" />
-    </div>
-  </div>
-</section>
-
 <script>
   (function () {
     function initEwcBinding() {
       const input = document.getElementById("ewc_code_input");
       const list = document.getElementById("ewc_code_list");
       const hidden = document.getElementById("ewc_code_id");
+      const results = document.getElementById("ewc_code_search_results");
       const hazardCheckbox = document.getElementById("is_hazardous");
 
-      if (!input || !list || !hidden) {
+      if (!input || !list || !hidden || !results) {
         return;
       }
 
       const options = Array.from(list.options);
+      const searchableOptions = [];
+      const seenOptionIds = new Set();
+      options.forEach((option) => {
+        const optionId = option.dataset.id || "";
+        if (!optionId || seenOptionIds.has(optionId)) {
+          return;
+        }
+        seenOptionIds.add(optionId);
+        searchableOptions.push(option);
+      });
 
       function optionByValue(value) {
         return options.find((option) => option.value === value) || null;
@@ -208,6 +212,57 @@
 
       function normalizeDigits(value) {
         return String(value || "").replace(/\D/g, "");
+      }
+
+      function hideResults() {
+        results.hidden = true;
+        results.textContent = "";
+      }
+
+      function renderResults() {
+        const query = String(input.value || "").trim();
+        const queryDigits = normalizeDigits(query);
+        const queryLower = query.toLowerCase();
+        if (!query) {
+          hideResults();
+          return;
+        }
+        results.textContent = "";
+        const matches = searchableOptions
+          .filter((option) => {
+            const canonical = String(option.dataset.canonical || option.value || "");
+            const haystack = canonical.toLowerCase();
+            const codeDigits = normalizeDigits(option.dataset.code6 || option.value || "");
+            if (queryLower && haystack.includes(queryLower)) {
+              return true;
+            }
+            if (queryDigits && codeDigits.includes(queryDigits)) {
+              return true;
+            }
+            return false;
+          })
+          .slice(0, 25);
+        if (!matches.length) {
+          const emptyState = document.createElement("div");
+          emptyState.className = "ewc-search-results__empty";
+          emptyState.textContent = searchableOptions.length
+            ? "No matching EWC codes."
+            : "No EWC codes loaded.";
+          results.appendChild(emptyState);
+          results.hidden = false;
+          return;
+        }
+        const fragment = document.createDocumentFragment();
+        matches.forEach((option) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "ewc-search-results__item";
+          button.dataset.ewcId = option.dataset.id || "";
+          button.textContent = option.dataset.canonical || option.value || "";
+          fragment.appendChild(button);
+        });
+        results.appendChild(fragment);
+        results.hidden = false;
       }
 
       let currentEwcId = hidden.value || "";
@@ -242,8 +297,9 @@
           hazardCheckbox.checked = hazardous;
         }
         lockHazard(true);
-        if (input.value !== option.value) {
-          input.value = option.value;
+        const canonicalLabel = option.dataset.canonical || option.value;
+        if (input.value !== canonicalLabel) {
+          input.value = canonicalLabel;
         }
         currentEwcId = newId;
       }
@@ -257,6 +313,7 @@
           }
         }
         applyOption(matched);
+        return matched;
       }
 
       if (hidden.value && !input.value) {
@@ -291,9 +348,68 @@
         });
       }
 
-      syncFromInput();
-      input.addEventListener("input", syncFromInput);
-      input.addEventListener("change", syncFromInput);
+      results.addEventListener("mousedown", function (event) {
+        event.preventDefault();
+      });
+      results.addEventListener("click", function (event) {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+        const button = target.closest("button[data-ewc-id]");
+        if (!button) {
+          return;
+        }
+        const selected = optionById(button.dataset.ewcId || "");
+        if (!selected) {
+          return;
+        }
+        applyOption(selected);
+        hideResults();
+      });
+
+      const initialMatch = syncFromInput();
+      if (!initialMatch) {
+        renderResults();
+      }
+
+      input.addEventListener("input", function () {
+        const matched = syncFromInput();
+        if (matched) {
+          hideResults();
+          return;
+        }
+        renderResults();
+      });
+      input.addEventListener("change", function () {
+        const matched = syncFromInput();
+        if (matched) {
+          hideResults();
+          return;
+        }
+        renderResults();
+      });
+      input.addEventListener("focus", function () {
+        renderResults();
+      });
+      input.addEventListener("blur", function () {
+        window.setTimeout(hideResults, 120);
+      });
+      input.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          hideResults();
+          return;
+        }
+        if (event.key !== "Enter" || results.hidden) {
+          return;
+        }
+        const first = results.querySelector(".ewc-search-results__item");
+        if (!first) {
+          return;
+        }
+        event.preventDefault();
+        first.click();
+      });
     }
 
     if (document.readyState === "loading") {

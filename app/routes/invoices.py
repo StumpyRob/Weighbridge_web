@@ -4,9 +4,10 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import and_, or_, select, text
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.orm import Session, joinedload
 
+from ..constants import NOTES_MAX
 from ..db import get_db
 from ..models.base import utcnow
 from ..models import (
@@ -19,8 +20,12 @@ from ..models import (
     TaxRate,
     Ticket,
     Unit,
+    Vehicle,
     VoidReason,
 )
+from ..security import validate_no_html
+from ..seed import seed_invoice_void_reasons, seed_payment_methods
+from ..templating import templates
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -28,14 +33,15 @@ logger = logging.getLogger(__name__)
 
 
 LOCKED_INVOICE_STATUSES = {"VOID"}
+VOID_REASON_TYPE_INVOICE = "INVOICE"
 
-
-def _is_other_void_reason(reason: VoidReason | None) -> bool:
-    if not reason:
-        return False
-    code = (reason.code or "").strip().lower()
-    description = (reason.description or "").strip().lower()
-    return code == "other" or description == "other"
+INVOICE_EXCLUSION_MISSING_QTY_PRICE = "Missing quantity/price"
+INVOICE_EXCLUSION_MISSING_WEIGHT_PRICE = "Missing weight/price"
+INVOICE_EXCLUSION_MISSING_PRICE = "Missing price"
+INVOICE_EXCLUSION_MISSING_NET_WEIGHT = "Missing net weight"
+INVOICE_EXCLUSION_ZERO_TOTAL = "Zero total"
+INVOICE_EXCLUSION_UNKNOWN_UNIT_TYPE = "Unknown unit type"
+WASTE_TRANSACTION_TYPES = {"WASTEIN", "WASTEOUT"}
 
 
 @router.get("/invoices", response_class=HTMLResponse)
@@ -110,6 +116,24 @@ async def invoices_generate(
         )
 
     try:
+        customer_do_not_invoice, customer_must_have_po = _customer_invoice_rules(
+            db, customer_id
+        )
+        if customer_do_not_invoice:
+            return templates.TemplateResponse(
+                request,
+                "invoices/generate.html",
+                {
+                    "request": request,
+                    "errors": ["No tickets found."],
+                    "customers": customers,
+                    "form": {
+                        "customer_id": str(customer_id or ""),
+                        "date_from": date_from_raw,
+                        "date_to": date_to_raw,
+                    },
+                },
+            )
         tickets = _fetch_ticket_candidates(db, customer_id, date_from, date_to)
         invoiceable_tickets = _fetch_invoiceable_ticket_candidates(
             db, customer_id, date_from, date_to
@@ -130,10 +154,10 @@ async def invoices_generate(
                     },
                 },
             )
-        included, excluded = _classify_tickets(tickets)
-        included_total = sum(
-            (_money(ticket.total) for ticket in included), Decimal("0.00")
+        included, excluded = _classify_tickets(
+            tickets, customer_must_have_po=customer_must_have_po
         )
+        included_total = _sum_included_ticket_totals(included)
     except Exception:
         logger.exception("Invoice preview failed")
         return templates.TemplateResponse(request, 
@@ -255,7 +279,7 @@ async def invoices_generate_confirm(
             },
         )
 
-    ticket_filters = _invoiceable_ticket_filters(customer_id, date_from, date_to)
+    ticket_filters = _invoiceable_ticket_filters(db, customer_id, date_from, date_to)
 
     try:
         ticket_rows = db.execute(
@@ -297,10 +321,16 @@ async def invoices_generate_confirm(
         )
 
     try:
+        customer = db.get(Customer, customer_id)
+        invoice_date = date.today()
+        due_date = None
+        if customer and customer.payment_terms_days is not None:
+            due_date = invoice_date + timedelta(days=max(customer.payment_terms_days, 0))
         invoice = Invoice(
             invoice_no=_generate_invoice_no(db),
             customer_id=customer_id,
-            invoice_date=date.today(),
+            invoice_date=invoice_date,
+            due_date=due_date,
             status="DRAFT",
             net_total=Decimal("0.00"),
             vat_total=Decimal("0.00"),
@@ -311,17 +341,42 @@ async def invoices_generate_confirm(
 
         line_totals: list[tuple[Decimal, Decimal]] = []
 
+        invoiceable_rows: list[tuple[Ticket, Product, TaxRate | None, Decimal, Decimal]] = []
         for ticket, product, tax_rate in ticket_rows:
-            net = _money(ticket.total)
-            rate = _decimal(tax_rate.rate_percent) if tax_rate else Decimal("0")
-            vat = _money(net * rate / Decimal("100"))
+            billable_qty, net, exclusion_reason = _resolve_ticket_invoice_values(
+                ticket, product
+            )
+            if exclusion_reason:
+                continue
+            invoiceable_rows.append((ticket, product, tax_rate, billable_qty, net))
+
+        if not invoiceable_rows:
+            return templates.TemplateResponse(
+                request,
+                "invoices/generate.html",
+                {
+                    "request": request,
+                    "errors": ["No invoiceable tickets found."],
+                    "customers": customers,
+                    "form": {
+                        "customer_id": str(customer_id or ""),
+                        "date_from": date_from_raw,
+                        "date_to": date_to_raw,
+                    },
+                },
+            )
+
+        for ticket, product, tax_rate, billable_qty, net in invoiceable_rows:
+            raw_rate = _decimal(tax_rate.rate_percent) if tax_rate else Decimal("0")
+            rate = raw_rate / Decimal("100") if raw_rate > 1 else raw_rate
+            vat = _money(net * rate)
             gross = net + vat
 
             line = InvoiceLine(
                 invoice_id=invoice.id,
                 ticket_id=ticket.id,
-                description=f"Ticket {ticket.ticket_no} - {product.description}",
-                quantity=float(ticket.qty or 0),
+                description=_build_invoice_line_description(ticket, product, db),
+                quantity=float(billable_qty),
                 unit_price=_money(ticket.unit_price),
                 net=net,
                 vat=vat,
@@ -503,7 +558,19 @@ async def invoices_void(
                 request,
                 db,
                 invoice,
-                errors=["Invoice is PAID and cannot be modified."],
+                errors=["Cannot void a paid invoice."],
+            ),
+            status_code=400,
+        )
+    if invoice.status != "DRAFT":
+        return templates.TemplateResponse(
+            request,
+            "invoices/detail.html",
+            _invoice_detail_context(
+                request,
+                db,
+                invoice,
+                errors=["Only draft invoices can be voided."],
             ),
             status_code=400,
         )
@@ -512,6 +579,10 @@ async def invoices_void(
     reason_id = _parse_int(str(form.get("void_reason_id", "")).strip())
     note = str(form.get("void_note", "")).strip()
     reason = db.get(VoidReason, reason_id) if reason_id else None
+    note_errors: list[str] = []
+    validate_no_html(note, "Void note", note_errors)
+    if note and len(note) > NOTES_MAX:
+        note_errors.append(f"Void note must be {NOTES_MAX} characters or fewer.")
 
     if not reason_id:
         return templates.TemplateResponse(request, 
@@ -521,7 +592,11 @@ async def invoices_void(
             ),
             status_code=400,
         )
-    if not reason or not reason.is_active:
+    if (
+        not reason
+        or not reason.is_active
+        or (reason.reason_type or "").strip().upper() != VOID_REASON_TYPE_INVOICE
+    ):
         return templates.TemplateResponse(
             request,
             "invoices/detail.html",
@@ -530,19 +605,13 @@ async def invoices_void(
             ),
             status_code=400,
         )
-    if _is_other_void_reason(reason) and not note:
+    if note_errors:
         return templates.TemplateResponse(
             request,
             "invoices/detail.html",
-            _invoice_detail_context(
-                request,
-                db,
-                invoice,
-                errors=["Void note is required when reason is Other."],
-            ),
+            _invoice_detail_context(request, db, invoice, errors=note_errors),
             status_code=400,
         )
-
     invoice.status = "VOID"
     db.add(
         InvoiceVoid(
@@ -597,13 +666,20 @@ def _parse_date(value: str) -> date | None:
 def _parse_datetime(value: str) -> datetime | None:
     if not value:
         return None
+    text = value.strip()
     try:
-        return datetime.fromisoformat(value)
+        return datetime.fromisoformat(text)
     except ValueError:
         pass
-    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%d/%m/%Y %H:%M"):
+    for fmt in (
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%d/%m/%Y %H:%M",
+        "%Y-%m-%d",
+        "%d/%m/%Y",
+    ):
         try:
-            return datetime.strptime(value, fmt)
+            return datetime.strptime(text, fmt)
         except ValueError:
             continue
     return None
@@ -654,6 +730,19 @@ def _money(value) -> Decimal:
 
 
 def _active_payment_methods(db: Session) -> list[PaymentMethod]:
+    methods = (
+        db.execute(
+            select(PaymentMethod)
+            .where(PaymentMethod.is_active.is_(True))
+            .order_by(PaymentMethod.code)
+        )
+        .scalars()
+        .all()
+    )
+    if methods:
+        return methods
+    # Keep mark-paid operational in clean databases.
+    seed_payment_methods(db)
     return (
         db.execute(
             select(PaymentMethod)
@@ -666,10 +755,14 @@ def _active_payment_methods(db: Session) -> list[PaymentMethod]:
 
 
 def _active_void_reasons(db: Session) -> list[VoidReason]:
+    seed_invoice_void_reasons(db)
     return (
         db.execute(
             select(VoidReason)
-            .where(VoidReason.is_active.is_(True))
+            .where(
+                VoidReason.is_active.is_(True),
+                func.upper(VoidReason.reason_type) == VOID_REASON_TYPE_INVOICE,
+            )
             .order_by(VoidReason.code)
         )
         .scalars()
@@ -688,24 +781,66 @@ def _invoice_detail_context(
     voided: bool = False,
 ) -> dict:
     customer = db.get(Customer, invoice.customer_id)
+    customer_billing_lines = _customer_billing_lines(customer)
     payment_method = (
         db.get(PaymentMethod, invoice.payment_method_id)
         if invoice.payment_method_id
         else None
     )
+    invoice_void_row = db.execute(
+        select(InvoiceVoid, VoidReason)
+        .outerjoin(VoidReason, InvoiceVoid.reason_id == VoidReason.id)
+        .where(InvoiceVoid.invoice_id == invoice.id)
+        .order_by(InvoiceVoid.voided_at.desc(), InvoiceVoid.id.desc())
+        .limit(1)
+    ).first()
+    latest_invoice_void = invoice_void_row[0] if invoice_void_row else None
+    latest_invoice_void_reason = invoice_void_row[1] if invoice_void_row else None
     lines = db.execute(
         select(InvoiceLine).where(InvoiceLine.invoice_id == invoice.id).order_by(InvoiceLine.id)
     ).scalars().all()
-    tickets = db.execute(
-        select(Ticket).where(Ticket.invoice_id == invoice.id).order_by(Ticket.datetime)
-    ).scalars().all()
+    ticket_rows = db.execute(
+        select(Ticket, Vehicle.registration)
+        .outerjoin(Vehicle, Ticket.vehicle_id == Vehicle.id)
+        .options(
+            joinedload(Ticket.product).joinedload(Product.unit),
+            joinedload(Ticket.product).joinedload(Product.ewc_code),
+        )
+        .where(Ticket.invoice_id == invoice.id)
+        .order_by(Ticket.datetime)
+    ).all()
+    tickets = [row[0] for row in ticket_rows]
+    has_waste_tickets = any(
+        _is_waste_ticket_transaction(ticket.transaction_type) for ticket in tickets
+    )
+    linked_tickets = [
+        {
+            "ticket": ticket,
+            "po_number": str(ticket.po_number or "").strip() or None,
+            "is_waste_ticket": _is_waste_ticket_transaction(ticket.transaction_type),
+            "vehicle_reg": _ticket_vehicle_registration(
+                ticket, db, vehicle_registration=vehicle_registration
+            ),
+            "product_display": _ticket_product_display(ticket.product),
+            "billable_display": _ticket_billable_display(ticket),
+            "ewc_code_display": _ticket_ewc_code_display(ticket),
+            "is_hazardous": _ticket_is_hazardous(ticket),
+            "waste_producer_display": _ticket_waste_producer_display(ticket),
+        }
+        for ticket, vehicle_registration in ticket_rows
+    ]
     return {
         "request": request,
         "invoice": invoice,
         "customer": customer,
+        "customer_billing_lines": customer_billing_lines,
         "payment_method": payment_method,
+        "invoice_void": latest_invoice_void,
+        "invoice_void_reason": latest_invoice_void_reason,
         "lines": lines,
         "tickets": tickets,
+        "linked_tickets": linked_tickets,
+        "has_waste_tickets": has_waste_tickets,
         "payment_methods": _active_payment_methods(db),
         "void_reasons": _active_void_reasons(db),
         "errors": errors or [],
@@ -713,6 +848,191 @@ def _invoice_detail_context(
         "paid": paid,
         "voided": voided,
     }
+
+
+def _build_invoice_line_description(ticket: Ticket, product: Product, db: Session) -> str:
+    ticket_date = ticket.datetime.strftime("%d/%m/%Y") if ticket.datetime else "-"
+    vehicle_reg = _ticket_vehicle_registration(ticket, db) or "-"
+    product_label = _invoice_line_product_label(product)
+    separator = " - "
+    return (
+        f"Ticket {ticket.ticket_no}"
+        f"{separator}{ticket_date}"
+        f"{separator}{vehicle_reg}"
+        f"{separator}{product_label}"
+    )
+
+
+def _invoice_line_product_label(product: Product | None) -> str:
+    if not product:
+        return "Item"
+    description = str(product.description or "").strip()
+    code = str(product.code or "").strip()
+    return description or code or "Item"
+
+
+def _customer_billing_lines(customer: Customer | None) -> list[str]:
+    if not customer:
+        return []
+    lines: list[str] = []
+    for value in (customer.address_line1, customer.address_line2):
+        part = str(value or "").strip()
+        if part:
+            lines.append(part)
+    city = str(customer.city or "").strip()
+    postcode = str(customer.postcode or "").strip()
+    city_postcode = " ".join(part for part in (city, postcode) if part).strip()
+    if city_postcode:
+        lines.append(city_postcode)
+    country = str(customer.country or "").strip()
+    if country:
+        lines.append(country)
+    return lines
+
+
+def _ticket_vehicle_registration(
+    ticket: Ticket, db: Session, *, vehicle_registration: str | None = None
+) -> str | None:
+    registration = str(ticket.vehicle_reg_text or "").strip()
+    if registration:
+        return registration
+    joined_registration = str(vehicle_registration or "").strip()
+    if joined_registration:
+        return joined_registration
+    if ticket.vehicle_id:
+        vehicle = db.get(Vehicle, ticket.vehicle_id)
+        if vehicle and vehicle.registration:
+            resolved = str(vehicle.registration).strip()
+            if resolved:
+                return resolved
+    return None
+
+
+def _ticket_product_display(product: Product | None) -> str:
+    if not product:
+        return "-"
+    code = str(product.code or "").strip()
+    description = str(product.description or "").strip()
+    if code and description:
+        return f"{code} - {description}"
+    return code or description or "-"
+
+
+def _ticket_unit_meta(ticket: Ticket) -> tuple[str, str]:
+    product_unit = ticket.product.unit if ticket.product else None
+    unit_name = str(
+        ticket.pricing_unit_name or (product_unit.name if product_unit else "")
+    ).strip()
+    unit_type = str(
+        ticket.pricing_unit_type or (product_unit.unit_type if product_unit else "")
+    ).strip().upper()
+    if not unit_type:
+        basis = str(ticket.pricing_basis or "").strip().upper()
+        if basis in {"COUNT", "WEIGHT"}:
+            unit_type = basis
+    return unit_name, unit_type
+
+
+def _format_qty(value, *, fixed_three_decimals: bool) -> str:
+    qty = _decimal(value).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+    if fixed_three_decimals:
+        return f"{qty:.3f}"
+    return f"{qty:.3f}".rstrip("0").rstrip(".") or "0"
+
+
+def _ticket_billable_display(ticket: Ticket) -> str:
+    unit_name, unit_type = _ticket_unit_meta(ticket)
+    billable_qty, _, _ = _resolve_ticket_invoice_values(ticket, ticket.product)
+
+    if billable_qty is not None:
+        if unit_type == "COUNT":
+            return f"{_format_qty(billable_qty, fixed_three_decimals=False)} x {unit_name or 'units'}"
+        return f"{_format_qty(billable_qty, fixed_three_decimals=True)} {unit_name or 'tonnes'}"
+
+    if unit_type == "COUNT":
+        count_qty = (
+            ticket.pricing_qty_snapshot
+            if ticket.pricing_qty_snapshot is not None
+            else ticket.qty
+        )
+        if count_qty is None:
+            return "-"
+        return f"{_format_qty(count_qty, fixed_three_decimals=False)} x {unit_name or 'units'}"
+
+    if unit_type == "WEIGHT":
+        weight_qty = (
+            ticket.pricing_billable_qty_snapshot
+            if ticket.pricing_billable_qty_snapshot is not None
+            else None
+        )
+        if weight_qty is not None:
+            return f"{_format_qty(weight_qty, fixed_three_decimals=True)} {unit_name or 'tonnes'}"
+
+        net_kg_value = (
+            ticket.pricing_net_kg_snapshot
+            if ticket.pricing_net_kg_snapshot is not None
+            else ticket.net_kg
+        )
+        if net_kg_value is None:
+            return "-"
+        net_kg = _decimal(net_kg_value)
+        normalized_name = unit_name.lower()
+        if normalized_name in {"tonne", "tonnes"}:
+            tonnes = net_kg / Decimal("1000")
+            return f"{_format_qty(tonnes, fixed_three_decimals=True)} tonnes"
+        if normalized_name == "kg":
+            return f"{_format_qty(net_kg, fixed_three_decimals=False)} kg"
+        return f"{_format_qty(net_kg, fixed_three_decimals=False)} kg"
+
+    return "-"
+
+
+def _is_waste_ticket_transaction(transaction_type) -> bool:
+    if transaction_type is None:
+        return False
+    normalized = (
+        transaction_type.value
+        if hasattr(transaction_type, "value")
+        else str(transaction_type)
+    )
+    return str(normalized).strip().upper() in WASTE_TRANSACTION_TYPES
+
+
+def _ticket_ewc_code_display(ticket: Ticket) -> str | None:
+    code_display = str(ticket.ewc_code_display or "").strip()
+    has_star = "*" in code_display
+    code_6_digits = "".join(ch for ch in code_display if ch.isdigit())
+    if len(code_6_digits) == 6:
+        code_display = f"{code_6_digits[0:2]} {code_6_digits[2:4]} {code_6_digits[4:6]}"
+    elif not code_display:
+        fallback_digits = "".join(ch for ch in str(ticket.ewc_code_6 or "") if ch.isdigit())
+        if len(fallback_digits) == 6:
+            code_display = f"{fallback_digits[0:2]} {fallback_digits[2:4]} {fallback_digits[4:6]}"
+        else:
+            code_display = str(ticket.ewc_code_6 or "").strip()
+    if not code_display:
+        return None
+    if has_star and "*" not in code_display:
+        code_display = f"{code_display}*"
+    return code_display
+
+
+def _ticket_waste_producer_display(ticket: Ticket) -> str | None:
+    producer_name = str(ticket.waste_producer_name or "").strip()
+    if producer_name:
+        return producer_name
+    producer_address = str(ticket.waste_producer_address or "").strip()
+    return producer_address or None
+
+
+def _ticket_is_hazardous(ticket: Ticket) -> bool:
+    ewc_label = _ticket_ewc_code_display(ticket) or ""
+    if "*" in ewc_label:
+        return True
+    if bool(ticket.ewc_hazardous):
+        return True
+    product_ewc = ticket.product.ewc_code if ticket.product else None
+    return bool(getattr(product_ewc, "hazardous", False))
 
 
 def _invoice_stop_blockers(
@@ -742,9 +1062,19 @@ def _invoice_on_stop_error(blockers: list[str]) -> str:
     )
 
 
+def _customer_invoice_rules(db: Session, customer_id: int) -> tuple[bool, bool]:
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        return False, False
+    return bool(customer.do_not_invoice), bool(customer.must_have_po)
+
+
 def _fetch_ticket_candidates(
     db: Session, customer_id: int, date_from: date | None, date_to: date | None
 ) -> list[Ticket]:
+    customer_do_not_invoice, _ = _customer_invoice_rules(db, customer_id)
+    if customer_do_not_invoice:
+        return []
     filters = [
         Ticket.customer_id == customer_id,
         Ticket.status == "COMPLETE",
@@ -761,7 +1091,10 @@ def _fetch_ticket_candidates(
     return (
         db.execute(
             select(Ticket)
-            .options(joinedload(Ticket.haulier))
+            .options(
+                joinedload(Ticket.haulier),
+                joinedload(Ticket.product).joinedload(Product.unit),
+            )
             .where(and_(*filters))
             .order_by(Ticket.datetime.asc())
         )
@@ -771,20 +1104,19 @@ def _fetch_ticket_candidates(
 
 
 def _invoiceable_ticket_filters(
-    customer_id: int, date_from: date | None, date_to: date | None
+    db: Session, customer_id: int, date_from: date | None, date_to: date | None
 ) -> list:
+    customer_do_not_invoice, customer_must_have_po = _customer_invoice_rules(
+        db, customer_id
+    )
+    if customer_do_not_invoice:
+        return [text("1=0")]
     filters = [
         Ticket.customer_id == customer_id,
         Ticket.status == "COMPLETE",
         Ticket.invoice_id.is_(None),
         Ticket.dont_invoice.is_(False),
         Ticket.paid.is_(False),
-        Ticket.qty.is_not(None),
-        Ticket.qty > 0,
-        Ticket.unit_price.is_not(None),
-        Ticket.unit_price >= 0,
-        Ticket.total.is_not(None),
-        Ticket.total > 0,
         Ticket.product.has(
             and_(
                 Product.unit_id.is_not(None),
@@ -792,6 +1124,13 @@ def _invoiceable_ticket_filters(
             )
         ),
     ]
+    if customer_must_have_po:
+        filters.extend(
+            [
+                Ticket.po_number.is_not(None),
+                func.length(func.trim(Ticket.po_number)) > 0,
+            ]
+        )
     # Date filters are interpreted in server-local time (UTC by default).
     if date_from:
         filters.append(Ticket.datetime >= datetime.combine(date_from, time.min))
@@ -804,21 +1143,31 @@ def _invoiceable_ticket_filters(
 def _fetch_invoiceable_ticket_candidates(
     db: Session, customer_id: int, date_from: date | None, date_to: date | None
 ) -> list[Ticket]:
-    filters = _invoiceable_ticket_filters(customer_id, date_from, date_to)
-    return (
+    filters = _invoiceable_ticket_filters(db, customer_id, date_from, date_to)
+    candidates = (
         db.execute(
             select(Ticket)
-            .options(joinedload(Ticket.haulier))
+            .options(
+                joinedload(Ticket.haulier),
+                joinedload(Ticket.product).joinedload(Product.unit),
+            )
             .where(and_(*filters))
             .order_by(Ticket.datetime.asc())
         )
         .scalars()
         .all()
     )
+    return [
+        ticket
+        for ticket in candidates
+        if _resolve_ticket_invoice_values(ticket, ticket.product)[2] is None
+    ]
 
 
 def _classify_tickets(
     tickets: list[Ticket],
+    *,
+    customer_must_have_po: bool = False,
 ) -> tuple[list[Ticket], list[tuple[Ticket, str]]]:
     included: list[Ticket] = []
     excluded: list[tuple[Ticket, str]] = []
@@ -836,16 +1185,89 @@ def _classify_tickets(
         if ticket.invoice_id is not None:
             excluded.append((ticket, "Already invoiced"))
             continue
-        if ticket.qty is None or float(ticket.qty) <= 0:
-            excluded.append((ticket, "Missing quantity/price"))
+        if customer_must_have_po and not _has_po_number(ticket.po_number):
+            excluded.append((ticket, "Missing PO"))
             continue
-        if ticket.unit_price is None or ticket.unit_price < 0:
-            excluded.append((ticket, "Missing quantity/price"))
-            continue
-        if ticket.total is None or ticket.total <= 0:
-            excluded.append((ticket, "Zero total"))
+        _, _, exclusion_reason = _resolve_ticket_invoice_values(ticket, ticket.product)
+        if exclusion_reason:
+            excluded.append((ticket, exclusion_reason))
             continue
 
         included.append(ticket)
 
     return included, excluded
+
+
+def _has_po_number(po_number: str | None) -> bool:
+    return bool(str(po_number or "").strip())
+
+
+def _sum_included_ticket_totals(tickets: list[Ticket]) -> Decimal:
+    total = Decimal("0.00")
+    for ticket in tickets:
+        _, line_net, exclusion_reason = _resolve_ticket_invoice_values(
+            ticket, ticket.product
+        )
+        if exclusion_reason or line_net is None:
+            continue
+        total += line_net
+    return _money(total)
+
+
+def _resolve_ticket_invoice_values(
+    ticket: Ticket, product: Product | None
+) -> tuple[Decimal | None, Decimal | None, str | None]:
+    unit = getattr(product, "unit", None) if product else None
+    unit_type = str(getattr(unit, "unit_type", "") or "").strip().upper()
+    unit_price = ticket.unit_price
+
+    has_price = unit_price is not None and _decimal(unit_price) >= 0
+    price_value = _decimal(unit_price) if has_price else None
+
+    if unit_type == "COUNT":
+        qty = ticket.qty
+        has_qty = qty is not None and _decimal(qty) > 0
+        if not has_qty or not has_price:
+            return None, None, INVOICE_EXCLUSION_MISSING_QTY_PRICE
+        billable_qty = _decimal(qty)
+    elif unit_type == "WEIGHT":
+        has_net = ticket.net_kg is not None
+        if not has_price and not has_net:
+            return None, None, INVOICE_EXCLUSION_MISSING_WEIGHT_PRICE
+        if not has_price:
+            return None, None, INVOICE_EXCLUSION_MISSING_PRICE
+        if not has_net:
+            return None, None, INVOICE_EXCLUSION_MISSING_NET_WEIGHT
+
+        snapshot_billable_qty = ticket.pricing_billable_qty_snapshot
+        if snapshot_billable_qty is not None:
+            billable_qty = _decimal(snapshot_billable_qty)
+        else:
+            computed_billable = _compute_weight_billable_qty(unit, ticket.net_kg)
+            if computed_billable is None:
+                return None, None, INVOICE_EXCLUSION_UNKNOWN_UNIT_TYPE
+            billable_qty = computed_billable
+
+        if billable_qty <= 0:
+            return None, None, INVOICE_EXCLUSION_MISSING_WEIGHT_PRICE
+    else:
+        return None, None, INVOICE_EXCLUSION_UNKNOWN_UNIT_TYPE
+
+    line_net = _money(billable_qty * price_value)
+    if line_net <= 0:
+        return None, None, INVOICE_EXCLUSION_ZERO_TOTAL
+    return billable_qty, line_net, None
+
+
+def _compute_weight_billable_qty(unit: Unit | None, net_kg_value) -> Decimal | None:
+    if unit is None or net_kg_value is None:
+        return None
+    net_kg = _decimal(net_kg_value)
+    unit_name = str(unit.name or "").strip().lower()
+    if unit_name in ("tonne", "tonnes"):
+        return (net_kg / Decimal("1000")).quantize(
+            Decimal("0.001"), rounding=ROUND_HALF_UP
+        )
+    if unit_name == "kg":
+        return net_kg.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return None

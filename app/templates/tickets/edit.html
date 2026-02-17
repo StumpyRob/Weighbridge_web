@@ -52,6 +52,12 @@
   </div>
 {% endif %}
 
+{% if customer_po_required_warning %}
+  <div class="alert alert--warning">
+    {{ po_required_banner_text or "PO required for invoicing. Add PO to release this ticket for invoicing." }}
+  </div>
+{% endif %}
+
 {% if form.status == "VOID" and ticket_void %}
   <div class="notice">
     <strong>Void reason:</strong>
@@ -138,6 +144,7 @@
       </div>
     </div>
   </section>
+  </fieldset>
 
   <section class="frame">
     <div class="frame-header">
@@ -148,20 +155,79 @@
         <div class="form-grid">
           <div class="field">
             <label for="vehicle_reg">Vehicle reg</label>
-            <input type="text" id="vehicle_reg" name="reg" value="{{ vehicle_reg }}" class="plate-input" oninput="this.value = this.value.toUpperCase()" hx-get="/tickets/vehicle-suggest" hx-trigger="keyup changed delay:400ms, load" hx-target="#vehicle-suggestions" hx-include="#direction,#customer_id,#haulier_id,#driver_id,#gross_kg,#tare_kg,#readout_kg" hx-vals='{"ticket_id":"{{ ticket.id }}"}' />
+            <input type="text" id="vehicle_reg" name="reg" value="{{ vehicle_reg }}" maxlength="{{ limits.REG_MAX }}" class="plate-input" oninput="this.value = this.value.toUpperCase()" hx-get="/tickets/vehicle-suggest" hx-trigger="keyup changed delay:400ms, load" hx-target="#vehicle-suggestions" hx-include="#direction,#customer_id,#haulier_id,#driver_id,#gross_kg,#tare_kg,#readout_kg" hx-vals='{"ticket_id":"{{ ticket.id }}"}' {% if is_locked %}disabled aria-disabled="true"{% endif %} />
           </div>
           <div class="field">
             <label for="customer_id">Customer</label>
-            <select id="customer_id" name="customer_id">
+            <select
+              id="customer_id"
+              name="customer_id"
+              hx-get="/tickets/product-defaults"
+              hx-trigger="change"
+              hx-target="#pricing-defaults"
+              hx-include="#weights-form,#qty,#transaction_type,#product_id,#customer_id"
+              hx-vals='{"ticket_id":"{{ ticket.id }}"}'
+              {% if is_locked %}disabled aria-disabled="true"{% endif %}
+            >
               <option value="">Select customer</option>
               {% for id, label in options.customers %}
                 <option value="{{ id }}" {% if form.customer_id|string == id|string %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
             </select>
           </div>
+          {% if is_open %}
+            <div class="field">
+              <label for="po_number">PO number</label>
+              <input
+                type="text"
+                id="po_number"
+                name="po_number"
+                value="{{ form.po_number }}"
+                maxlength="{{ limits.PO_NUMBER_MAX }}"
+                placeholder="Optional"
+              />
+            </div>
+          {% elif form.status == "COMPLETE" %}
+            <div class="field po-inline-field" id="po">
+              <label>PO number</label>
+              <div class="po-inline-row">
+                <div class="readonly">{{ form.po_number or "-" }}</div>
+                {% if can_edit_complete_po %}
+                  <details class="po-inline-details">
+                    <summary class="btn btn--secondary">{{ "Change" if form.po_number else "Add" }}</summary>
+                    <div class="po-inline-editor">
+                      <label for="po_number_edit">PO number</label>
+                      <input
+                        type="text"
+                        id="po_number_edit"
+                        name="po_number"
+                        value="{{ form.po_number }}"
+                        maxlength="{{ limits.PO_NUMBER_MAX }}"
+                        placeholder="Enter PO number"
+                      />
+                      <div class="actions btn-group">
+                        <button
+                          type="submit"
+                          class="btn btn--primary"
+                          formaction="/tickets/{{ ticket.id }}/po"
+                          formmethod="post"
+                          formnovalidate
+                        >
+                          Save PO
+                        </button>
+                      </div>
+                    </div>
+                  </details>
+                {% endif %}
+              </div>
+              {% if po_locked_invoiced %}
+                <div class="hint">PO locked (ticket already invoiced).</div>
+              {% endif %}
+            </div>
+          {% endif %}
           <div class="field">
             <label for="haulier_id">Haulier</label>
-            <select id="haulier_id" name="haulier_id">
+            <select id="haulier_id" name="haulier_id" {% if is_locked %}disabled aria-disabled="true"{% endif %}>
               <option value="">Select haulier</option>
               {% for id, label in options.hauliers %}
                 <option value="{{ id }}" {% if form.haulier_id|string == id|string %}selected{% endif %}>{{ label }}</option>
@@ -174,6 +240,7 @@
     </div>
   </section>
 
+  <fieldset {% if is_locked %}disabled aria-disabled="true"{% endif %}>
   <section class="frame compact">
     <div class="frame-header">
       <h2>Material</h2>
@@ -243,17 +310,28 @@
     </div>
   </section>
 
-  <section class="frame compliance-frame">
+  {% set is_waste_tx = form.transaction_type in ["WASTEIN", "WASTEOUT"] %}
+  <section
+    class="frame compliance-frame"
+    id="waste-compliance-section"
+    {% if not is_waste_tx %}style="display:none"{% endif %}
+  >
     <div class="frame-header">
       <h2>Compliance</h2>
     </div>
     <div class="frame-body">
+      {% if compliance_locked_invoiced %}
+        <div class="hint">{{ compliance_locked_invoiced_message or "Waste compliance locked (ticket already invoiced)." }}</div>
+      {% endif %}
+      <fieldset
+        id="waste-compliance-fieldset"
+        class="compliance-fieldset"
+        {% if compliance_locked_invoiced %}disabled aria-disabled="true"{% endif %}
+      >
       <div class="form-grid">
-        {% set is_waste_tx = form.transaction_type in ["WASTEIN", "WASTEOUT"] %}
         <div
-          class="field ewc-ticket-field{% if is_waste_tx and not form.ewc_code %} is-required{% endif %}"
+          class="field ewc-ticket-field ewc-search-field"
           id="ewc-ticket-field"
-          {% if not is_waste_tx %}style="display:none"{% endif %}
         >
           <label for="ewc_code">EWC code</label>
           <input type="hidden" name="waste_code_id" value="{{ form.waste_code_id }}" />
@@ -261,18 +339,37 @@
             type="text"
             id="ewc_code"
             name="ewc_code"
-            list="ewc_code_list"
             value="{{ form.ewc_code }}"
-            placeholder="e.g. 01 01 01"
-            inputmode="numeric"
-            maxlength="10"
+            placeholder="Search by code or description"
+            inputmode="text"
+            maxlength="{{ limits.DESC_MAX }}"
             autocomplete="off"
           />
           <datalist id="ewc_code_list">
-            {% for code_display, description in options.ewc_codes %}
-              <option value="{{ code_display }}" label="{{ description }}"></option>
+            {% for code_display, description, code_6, hazardous in options.ewc_codes %}
+              <option
+                value="{{ code_display }}"
+                label="{{ description }}"
+                data-code-display="{{ code_display }}"
+                data-code-6="{{ code_6 or '' }}"
+                data-hazardous="{{ "1" if hazardous else "0" }}"
+              ></option>
+              {% if description %}
+                {% set description_first = description ~ " - " ~ code_display %}
+                <option
+                  value="{{ description_first }}"
+                  label="{{ code_display }}"
+                  data-code-display="{{ code_display }}"
+                  data-code-6="{{ code_6 or '' }}"
+                  data-hazardous="{{ "1" if hazardous else "0" }}"
+                ></option>
+              {% endif %}
             {% endfor %}
           </datalist>
+          <div id="ewc_code_search_results" class="ewc-search-results" hidden></div>
+          {% if not options.ewc_codes %}
+            <div class="help">No EWC codes loaded. Run `python scripts/import_ewc_codes.py ewc_codes_regulatory_format_2026.csv`.</div>
+          {% endif %}
           <input
             type="hidden"
             id="ewc_manual_override"
@@ -300,21 +397,27 @@
           <input
             type="hidden"
             id="ewc_hazardous"
-            value="{% if ticket.ewc_hazardous %}1{% else %}0{% endif %}"
+            name="ewc_hazardous"
+            value="{{ form.ewc_hazardous if form.ewc_hazardous is defined else ("1" if ticket_compliance_hazardous else "0") }}"
           />
-          <div id="ewc-default-hint" class="hint">
+          <div
+            id="ewc-default-hint"
+            class="hint"
+            {% if not form.ewc_product_default_display %}style="display:none"{% endif %}
+          >
             {% if form.ewc_product_default_display %}
               Product default: {{ form.ewc_product_default_display }}
-            {% else %}
-              No default EWC on selected product.
             {% endif %}
           </div>
-          <div
-            id="ewc-required-hint"
-            class="hint ewc-required-hint"
-            {% if is_waste_tx and not form.ewc_code %}style="display:block"{% else %}style="display:none"{% endif %}
-          >
-            Required for waste tickets.
+        </div>
+        <div class="field">
+          <label>Hazard</label>
+          <div id="ewc-hazard-display" class="readonly">
+            {% if form.ewc_hazardous == "1" %}
+              Yes
+            {% else %}
+              No
+            {% endif %}
           </div>
         </div>
         <div class="field">
@@ -336,34 +439,35 @@
           >
             <div class="field">
               <label for="waste_producer_name">Name</label>
-              <input type="text" id="waste_producer_name" name="waste_producer_name" value="{{ form.waste_producer_name }}" />
+              <input type="text" id="waste_producer_name" name="waste_producer_name" value="{{ form.waste_producer_name }}" maxlength="{{ limits.NAME_MAX }}" />
             </div>
             <div class="field">
               <label for="waste_producer_address_line_1">Address line 1</label>
-              <input type="text" id="waste_producer_address_line_1" name="waste_producer_address_line_1" value="{{ form.waste_producer_address_line_1 }}" />
+              <input type="text" id="waste_producer_address_line_1" name="waste_producer_address_line_1" value="{{ form.waste_producer_address_line_1 }}" maxlength="{{ limits.ADDRESS_LINE_MAX }}" />
             </div>
             <div class="field">
               <label for="waste_producer_address_line_2">Address line 2</label>
-              <input type="text" id="waste_producer_address_line_2" name="waste_producer_address_line_2" value="{{ form.waste_producer_address_line_2 }}" />
+              <input type="text" id="waste_producer_address_line_2" name="waste_producer_address_line_2" value="{{ form.waste_producer_address_line_2 }}" maxlength="{{ limits.ADDRESS_LINE_MAX }}" />
             </div>
             <div class="field">
               <label for="waste_producer_address_line_3">Address line 3</label>
-              <input type="text" id="waste_producer_address_line_3" name="waste_producer_address_line_3" value="{{ form.waste_producer_address_line_3 }}" />
+              <input type="text" id="waste_producer_address_line_3" name="waste_producer_address_line_3" value="{{ form.waste_producer_address_line_3 }}" maxlength="{{ limits.ADDRESS_LINE_MAX }}" />
             </div>
             <div class="field">
               <label for="waste_producer_postcode">Postcode</label>
-              <input type="text" id="waste_producer_postcode" name="waste_producer_postcode" value="{{ form.waste_producer_postcode }}" />
+              <input type="text" id="waste_producer_postcode" name="waste_producer_postcode" value="{{ form.waste_producer_postcode }}" maxlength="{{ limits.POSTCODE_MAX }}" />
             </div>
           </div>
           <div
             id="producer-hazard-hint"
             class="hint"
-            {% if form.transaction_type in ["WASTEIN", "WASTEOUT"] and ticket.ewc_hazardous %}style="display:block"{% else %}style="display:none"{% endif %}
+            {% if form.transaction_type in ["WASTEIN", "WASTEOUT"] and form.ewc_hazardous == "1" %}style="display:block"{% else %}style="display:none"{% endif %}
           >
             Hazardous waste requires producer details.
           </div>
         </div>
       </div>
+      </fieldset>
     </div>
   </section>
 
@@ -443,7 +547,7 @@
           </div>
 
           <div id="pricing-defaults">
-            {% with unit_price=form.unit_price, unit_name=unit_name %}
+            {% with unit_price=form.unit_price, unit_name=unit_name, price_override_active=price_override_active, price_override_unit_price=price_override_unit_price %}
               {% include "tickets/_pricing_defaults.html" %}
             {% endwith %}
           </div>
@@ -469,6 +573,11 @@
       <h2>Flags</h2>
     </div>
     <div class="frame-body">
+      {% if customer_do_not_invoice_warning %}
+        <div class="alert alert--warning">
+          Customer is marked Do not invoice - this ticket will never be invoiceable.
+        </div>
+      {% endif %}
       <div class="field checkbox">
         <input type="checkbox" id="dont_invoice" name="dont_invoice" {% if form.dont_invoice %}checked{% endif %} />
         <label for="dont_invoice">Don't invoice</label>
@@ -490,11 +599,9 @@
   {% endif %}
 </form>
 
-{% if can_void %}
-  <section class="frame compact ticket-void-frame">
-    <div class="frame-header">
-      <h2>Void Ticket</h2>
-    </div>
+{% if form.status != "VOID" %}
+  <details class="frame compact ticket-void-frame ticket-void-disclosure">
+    <summary class="frame-header">Void Ticket</summary>
     <div class="frame-body">
       <form method="post" action="/tickets/{{ ticket.id }}">
         <input type="hidden" name="action" value="void" />
@@ -513,17 +620,19 @@
           </div>
           <div class="field">
             <label for="void_note">Note</label>
-            <input type="text" id="void_note" name="void_note" />
+            <input type="text" id="void_note" name="void_note" maxlength="{{ limits.NOTES_MAX }}" />
           </div>
         </div>
         <div class="actions btn-group ticket-void-actions">
-          {% if ticket.status != "VOID" %}
+          {% if can_void %}
             <button type="submit" class="btn btn--danger">Void Ticket</button>
+          {% else %}
+            <span class="muted">{{ void_blocked_message or "Only complete tickets can be voided." }}</span>
           {% endif %}
         </div>
       </form>
     </div>
-  </section>
+  </details>
 {% endif %}
 
 <script>
@@ -828,24 +937,33 @@
     }
 
     function syncEwcUi() {
+      const complianceSection = document.getElementById("waste-compliance-section");
+      const complianceFieldset = document.getElementById("waste-compliance-fieldset");
       const ewcWrap = document.getElementById("ewc-ticket-field");
       const ewcInput = document.getElementById("ewc_code");
       const manualInput = document.getElementById("ewc_manual_override");
       const autoInput = document.getElementById("ewc_auto_code_6");
       const defaultCodeInput = document.getElementById("ewc_product_default_code_6");
       const defaultDisplayInput = document.getElementById("ewc_product_default_display");
-      const requiredHint = document.getElementById("ewc-required-hint");
       const defaultHint = document.getElementById("ewc-default-hint");
       const producerHazardHint = document.getElementById("producer-hazard-hint");
       const hazardousInput = document.getElementById("ewc_hazardous");
+      const hazardDisplay = document.getElementById("ewc-hazard-display");
+      const complianceLockedInvoiced = {{ "true" if compliance_locked_invoiced else "false" }};
 
       if (!ewcWrap || !ewcInput || !manualInput || !autoInput) {
         return;
       }
 
       const wasteTx = isWasteTransaction();
+      if (complianceSection) {
+        complianceSection.style.display = wasteTx ? "" : "none";
+      }
+      if (complianceFieldset) {
+        complianceFieldset.disabled = complianceLockedInvoiced || !wasteTx;
+      }
       ewcWrap.style.display = wasteTx ? "" : "none";
-      ewcInput.required = wasteTx;
+      ewcInput.required = false;
 
       const defaultDigits = normalizeEwcDigits(
         (defaultCodeInput && defaultCodeInput.value) ||
@@ -877,46 +995,214 @@
         }
       }
 
-      const hasEwcCode = normalizeEwcDigits(ewcInput.value).length === 6;
-      if (requiredHint) {
-        requiredHint.style.display = wasteTx && !hasEwcCode ? "block" : "none";
-      }
-      ewcWrap.classList.toggle("is-required", wasteTx && !hasEwcCode);
-
       if (defaultHint) {
-        defaultHint.textContent = defaultDisplay
-          ? "Product default: " + defaultDisplay
-          : "No default EWC on selected product.";
+        if (defaultDisplay) {
+          defaultHint.textContent = "Product default: " + defaultDisplay;
+          defaultHint.style.display = "block";
+        } else {
+          defaultHint.textContent = "";
+          defaultHint.style.display = "none";
+        }
       }
 
       if (producerHazardHint && hazardousInput) {
         producerHazardHint.style.display =
           wasteTx && hazardousInput.value === "1" ? "block" : "none";
       }
+      if (hazardDisplay) {
+        hazardDisplay.textContent =
+          wasteTx && hazardousInput && hazardousInput.value === "1" ? "Yes" : "No";
+      }
     }
 
     function bindEwcField() {
       const ewcInput = document.getElementById("ewc_code");
-      if (!ewcInput || ewcInput.dataset.bound === "true") {
+      const ewcList = document.getElementById("ewc_code_list");
+      const ewcResults = document.getElementById("ewc_code_search_results");
+      const ewcHazardousInput = document.getElementById("ewc_hazardous");
+      const ewcOptions = ewcList ? Array.from(ewcList.options) : [];
+      if (!ewcInput || !ewcResults || ewcInput.dataset.bound === "true") {
         return;
       }
       ewcInput.dataset.bound = "true";
+      const candidateMap = new Map();
+      ewcOptions.forEach((option) => {
+        const codeDisplay = String(option.dataset.codeDisplay || "").trim();
+        if (!codeDisplay || candidateMap.has(codeDisplay)) {
+          return;
+        }
+        candidateMap.set(codeDisplay, {
+          codeDisplay: codeDisplay,
+          code6: normalizeEwcDigits(option.dataset.code6 || codeDisplay),
+          description: String(option.label || "").trim(),
+          hazardous: option.dataset.hazardous === "1",
+        });
+      });
+      const ewcCandidates = Array.from(candidateMap.values());
+      const candidateByDisplay = new Map(
+        ewcCandidates.map((candidate) => [candidate.codeDisplay, candidate])
+      );
+
+      function setHazardFromCandidate(candidate) {
+        if (!ewcHazardousInput) {
+          return;
+        }
+        ewcHazardousInput.value = candidate && candidate.hazardous ? "1" : "0";
+      }
+
+      function hideResults() {
+        ewcResults.hidden = true;
+        ewcResults.textContent = "";
+      }
+
+      function renderResults() {
+        const query = String(ewcInput.value || "").trim();
+        const queryDigits = normalizeEwcDigits(query);
+        const queryLower = query.toLowerCase();
+        if (!query) {
+          hideResults();
+          return;
+        }
+        ewcResults.textContent = "";
+        const matches = ewcCandidates
+          .filter((candidate) => {
+            const haystack = (
+              candidate.codeDisplay + " " + (candidate.description || "")
+            ).toLowerCase();
+            if (queryLower && haystack.includes(queryLower)) {
+              return true;
+            }
+            if (queryDigits && candidate.code6.includes(queryDigits)) {
+              return true;
+            }
+            return false;
+          })
+          .slice(0, 25);
+        if (!matches.length) {
+          const emptyState = document.createElement("div");
+          emptyState.className = "ewc-search-results__empty";
+          emptyState.textContent = ewcCandidates.length
+            ? "No matching EWC codes."
+            : "No EWC codes loaded.";
+          ewcResults.appendChild(emptyState);
+          ewcResults.hidden = false;
+          return;
+        }
+        const fragment = document.createDocumentFragment();
+        matches.forEach((candidate) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "ewc-search-results__item";
+          button.dataset.ewcDisplay = candidate.codeDisplay;
+          button.dataset.ewcHazardous = candidate.hazardous ? "1" : "0";
+          button.textContent = candidate.description
+            ? candidate.codeDisplay + " - " + candidate.description
+            : candidate.codeDisplay;
+          fragment.appendChild(button);
+        });
+        ewcResults.appendChild(fragment);
+        ewcResults.hidden = false;
+      }
+
+      function normalizeSelectedDatalistOption() {
+        if (!ewcOptions.length) {
+          return null;
+        }
+        const entered = String(ewcInput.value || "").trim();
+        if (!entered) {
+          setHazardFromCandidate(null);
+          return null;
+        }
+        const matched = ewcOptions.find((option) => option.value === entered);
+        if (!matched) {
+          setHazardFromCandidate(null);
+          return null;
+        }
+        const canonicalDisplay = String(matched.dataset.codeDisplay || "").trim();
+        if (canonicalDisplay) {
+          ewcInput.value = canonicalDisplay;
+          const candidate = candidateByDisplay.get(canonicalDisplay) || null;
+          setHazardFromCandidate(candidate);
+          return candidate;
+        }
+        const optionDigits = normalizeEwcDigits(
+          matched.dataset.code6 || matched.value || ""
+        );
+        if (optionDigits.length === 6) {
+          ewcInput.value = formatEwcDisplay(optionDigits);
+        }
+        const candidate = candidateByDisplay.get(String(ewcInput.value || "").trim()) || null;
+        setHazardFromCandidate(candidate);
+        return candidate;
+      }
+
+      function applyEwcFieldRules() {
+        const candidate = normalizeSelectedDatalistOption();
+        if (!candidate && ewcHazardousInput) {
+          ewcHazardousInput.value = "0";
+        }
+        updateManualEwcState();
+        syncEwcUi();
+      }
+
+      ewcResults.addEventListener("mousedown", function (event) {
+        event.preventDefault();
+      });
+      ewcResults.addEventListener("click", function (event) {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+        const button = target.closest("button[data-ewc-display]");
+        if (!button) {
+          return;
+        }
+        const codeDisplay = String(button.dataset.ewcDisplay || "").trim();
+        if (!codeDisplay) {
+          return;
+        }
+        ewcInput.value = codeDisplay;
+        const hazardous = button.dataset.ewcHazardous === "1";
+        setHazardFromCandidate({ hazardous: hazardous });
+        applyEwcFieldRules();
+        hideResults();
+      });
 
       ewcInput.addEventListener("input", function () {
-        updateManualEwcState();
-        syncEwcUi();
+        applyEwcFieldRules();
+        renderResults();
       });
       ewcInput.addEventListener("change", function () {
-        updateManualEwcState();
-        syncEwcUi();
+        applyEwcFieldRules();
+        renderResults();
+      });
+      ewcInput.addEventListener("focus", function () {
+        renderResults();
       });
       ewcInput.addEventListener("blur", function () {
+        window.setTimeout(hideResults, 120);
+        normalizeSelectedDatalistOption();
         const digits = normalizeEwcDigits(ewcInput.value);
         if (digits.length === 6) {
           ewcInput.value = formatEwcDisplay(digits);
         }
         updateManualEwcState();
         syncEwcUi();
+      });
+      ewcInput.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          hideResults();
+          return;
+        }
+        if (event.key !== "Enter" || ewcResults.hidden) {
+          return;
+        }
+        const first = ewcResults.querySelector(".ewc-search-results__item");
+        if (!first) {
+          return;
+        }
+        event.preventDefault();
+        first.click();
       });
     }
 
@@ -1233,3 +1519,4 @@
   })();
 </script>
 {% endblock %}
+

@@ -19,6 +19,9 @@ from .services.unit_rules import (
 
 logger = logging.getLogger(__name__)
 
+VOID_REASON_TYPE_TICKET = "TICKET"
+VOID_REASON_TYPE_INVOICE = "INVOICE"
+
 
 SEED_UNITS = [
     {"name": "kg", "unit_type": "WEIGHT"},
@@ -42,7 +45,7 @@ SEED_TAX_RATES = [
     },
 ]
 
-SEED_VOID_REASONS = [
+SEED_TICKET_VOID_REASONS = [
     {"code": "Entered in error", "description": "Entered in error"},
     {"code": "Duplicate ticket", "description": "Duplicate ticket"},
     {"code": "Customer cancelled", "description": "Customer cancelled"},
@@ -52,12 +55,17 @@ SEED_VOID_REASONS = [
     {"code": "System/test", "description": "System/test"},
 ]
 
+SEED_INVOICE_VOID_REASONS = [
+    {"code": "Entered in error", "description": "Entered in error"},
+    {"code": "Customer cancelled", "description": "Customer cancelled"},
+    {"code": "Duplicate invoice", "description": "Duplicate invoice"},
+]
+
 SEED_PAYMENT_METHODS = [
-    {"code": "Cash", "description": "Cash"},
+    {"code": "BACS", "description": "BACS"},
     {"code": "Card", "description": "Card"},
-    {"code": "Bank transfer", "description": "Bank transfer"},
+    {"code": "Cash", "description": "Cash"},
     {"code": "Cheque", "description": "Cheque"},
-    {"code": "Other", "description": "Other"},
 ]
 
 SEED_VEHICLE_TYPES = [
@@ -244,18 +252,102 @@ def _seed_code_lookup_rows(
     return created, dirty
 
 
+def _seed_void_reasons_for_type(
+    session: Session,
+    seed_rows: list[dict[str, str]],
+    reason_type: str,
+    now: datetime,
+) -> tuple[int, bool]:
+    created = 0
+    dirty = False
+    for entry in seed_rows:
+        code = entry["code"].strip()
+        description = (entry.get("description") or "").strip() or None
+        exists = session.execute(
+            select(VoidReason).where(
+                func.lower(VoidReason.code) == code.lower(),
+                func.upper(VoidReason.reason_type) == reason_type,
+            )
+        ).scalar_one_or_none()
+        if exists:
+            updated = False
+            if exists.code != code:
+                exists.code = code
+                updated = True
+            if exists.description != description:
+                exists.description = description
+                updated = True
+            if (exists.reason_type or "").strip().upper() != reason_type:
+                exists.reason_type = reason_type
+                updated = True
+            if not exists.is_active:
+                exists.is_active = True
+                updated = True
+            if updated:
+                exists.updated_at = now
+                dirty = True
+            continue
+
+        session.add(
+            VoidReason(
+                code=code,
+                reason_type=reason_type,
+                description=description,
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        created += 1
+        dirty = True
+    return created, dirty
+
+
 def seed_void_reasons(session: Session | None = None) -> int:
     now = utcnow()
     if session is None:
         with SessionLocal() as local_session:
-            created, dirty = _seed_code_lookup_rows(
-                local_session, VoidReason, SEED_VOID_REASONS, now
+            created, dirty = _seed_void_reasons_for_type(
+                local_session,
+                SEED_TICKET_VOID_REASONS,
+                VOID_REASON_TYPE_TICKET,
+                now,
             )
             if dirty:
                 local_session.commit()
             return created
 
-    created, dirty = _seed_code_lookup_rows(session, VoidReason, SEED_VOID_REASONS, now)
+    created, dirty = _seed_void_reasons_for_type(
+        session,
+        SEED_TICKET_VOID_REASONS,
+        VOID_REASON_TYPE_TICKET,
+        now,
+    )
+    if dirty:
+        session.commit()
+    return created
+
+
+def seed_invoice_void_reasons(session: Session | None = None) -> int:
+    now = utcnow()
+    if session is None:
+        with SessionLocal() as local_session:
+            created, dirty = _seed_void_reasons_for_type(
+                local_session,
+                SEED_INVOICE_VOID_REASONS,
+                VOID_REASON_TYPE_INVOICE,
+                now,
+            )
+            if dirty:
+                local_session.commit()
+            return created
+
+    created, dirty = _seed_void_reasons_for_type(
+        session,
+        SEED_INVOICE_VOID_REASONS,
+        VOID_REASON_TYPE_INVOICE,
+        now,
+    )
     if dirty:
         session.commit()
     return created
@@ -301,12 +393,14 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     created_units = seed_units()
     created_tax_rates = seed_tax_rates()
-    created_void_reasons = seed_void_reasons()
+    created_ticket_void_reasons = seed_void_reasons()
+    created_invoice_void_reasons = seed_invoice_void_reasons()
     created_payment_methods = seed_payment_methods()
     created_vehicle_types = seed_vehicle_types()
     logger.info("Seeded units: %s", created_units)
     logger.info("Seeded tax rates: %s", created_tax_rates)
-    logger.info("Seeded void reasons: %s", created_void_reasons)
+    logger.info("Seeded ticket void reasons: %s", created_ticket_void_reasons)
+    logger.info("Seeded invoice void reasons: %s", created_invoice_void_reasons)
     logger.info("Seeded payment methods: %s", created_payment_methods)
     logger.info("Seeded vehicle types: %s", created_vehicle_types)
 

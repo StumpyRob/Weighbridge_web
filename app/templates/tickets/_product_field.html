@@ -15,7 +15,7 @@
     hx-get="/tickets/product-defaults"
     hx-trigger="change"
     hx-target="#pricing-defaults"
-    hx-include="#weights-form,#qty,#transaction_type"
+    hx-include="#weights-form,#qty,#transaction_type,#customer_id"
   >
     <option value="">Select product</option>
     {% for id, label in options.products %}

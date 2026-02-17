@@ -1,4 +1,5 @@
 <div class="tabs">
   <a class="btn btn--ghost{% if request.url.path.startswith('/products/units') %} is-active{% endif %}" href="/products/units">Units</a>
-  <a class="btn btn--ghost{% if request.url.path.startswith('/products') and not request.url.path.startswith('/products/units') %} is-active{% endif %}" href="/products">Products</a>
+  <a class="btn btn--ghost{% if request.url.path.startswith('/products/groups') %} is-active{% endif %}" href="/products/groups">Product Groups</a>
+  <a class="btn btn--ghost{% if request.url.path.startswith('/products') and not request.url.path.startswith('/products/units') and not request.url.path.startswith('/products/groups') %} is-active{% endif %}" href="/products">Products</a>
 </div>
