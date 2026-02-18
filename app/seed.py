@@ -10,7 +10,14 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
-from .models import PaymentMethod, Product, TaxRate, Unit, VehicleType, VoidReason
+from .models import (
+    PaymentMethod,
+    Product,
+    TaxRate,
+    Unit,
+    VehicleType,
+    VoidReason,
+)
 from .services.unit_rules import (
     canonical_weight_unit,
     is_allowed_weight_unit,

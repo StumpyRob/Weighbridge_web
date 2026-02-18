@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "_help.html" import help %}
+{% if help_text is not defined %}{% set help_text = {} %}{% endif %}
 
 {% block title %}Generate Invoice | Weighbridge Web{% endblock %}
 
@@ -24,7 +26,7 @@
   <section class="card">
     <h2>Selection</h2>
     <div class="quick-ranges" role="group" aria-label="Quick ranges">
-      <span class="quick-ranges__label">Quick ranges</span>
+      <span class="quick-ranges__label">Quick ranges{{ help(help_text.invoice_generate_quick_ranges, "invoice-generate-quick-ranges-help") }}</span>
       <button type="button" class="btn btn--secondary quick-range-btn" data-quick-range="this-week">This week (Mon-Sun)</button>
       <button type="button" class="btn btn--secondary quick-range-btn" data-quick-range="last-week">Last week</button>
       <button type="button" class="btn btn--secondary quick-range-btn" data-quick-range="this-month">This month</button>

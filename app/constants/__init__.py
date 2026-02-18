@@ -9,6 +9,7 @@ from .field_limits import (
     POSTCODE_MAX,
     REG_MAX,
 )
+from .help_text import HELP_TEXT
 
 __all__ = [
     "ADDRESS_LINE_MAX",
@@ -20,4 +21,5 @@ __all__ = [
     "PO_NUMBER_MAX",
     "POSTCODE_MAX",
     "REG_MAX",
+    "HELP_TEXT",
 ]

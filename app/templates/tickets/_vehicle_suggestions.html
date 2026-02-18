@@ -48,7 +48,7 @@
             hx-post="/tickets/vehicle-suggestion/apply"
             hx-target="#vehicle-suggestions"
             hx-swap="innerHTML"
-            hx-include="#vehicle_reg,#customer_id,#haulier_id,#driver_id,#gross_kg,#tare_kg,#readout_kg"
+            hx-include="#vehicle_reg,#customer_id,#haulier_id,#driver_id,#gross_kg,#tare_kg,#readout_kg,#walk_in_sale"
             hx-vals='{"ticket_id":"{{ ticket.id }}"}'
           >
             Apply
@@ -91,7 +91,7 @@
 {% endif %}
 
 {% if oob_customer_options %}
-  <select id="customer_id" name="customer_id" hx-swap-oob="true">
+  <select id="customer_id" name="customer_id" hx-swap-oob="true" hx-get="/tickets/product-defaults" hx-trigger="change" hx-target="#pricing-defaults" hx-include="#weights-form,#qty,#transaction_type,#product_id,#customer_id" hx-vals='{"ticket_id":"{{ ticket.id }}"}'>
     <option value="">Select customer</option>
     {% for id, label in oob_customer_options %}
       <option value="{{ id }}" {% if oob_customer_selected|string == id|string %}selected{% endif %}>{{ label }}</option>

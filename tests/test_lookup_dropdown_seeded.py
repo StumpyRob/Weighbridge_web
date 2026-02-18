@@ -375,3 +375,4 @@ def test_seed_payment_methods_is_idempotent_and_reactivates_existing_code(db_ses
         ).scalars().all()
         assert len(code_rows) == 1
     assert created_second == 0
+

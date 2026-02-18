@@ -1,4 +1,6 @@
+{% from "_help.html" import help %}
 {% from "_wip.html" import wip_field %}
+{% if help_text is not defined %}{% set help_text = {} %}{% endif %}
 
 <section class="card product-main-card">
   <h2>Product</h2>
@@ -12,7 +14,7 @@
       <input type="text" id="description" name="description" value="{{ form.description }}" maxlength="{{ limits.DESC_MAX }}" required />
     </div>
     <div class="field">
-      <label for="group_id">Product group</label>
+      <label for="group_id">Product group{{ help(help_text.product_group, "product-group-help") }}</label>
       <select id="group_id" name="group_id">
         <option value="">No group</option>
         {% for id, label in options.groups %}
@@ -81,7 +83,7 @@
       </div>
     </div>
     <div class="field">
-      <label for="nominal_code">Nominal code</label>
+      <label for="nominal_code">Nominal code{{ help(help_text.product_nominal_code, "product-nominal-code-help") }}</label>
       <input
         type="text"
         id="nominal_code"
@@ -89,13 +91,12 @@
         value="{{ form.nominal_code }}"
         maxlength="{{ limits.NOMINAL_CODE_MAX }}"
       />
-      <div class="help">If blank, will use Product Group default (if set).</div>
       {% if not form.nominal_code and form.effective_nominal_code %}
         <div class="hint">Effective nominal code: {{ form.effective_nominal_code }}</div>
       {% endif %}
     </div>
     <div class="field ewc-search-field">
-      <label for="ewc_code_input">EWC code</label>
+      <label for="ewc_code_input">EWC code{{ help(help_text.product_ewc_code, "product-ewc-code-help") }}</label>
       <input
         type="text"
         id="ewc_code_input"
@@ -138,7 +139,7 @@
       {% endif %}
     </div>
     <div class="field">
-      <label for="default_destination_id">Default destination</label>
+      <label for="default_destination_id">Default destination{{ help(help_text.product_default_destination, "product-default-destination-help") }}</label>
       <select id="default_destination_id" name="default_destination_id">
         <option value="">No default</option>
         {% for id, label in options.destinations %}
@@ -426,18 +427,16 @@
     <div class="field checkbox">
       <input type="checkbox" id="sales_only" name="sales_only" {% if form.sales_only %}checked{% endif %} />
       <label for="sales_only">Sales-only (SALE tickets only)</label>
+      {{ help(help_text.product_sales_only, "product-sales-only-help") }}
     </div>
     <div class="field checkbox">
       <input type="checkbox" id="is_hazardous" name="is_hazardous" {% if form.is_hazardous %}checked{% endif %} />
       <label for="is_hazardous">Hazardous</label>
+      {{ help(help_text.product_hazardous, "product-hazardous-help") }}
     </div>
-    <div class="field checkbox">
-      <input type="checkbox" id="final_disposal" name="final_disposal" {% if form.final_disposal %}checked{% endif %} />
-      <label for="final_disposal">Final disposal</label>
-    </div>
-    <div class="field checkbox">
-      <input type="checkbox" id="used_on_site" name="used_on_site" {% if form.used_on_site %}checked{% endif %} />
-      <label for="used_on_site">Used on site</label>
-    </div>
+    {% if DEV_MODE %}
+      {{ wip_field("final_disposal_wip", "Final disposal", "", "Not implemented. Intended for waste compliance / reporting logic.", input_type="checkbox", help_text=help_text.product_wip_final_disposal) }}
+      {{ wip_field("used_on_site_wip", "Used on site", "", "Not implemented. Intended for internal consumption / stock tracking.", input_type="checkbox", help_text=help_text.product_wip_used_on_site) }}
+    {% endif %}
   </div>
 </section>

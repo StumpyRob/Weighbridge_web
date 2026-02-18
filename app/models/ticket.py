@@ -49,6 +49,7 @@ class Ticket(Base):
         Index("ix_tickets_customer_id", "customer_id"),
         Index("ix_tickets_vehicle_id", "vehicle_id"),
         Index("ix_tickets_vehicle_reg_text", "vehicle_reg_text"),
+        Index("ix_tickets_walk_in_sale", "walk_in_sale"),
         Index("ix_tickets_haulier_id", "haulier_id"),
         Index("ix_tickets_driver_id", "driver_id"),
         Index("ix_tickets_container_id", "container_id"),
@@ -78,6 +79,7 @@ class Ticket(Base):
     vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id"))
     vehicle_reg_text: Mapped[str | None] = mapped_column(String(REG_MAX))
     walk_in: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    walk_in_sale: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
     ewc_code_6: Mapped[str | None] = mapped_column(String(6), nullable=True)
     ewc_code_display: Mapped[str | None] = mapped_column(String(10), nullable=True)

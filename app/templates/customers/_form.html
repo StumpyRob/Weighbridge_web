@@ -1,3 +1,7 @@
+{% from "_help.html" import help %}
+{% from "_wip.html" import wip_field %}
+{% if help_text is not defined %}{% set help_text = {} %}{% endif %}
+
 <section class="card">
   <h2>Account</h2>
   <div class="form-grid">
@@ -75,7 +79,7 @@
   <h2>Billing</h2>
   <div class="form-grid">
     <div class="field">
-      <label for="invoice_frequency">Invoice frequency</label>
+      <label for="invoice_frequency">Invoice frequency{{ help(help_text.customer_invoice_frequency, "customer-invoice-frequency-help") }}</label>
       <select id="invoice_frequency" name="invoice_frequency">
         <option value="">Not set</option>
         {% for value, label in options.invoice_frequencies %}
@@ -86,7 +90,7 @@
       </select>
     </div>
     <div class="field">
-      <label for="payment_terms_days">Payment terms (days)</label>
+      <label for="payment_terms_days">Payment terms (days){{ help(help_text.customer_payment_terms_days, "customer-payment-terms-days-help") }}</label>
       <input
         type="number"
         id="payment_terms_days"
@@ -97,7 +101,7 @@
       />
     </div>
     <div class="field">
-      <label for="payment_terms">Payment terms</label>
+      <label for="payment_terms">Payment terms{{ help(help_text.customer_payment_terms, "customer-payment-terms-help") }}</label>
       <input
         type="text"
         id="payment_terms"
@@ -119,6 +123,7 @@
     <div class="field checkbox">
       <input type="checkbox" id="on_stop" name="on_stop" {% if form.on_stop %}checked{% endif %} />
       <label for="on_stop">On stop</label>
+      {{ help(help_text.customer_on_stop, "customer-on-stop-help") }}
     </div>
     <div class="field checkbox">
       <input
@@ -128,6 +133,7 @@
         {% if form.do_not_invoice %}checked{% endif %}
       />
       <label for="do_not_invoice">Do not invoice</label>
+      {{ help(help_text.customer_do_not_invoice, "customer-do-not-invoice-help") }}
     </div>
     <div class="field checkbox">
       <input
@@ -137,9 +143,10 @@
         {% if form.must_have_po %}checked{% endif %}
       />
       <label for="must_have_po">Must have PO</label>
+      {{ help(help_text.customer_must_have_po, "customer-must-have-po-help") }}
     </div>
     {% if DEV_MODE %}
-      {{ wip_field("cash_account_wip", "Cash account", "", "Not implemented yet.", input_type="checkbox") }}
+      {{ wip_field("cash_account_wip", "Cash account", "", "Not implemented yet.", input_type="checkbox", help_text=help_text.customer_wip_cash_account) }}
     {% endif %}
   </div>
 </section>

@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "_help.html" import help %}
+{% if help_text is not defined %}{% set help_text = {} %}{% endif %}
 
 {% block title %}Edit Ticket {{ ticket.ticket_no }} | Weighbridge Web{% endblock %}
 
@@ -27,6 +29,9 @@
     <h1>Ticket {{ ticket.ticket_no }}</h1>
     <div class="ticket-meta">
       <span class="status-text status-{{ form.status | lower }}">{{ form.status }}</span>
+      {% if ticket.walk_in_sale %}
+        <span class="ticket-link-badge">Walk-in</span>
+      {% endif %}
       <span>Created: {{ ticket.created_at.strftime("%d/%m/%Y %H:%M") if ticket.created_at else "" }}</span>
       <span>Updated: {{ ticket.updated_at.strftime("%d/%m/%Y %H:%M") if ticket.updated_at else "" }}</span>
     </div>
@@ -123,7 +128,7 @@
           <input type="datetime-local" id="datetime" name="datetime" value="{{ form.datetime }}" required />
         </div>
         <div class="field">
-          <label for="direction">Direction</label>
+          <label for="direction">Direction{{ help(help_text.ticket_direction, "ticket-direction-help") }}</label>
           <select id="direction" name="direction" required hx-get="/tickets/mismatch-warning" hx-trigger="change" hx-target="#mismatch-warning" hx-include="#direction,#transaction_type">
             <option value="">Select direction</option>
             {% for value, label in options.directions %}
@@ -132,7 +137,7 @@
           </select>
         </div>
         <div class="field">
-          <label for="transaction_type">Transaction type</label>
+          <label for="transaction_type">Transaction type{{ help(help_text.ticket_transaction_type, "ticket-transaction-type-help") }}</label>
           <select id="transaction_type" name="transaction_type" required hx-get="/tickets/mismatch-warning" hx-trigger="change" hx-target="#mismatch-warning" hx-include="#direction,#transaction_type">
             <option value="">Select transaction</option>
             {% for value, label in options.transaction_types %}
@@ -155,9 +160,9 @@
         <div class="form-grid">
           <div class="field">
             <label for="vehicle_reg">Vehicle reg</label>
-            <input type="text" id="vehicle_reg" name="reg" value="{{ vehicle_reg }}" maxlength="{{ limits.REG_MAX }}" class="plate-input" oninput="this.value = this.value.toUpperCase()" hx-get="/tickets/vehicle-suggest" hx-trigger="keyup changed delay:400ms, load" hx-target="#vehicle-suggestions" hx-include="#direction,#customer_id,#haulier_id,#driver_id,#gross_kg,#tare_kg,#readout_kg" hx-vals='{"ticket_id":"{{ ticket.id }}"}' {% if is_locked %}disabled aria-disabled="true"{% endif %} />
+            <input type="text" id="vehicle_reg" name="reg" value="{{ vehicle_reg }}" maxlength="{{ limits.REG_MAX }}" class="plate-input" oninput="this.value = this.value.toUpperCase()" hx-get="/tickets/vehicle-suggest" hx-trigger="keyup changed delay:400ms, load" hx-target="#vehicle-suggestions" hx-include="#direction,#customer_id,#haulier_id,#driver_id,#gross_kg,#tare_kg,#readout_kg,#walk_in_sale" hx-vals='{"ticket_id":"{{ ticket.id }}"}' {% if is_locked %}disabled aria-disabled="true"{% endif %} />
           </div>
-          <div class="field">
+          <div class="field" id="customer-field" {% if form.walk_in_sale and form.transaction_type == "SALE" %}style="display:none"{% endif %}>
             <label for="customer_id">Customer</label>
             <select
               id="customer_id"
@@ -167,13 +172,25 @@
               hx-target="#pricing-defaults"
               hx-include="#weights-form,#qty,#transaction_type,#product_id,#customer_id"
               hx-vals='{"ticket_id":"{{ ticket.id }}"}'
-              {% if is_locked %}disabled aria-disabled="true"{% endif %}
+              {% if is_locked or (form.walk_in_sale and form.transaction_type == "SALE") %}disabled aria-disabled="true"{% endif %}
             >
               <option value="">Select customer</option>
               {% for id, label in options.customers %}
                 <option value="{{ id }}" {% if form.customer_id|string == id|string %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
             </select>
+          </div>
+          <div class="field checkbox" id="walk-in-sale-field" {% if form.transaction_type != "SALE" %}style="display:none"{% endif %}>
+            <input
+              type="checkbox"
+              id="walk_in_sale"
+              name="walk_in_sale"
+              value="on"
+              {% if form.walk_in_sale %}checked{% endif %}
+              {% if is_locked %}disabled aria-disabled="true"{% endif %}
+            />
+            <label for="walk_in_sale">Walk-in sale (no invoice)</label>
+            {{ help(help_text.ticket_walk_in_sale, "ticket-walk-in-sale-help") }}
           </div>
           {% if is_open %}
             <div class="field">
@@ -225,9 +242,9 @@
               {% endif %}
             </div>
           {% endif %}
-          <div class="field">
+          <div class="field" id="participant-haulier-field" {% if form.walk_in_sale and form.transaction_type == "SALE" %}style="display:none"{% endif %}>
             <label for="haulier_id">Haulier</label>
-            <select id="haulier_id" name="haulier_id" {% if is_locked %}disabled aria-disabled="true"{% endif %}>
+            <select id="haulier_id" name="haulier_id" {% if is_locked or (form.walk_in_sale and form.transaction_type == "SALE") %}disabled aria-disabled="true"{% endif %}>
               <option value="">Select haulier</option>
               {% for id, label in options.hauliers %}
                 <option value="{{ id }}" {% if form.haulier_id|string == id|string %}selected{% endif %}>{{ label }}</option>
@@ -271,40 +288,40 @@
     </div>
     <div class="frame-body">
       <div class="form-grid">
-        <div class="field">
+        <div class="field" id="logistics-driver-field" {% if form.walk_in_sale and form.transaction_type == "SALE" %}style="display:none"{% endif %}>
           <label for="driver_id">Driver</label>
-          <select id="driver_id" name="driver_id">
+          <select id="driver_id" name="driver_id" {% if form.walk_in_sale and form.transaction_type == "SALE" %}disabled aria-disabled="true"{% endif %}>
             <option value="">Select driver</option>
             {% for id, label in options.drivers %}
               <option value="{{ id }}" {% if form.driver_id|string == id|string %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="field">
+        <div class="field" id="logistics-container-field" {% if form.walk_in_sale and form.transaction_type == "SALE" %}style="display:none"{% endif %}>
           <label for="container_id">Container</label>
-          <select id="container_id" name="container_id">
+          <select id="container_id" name="container_id" {% if form.walk_in_sale and form.transaction_type == "SALE" %}disabled aria-disabled="true"{% endif %}>
             <option value="">Select container</option>
             {% for id, label in options.containers %}
               <option value="{{ id }}" {% if form.container_id|string == id|string %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="field">
+        <div class="field" id="logistics-destination-field" {% if form.walk_in_sale and form.transaction_type == "SALE" %}style="display:none"{% endif %}>
           <label for="destination_id">Destination</label>
-          <select id="destination_id" name="destination_id">
+          <select id="destination_id" name="destination_id" {% if form.walk_in_sale and form.transaction_type == "SALE" %}disabled aria-disabled="true"{% endif %}>
             <option value="">Select destination</option>
             {% for id, label in options.destinations %}
               <option value="{{ id }}" {% if form.destination_id|string == id|string %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="field">
-          <label for="yard_id">Yard (optional)</label>
+        <div class="field" id="logistics-yard-field">
+          <label for="yard_id">Yard (optional){{ help(help_text.ticket_yard, "ticket-yard-help") }}</label>
           <input type="text" id="yard_id" name="yard_id" value="{{ form.yard_id }}" placeholder="Optional" />
         </div>
-        <div class="field">
-          <label for="area_id">Area (optional)</label>
-          <input type="text" id="area_id" name="area_id" value="{{ form.area_id }}" placeholder="Optional" />
+        <div class="field" id="logistics-area-field" {% if form.walk_in_sale and form.transaction_type == "SALE" %}style="display:none"{% endif %}>
+          <label for="area_id">Area (optional){{ help(help_text.ticket_area, "ticket-area-help") }}</label>
+          <input type="text" id="area_id" name="area_id" value="{{ form.area_id }}" placeholder="Optional" {% if form.walk_in_sale and form.transaction_type == "SALE" %}disabled aria-disabled="true"{% endif %} />
         </div>
       </div>
     </div>
@@ -333,7 +350,7 @@
           class="field ewc-ticket-field ewc-search-field"
           id="ewc-ticket-field"
         >
-          <label for="ewc_code">EWC code</label>
+          <label for="ewc_code">EWC code{{ help(help_text.ticket_ewc_code, "ticket-ewc-code-help") }}</label>
           <input type="hidden" name="waste_code_id" value="{{ form.waste_code_id }}" />
           <input
             type="text"
@@ -411,7 +428,7 @@
           </div>
         </div>
         <div class="field">
-          <label>Hazard</label>
+          <label>Hazard{{ help(help_text.ticket_ewc_hazard, "ticket-ewc-hazard-help") }}</label>
           <div id="ewc-hazard-display" class="readonly">
             {% if form.ewc_hazardous == "1" %}
               Yes
@@ -431,6 +448,7 @@
               {% if form.waste_producer_same_as_customer %}checked{% endif %}
             />
             <label for="waste_producer_same_as_customer">Waste producer same as customer</label>
+            {{ help(help_text.ticket_waste_producer_same_as_customer, "ticket-waste-producer-help") }}
           </div>
           <div
             id="waste-producer-manual"
@@ -579,8 +597,9 @@
         </div>
       {% endif %}
       <div class="field checkbox">
-        <input type="checkbox" id="dont_invoice" name="dont_invoice" {% if form.dont_invoice %}checked{% endif %} />
+        <input type="checkbox" id="dont_invoice" name="dont_invoice" {% if form.dont_invoice %}checked{% endif %} {% if form.walk_in_sale and form.transaction_type == "SALE" %}disabled aria-disabled="true"{% endif %} />
         <label for="dont_invoice">Don't invoice</label>
+        {{ help(help_text.ticket_dont_invoice, "ticket-dont-invoice-help") }}
       </div>
     </div>
   </section>
@@ -607,7 +626,7 @@
         <input type="hidden" name="action" value="void" />
         <div class="form-grid">
           <div class="field">
-            <label for="void_reason_id">Void reason</label>
+            <label for="void_reason_id">Void reason{{ help(help_text.ticket_void_reason, "ticket-void-reason-help") }}</label>
             <select id="void_reason_id" name="void_reason_id">
               <option value="">Select reason</option>
               {% for id, label in options.void_reasons %}
@@ -899,6 +918,118 @@
         .trim()
         .toUpperCase();
       return transactionType === "WASTEIN" || transactionType === "WASTEOUT";
+    }
+
+    function isSaleTransaction() {
+      const transactionType = (document.getElementById("transaction_type")?.value || "")
+        .trim()
+        .toUpperCase();
+      return transactionType === "SALE";
+    }
+
+    function syncWalkInSaleUi() {
+      const walkInField = document.getElementById("walk-in-sale-field");
+      const walkInInput = document.getElementById("walk_in_sale");
+      const customerField = document.getElementById("customer-field");
+      const customerSelect = document.getElementById("customer_id");
+      const dontInvoiceInput = document.getElementById("dont_invoice");
+
+      const saleMode = isSaleTransaction();
+      if (walkInField) {
+        walkInField.style.display = saleMode ? "" : "none";
+      }
+      if (!walkInInput) {
+        return;
+      }
+
+      if (!saleMode) {
+        walkInInput.checked = false;
+      }
+      walkInInput.disabled = !saleMode;
+      if (walkInInput.disabled) {
+        walkInInput.setAttribute("aria-disabled", "true");
+      } else {
+        walkInInput.removeAttribute("aria-disabled");
+      }
+
+      const walkInSaleEnabled = saleMode && walkInInput.checked;
+
+      if (customerSelect) {
+        let customerChanged = false;
+        if (walkInSaleEnabled) {
+          if (customerSelect.dataset.walkInSalePreviousValue === undefined) {
+            customerSelect.dataset.walkInSalePreviousValue = customerSelect.value || "";
+          }
+          if (customerSelect.value) {
+            customerSelect.value = "";
+            customerChanged = true;
+          }
+          customerSelect.disabled = true;
+          customerSelect.setAttribute("aria-disabled", "true");
+          if (customerField) {
+            customerField.style.display = "none";
+          }
+        } else {
+          if (customerField) {
+            customerField.style.display = "";
+          }
+          customerSelect.disabled = false;
+          customerSelect.removeAttribute("aria-disabled");
+          if (customerSelect.dataset.walkInSalePreviousValue !== undefined) {
+            if (!customerSelect.value) {
+              customerSelect.value = customerSelect.dataset.walkInSalePreviousValue || "";
+              customerChanged = true;
+            }
+            delete customerSelect.dataset.walkInSalePreviousValue;
+          }
+        }
+        if (customerChanged) {
+          customerSelect.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      }
+
+      if (dontInvoiceInput) {
+        if (walkInSaleEnabled) {
+          if (dontInvoiceInput.dataset.walkInSalePreviousChecked === undefined) {
+            dontInvoiceInput.dataset.walkInSalePreviousChecked = dontInvoiceInput.checked ? "1" : "0";
+          }
+          dontInvoiceInput.checked = true;
+          dontInvoiceInput.disabled = true;
+          dontInvoiceInput.setAttribute("aria-disabled", "true");
+        } else {
+          dontInvoiceInput.disabled = false;
+          dontInvoiceInput.removeAttribute("aria-disabled");
+          if (dontInvoiceInput.dataset.walkInSalePreviousChecked !== undefined) {
+            dontInvoiceInput.checked = dontInvoiceInput.dataset.walkInSalePreviousChecked === "1";
+            delete dontInvoiceInput.dataset.walkInSalePreviousChecked;
+          }
+        }
+      }
+
+      function setFieldMode(fieldId, controlId, enabled) {
+        const field = document.getElementById(fieldId);
+        const control = document.getElementById(controlId);
+        if (field) {
+          field.style.display = enabled ? "" : "none";
+        }
+        if (!control) {
+          return;
+        }
+        control.disabled = !enabled;
+        if (!enabled) {
+          control.setAttribute("aria-disabled", "true");
+          control.value = "";
+        } else {
+          control.removeAttribute("aria-disabled");
+        }
+      }
+
+      const logisticsEnabled = !walkInSaleEnabled;
+      setFieldMode("participant-haulier-field", "haulier_id", logisticsEnabled);
+      setFieldMode("logistics-driver-field", "driver_id", logisticsEnabled);
+      setFieldMode("logistics-container-field", "container_id", logisticsEnabled);
+      setFieldMode("logistics-destination-field", "destination_id", logisticsEnabled);
+      setFieldMode("logistics-area-field", "area_id", logisticsEnabled);
     }
 
     function updateManualEwcState() {
@@ -1259,6 +1390,7 @@
     }
 
     function applyTicketRules() {
+      syncWalkInSaleUi();
       applySelectedProductMeta();
       applyPricingRules();
       syncEwcUi();
@@ -1299,6 +1431,17 @@
       }
       directionSelect.dataset.modeBound = "true";
       directionSelect.addEventListener("change", function () {
+        scheduleApplyTicketRules();
+      });
+    }
+
+    function bindWalkInSync() {
+      const walkInInput = document.getElementById("walk_in_sale");
+      if (!walkInInput || walkInInput.dataset.modeBound === "true") {
+        return;
+      }
+      walkInInput.dataset.modeBound = "true";
+      walkInInput.addEventListener("change", function () {
         scheduleApplyTicketRules();
       });
     }
@@ -1453,6 +1596,7 @@
     bindProductMetaSync();
     bindTransactionTypeSync();
     bindDirectionSync();
+    bindWalkInSync();
     bindUnsavedChangesGuard();
     bindProducerToggle();
     bindEwcField();
@@ -1472,12 +1616,14 @@
       if (event.target.id === "product-field") {
         bindProductMetaSync();
         bindDirectionSync();
+        bindWalkInSync();
         bindEwcField();
         applyTicketRules();
         return;
       }
       if (event.target.id === "weights-block" || event.target.id === "pricing-defaults") {
         applyDefaultDestination();
+        bindWalkInSync();
         bindEwcField();
         applyTicketRules();
       }
@@ -1497,6 +1643,7 @@
       ) {
         bindProductMetaSync();
         bindDirectionSync();
+        bindWalkInSync();
         bindEwcField();
         applyTicketRules();
       }
@@ -1512,11 +1659,13 @@
       ) {
         bindProductMetaSync();
         bindDirectionSync();
+        bindWalkInSync();
         bindEwcField();
         scheduleApplyTicketRules();
       }
     });
   })();
 </script>
-{% endblock %}
+{% endblock %}
+
 

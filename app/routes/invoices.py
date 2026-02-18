@@ -753,7 +753,6 @@ def _active_payment_methods(db: Session) -> list[PaymentMethod]:
         .all()
     )
 
-
 def _active_void_reasons(db: Session) -> list[VoidReason]:
     seed_invoice_void_reasons(db)
     return (
@@ -1080,6 +1079,7 @@ def _fetch_ticket_candidates(
         Ticket.status == "COMPLETE",
         Ticket.invoice_id.is_(None),
         Ticket.dont_invoice.is_(False),
+        Ticket.walk_in_sale.is_(False),
         Ticket.paid.is_(False),
     ]
     # Date filters are interpreted in server-local time (UTC by default).
@@ -1116,6 +1116,7 @@ def _invoiceable_ticket_filters(
         Ticket.status == "COMPLETE",
         Ticket.invoice_id.is_(None),
         Ticket.dont_invoice.is_(False),
+        Ticket.walk_in_sale.is_(False),
         Ticket.paid.is_(False),
         Ticket.product.has(
             and_(

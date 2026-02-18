@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "_help.html" import help %}
+{% if help_text is not defined %}{% set help_text = {} %}{% endif %}
 
 {% block title %}Invoice {{ invoice.invoice_no }} | Weighbridge Web{% endblock %}
 
@@ -123,7 +125,7 @@
           <span class="summary-value">&pound;{{ "{:,.2f}".format(invoice.gross_total or 0) }}</span>
         </div>
         <div class="summary-item">
-          <span class="summary-label">Paid Status</span>
+          <span class="summary-label">Paid Status{{ help(help_text.invoice_paid_status, "invoice-paid-status-help") }}</span>
           <span class="summary-value">{{ "PAID" if invoice.status == "PAID" else "UNPAID" }}</span>
         </div>
         <div class="summary-item">
@@ -131,7 +133,7 @@
           <span class="summary-value">{{ invoice.paid_at.strftime("%d/%m/%y") if invoice.paid_at else "-" }}</span>
         </div>
         <div class="summary-item">
-          <span class="summary-label">Payment Method</span>
+          <span class="summary-label">Payment Method{{ help(help_text.invoice_payment_method_summary, "invoice-payment-method-summary-help") }}</span>
           <span class="summary-value">{{ payment_method.code if payment_method else "-" }}</span>
         </div>
       </div>
@@ -153,7 +155,7 @@
           action="/invoices/{{ invoice.id }}/paid"
         >
           <div class="field">
-            <label for="payment_method_id">Payment method</label>
+            <label for="payment_method_id">Payment method{{ help(help_text.invoice_payment_method, "invoice-payment-method-help") }}</label>
             <select id="payment_method_id" name="payment_method_id" required>
               <option value="">Select payment method</option>
               {% for method in payment_methods %}
@@ -315,7 +317,7 @@
         <form method="post" action="/invoices/{{ invoice.id }}/void">
           <div class="invoice-void-grid">
             <div class="field">
-              <label for="void_reason_id">Void reason</label>
+              <label for="void_reason_id">Void reason{{ help(help_text.invoice_void_reason, "invoice-void-reason-help") }}</label>
               <select id="void_reason_id" name="void_reason_id">
                 <option value="">Select reason</option>
                 {% for reason in void_reasons %}
@@ -326,7 +328,6 @@
             <div class="field">
               <label for="void_note">Reason note</label>
               <input type="text" id="void_note" name="void_note" maxlength="{{ limits.NOTES_MAX }}" placeholder="Optional note" />
-              <div class="hint">Max {{ limits.NOTES_MAX }} characters.</div>
             </div>
           </div>
           <div class="actions btn-group invoice-void-actions">

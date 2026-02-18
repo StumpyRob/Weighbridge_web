@@ -70,6 +70,7 @@ PO_REQUIRED_INVOICE_BANNER = (
 COMPLIANCE_LOCKED_INVOICED_MESSAGE = (
     "Cannot update waste compliance because this ticket has already been invoiced."
 )
+WALK_IN_SALE_ONLY_ERROR = "Walk-in sale mode is only available for Sale tickets."
 PO_UPDATE_ALLOWED_STATUSES = {
     TicketStatusEnum.OPEN.value,
     TicketStatusEnum.COMPLETE.value,
@@ -86,6 +87,7 @@ def tickets_list(
     open_only: int | None = None,
     direction: str | None = None,
     transaction_type: str | None = None,
+    walk_in_sale_only: int | None = None,
     ticket_no: str | None = None,
     q: str | None = None,
     page: int = 1,
@@ -111,6 +113,8 @@ def tickets_list(
         filters.append(Ticket.direction == direction)
     if transaction_type:
         filters.append(Ticket.transaction_type == transaction_type)
+    if walk_in_sale_only:
+        filters.append(Ticket.walk_in_sale.is_(True))
     if search_query:
         like = _ticket_contains_like_pattern(search_query)
         filters.append(
@@ -189,6 +193,7 @@ def tickets_list(
                 "open_only": "1" if open_only else "",
                 "direction": direction or "",
                 "transaction_type": transaction_type or "",
+                "walk_in_sale_only": "1" if walk_in_sale_only else "",
                 "ticket_no": ticket_no or "",
                 "q": search_query,
             },
@@ -494,6 +499,7 @@ def tickets_vehicle_suggest(
     reg: str | None = Query(None),
     ticket_id: int | None = Query(None),
     walk_in: str | None = Query(None),
+    walk_in_sale: str | None = Query(None),
     direction: str | None = Query(None),
     customer_id: str | None = Query(None),
     haulier_id: str | None = Query(None),
@@ -506,6 +512,8 @@ def tickets_vehicle_suggest(
     if not reg or not ticket_id:
         return HTMLResponse("", status_code=204)
     if walk_in and str(walk_in).lower() in ("1", "true", "on", "yes"):
+        return HTMLResponse("", status_code=204)
+    if walk_in_sale and str(walk_in_sale).lower() in ("1", "true", "on", "yes"):
         return HTMLResponse("", status_code=204)
 
     ticket = db.get(Ticket, ticket_id)
@@ -932,6 +940,62 @@ def _is_haulier_on_stop(haulier: Haulier | None) -> bool:
     return bool(getattr(haulier, "on_stop", False)) if haulier else False
 
 
+def _apply_walk_in_sale_mode(payload: dict) -> None:
+    transaction_type = payload.get("transaction_type")
+    is_sale = transaction_type == TransactionTypeEnum.SALE.value
+    walk_in_sale = bool(payload.get("walk_in_sale"))
+
+    form_data = payload.get("form")
+    if not isinstance(form_data, dict):
+        form_data = {}
+        payload["form"] = form_data
+
+    if walk_in_sale and not is_sale:
+        payload["errors"].append(WALK_IN_SALE_ONLY_ERROR)
+        payload["walk_in_sale"] = False
+        form_data["walk_in_sale"] = ""
+        return
+
+    if not walk_in_sale:
+        return
+
+    payload["customer_id"] = None
+    form_data["customer_id"] = ""
+    payload["dont_invoice"] = True
+    form_data["dont_invoice"] = "on"
+
+    for key in ("haulier_id", "driver_id", "container_id", "destination_id", "area_id"):
+        payload[key] = None
+        form_data[key] = ""
+    payload["area_id_present"] = True
+
+    payload["waste_code_id"] = None
+    form_data["waste_code_id"] = ""
+    payload["waste_producer_same_as_customer"] = True
+    form_data["waste_producer_same_as_customer"] = "on"
+    for key in (
+        "waste_producer_name",
+        "waste_producer_address_line_1",
+        "waste_producer_address_line_2",
+        "waste_producer_address_line_3",
+        "waste_producer_postcode",
+    ):
+        payload[key] = ""
+        form_data[key] = ""
+
+    payload["ewc_code_raw"] = ""
+    payload["ewc_code_6"] = None
+    payload["ewc_manual_override"] = False
+    payload["ewc_hazardous"] = False
+    payload["ewc_auto_code_6"] = ""
+    payload["ewc_product_default_code_6"] = ""
+    payload["ewc_product_default_display"] = ""
+    form_data["ewc_code"] = ""
+    form_data["ewc_manual_override"] = "0"
+    form_data["ewc_hazardous"] = "0"
+    form_data["ewc_auto_code_6"] = ""
+
+
 def _is_other_void_reason(reason: VoidReason | None) -> bool:
     if not reason:
         return False
@@ -1351,6 +1415,7 @@ async def tickets_update(
         current_status=ticket.status.value if ticket.status else None,
         validate_ewc=action == "complete",
     )
+    _apply_walk_in_sale_mode(payload)
     payload["form"]["direction"] = payload["direction"] or ""
     payload["form"]["transaction_type"] = payload["transaction_type"] or ""
     if payload["vehicle_id"] is None and ticket.vehicle_id is not None:
@@ -1395,7 +1460,7 @@ async def tickets_update(
         )
         if is_waste_tx and not completion_allowed:
             payload["errors"].append(
-                "To complete: enter a registration, select a vehicle, or tick 'No vehicle / Walk-in'."
+                "To complete: enter a registration or select a vehicle."
             )
 
         _validate_required_on_complete(payload)
@@ -1462,6 +1527,7 @@ async def tickets_update(
         if payload["errors"]:
             ticket.vehicle_reg_text = payload["vehicle_reg_text"]
             ticket.walk_in = payload["walk_in"]
+            ticket.walk_in_sale = payload["walk_in_sale"]
             ticket.updated_at = utcnow()
             db.commit()
             return _render_ticket_edit(
@@ -1598,6 +1664,7 @@ async def tickets_update(
     if payload["errors"]:
         ticket.vehicle_reg_text = payload["vehicle_reg_text"]
         ticket.walk_in = payload["walk_in"]
+        ticket.walk_in_sale = payload["walk_in_sale"]
         ticket.updated_at = utcnow()
         db.commit()
         return _render_ticket_edit(
@@ -2482,6 +2549,7 @@ def _apply_ticket_updates(ticket: Ticket, payload: dict) -> None:
     ticket.vehicle_id = payload["vehicle_id"]
     ticket.vehicle_reg_text = payload["vehicle_reg_text"]
     ticket.walk_in = payload["walk_in"]
+    ticket.walk_in_sale = payload["walk_in_sale"]
     ticket.product_id = payload["product_id"]
     ticket.haulier_id = payload["haulier_id"]
     ticket.driver_id = payload["driver_id"]
@@ -2526,6 +2594,7 @@ def _parse_ticket_form(
     vehicle_id = _parse_int(_form_value(form, "vehicle_id"))
     vehicle_reg_text = _normalize_reg_text(_form_value(form, "reg"))
     walk_in = _form_value(form, "walk_in") == "on"
+    walk_in_sale = _form_value(form, "walk_in_sale") == "on"
     product_id_raw = _first_non_empty_form_value(form, "product_id")
     product_id = _parse_int(product_id_raw)
     same_as_customer_present = bool(
@@ -2649,6 +2718,7 @@ def _parse_ticket_form(
         "vehicle_id": _form_value(form, "vehicle_id"),
         "vehicle_reg_text": vehicle_reg_text,
         "walk_in": "on" if walk_in else "",
+        "walk_in_sale": "on" if walk_in_sale else "",
         "product_id": product_id_raw,
         "haulier_id": _form_value(form, "haulier_id"),
         "driver_id": _form_value(form, "driver_id"),
@@ -2700,6 +2770,7 @@ def _parse_ticket_form(
         "vehicle_id": vehicle_id,
         "vehicle_reg_text": vehicle_reg_text,
         "walk_in": walk_in,
+        "walk_in_sale": walk_in_sale,
         "product_id": product_id,
         "haulier_id": _parse_int(_form_value(form, "haulier_id")),
         "driver_id": _parse_int(_form_value(form, "driver_id")),
@@ -2802,6 +2873,7 @@ def _ticket_to_form(ticket: Ticket) -> dict:
         "vehicle_id": str(ticket.vehicle_id or ""),
         "vehicle_reg_text": ticket.vehicle_reg_text or "",
         "walk_in": "on" if ticket.walk_in else "",
+        "walk_in_sale": "on" if ticket.walk_in_sale else "",
         "product_id": str(ticket.product_id or ""),
         "haulier_id": str(ticket.haulier_id or ""),
         "driver_id": str(ticket.driver_id or ""),
@@ -2922,7 +2994,12 @@ def _apply_ticket_defaults(db: Session, payload: dict) -> None:
     vehicle = db.get(Vehicle, payload["vehicle_id"]) if payload.get("vehicle_id") else None
     warnings = payload.setdefault("warnings", [])
 
-    if payload["customer_id"] is None and vehicle:
+    if (
+        payload["customer_id"] is None
+        and not payload.get("walk_in")
+        and not payload.get("walk_in_sale")
+        and vehicle
+    ):
         candidate_customer_id = vehicle.default_customer_id or vehicle.owner_customer_id
         if candidate_customer_id:
             customer = db.get(Customer, candidate_customer_id)
@@ -2936,7 +3013,12 @@ def _apply_ticket_defaults(db: Session, payload: dict) -> None:
                     if warning not in warnings:
                         warnings.append(warning)
 
-    if payload.get("haulier_id") is None and vehicle and vehicle.default_haulier_id:
+    if (
+        payload.get("haulier_id") is None
+        and not payload.get("walk_in_sale")
+        and vehicle
+        and vehicle.default_haulier_id
+    ):
         default_haulier = db.get(Haulier, vehicle.default_haulier_id)
         if default_haulier and default_haulier.is_active:
             payload["haulier_id"] = default_haulier.id
@@ -3276,7 +3358,7 @@ def _validate_required_on_complete(payload: dict) -> None:
                 "Destination is required to complete a waste ticket."
             )
     elif is_sale:
-        if not payload.get("customer_id"):
+        if not payload.get("customer_id") and not payload.get("walk_in_sale"):
             payload["errors"].append(
                 "Customer is required to complete a sale ticket."
             )

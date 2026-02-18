@@ -15,7 +15,7 @@
   </div>
 </div>
 
-<form class="filters" method="get" action="/tickets">
+<form class="filters tickets-list-filters" method="get" action="/tickets">
   {% if filters.date_from %}
     <input type="hidden" name="date_from" value="{{ filters.date_from }}" />
   {% endif %}
@@ -47,15 +47,27 @@
       <div class="muted">(Open only enabled)</div>
     {% endif %}
   </div>
-  <div class="field">
-    <label for="open_only">Open only</label>
-    <input
-      type="checkbox"
-      id="open_only"
-      name="open_only"
-      value="1"
-      {% if filters.open_only %}checked{% endif %}
-    />
+  <div class="tickets-list-toggle-group">
+    <div class="field checkbox">
+      <input
+        type="checkbox"
+        id="open_only"
+        name="open_only"
+        value="1"
+        {% if filters.open_only %}checked{% endif %}
+      />
+      <label for="open_only">Open only</label>
+    </div>
+    <div class="field checkbox">
+      <input
+        type="checkbox"
+        id="walk_in_sale_only"
+        name="walk_in_sale_only"
+        value="1"
+        {% if filters.walk_in_sale_only %}checked{% endif %}
+      />
+      <label for="walk_in_sale_only">Show walk-ins only</label>
+    </div>
   </div>
   <div class="actions btn-group">
     <button type="submit" class="btn btn--secondary">Filter</button>
@@ -104,8 +116,13 @@
           <td>
             {% if row.Customer and row.Customer.name %}
               <span class="truncate truncate--md" title="{{ row.Customer.name }}">{{ row.Customer.name }}</span>
-            {% else %}
+            {% elif not row.Ticket.walk_in_sale %}
               &mdash;
+            {% endif %}
+            {% if row.Ticket.walk_in_sale %}
+              <div class="tickets-customer-meta">
+                <span class="ticket-link-badge">Walk-in</span>
+              </div>
             {% endif %}
           </td>
           <td>

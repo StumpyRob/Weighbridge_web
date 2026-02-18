@@ -1,0 +1,11 @@
+{% macro help(text, id=None) -%}
+  <span class="help-inline">
+    <button
+      type="button"
+      class="help-icon"
+      aria-label="Help: {{ text }}"
+      {% if id %}aria-describedby="{{ id }}"{% endif %}
+    >?</button>
+    <span class="help-tooltip" role="tooltip" {% if id %}id="{{ id }}"{% endif %}>{{ text }}</span>
+  </span>
+{%- endmacro %}
