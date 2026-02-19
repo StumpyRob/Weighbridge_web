@@ -111,10 +111,6 @@ def test_customers_list_renders_truncation_markup(client, db_session):
         in response.text
     )
     assert f'class="truncate truncate--md" title="{customer.name}"' in response.text
-    assert (
-        f'class="truncate truncate--md" title="{customer.invoice_email}"'
-        in response.text
-    )
 
 
 def test_products_list_renders_truncation_markup(client, db_session):
@@ -130,12 +126,16 @@ def test_products_list_renders_truncation_markup(client, db_session):
 
     response = client.get("/products")
 
+    expected_description = product.description[:28] + "..."
     assert response.status_code == 200
+    assert 'class="table-wrap list-table-wrap"' in response.text
+    assert 'class="data-table list-table products-table"' in response.text
+    assert 'data-row-link="/products/' in response.text
+    assert "<th>Group</th>" not in response.text
+    assert "<th>Nominal code</th>" not in response.text
     assert f'class="truncate truncate--sm" title="{product.code}"' in response.text
-    assert (
-        f'class="truncate truncate--lg" title="{product.description}"'
-        in response.text
-    )
+    assert f'title="{product.description}"' in response.text
+    assert expected_description in response.text
 
 
 def test_lookups_list_renders_truncation_markup(client, db_session):

@@ -63,37 +63,43 @@
     </div>
   </form>
 
-  <div class="table-wrap">
-    <table class="data-table">
+  <div class="table-wrap list-table-wrap">
+    <table class="data-table list-table lookup-list-table">
+      <colgroup>
+        <col class="lookup-col-name" />
+        {% if entity_singular == "Unit" %}
+          <col class="lookup-col-type" />
+        {% endif %}
+        <col class="lookup-col-status" />
+        <col class="lookup-col-actions" />
+      </colgroup>
       <thead>
         <tr>
-          <th>Name</th>
+          <th class="truncate-col">Name</th>
           {% if entity_singular == "Unit" %}
             <th class="type-col">Type</th>
           {% endif %}
-          <th>Status</th>
+          <th class="status-col">Status</th>
           <th class="actions-col">Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for item in items %}
-          <tr>
-            <td>
+          {% set can_edit = not (entity_singular == "Unit" and item.unit_type == "WEIGHT") %}
+          <tr{% if can_edit %} data-row-link="{{ base_path }}/{{ item.id }}/edit"{% endif %}>
+            <td class="truncate-col">
               <span class="truncate truncate--md" title="{{ item.name }}">{{ item.name }}</span>
             </td>
             {% if entity_singular == "Unit" %}
-              <td class="type-col">
+              <td class="type-col{% if item.unit_type == 'WEIGHT' %} type-col--system{% endif %}">
                 {% if item.unit_type == "WEIGHT" %}
-                  Weight
+                  Weight (system)
                 {% else %}
                   Count
                 {% endif %}
-                {% if item.unit_type == "WEIGHT" %}
-                  <span class="status-pill status-open">System</span>
-                {% endif %}
               </td>
             {% endif %}
-            <td>
+            <td class="status-col">
               {% if item.is_active %}
                 <span class="status-pill status-open">Active</span>
               {% else %}
@@ -102,17 +108,17 @@
             </td>
             <td class="actions-col">
               <div class="actions btn-group lookup-actions">
-                {% if entity_singular == "Unit" and item.unit_type == "WEIGHT" %}
+                {% if not can_edit %}
                   &nbsp;
                 {% else %}
-                  <a class="btn btn--ghost" href="{{ base_path }}/{{ item.id }}/edit">Edit</a>
+                  <a class="btn btn--ghost btn--sm" href="{{ base_path }}/{{ item.id }}/edit">Edit</a>
                   {% if item.is_active %}
                     <form method="post" action="{{ base_path }}/{{ item.id }}/deactivate">
-                      <button type="submit" class="btn btn--danger">Deactivate</button>
+                      <button type="submit" class="btn btn--danger btn--sm">Deactivate</button>
                     </form>
                   {% elif not hide_inactive %}
                     <form method="post" action="{{ base_path }}/{{ item.id }}/reactivate">
-                      <button type="submit" class="btn btn--secondary">Reactivate</button>
+                      <button type="submit" class="btn btn--secondary btn--sm">Reactivate</button>
                     </form>
                   {% endif %}
                 {% endif %}

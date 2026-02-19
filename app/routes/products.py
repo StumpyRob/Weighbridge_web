@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, selectinload
 
 from ..constants import CODE_MAX, DESC_MAX, NAME_MAX, NOMINAL_CODE_MAX
 from ..db import get_db
@@ -58,10 +58,10 @@ def products_list(
     query = (
         select(Product)
         .options(
-            joinedload(Product.unit),
-            joinedload(Product.product_group),
-            joinedload(Product.ewc_code),
-            joinedload(Product.tax_rate),
+            selectinload(Product.unit),
+            selectinload(Product.product_group),
+            selectinload(Product.ewc_code),
+            selectinload(Product.tax_rate),
         )
         .order_by(Product.code)
     )

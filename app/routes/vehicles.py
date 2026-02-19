@@ -17,6 +17,8 @@ from ..models import (
     VehicleTare,
     VehicleType,
 )
+from ..seed import seed_vehicle_types
+from ..templating import templates
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -245,6 +247,7 @@ def _load_options(db: Session) -> dict[str, list[tuple[str, str]]]:
         .where(Customer.on_stop.is_(False))
         .order_by(Customer.name)
     ).scalars()
+    seed_vehicle_types(db)
     vehicle_types = db.execute(select(VehicleType).order_by(VehicleType.code)).scalars()
     hauliers = db.execute(
         select(Haulier).where(Haulier.is_active.is_(True)).order_by(Haulier.name)

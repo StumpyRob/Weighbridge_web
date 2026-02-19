@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_help.html" import help %}
 
 {% block title %}
   {% if mode == "edit" %}
@@ -29,7 +30,14 @@
   <form class="ticket-form" method="post">
     {% if entity_singular != "Unit" %}
       <div class="field">
-        <label for="name">Name</label>
+        <label for="name">
+          Name
+          {% if entity_singular == "Destination" %}
+            {{ help(help_text.lookup_destination_meaning, "destination-meaning-help") }}
+          {% elif entity_singular == "Container" %}
+            {{ help(help_text.lookup_container_usage, "container-usage-help") }}
+          {% endif %}
+        </label>
         <input
           type="text"
           id="name"
@@ -64,7 +72,10 @@
     {% endif %}
     {% if entity_singular == "Haulier" %}
       <div class="field">
-        <label for="carrier_licence_number">Carrier licence number</label>
+        <label for="carrier_licence_number">
+          Carrier licence number
+          {{ help(help_text.lookup_carrier_licence_number, "haulier-carrier-licence-help") }}
+        </label>
         <input
           type="text"
           id="carrier_licence_number"

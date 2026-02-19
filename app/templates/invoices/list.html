@@ -27,31 +27,39 @@
   </form>
 </section>
 
-<section class="card">
-  <h2>Invoices</h2>
-  <div class="table-wrap">
-    <table class="data-table">
+<section class="invoice-list-section">
+  <div class="table-wrap list-table-wrap">
+    <table class="data-table list-table">
       <thead>
         <tr>
           <th>Invoice no</th>
-          <th>Customer</th>
+          <th class="truncate-col">Customer</th>
           <th>Date</th>
           <th>Status</th>
-          <th>Net</th>
-          <th>VAT</th>
-          <th>Gross</th>
+          <th class="numeric-col num">Net</th>
+          <th class="numeric-col num">VAT</th>
+          <th class="numeric-col num">Gross</th>
         </tr>
       </thead>
       <tbody>
         {% for invoice, customer in rows %}
-          <tr>
+          {% set invoice_status = invoice.status.value if invoice.status and invoice.status.value is defined else invoice.status %}
+          <tr data-row-link="/invoices/{{ invoice.id }}">
             <td><a href="/invoices/{{ invoice.id }}" class="truncate truncate--sm" title="{{ invoice.invoice_no }}">{{ invoice.invoice_no }}</a></td>
-            <td><span class="truncate truncate--md" title="{{ customer.name if customer else '' }}">{{ customer.name if customer else "" }}</span></td>
+            <td class="truncate-col"><span class="truncate truncate--md" title="{{ customer.name if customer else '' }}">{{ customer.name if customer else "" }}</span></td>
             <td>{{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "" }}</td>
-            <td>{{ invoice.status }}</td>
-            <td>{{ "{:.2f}".format(invoice.net_total) }}</td>
-            <td>{{ "{:.2f}".format(invoice.vat_total) }}</td>
-            <td>{{ "{:.2f}".format(invoice.gross_total) }}</td>
+            <td>
+              {% if invoice_status %}
+                {% set invoice_status_class = invoice_status | lower %}
+                {% if invoice_status_class not in ["draft", "paid", "void"] %}
+                  {% set invoice_status_class = "info" %}
+                {% endif %}
+                <span class="status-pill status-{{ invoice_status_class }}">{{ invoice_status }}</span>
+              {% endif %}
+            </td>
+            <td class="numeric-col num">{% if invoice.net_total is not none %}&pound;{{ "{:,.2f}".format(invoice.net_total) }}{% endif %}</td>
+            <td class="numeric-col num">{% if invoice.vat_total is not none %}&pound;{{ "{:,.2f}".format(invoice.vat_total) }}{% endif %}</td>
+            <td class="numeric-col num">{% if invoice.gross_total is not none %}&pound;{{ "{:,.2f}".format(invoice.gross_total) }}{% endif %}</td>
           </tr>
         {% else %}
           <tr>
@@ -63,3 +71,4 @@
   </div>
 </section>
 {% endblock %}
+

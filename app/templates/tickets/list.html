@@ -75,24 +75,25 @@
   </div>
 </form>
 
-<div class="table-wrap">
-  <table class="data-table tickets-table">
+<div class="table-wrap list-table-wrap">
+  <table class="data-table tickets-table list-table">
     <thead>
       <tr>
         <th>Ticket #</th>
         <th>Date / Time</th>
         <th>Direction</th>
         <th>Vehicle</th>
-        <th>Customer</th>
-        <th>Product</th>
+        <th class="truncate-col">Customer</th>
+        <th class="truncate-col">Product</th>
         <th class="status-col">Status</th>
-        <th class="weights-col">Net</th>
+        <th class="type-col">Type</th>
+        <th class="weights-col numeric-col num">Net (kg)</th>
       </tr>
     </thead>
     <tbody>
       {% for row in rows %}
-        <tr>
-          <td>
+        <tr data-row-link="/tickets/{{ row.Ticket.id }}">
+          <td class="truncate-col">
             <a
               href="/tickets/{{ row.Ticket.id }}"
               {% if row.Ticket.status and row.Ticket.status.value == "VOID" %}class="link-muted"{% endif %}
@@ -101,7 +102,7 @@
             </a>
           </td>
           <td>{{ row.Ticket.datetime.strftime("%d/%m/%Y %H:%M") if row.Ticket.datetime else "" }}</td>
-          <td>
+          <td class="truncate-col">
             {% if row.Ticket.direction %}
               {% if row.Ticket.direction.value == "INWARD" %}IN{% elif row.Ticket.direction.value == "OUTWARD" %}OUT{% else %}{{ row.Ticket.direction.value }}{% endif %}
             {% endif %}
@@ -113,16 +114,18 @@
               &mdash;
             {% endif %}
           </td>
-          <td>
+          <td class="truncate-col">
             {% if row.Customer and row.Customer.name %}
-              <span class="truncate truncate--md" title="{{ row.Customer.name }}">{{ row.Customer.name }}</span>
-            {% elif not row.Ticket.walk_in_sale %}
-              &mdash;
-            {% endif %}
-            {% if row.Ticket.walk_in_sale %}
-              <div class="tickets-customer-meta">
-                <span class="ticket-link-badge">Walk-in</span>
+              <div class="status-stack">
+                <span class="truncate truncate--md" title="{{ row.Customer.name }}">{{ row.Customer.name }}</span>
+                {% if row.Ticket.walk_in_sale %}
+                  <span class="ticket-link-badge">WALK-IN</span>
+                {% endif %}
               </div>
+            {% elif row.Ticket.walk_in_sale %}
+              <span class="ticket-link-badge">WALK-IN</span>
+            {% else %}
+              &mdash;
             {% endif %}
           </td>
           <td>
@@ -134,18 +137,30 @@
           </td>
           <td class="status-col">
             {% if row.Ticket.status %}
-              <span class="status-text status-{{ row.Ticket.status.value | lower }}">
+              <span class="status-pill status-{{ row.Ticket.status.value | lower }}">
                 {{ row.Ticket.status.value }}
               </span>
             {% endif %}
           </td>
-          <td class="weights-col">
-            {{ "{:.0f}".format(row.Ticket.net_kg) if row.Ticket.net_kg is not none else "&mdash;" | safe }}
+          <td class="type-col">
+            {% set tx = row.Ticket.transaction_type.value if row.Ticket.transaction_type else "" %}
+            {% if tx == "SALE" %}
+              <span class="ticket-kind-badge ticket-kind-badge--sale">SALE</span>
+            {% elif tx.startswith("WASTE") %}
+              <span class="ticket-kind-badge ticket-kind-badge--waste">WASTE</span>
+            {% elif tx %}
+              <span class="ticket-kind-badge ticket-kind-badge--goods">GOODS</span>
+            {% else %}
+              &mdash;
+            {% endif %}
+          </td>
+          <td class="weights-col numeric-col num">
+            {{ "{:,.0f} kg".format(row.Ticket.net_kg) if row.Ticket.net_kg is not none else "&mdash;" | safe }}
           </td>
         </tr>
       {% else %}
         <tr>
-          <td colspan="8" class="empty">No tickets found.</td>
+          <td colspan="9" class="empty">No tickets found.</td>
         </tr>
       {% endfor %}
     </tbody>

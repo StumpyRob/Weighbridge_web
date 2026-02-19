@@ -46,22 +46,34 @@
   </div>
 </form>
 
-<div class="table-wrap">
-  <table class="data-table">
+<div class="table-wrap list-table-wrap">
+  <table class="data-table list-table products-groups-table">
+    <colgroup>
+      <col class="products-groups-col-name" />
+      <col class="products-groups-col-nominal" />
+      <col class="products-groups-col-status" />
+      <col class="products-groups-col-actions" />
+    </colgroup>
     <thead>
       <tr>
-        <th>Name</th>
-        <th>Default nominal</th>
-        <th>Status</th>
+        <th class="truncate-col">Name</th>
+        <th>Nominal</th>
+        <th class="status-col">Status</th>
         <th class="actions-col">Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for group in groups %}
-        <tr>
-          <td><span class="truncate truncate--md" title="{{ group.name }}">{{ group.name }}</span></td>
-          <td>{{ group.nominal_code_default or "—" }}</td>
+        <tr data-row-link="/products/groups/{{ group.id }}/edit">
+          <td class="truncate-col"><span class="truncate truncate--md" title="{{ group.name }}">{{ group.name }}</span></td>
           <td>
+            {% if group.nominal_code_default %}
+              <span class="truncate truncate--sm" title="{{ group.nominal_code_default }}">{{ group.nominal_code_default }}</span>
+            {% else %}
+              <span class="truncate truncate--sm" title="">&mdash;</span>
+            {% endif %}
+          </td>
+          <td class="status-col">
             {% if group.is_active %}
               <span class="status-pill status-open">Active</span>
             {% else %}
@@ -70,14 +82,14 @@
           </td>
           <td class="actions-col">
             <div class="actions btn-group lookup-actions">
-              <a class="btn btn--ghost" href="/products/groups/{{ group.id }}/edit">Edit</a>
+              <a class="btn btn--ghost btn--sm" href="/products/groups/{{ group.id }}/edit">Edit</a>
               {% if group.is_active %}
                 <form method="post" action="/products/groups/{{ group.id }}/deactivate">
-                  <button type="submit" class="btn btn--danger">Deactivate</button>
+                  <button type="submit" class="btn btn--danger btn--sm">Deactivate</button>
                 </form>
               {% elif not hide_inactive %}
                 <form method="post" action="/products/groups/{{ group.id }}/reactivate">
-                  <button type="submit" class="btn btn--secondary">Reactivate</button>
+                  <button type="submit" class="btn btn--secondary btn--sm">Reactivate</button>
                 </form>
               {% endif %}
             </div>

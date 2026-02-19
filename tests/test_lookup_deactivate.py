@@ -76,6 +76,9 @@ def test_drivers_list_renders_direct_edit_link(client, db_session):
     response = client.get("/lookups/drivers")
 
     assert response.status_code == 200
-    assert f'<a class="btn btn--ghost" href="/lookups/drivers/{driver.id}/edit">Edit</a>' in response.text
+    assert (
+        f'<a class="btn btn--ghost btn--sm" href="/lookups/drivers/{driver.id}/edit">Edit</a>'
+        in response.text
+    )
     assert f'href="/lookups/drivers/{driver.id}"' not in response.text
     assert "stretch-link" not in response.text

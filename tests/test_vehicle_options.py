@@ -1,4 +1,6 @@
-from app.models import Customer, Driver
+from sqlalchemy import delete, func, select
+
+from app.models import Customer, Driver, VehicleType
 from app.seed import seed_vehicle_types
 
 
@@ -28,3 +30,13 @@ def test_vehicle_form_shows_seeded_vehicle_types(client, db_session):
 
     assert response.status_code == 200
     assert "Rigid" in response.text
+
+
+def test_vehicle_form_auto_seeds_vehicle_types_when_empty(client, db_session):
+    db_session.execute(delete(VehicleType))
+    db_session.commit()
+
+    response = client.get("/vehicles/new")
+
+    assert response.status_code == 200
+    assert db_session.execute(select(func.count(VehicleType.id))).scalar_one() == 10

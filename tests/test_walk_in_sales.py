@@ -272,7 +272,7 @@ def test_ticket_list_shows_walk_in_badge_and_filter(client, db_session):
     assert all_rows.status_code == 200
     assert walk_in_ticket.ticket_no in all_rows.text
     assert regular_ticket.ticket_no in all_rows.text
-    assert "Walk-in" in all_rows.text
+    assert "WALK-IN" in all_rows.text
 
     filtered = client.get("/tickets", params={"walk_in_sale_only": "1"})
     assert filtered.status_code == 200

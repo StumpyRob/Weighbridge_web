@@ -35,44 +35,66 @@
   </div>
 </form>
 
-<div class="table-wrap">
-  <table class="data-table">
+<div class="table-wrap list-table-wrap">
+  <table class="data-table list-table products-table">
+    <colgroup>
+      <col class="products-col-code" />
+      <col class="products-col-description" />
+      <col class="products-col-unit" />
+      <col class="products-col-unit-price" />
+      <col class="products-col-tax-rate" />
+    </colgroup>
     <thead>
       <tr>
-        <th>Code</th>
-        <th>Description</th>
-        <th>Group</th>
-        <th>Unit</th>
-        <th>Tax rate</th>
-        <th>Nominal code</th>
-        <th>Unit price</th>
+        <th class="code-col">Code</th>
+        <th class="description-col truncate-col">Description</th>
+        <th class="unit-col">Unit</th>
+        <th class="unit-price-col numeric-col num">Unit price</th>
+        <th class="tax-rate-col numeric-col num">Tax rate</th>
       </tr>
     </thead>
     <tbody>
       {% for product in products %}
-        <tr>
-          <td><a href="/products/{{ product.id }}" class="truncate truncate--sm" title="{{ product.code }}">{{ product.code }}</a></td>
-          <td><span class="truncate truncate--lg" title="{{ product.description }}">{{ product.description }}</span></td>
-          <td><span class="truncate truncate--md" title="{{ product.product_group.name if product.product_group else '' }}">{{ product.product_group.name if product.product_group else "" }}</span></td>
-          <td>{{ product.unit.name if product.unit else "" }}</td>
+        {% set product_description = product.description or "" %}
+        {% set unit_name = product.unit.name if product.unit and product.unit.name else "" %}
+        <tr data-row-link="/products/{{ product.id }}">
           <td>
+            <a href="/products/{{ product.id }}" class="truncate truncate--sm" title="{{ product.code }}">{{ product.code }}</a>
+          </td>
+          <td class="description-col truncate-col" title="{{ product_description }}">
+            <span class="table-cell-truncate">
+              {{ product_description[:28] ~ ('...' if product_description|length > 28 else '') }}
+            </span>
+          </td>
+          <td class="unit-col">
+            {% if unit_name %}
+              <span class="table-cell-truncate" title="{{ unit_name }}">{{ unit_name }}</span>
+            {% else %}
+              <span class="table-cell-truncate" title="">&mdash;</span>
+            {% endif %}
+          </td>
+          <td class="unit-price-col numeric-col num">
+            {% if product.unit_price is not none %}
+              &pound;{{ "{:,.2f}".format(product.unit_price) }}
+            {% endif %}
+          </td>
+          <td class="tax-rate-col numeric-col num">
             {% if product.tax_rate and product.tax_rate.rate_percent is not none %}
               {% set raw_rate = product.tax_rate.rate_percent %}
               {% set percent = (raw_rate * 100) if raw_rate <= 1 else raw_rate %}
               {{ "{:f}".format(percent).rstrip("0").rstrip(".") or "0" }}%
             {% else %}
-              {{ product.tax_rate.code if product.tax_rate else "" }}
+              &mdash;
             {% endif %}
           </td>
-          <td>{{ product.nominal_code or (product.product_group.nominal_code_default if product.product_group and product.product_group.nominal_code_default else "") }}</td>
-          <td>{{ "{:.2f}".format(product.unit_price) if product.unit_price is not none else "" }}</td>
         </tr>
       {% else %}
         <tr>
-          <td colspan="7" class="empty">No products found.</td>
+          <td colspan="5" class="empty">No products found.</td>
         </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 {% endblock %}
+

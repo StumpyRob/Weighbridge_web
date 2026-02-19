@@ -48,12 +48,33 @@ body {
 }
 
 .container {
-  max-width: 900px;
-  margin: 2.5rem auto;
-  padding: 2rem;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 1.25rem auto;
+  padding: 1rem 16px;
   background: #ffffff;
   border-radius: 12px;
   box-shadow: 0 10px 30px rgba(31, 42, 68, 0.1);
+}
+
+@media (min-width: 768px) {
+  .container {
+    padding: 1.5rem 20px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .container {
+    max-width: 1180px;
+    padding: 1.75rem 24px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .container {
+    max-width: 1400px;
+    padding: 2rem 24px;
+  }
 }
 
 :root {
@@ -155,6 +176,12 @@ body {
   color: #374151;
 }
 
+.btn--sm {
+  height: 30px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.84rem;
+}
+
 .btn:disabled,
 .btn[disabled],
 a.btn[aria-disabled="true"] {
@@ -242,6 +269,8 @@ a.btn[aria-disabled="true"] {
   font-size: 0.78rem;
   line-height: 1.3;
   text-align: left;
+  white-space: normal;
+  overflow-wrap: break-word;
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.2);
   z-index: 1400;
   opacity: 0;
@@ -336,10 +365,18 @@ a.btn[aria-disabled="true"] {
 
 
 .table-wrap {
+  width: 100%;
   overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid #e5e7eb;
   border-radius: 10px;
   background: #ffffff;
+}
+
+.table-wrap.list-table-wrap {
+  overflow-x: auto;
+  overflow-y: visible;
 }
 
 .data-table {
@@ -360,19 +397,103 @@ a.btn[aria-disabled="true"] {
   min-width: 120px;
 }
 
-.data-table .type-col {
+.data-table td.type-col {
   min-width: 90px;
-  color: #6b7280;
+  color: #1f2a44;
   font-size: 0.9rem;
+}
+
+.data-table td.type-col.type-col--system {
+  color: #6b7280;
 }
 
 .data-table .weights-col {
   min-width: 140px;
 }
 
+.list-table {
+  table-layout: auto;
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+}
+
+.list-table th,
+.list-table td {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.lookup-list-table .lookup-col-type {
+  width: 140px;
+}
+
+.lookup-list-table .lookup-col-status {
+  width: 130px;
+}
+
+.lookup-list-table .lookup-col-actions {
+  width: 220px;
+}
+
+.lookup-list-table .lookup-col-name {
+  width: 280px;
+}
+
+.lookup-list-table {
+  table-layout: fixed;
+}
+
+.lookup-list-table th.status-col,
+.lookup-list-table td.status-col {
+  width: 130px;
+  min-width: 130px;
+}
+
+.lookup-list-table th.actions-col,
+.lookup-list-table td.actions-col {
+  width: 220px;
+  min-width: 220px;
+}
+
+.table-wrap.list-table-wrap.customers-table-wrap {
+  overflow: visible;
+}
+
+.customers-table {
+  table-layout: auto;
+  width: 100%;
+  min-width: 0;
+}
+
+.customers-table th.customer-account-col,
+.customers-table td.customer-account-col {
+  width: 160px;
+}
+
+.customers-table th.customer-name-col,
+.customers-table td.customer-name-col {
+  width: 240px;
+}
+
+.customers-table th.flags-col,
+.customers-table td.flags-col {
+  width: auto;
+  padding-left: calc(0.65rem + 20px);
+}
+
+.customers-table td.flags-col {
+  white-space: normal;
+}
+
+.customers-table td.flags-col .status-stack {
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
 .tickets-table th,
 .tickets-table td {
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .tickets-table .status-col,
@@ -380,6 +501,236 @@ a.btn[aria-disabled="true"] {
   min-width: 0;
 }
 
+.tickets-table th.status-col,
+.tickets-table td.status-col {
+  width: 112px;
+  min-width: 112px;
+}
+
+.tickets-table td.status-col {
+  overflow: visible;
+}
+
+.tickets-table th.type-col,
+.tickets-table td.type-col {
+  width: 90px;
+  min-width: 90px;
+}
+
+.products-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.products-table th,
+.products-table td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.products-table .products-col-code {
+  width: 180px;
+}
+
+.products-table .products-col-description {
+  width: 300px;
+}
+
+.products-table .products-col-unit {
+  width: 140px;
+}
+
+.products-table .products-col-unit-price {
+  width: 130px;
+}
+
+.products-table .products-col-tax-rate {
+  width: 110px;
+}
+
+.products-table td.description-col,
+.products-table td.unit-col {
+  max-width: 0;
+}
+
+.products-table .tax-rate-col {
+  min-width: 110px;
+  text-align: right;
+}
+
+.products-table .unit-price-col {
+  min-width: 130px;
+  text-align: right;
+}
+
+.products-groups-table .products-groups-col-name {
+  width: 280px;
+}
+
+.products-groups-table {
+  table-layout: fixed;
+}
+
+.products-groups-table .products-groups-col-nominal {
+  width: 140px;
+}
+
+.products-groups-table .products-groups-col-status {
+  width: 130px;
+}
+
+.products-groups-table .products-groups-col-actions {
+  width: 220px;
+}
+
+.products-groups-table th.status-col,
+.products-groups-table td.status-col {
+  width: 130px;
+  min-width: 130px;
+}
+
+.products-groups-table th.actions-col,
+.products-groups-table td.actions-col {
+  width: 220px;
+  min-width: 220px;
+}
+
+.data-row-link {
+  cursor: pointer;
+}
+
+.data-row-link:hover {
+  background: #f9fafb;
+}
+
+.numeric-col {
+  text-align: right !important;
+  white-space: nowrap !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.num {
+  text-align: right !important;
+  white-space: nowrap !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table .actions-col {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.data-table th.actions-col {
+  text-align: right;
+}
+
+.data-table .actions-col .btn-group {
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.data-table .actions-col .actions {
+  white-space: nowrap;
+  flex-wrap: nowrap;
+}
+
+.data-table .actions-col .btn {
+  height: 30px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.84rem;
+  flex: 0 0 auto;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.14rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.status-pill.status-open {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.status-pill.status-complete {
+  background: #dcfce7;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.status-pill.status-paid {
+  background: #dcfce7;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.status-pill.status-draft {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+.status-pill.status-void {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+  color: #6b7280;
+}
+
+.status-pill.status-info {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.status-stack {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.ticket-kind-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.06rem 0.36rem;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  color: #374151;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.ticket-kind-badge--sale {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.ticket-kind-badge--waste {
+  background: #fee2e2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+.ticket-kind-badge--goods {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
 
 .data-table th {
   background: #f3f4f6;
@@ -405,6 +756,25 @@ a.btn[aria-disabled="true"] {
 
 .truncate--lg {
   max-width: 24rem;
+}
+
+.table-cell-truncate {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.truncate-col {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
 }
 
 .status-void {
@@ -438,7 +808,8 @@ a.btn[aria-disabled="true"] {
 }
 
 .empty {
-  text-align: center;
+  text-align: left;
+  white-space: normal;
   color: #6b7280;
   padding: 1.25rem;
 }
@@ -592,7 +963,7 @@ a.btn[aria-disabled="true"] {
   border: 1px solid #e5e7eb;
   border-radius: 10px;
   background: #ffffff;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .page-header + .card {
@@ -1159,6 +1530,10 @@ details > summary:focus-visible {
   margin-bottom: 0;
 }
 
+.invoice-list-section {
+  margin-top: var(--section-gap);
+}
+
 .invoice-billing-address {
   margin-top: 0.35rem;
 }
@@ -1196,7 +1571,7 @@ details > summary:focus-visible {
   padding: 0.2rem 0.6rem;
   border-radius: 999px;
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   border: 1px solid transparent;
@@ -1423,19 +1798,7 @@ details > summary:focus-visible {
   background: #f3f4f6;
   color: #14213d;
   text-decoration: none;
-  font-weight: 600;
-}
-
-.tickets-customer-meta {
-  margin-top: 0;
-}
-
-.tickets-customer-meta:not(:first-child) {
-  margin-top: 0.25rem;
-}
-
-.tickets-table .tickets-customer-meta {
-  line-height: 1;
+  font-weight: 500;
 }
 
 .tickets-table .ticket-link-badge {

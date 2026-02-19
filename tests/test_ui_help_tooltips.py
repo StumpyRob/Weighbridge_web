@@ -9,6 +9,7 @@ from app.models import (
     TicketStatusEnum,
     TransactionTypeEnum,
     Unit,
+    Vehicle,
 )
 
 
@@ -82,3 +83,27 @@ def test_ticket_edit_shows_tooltips_and_no_inline_dont_invoice_hint(client, db_s
     assert 'id="ticket-void-reason-help"' in response.text
     assert "Use for cash/card counter sales. No customer invoice generated." in response.text
     assert "Locked on for walk-in sale." not in response.text
+
+
+def test_vehicle_pages_show_tooltips_for_defaults_and_tares(client, db_session):
+    vehicle = Vehicle(registration="VH-HELP-1")
+    db_session.add(vehicle)
+    db_session.commit()
+
+    list_response = client.get("/vehicles")
+    assert list_response.status_code == 200
+    assert 'id="vehicle-list-registration-search-help"' in list_response.text
+    assert 'id="vehicle-list-default-tare-help"' not in list_response.text
+    assert 'id="vehicle-list-overweight-threshold-help"' not in list_response.text
+
+    new_response = client.get("/vehicles/new")
+    assert new_response.status_code == 200
+    assert 'id="vehicle-default-tare-help"' in new_response.text
+    assert 'id="vehicle-overweight-threshold-help"' in new_response.text
+    assert 'id="vehicle-ticket-defaults-help"' in new_response.text
+    assert 'id="vehicle-default-customer-help"' in new_response.text
+    assert 'id="vehicle-default-haulier-help"' in new_response.text
+
+    edit_response = client.get(f"/vehicles/{vehicle.id}")
+    assert edit_response.status_code == 200
+    assert 'id="vehicle-per-container-tares-help"' in edit_response.text

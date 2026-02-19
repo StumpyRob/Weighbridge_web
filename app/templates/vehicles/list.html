@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_help.html" import help %}
 
 {% block title %}Vehicles | Weighbridge Web{% endblock %}
 
@@ -24,7 +25,7 @@
 
 <form class="filters" method="get" action="/vehicles">
   <div class="field">
-    <label for="q">Registration contains</label>
+    <label for="q">Registration contains{{ help(help_text.vehicle_registration_search, "vehicle-list-registration-search-help") }}</label>
     <input type="text" id="q" name="q" value="{{ q }}" />
   </div>
   <div class="actions btn-group">
@@ -33,28 +34,28 @@
   </div>
 </form>
 
-<div class="table-wrap">
-  <table class="data-table">
+<div class="table-wrap list-table-wrap">
+  <table class="data-table list-table">
     <thead>
       <tr>
         <th>Registration</th>
-        <th>Owner</th>
-        <th>Type</th>
-        <th>Default tare</th>
-        <th>Overweight threshold</th>
+        <th class="truncate-col">Owner</th>
+        <th>Vehicle type</th>
+        <th class="numeric-col num">Default tare</th>
+        <th class="numeric-col num">Overweight threshold</th>
       </tr>
     </thead>
     <tbody>
       {% for vehicle, owner, vtype in rows %}
-        <tr>
+        <tr data-row-link="/vehicles/{{ vehicle.id }}">
           <td><a href="/vehicles/{{ vehicle.id }}" class="truncate truncate--sm" title="{{ vehicle.registration }}">{{ vehicle.registration }}</a></td>
-          <td><span class="truncate truncate--md" title="{{ owner.name if owner else '' }}">{{ owner.name if owner else "" }}</span></td>
+          <td class="truncate-col"><span class="truncate truncate--md" title="{{ owner.name if owner else '' }}">{{ owner.name if owner else "" }}</span></td>
           <td><span class="truncate truncate--sm" title="{{ vtype.code if vtype else '' }}">{{ vtype.code if vtype else "" }}</span></td>
-          <td>
-            {{ "{:.0f}".format(vehicle.default_tare_kg) if vehicle.default_tare_kg is not none else "" }}
+          <td class="numeric-col num">
+            {{ "{:,.0f} kg".format(vehicle.default_tare_kg) if vehicle.default_tare_kg is not none else "&mdash;" | safe }}
           </td>
-          <td>
-            {{ "{:.0f}".format(vehicle.overweight_threshold_kg) if vehicle.overweight_threshold_kg is not none else "" }}
+          <td class="numeric-col num">
+            {{ "{:,.0f} kg".format(vehicle.overweight_threshold_kg) if vehicle.overweight_threshold_kg is not none else "&mdash;" | safe }}
           </td>
         </tr>
       {% else %}

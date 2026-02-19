@@ -14,6 +14,13 @@ HELP_TEXT = {
     "customer_do_not_invoice": "Excludes this customer from all invoice generation.",
     "customer_must_have_po": "Requires PO on tickets before they can be invoiced.",
     "customer_wip_cash_account": "WIP: planned flag for cash/counter account behaviour.",
+    "vehicle_registration_search": "Search vehicles by full or partial registration.",
+    "vehicle_default_tare": "Suggested tare when this vehicle is selected; can still be overridden on the ticket.",
+    "vehicle_overweight_threshold": "Optional limit used for overload checks on this vehicle.",
+    "vehicle_ticket_defaults": "Auto-fills these values on new tickets when this vehicle is identified.",
+    "vehicle_default_customer": "Pre-selects customer on new tickets for this vehicle.",
+    "vehicle_default_haulier": "Pre-selects haulier on new tickets for this vehicle.",
+    "vehicle_per_container_tares": "Optional tare overrides by container for this vehicle.",
     "ticket_direction": "Sets vehicle movement direction for this ticket.",
     "ticket_transaction_type": "Controls ticket rules by flow type (waste vs sale).",
     "ticket_walk_in_sale": "Use for cash/card counter sales. No customer invoice generated.",
@@ -31,3 +38,11 @@ HELP_TEXT = {
     "invoice_void_reason": "Required audit reason for voiding this invoice.",
 }
 
+HELP_TEXT.update(
+    {
+        "lookup_carrier_licence_number": "Waste carrier licence number used for compliance and printed documentation.",
+        "lookup_destination_meaning": "Represents the final site or facility for this material and is used for compliance and reporting.",
+        "lookup_driver_linked_haulier": "If linked, selecting this driver on a ticket will auto-fill the associated haulier.",
+        "lookup_container_usage": "Container type is used for operational tracking and reporting.",
+    }
+)

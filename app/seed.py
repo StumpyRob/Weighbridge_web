@@ -76,12 +76,15 @@ SEED_PAYMENT_METHODS = [
 ]
 
 SEED_VEHICLE_TYPES = [
-    {"code": "Rigid", "description": "Rigid"},
-    {"code": "Artic", "description": "Artic"},
+    {"code": "Car", "description": "Car"},
     {"code": "Van", "description": "Van"},
-    {"code": "Skip lorry", "description": "Skip lorry"},
-    {"code": "Tractor", "description": "Tractor"},
-    {"code": "Trailer", "description": "Trailer"},
+    {"code": "7.5T Rigid", "description": "7.5T Rigid"},
+    {"code": "4 Wheeler", "description": "4 Wheeler"},
+    {"code": "6 Wheeler", "description": "6 Wheeler"},
+    {"code": "8 Wheeler", "description": "8 Wheeler"},
+    {"code": "Artic", "description": "Artic"},
+    {"code": "Tractor & Trailer", "description": "Tractor & Trailer"},
+    {"code": "Plant", "description": "Plant"},
     {"code": "Other", "description": "Other"},
 ]
 
@@ -381,16 +384,23 @@ def seed_payment_methods(session: Session | None = None) -> int:
 
 def seed_vehicle_types(session: Session | None = None) -> int:
     now = utcnow()
+
+    def seed_if_empty(target_session: Session) -> tuple[int, bool]:
+        row_count = target_session.execute(select(func.count(VehicleType.id))).scalar_one()
+        if row_count > 0:
+            return 0, False
+        return _seed_code_lookup_rows(
+            target_session, VehicleType, SEED_VEHICLE_TYPES, now
+        )
+
     if session is None:
         with SessionLocal() as local_session:
-            created, dirty = _seed_code_lookup_rows(
-                local_session, VehicleType, SEED_VEHICLE_TYPES, now
-            )
+            created, dirty = seed_if_empty(local_session)
             if dirty:
                 local_session.commit()
             return created
 
-    created, dirty = _seed_code_lookup_rows(session, VehicleType, SEED_VEHICLE_TYPES, now)
+    created, dirty = seed_if_empty(session)
     if dirty:
         session.commit()
     return created

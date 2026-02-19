@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_help.html" import help %}
 
 {% block title %}Edit Vehicle {{ vehicle.registration }} | Weighbridge Web{% endblock %}
 
@@ -26,7 +27,7 @@
   </form>
 
   <section class="card">
-    <h2>Per-Container Tares</h2>
+    <h2>Per-Container Tares{{ help(help_text.vehicle_per_container_tares, "vehicle-per-container-tares-help") }}</h2>
     <form class="inline-form btn-group vehicle-tares-add-form" method="post" action="/vehicles/{{ vehicle.id }}/tares">
       <select name="container_id">
         <option value="">Select container</option>
