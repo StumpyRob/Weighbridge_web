@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ticket {{ payload.ticket_no }}</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+      .ticket-header { display: flex; align-items: flex-start; gap: 18px; margin-bottom: 12px; }
+      .ticket-logo { max-width: 140px; max-height: 64px; width: auto; height: auto; display: block; object-fit: contain; }
+      .ticket-logo-placeholder { width: 140px; height: 64px; border: 1px dashed #9ca3af; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; color: #6b7280; }
+      .ticket-heading { min-width: 0; }
+      h1 { margin: 0 0 8px; }
+      .muted { color: #4b5563; margin: 0; }
+      h2 { margin: 20px 0 8px; font-size: 1rem; }
+      .grid { display: grid; grid-template-columns: 220px 1fr; gap: 6px 16px; }
+      .label { color: #374151; font-weight: 600; }
+      .value { color: #111827; }
+    </style>
+  </head>
+  <body>
+    <div class="ticket-header">
+      {% if payload.branding is defined and payload.branding.logo_data_uri %}
+        <img src="{{ payload.branding.logo_data_uri }}" alt="Logo" class="ticket-logo" />
+      {% else %}
+        <div class="ticket-logo-placeholder">LOGO</div>
+      {% endif %}
+      <div class="ticket-heading">
+        <h1>Ticket {{ payload.ticket_no }}</h1>
+        <p class="muted">{{ payload.datetime_display }} | {{ payload.status }}</p>
+      </div>
+    </div>
+
+    <h2>Summary</h2>
+    <div class="grid">
+      <div class="label">Direction</div><div class="value">{{ payload.direction }}</div>
+      <div class="label">Transaction</div><div class="value">{{ payload.transaction_type }}</div>
+      <div class="label">Registration</div><div class="value">{{ payload.vehicle.registration or "-" }}</div>
+      <div class="label">Customer</div><div class="value">{{ payload.customer.name or "-" }}</div>
+      <div class="label">Account</div><div class="value">{{ payload.customer.account_code or "-" }}</div>
+      <div class="label">Walk-in sale</div><div class="value">{{ "Yes" if payload.walk_in_sale else "No" }}</div>
+      <div class="label">Product</div><div class="value">{{ payload.product.code }} {{ payload.product.description }}</div>
+      <div class="label">Unit</div><div class="value">{{ payload.product.unit_name or "-" }}</div>
+      <div class="label">Gross</div><div class="value">{{ payload.weights.gross_kg_display }}</div>
+      <div class="label">Tare</div><div class="value">{{ payload.weights.tare_kg_display }}</div>
+      <div class="label">Net</div><div class="value">{{ payload.weights.net_kg_display }}</div>
+      <div class="label">Qty</div><div class="value">{{ payload.weights.qty_display }}</div>
+      <div class="label">Unit price</div><div class="value">{{ payload.weights.unit_price_display }}</div>
+      <div class="label">Total</div><div class="value">{{ payload.weights.total_display }}</div>
+      <div class="label">PO</div><div class="value">{{ payload.po_number or "-" }}</div>
+      <div class="label">EWC</div><div class="value">{{ payload.compliance.ewc_code_display or payload.compliance.ewc_code_6 or "-" }}</div>
+      <div class="label">Hazardous</div><div class="value">{{ "Yes" if payload.compliance.ewc_hazardous else "No" }}</div>
+    </div>
+  </body>
+</html>

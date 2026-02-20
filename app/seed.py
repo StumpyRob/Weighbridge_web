@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models import (
     PaymentMethod,
+    PrintProfile,
     Product,
     TaxRate,
     Unit,
@@ -86,6 +87,33 @@ SEED_VEHICLE_TYPES = [
     {"code": "Tractor & Trailer", "description": "Tractor & Trailer"},
     {"code": "Plant", "description": "Plant"},
     {"code": "Other", "description": "Other"},
+]
+
+PRINT_PROFILE_PURPOSE_TICKET_THERMAL = "TICKET_THERMAL"
+PRINT_PROFILE_PURPOSE_TICKET_A4 = "TICKET_A4"
+PRINT_TRANSPORT_NETWORK_RAW_9100 = "NETWORK_RAW_9100"
+PRINT_TRANSPORT_USB_ESC_POS = "USB_ESC_POS"
+PRINT_TRANSPORT_CUPS = "CUPS"
+
+SEED_PRINT_PROFILES = [
+    {
+        "code": "THERMAL_DEFAULT",
+        "description": "Default thermal ticket print profile",
+        "purpose": PRINT_PROFILE_PURPOSE_TICKET_THERMAL,
+        "template_name": "thermal_default.txt",
+        "transport_mode": PRINT_TRANSPORT_NETWORK_RAW_9100,
+        "transport_config": {"host": "127.0.0.1", "port": 9100},
+        "is_default": True,
+    },
+    {
+        "code": "A4_DEFAULT",
+        "description": "Default A4 ticket print profile",
+        "purpose": PRINT_PROFILE_PURPOSE_TICKET_A4,
+        "template_name": "a4_default.html",
+        "transport_mode": PRINT_TRANSPORT_CUPS,
+        "transport_config": {"printer_name": "default"},
+        "is_default": True,
+    },
 ]
 
 
@@ -406,6 +434,85 @@ def seed_vehicle_types(session: Session | None = None) -> int:
     return created
 
 
+def seed_print_profiles(session: Session | None = None) -> int:
+    now = utcnow()
+
+    def seed_rows(target_session: Session) -> tuple[int, bool]:
+        created = 0
+        dirty = False
+        for entry in SEED_PRINT_PROFILES:
+            code = entry["code"].strip()
+            description = (entry.get("description") or "").strip() or None
+            purpose = (entry.get("purpose") or "").strip().upper()
+            template_name = (entry.get("template_name") or "").strip()
+            transport_mode = (entry.get("transport_mode") or "").strip().upper()
+            transport_config = dict(entry.get("transport_config") or {})
+            is_default = bool(entry.get("is_default"))
+            exists = target_session.execute(
+                select(PrintProfile).where(func.lower(PrintProfile.code) == code.lower())
+            ).scalar_one_or_none()
+            if exists:
+                updated = False
+                if exists.code != code:
+                    exists.code = code
+                    updated = True
+                if exists.description != description:
+                    exists.description = description
+                    updated = True
+                if exists.purpose != purpose:
+                    exists.purpose = purpose
+                    updated = True
+                if exists.template_name != template_name:
+                    exists.template_name = template_name
+                    updated = True
+                if exists.transport_mode != transport_mode:
+                    exists.transport_mode = transport_mode
+                    updated = True
+                if (exists.transport_config or {}) != transport_config:
+                    exists.transport_config = transport_config
+                    updated = True
+                if bool(exists.is_default) != is_default:
+                    exists.is_default = is_default
+                    updated = True
+                if not exists.is_active:
+                    exists.is_active = True
+                    updated = True
+                if updated:
+                    exists.updated_at = now
+                    dirty = True
+                continue
+
+            target_session.add(
+                PrintProfile(
+                    code=code,
+                    description=description,
+                    purpose=purpose,
+                    template_name=template_name,
+                    transport_mode=transport_mode,
+                    transport_config=transport_config,
+                    is_default=is_default,
+                    is_active=True,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            created += 1
+            dirty = True
+        return created, dirty
+
+    if session is None:
+        with SessionLocal() as local_session:
+            created, dirty = seed_rows(local_session)
+            if dirty:
+                local_session.commit()
+            return created
+
+    created, dirty = seed_rows(session)
+    if dirty:
+        session.commit()
+    return created
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     created_units = seed_units()
@@ -414,12 +521,14 @@ def main() -> None:
     created_invoice_void_reasons = seed_invoice_void_reasons()
     created_payment_methods = seed_payment_methods()
     created_vehicle_types = seed_vehicle_types()
+    created_print_profiles = seed_print_profiles()
     logger.info("Seeded units: %s", created_units)
     logger.info("Seeded tax rates: %s", created_tax_rates)
     logger.info("Seeded ticket void reasons: %s", created_ticket_void_reasons)
     logger.info("Seeded invoice void reasons: %s", created_invoice_void_reasons)
     logger.info("Seeded payment methods: %s", created_payment_methods)
     logger.info("Seeded vehicle types: %s", created_vehicle_types)
+    logger.info("Seeded print profiles: %s", created_print_profiles)
 
 
 if __name__ == "__main__":

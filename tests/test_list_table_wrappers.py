@@ -31,6 +31,7 @@ def test_list_pages_render_table_wrapper(client, path):
         "/lookups/drivers",
         "/lookups/containers",
         "/lookups/destinations",
+        "/lookups/print-profiles",
     ],
 )
 def test_lookup_tabs_render_table_wrapper_and_actions_column(client, path):

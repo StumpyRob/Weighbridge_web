@@ -1,7 +1,7 @@
 from datetime import datetime
 
 import sqlalchemy as sa
-from sqlalchemy import Boolean, DateTime, Integer, Numeric, String, func
+from sqlalchemy import JSON, Boolean, DateTime, Integer, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..constants import CODE_MAX, DESC_MAX, NAME_MAX, NOMINAL_CODE_MAX
@@ -272,6 +272,29 @@ class ProductGroup(Base):
     name: Mapped[str] = mapped_column(String(NAME_MAX), unique=True, nullable=False)
     description: Mapped[str | None] = mapped_column(String(DESC_MAX))
     nominal_code_default: Mapped[str | None] = mapped_column(String(NOMINAL_CODE_MAX))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
+
+
+class PrintProfile(Base):
+    __tablename__ = "print_profiles"
+    __table_args__ = (
+        sa.UniqueConstraint("code", name="uq_print_profiles_code"),
+        sa.Index("ix_print_profiles_purpose", "purpose"),
+        sa.Index("ix_print_profiles_is_active", "is_active"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(CODE_MAX), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(DESC_MAX))
+    purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+    template_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    transport_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    transport_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(

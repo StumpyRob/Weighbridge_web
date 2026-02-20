@@ -6,7 +6,15 @@
 
   const HIDE_DELAY_MS = 4000;
   const HIDE_TRANSITION_MS = 250;
-  const SUCCESS_QUERY_FLAGS = ["saved", "created", "completed", "paid", "voided"];
+  const SUCCESS_QUERY_FLAGS = [
+    "saved",
+    "created",
+    "completed",
+    "paid",
+    "voided",
+    "printed",
+    "printed_to",
+  ];
 
   function removeToast(toast) {
     if (toast && toast.parentNode) {
@@ -69,8 +77,10 @@
   }
 
   successToasts.forEach(function (toast) {
+    const timeoutAttr = Number.parseInt(toast.getAttribute("data-timeout-ms") || "", 10);
+    const timeoutMs = Number.isFinite(timeoutAttr) && timeoutAttr > 0 ? timeoutAttr : HIDE_DELAY_MS;
     window.setTimeout(function () {
       hideToast(toast);
-    }, HIDE_DELAY_MS);
+    }, timeoutMs);
   });
 })();

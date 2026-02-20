@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
@@ -17,6 +20,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..constants import CODE_MAX, NAME_MAX, NOTES_MAX, PO_NUMBER_MAX, REG_MAX
 from .base import Base, utcnow
+
+if TYPE_CHECKING:
+    from .lookups import Container, Destination, Driver, Haulier
+    from .product import Product
 
 
 class DirectionEnum(str, Enum):
@@ -128,8 +135,8 @@ class Ticket(Base):
     dont_invoice: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     paid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     payment_method_id: Mapped[int | None] = mapped_column(Integer)
-    product: Mapped["Product | None"] = relationship("Product")
-    haulier: Mapped["Haulier | None"] = relationship("Haulier")
-    driver: Mapped["Driver | None"] = relationship("Driver")
-    container: Mapped["Container | None"] = relationship("Container")
-    destination: Mapped["Destination | None"] = relationship("Destination")
+    product: Mapped[Product | None] = relationship("Product")
+    haulier: Mapped[Haulier | None] = relationship("Haulier")
+    driver: Mapped[Driver | None] = relationship("Driver")
+    container: Mapped[Container | None] = relationship("Container")
+    destination: Mapped[Destination | None] = relationship("Destination")

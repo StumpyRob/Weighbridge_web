@@ -91,6 +91,10 @@ body {
   margin-bottom: 1.5rem;
 }
 
+.ticket-edit-header {
+  align-items: flex-start;
+}
+
 .page-header .actions {
   margin-left: auto;
   justify-content: flex-end;
@@ -340,6 +344,158 @@ a.btn[aria-disabled="true"] {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ticket-print-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.ticket-print-form select {
+  min-width: 160px;
+  height: 36px;
+  padding: 0.4rem 0.55rem;
+}
+
+.ticket-header-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+
+.ticket-header-actions__primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  width: max-content;
+  max-width: 100%;
+}
+
+.ticket-header-actions__primary > * {
+  flex: 0 0 auto;
+}
+
+.ticket-print-advanced {
+  position: relative;
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 100%;
+  margin-top: 0.2rem;
+}
+
+.ticket-print-advanced__toggle {
+  display: inline-block;
+  color: #6b7280;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  user-select: none;
+}
+
+.ticket-print-advanced__panel {
+  margin-top: 0.25rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+  display: grid;
+  gap: 0.5rem;
+  width: min(640px, 100%);
+  max-width: 640px;
+}
+
+.ticket-print-availability-hint {
+  margin: 0;
+  width: 100%;
+  text-align: right;
+}
+
+.ticket-print-advanced__row {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.ticket-print-advanced__row--prints {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ticket-print-advanced__cell {
+  min-width: 0;
+}
+
+.ticket-print-form--advanced {
+  width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3rem;
+}
+
+.ticket-print-form--advanced select {
+  min-width: 0;
+  width: 100%;
+}
+
+.ticket-print-form--advanced .btn {
+  width: 100%;
+  justify-content: center;
+  min-height: 36px;
+  height: 36px;
+}
+
+.ticket-print-advanced__links {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.ticket-print-advanced__links .btn {
+  font-size: 0.85rem;
+  padding: 0.2rem 0.45rem;
+  justify-content: flex-start;
+}
+
+@media (max-width: 640px) {
+  .ticket-header-actions {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .ticket-header-actions__primary {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .ticket-print-advanced__panel {
+    width: min(640px, calc(100vw - 2rem));
+  }
+
+  .ticket-print-advanced__row--prints {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-print-advanced__links {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-print-availability-hint {
+    text-align: left;
+  }
 }
 
 .tabs {
@@ -1166,6 +1322,17 @@ details.frame:not([open]) .frame-header {
   border: 1px solid #d1d5db;
   background: #ffffff;
   box-sizing: border-box;
+}
+
+.field textarea {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  box-sizing: border-box;
+  font: inherit;
+  line-height: 1.35;
 }
 
 .checkbox {

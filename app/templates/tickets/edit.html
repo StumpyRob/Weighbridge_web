@@ -5,10 +5,12 @@
 {% block title %}Edit Ticket {{ ticket.ticket_no }} | Weighbridge Web{% endblock %}
 
 {% block toast_messages %}
-  {% if completed or saved or voided %}
-    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+  {% if completed or saved or voided or printed %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1"{% if printed %} data-timeout-ms="2000"{% endif %}>
       <div class="flash-toast__content">
-        {% if completed %}
+        {% if printed %}
+          Sent to printer: {{ printed_to or print_primary_profile_name or "Printer" }}
+        {% elif completed %}
           Ticket completed.
         {% elif voided %}
           Ticket voided.
@@ -24,7 +26,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-header">
+<div class="page-header ticket-edit-header">
   <div>
     <h1>Ticket {{ ticket.ticket_no }}</h1>
     <div class="ticket-meta">
@@ -42,11 +44,79 @@
       </div>
     {% endif %}
   </div>
-  <div class="actions btn-group">
-    {% if is_open %}
-      <button type="submit" class="btn btn--primary" form="ticket-form" name="action" value="complete">
-        Mark Complete
-      </button>
+  {% set is_complete = form.status == "COMPLETE" %}
+  <div class="actions btn-group ticket-header-actions">
+    {% if is_complete %}
+      <div id="print-actions" class="ticket-header-actions__primary">
+        <form class="ticket-print-form" method="post" action="/tickets/{{ ticket.id }}/print">
+          <button type="submit" class="btn btn--primary" {% if not has_print_profiles %}disabled aria-disabled="true"{% endif %}>
+            Print
+          </button>
+        </form>
+        <a class="btn btn--secondary" href="/tickets/{{ ticket.id }}/receipt" target="_blank" rel="noopener">
+          Print preview
+        </a>
+      </div>
+      <details class="ticket-print-advanced" {% if print_advanced_open %}open{% endif %}>
+        <summary class="ticket-print-advanced__toggle">Printer options</summary>
+        <div class="ticket-print-advanced__panel">
+          <div class="ticket-print-advanced__row ticket-print-advanced__row--prints">
+            <div class="ticket-print-advanced__cell">
+              {% if show_thermal_profile_selector %}
+                <form class="ticket-print-form ticket-print-form--advanced" method="post" action="/tickets/{{ ticket.id }}/print">
+                  <input type="hidden" name="purpose" value="TICKET_THERMAL" />
+                  <label class="sr-only" for="print_profile_id_thermal">Thermal profile</label>
+                  <select id="print_profile_id_thermal" name="profile_id">
+                    {% for profile_id, label in thermal_profile_options %}
+                      <option value="{{ profile_id }}" {% if print_thermal_selected_profile_id == profile_id %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" class="btn btn--secondary">Print (Thermal)</button>
+                </form>
+              {% else %}
+                <form class="ticket-print-form ticket-print-form--advanced" method="post" action="/tickets/{{ ticket.id }}/print">
+                  <input type="hidden" name="purpose" value="TICKET_THERMAL" />
+                  <input type="hidden" name="profile_id" value="{{ print_thermal_selected_profile_id }}" />
+                  <button type="submit" class="btn btn--secondary" {% if not print_has_thermal_profiles and not has_print_profiles %}disabled aria-disabled="true"{% endif %}>Print (Thermal)</button>
+                </form>
+              {% endif %}
+            </div>
+
+            <div class="ticket-print-advanced__cell">
+              {% if show_a4_profile_selector %}
+                <form class="ticket-print-form ticket-print-form--advanced" method="post" action="/tickets/{{ ticket.id }}/print">
+                  <input type="hidden" name="purpose" value="TICKET_A4" />
+                  <label class="sr-only" for="print_profile_id_a4">A4 profile</label>
+                  <select id="print_profile_id_a4" name="profile_id">
+                    {% for profile_id, label in a4_profile_options %}
+                      <option value="{{ profile_id }}" {% if print_a4_selected_profile_id == profile_id %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" class="btn btn--secondary">Print (A4)</button>
+                </form>
+              {% else %}
+                <form class="ticket-print-form ticket-print-form--advanced" method="post" action="/tickets/{{ ticket.id }}/print">
+                  <input type="hidden" name="purpose" value="TICKET_A4" />
+                  <input type="hidden" name="profile_id" value="{{ print_a4_selected_profile_id }}" />
+                  <button type="submit" class="btn btn--secondary" {% if not print_has_a4_profiles %}disabled aria-disabled="true"{% endif %}>Print (A4)</button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="ticket-print-advanced__row ticket-print-advanced__links">
+            <a class="btn btn--ghost btn--sm" href="/tickets/{{ ticket.id }}/print/thermal" target="_blank" rel="noopener">Preview thermal</a>
+            <a class="btn btn--ghost btn--sm" href="/tickets/{{ ticket.id }}/print/a4" target="_blank" rel="noopener">Preview A4</a>
+          </div>
+        </div>
+      </details>
+    {% elif is_open %}
+      <div class="ticket-header-actions__primary">
+        <button type="submit" class="btn btn--primary" form="ticket-form" name="action" value="complete">
+          Mark Complete
+        </button>
+      </div>
+      <p class="ticket-print-availability-hint muted">Printing available once ticket is complete.</p>
     {% endif %}
   </div>
 </div>

@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Print Profiles | Weighbridge Web{% endblock %}
+
+{% block toast_messages %}
+  {% if saved %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Saved.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Print Profiles</h1>
+      <p class="muted">Manage print templates and printer transport targets.</p>
+    </div>
+    <div class="actions btn-group">
+      <a class="btn btn--primary" href="/lookups/print-profiles/new">Add Print Profile</a>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a class="btn btn--ghost" href="/lookups/hauliers">Hauliers</a>
+    <a class="btn btn--ghost" href="/lookups/drivers">Drivers</a>
+    <a class="btn btn--ghost" href="/lookups/containers">Containers</a>
+    <a class="btn btn--ghost" href="/lookups/destinations">Destinations</a>
+    <a class="btn btn--ghost is-active" href="/lookups/print-profiles">Print Profiles</a>
+  </div>
+
+  {% if error %}
+    <div class="alert">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  <form class="filters filters-inline" method="get" action="/lookups/print-profiles">
+    <div class="field">
+      <label for="q">Search</label>
+      <input type="text" id="q" name="q" value="{{ q }}" />
+    </div>
+    <div class="field checkbox">
+      <input type="hidden" name="hide_inactive" value="0" />
+      <input
+        type="checkbox"
+        id="hide_inactive"
+        name="hide_inactive"
+        value="1"
+        {% if hide_inactive %}checked{% endif %}
+      />
+      <label for="hide_inactive">Hide inactive</label>
+    </div>
+    <div class="actions btn-group">
+      <button type="submit" class="btn btn--secondary">Search</button>
+      <a class="btn btn--ghost" href="/lookups/print-profiles">Reset</a>
+    </div>
+  </form>
+
+  <div class="table-wrap list-table-wrap">
+    <table class="data-table list-table">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Description</th>
+          <th>Purpose</th>
+          <th>Default</th>
+          <th>Template</th>
+          <th>Transport</th>
+          <th class="status-col">Status</th>
+          <th class="actions-col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+          <tr data-row-link="/lookups/print-profiles/{{ item.id }}/edit">
+            <td>{{ item.code }}</td>
+            <td>
+              <span class="table-cell-truncate" title="{{ item.description or '' }}">{{ item.description or "-" }}</span>
+            </td>
+            <td>{{ item.purpose }}</td>
+            <td>
+              {% if item.is_default %}
+                <span class="status-pill status-info">Default</span>
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>{{ item.template_name }}</td>
+            <td>{{ item.transport_mode }}</td>
+            <td class="status-col">
+              {% if item.is_active %}
+                <span class="status-pill status-open">Active</span>
+              {% else %}
+                <span class="status-pill status-void">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="actions-col">
+              <div class="actions btn-group lookup-actions">
+                <a class="btn btn--ghost btn--sm" href="/lookups/print-profiles/{{ item.id }}/edit">Edit</a>
+                {% if item.is_active %}
+                  <form method="post" action="/lookups/print-profiles/{{ item.id }}/deactivate">
+                    <button type="submit" class="btn btn--danger btn--sm">Deactivate</button>
+                  </form>
+                {% elif not hide_inactive %}
+                  <form method="post" action="/lookups/print-profiles/{{ item.id }}/reactivate">
+                    <button type="submit" class="btn btn--secondary btn--sm">Reactivate</button>
+                  </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="8" class="empty">No print profiles found.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

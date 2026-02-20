@@ -1,0 +1,40 @@
+WEIGHBRIDGE TICKET
+=================
+Ticket: {{ payload.ticket_no }}
+Date/Time: {{ payload.datetime_display }}
+Status: {{ payload.status }}
+Direction: {{ payload.direction }}
+Transaction: {{ payload.transaction_type }}
+
+== VEHICLE ==
+Registration: {{ payload.vehicle.registration or "-" }}
+
+== CUSTOMER ==
+Account: {{ payload.customer.account_code or "-" }}
+Name: {{ payload.customer.name or "-" }}
+Walk-in sale: {{ "YES" if payload.walk_in_sale else "NO" }}
+
+== MATERIAL ==
+Code: {{ payload.product.code or "-" }}
+Description: {{ payload.product.description or "-" }}
+Unit: {{ payload.product.unit_name or "-" }}{% if payload.product.unit_type %} ({{ payload.product.unit_type }}){% endif %}
+
+== WEIGHTS ==
+Gross: {{ payload.weights.gross_kg_display }}
+Tare: {{ payload.weights.tare_kg_display }}
+Net: {{ payload.weights.net_kg_display }}
+Qty: {{ payload.weights.qty_display }}
+Unit price: {{ payload.weights.unit_price_display }}
+Total: {{ payload.weights.total_display }}
+PO: {{ payload.po_number or "-" }}
+
+== LOGISTICS ==
+Haulier: {{ payload.logistics.haulier or "-" }}
+Driver: {{ payload.logistics.driver or "-" }}
+Container: {{ payload.logistics.container or "-" }}
+Destination: {{ payload.logistics.destination or "-" }}
+Carrier licence: {{ payload.logistics.carrier_licence_number or "-" }}
+
+== COMPLIANCE ==
+EWC: {{ payload.compliance.ewc_code_display or payload.compliance.ewc_code_6 or "-" }}
+Hazardous: {{ "YES" if payload.compliance.ewc_hazardous else "NO" }}

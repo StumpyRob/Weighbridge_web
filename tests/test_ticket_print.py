@@ -1,0 +1,339 @@
+from datetime import datetime
+from decimal import Decimal
+
+from app.models import (
+    Container,
+    Customer,
+    Destination,
+    DirectionEnum,
+    Driver,
+    Haulier,
+    Product,
+    Ticket,
+    TicketStatusEnum,
+    TransactionTypeEnum,
+    Unit,
+    Vehicle,
+)
+from app.services.print_payload import build_ticket_print_payload
+
+
+def test_build_ticket_print_payload_sale_fields(db_session):
+    customer = Customer(account_code="C-PRINT-SALE", name="Print Sale Customer")
+    vehicle = Vehicle(registration="PRINT123")
+    unit = Unit(name="Each", unit_type="COUNT", is_active=True)
+    product = Product(
+        code="P-PRINT-SALE",
+        description="Print Sale Product",
+        unit=unit,
+        unit_price=Decimal("12.50"),
+    )
+    db_session.add_all([customer, vehicle, unit, product])
+    db_session.flush()
+
+    ticket = Ticket(
+        ticket_no="T-PRINT-SALE-1",
+        datetime=datetime(2026, 2, 19, 9, 30, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        product_id=product.id,
+        qty=Decimal("2.000"),
+        unit_price=Decimal("12.50"),
+        total=Decimal("25.00"),
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    payload = build_ticket_print_payload(db_session, ticket)
+
+    assert payload["ticket_no"] == "T-PRINT-SALE-1"
+    assert payload["transaction_type"] == "SALE"
+    assert payload["is_sale"] is True
+    assert payload["customer"]["name"] == "Print Sale Customer"
+    assert payload["vehicle"]["registration"] == "PRINT123"
+    assert payload["product"]["code"] == "P-PRINT-SALE"
+    assert "branding" in payload
+    assert "logo_data_uri" in payload["branding"]
+    assert "weights" in payload
+    assert "logistics" in payload
+    assert "compliance" in payload
+
+
+def test_build_ticket_print_payload_waste_fields(db_session):
+    customer = Customer(account_code="C-PRINT-WASTE", name="Print Waste Customer")
+    haulier = Haulier(name="Print Haulier", carrier_licence_number="CBDU12345")
+    driver = Driver(name="Print Driver")
+    container = Container(name="Print Container")
+    destination = Destination(name="Print Destination")
+    db_session.add_all([customer, haulier, driver, container, destination])
+    db_session.flush()
+
+    ticket = Ticket(
+        ticket_no="T-PRINT-WASTE-1",
+        datetime=datetime(2026, 2, 19, 10, 0, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        customer_id=customer.id,
+        haulier_id=haulier.id,
+        driver_id=driver.id,
+        container_id=container.id,
+        destination_id=destination.id,
+        gross_kg=Decimal("21000.000"),
+        tare_kg=Decimal("8000.000"),
+        net_kg=Decimal("13000.000"),
+        ewc_code_display="17 09 04",
+        ewc_code_6="170904",
+        ewc_description="Mixed construction waste",
+        ewc_hazardous=False,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    payload = build_ticket_print_payload(db_session, ticket)
+
+    assert payload["transaction_type"] == "WASTEIN"
+    assert payload["is_waste"] is True
+    assert payload["logistics"]["haulier"] == "Print Haulier"
+    assert payload["logistics"]["driver"] == "Print Driver"
+    assert payload["logistics"]["container"] == "Print Container"
+    assert payload["logistics"]["destination"] == "Print Destination"
+    assert payload["compliance"]["ewc_code_display"] == "17 09 04"
+
+
+def test_build_ticket_print_payload_walk_in_fields(db_session):
+    unit = Unit(name="Each", unit_type="COUNT", is_active=True)
+    product = Product(
+        code="P-PRINT-WALKIN",
+        description="Print Walk-in Product",
+        unit=unit,
+        unit_price=Decimal("8.00"),
+    )
+    db_session.add_all([unit, product])
+    db_session.flush()
+
+    ticket = Ticket(
+        ticket_no="T-PRINT-WALKIN-1",
+        datetime=datetime(2026, 2, 19, 10, 30, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        product_id=product.id,
+        walk_in_sale=True,
+        qty=Decimal("1.000"),
+        unit_price=Decimal("8.00"),
+        total=Decimal("8.00"),
+        dont_invoice=True,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    payload = build_ticket_print_payload(db_session, ticket)
+
+    assert payload["walk_in_sale"] is True
+    assert payload["customer"]["name"] == ""
+    assert payload["dont_invoice"] is True
+
+
+def test_ticket_print_thermal_route_contains_key_fields(client, db_session):
+    customer = Customer(account_code="C-PRINT-ROUTE", name="Print Route Customer")
+    vehicle = Vehicle(registration="RTE123")
+    unit = Unit(name="Each", unit_type="COUNT", is_active=True)
+    product = Product(
+        code="P-PRINT-ROUTE",
+        description="Print Route Product",
+        unit=unit,
+        unit_price=Decimal("9.50"),
+    )
+    db_session.add_all([customer, vehicle, unit, product])
+    db_session.flush()
+
+    ticket = Ticket(
+        ticket_no="T-PRINT-ROUTE-1",
+        datetime=datetime(2026, 2, 19, 11, 0, 0),
+        status=TicketStatusEnum.COMPLETE.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        product_id=product.id,
+        qty=Decimal("3.000"),
+        unit_price=Decimal("9.50"),
+        total=Decimal("28.50"),
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    response = client.get(f"/tickets/{ticket.id}/print/thermal")
+
+    assert response.status_code == 200
+    assert "text/plain" in response.headers.get("content-type", "")
+    assert "Ticket: T-PRINT-ROUTE-1" in response.text
+    assert "Transaction: SALE" in response.text
+    assert "Registration: RTE123" in response.text
+    assert "Name: Print Route Customer" in response.text
+
+
+def test_ticket_print_a4_route_renders_html_preview(client, db_session):
+    ticket = Ticket(
+        ticket_no="T-PRINT-A4-1",
+        datetime=datetime(2026, 2, 19, 11, 30, 0),
+        status=TicketStatusEnum.COMPLETE.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    response = client.get(f"/tickets/{ticket.id}/print/a4")
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers.get("content-type", "")
+    assert "ticket-header" in response.text
+    assert (
+        'class="ticket-logo"' in response.text
+        or "ticket-logo-placeholder" in response.text
+    )
+    assert "<h1>Ticket T-PRINT-A4-1</h1>" in response.text
+
+
+def test_ticket_print_thermal_route_requires_complete(client, db_session):
+    ticket = Ticket(
+        ticket_no="T-PRINT-THERMAL-OPEN-1",
+        datetime=datetime(2026, 2, 19, 11, 40, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    response = client.get(f"/tickets/{ticket.id}/print/thermal")
+
+    assert response.status_code == 400
+    assert "Ticket must be complete to print." in response.text
+
+
+def test_ticket_print_a4_route_requires_complete(client, db_session):
+    ticket = Ticket(
+        ticket_no="T-PRINT-A4-OPEN-1",
+        datetime=datetime(2026, 2, 19, 11, 50, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    response = client.get(f"/tickets/{ticket.id}/print/a4")
+
+    assert response.status_code == 400
+    assert "Ticket must be complete to print." in response.text
+
+
+def test_ticket_receipt_route_returns_200_for_valid_ticket(client, db_session):
+    ticket = Ticket(
+        ticket_no="T-PRINT-RECEIPT-1",
+        datetime=datetime(2026, 2, 19, 12, 30, 0),
+        status=TicketStatusEnum.COMPLETE.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    response = client.get(f"/tickets/{ticket.id}/receipt")
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers.get("content-type", "")
+    assert "Ticket Receipt" in response.text
+    assert "T-PRINT-RECEIPT-1" in response.text
+    assert "DRAFT" not in response.text
+
+
+def test_ticket_receipt_open_ticket_displays_draft_indicator(client, db_session):
+    ticket = Ticket(
+        ticket_no="T-PRINT-RECEIPT-DRAFT-1",
+        datetime=datetime(2026, 2, 19, 12, 45, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    response = client.get(f"/tickets/{ticket.id}/receipt")
+
+    assert response.status_code == 200
+    assert "DRAFT - PREVIEW ONLY" in response.text
+    assert "draft-badge" in response.text
+
+
+def test_ticket_receipt_contains_core_fields(client, db_session):
+    customer = Customer(account_code="C-PRINT-RECEIPT", name="Receipt Customer")
+    vehicle = Vehicle(registration="RCPT123")
+    unit = Unit(name="Each", unit_type="COUNT", is_active=True)
+    product = Product(
+        code="P-PRINT-RECEIPT",
+        description="Receipt Product",
+        unit=unit,
+        unit_price=Decimal("11.50"),
+    )
+    db_session.add_all([customer, vehicle, unit, product])
+    db_session.flush()
+
+    ticket = Ticket(
+        ticket_no="T-PRINT-RECEIPT-2",
+        datetime=datetime(2026, 2, 19, 13, 0, 0),
+        status=TicketStatusEnum.COMPLETE.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        product_id=product.id,
+        gross_kg=Decimal("4000.000"),
+        tare_kg=Decimal("1000.000"),
+        net_kg=Decimal("3000.000"),
+        qty=Decimal("2.000"),
+        unit_price=Decimal("11.50"),
+        total=Decimal("23.00"),
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    response = client.get(f"/tickets/{ticket.id}/receipt")
+
+    assert response.status_code == 200
+    assert "T-PRINT-RECEIPT-2" in response.text
+    assert "19/02/2026 13:00" in response.text
+    assert "Receipt Customer" in response.text
+    assert "Receipt Product" in response.text
+    assert "Gross" in response.text
+    assert "Tare" in response.text
+    assert "Net" in response.text
+    assert "Qty" in response.text
+    assert "Unit price" in response.text
+    assert "Total" in response.text
+    assert "23.00" in response.text

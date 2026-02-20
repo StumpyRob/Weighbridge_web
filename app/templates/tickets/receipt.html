@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Receipt {{ payload.ticket_no }}</title>
+    <style>
+      :root {
+        --receipt-width: 80mm;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 0.5rem;
+        background: #f3f4f6;
+        color: #111827;
+        font-family: "Consolas", "Courier New", monospace;
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .receipt-wrap {
+        width: 100%;
+      }
+
+      .receipt {
+        width: var(--receipt-width);
+        margin: 0 auto;
+        background: #ffffff;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        padding: 6mm 4mm;
+      }
+
+      .center {
+        text-align: center;
+      }
+
+      .title {
+        font-size: 15px;
+        font-weight: 700;
+        margin: 0;
+      }
+
+      .subtitle {
+        margin: 0.1rem 0 0;
+      }
+
+      .draft-banner {
+        margin-bottom: 0.45rem;
+        padding: 0.24rem 0.4rem;
+        border: 1px dashed #b45309;
+        border-radius: 4px;
+        background: #fffbeb;
+        color: #92400e;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-align: center;
+      }
+
+      .draft-badge {
+        display: inline-block;
+        margin-top: 0.18rem;
+        padding: 0.08rem 0.38rem;
+        border: 1px solid #b45309;
+        border-radius: 999px;
+        background: #fffbeb;
+        color: #92400e;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+      }
+
+      .section {
+        margin-top: 0.45rem;
+        padding-top: 0.35rem;
+        border-top: 1px dashed #9ca3af;
+      }
+
+      .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.4rem;
+      }
+
+      .label {
+        color: #374151;
+      }
+
+      .value {
+        text-align: right;
+      }
+
+      .strong {
+        font-weight: 700;
+      }
+
+      .no-print {
+        width: var(--receipt-width);
+        margin: 0.5rem auto 0;
+        display: flex;
+        justify-content: center;
+        gap: 0.5rem;
+      }
+
+      .print-btn {
+        appearance: none;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        background: #f3f4f6;
+        color: #111827;
+        padding: 0.42rem 0.68rem;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      @page {
+        size: 80mm auto;
+        margin: 2mm;
+      }
+
+      @media print {
+        body {
+          background: #ffffff;
+          padding: 0;
+        }
+
+        .receipt {
+          width: 100%;
+          margin: 0;
+          border: none;
+          border-radius: 0;
+          padding: 0;
+        }
+
+        .no-print {
+          display: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="receipt-wrap">
+      <article class="receipt">
+        {% set is_draft = payload.status != "COMPLETE" %}
+        {% if is_draft %}
+          <div class="draft-banner">DRAFT - PREVIEW ONLY</div>
+        {% endif %}
+        <header class="center">
+          <h1 class="title">Ticket Receipt</h1>
+          <p class="subtitle">{{ payload.ticket_no }}</p>
+          {% if is_draft %}
+            <span class="draft-badge">DRAFT</span>
+          {% endif %}
+        </header>
+
+        <section class="section">
+          <div class="row">
+            <span class="label">Date/time</span>
+            <span class="value">{{ payload.datetime_display or "-" }}</span>
+          </div>
+          <div class="row">
+            <span class="label">Status</span>
+            <span class="value">{{ payload.status or "-" }}</span>
+          </div>
+          <div class="row">
+            <span class="label">Transaction</span>
+            <span class="value">{{ payload.transaction_type or "-" }}</span>
+          </div>
+          <div class="row">
+            <span class="label">Direction</span>
+            <span class="value">{{ payload.direction or "-" }}</span>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="row">
+            <span class="label">Customer</span>
+            <span class="value">{{ payload.customer.name or "-" }}</span>
+          </div>
+          <div class="row">
+            <span class="label">Account</span>
+            <span class="value">{{ payload.customer.account_code or "-" }}</span>
+          </div>
+          <div class="row">
+            <span class="label">Vehicle</span>
+            <span class="value">{{ payload.vehicle.registration or "-" }}</span>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="row">
+            <span class="label">Product</span>
+            <span class="value">{{ payload.product.code or "-" }}</span>
+          </div>
+          <div class="row">
+            <span class="label">Description</span>
+            <span class="value">{{ payload.product.description or "-" }}</span>
+          </div>
+          <div class="row">
+            <span class="label">Unit</span>
+            <span class="value">{{ payload.product.unit_name or "-" }}</span>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="row">
+            <span class="label">Gross</span>
+            <span class="value">{{ payload.weights.gross_kg_display }}</span>
+          </div>
+          <div class="row">
+            <span class="label">Tare</span>
+            <span class="value">{{ payload.weights.tare_kg_display }}</span>
+          </div>
+          <div class="row">
+            <span class="label">Net</span>
+            <span class="value">{{ payload.weights.net_kg_display }}</span>
+          </div>
+          <div class="row">
+            <span class="label">Qty</span>
+            <span class="value">{{ payload.weights.qty_display }}</span>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="row">
+            <span class="label">Unit price</span>
+            <span class="value">
+              {% if payload.weights.unit_price is not none %}
+                {{ "{:,.2f}".format(payload.weights.unit_price) }}
+              {% else %}
+                -
+              {% endif %}
+            </span>
+          </div>
+          <div class="row strong">
+            <span class="label">Total</span>
+            <span class="value">
+              {% if payload.weights.total is not none %}
+                {{ "{:,.2f}".format(payload.weights.total) }}
+              {% else %}
+                -
+              {% endif %}
+            </span>
+          </div>
+        </section>
+      </article>
+
+      <div class="no-print">
+        <button type="button" class="print-btn" onclick="window.print()">Print</button>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        function triggerPrint() {
+          try {
+            window.print();
+          } catch (_err) {
+            // Browser blocked print popup; fallback button remains visible.
+          }
+        }
+        window.addEventListener("load", function () {
+          window.setTimeout(triggerPrint, 180);
+        });
+      })();
+    </script>
+  </body>
+</html>

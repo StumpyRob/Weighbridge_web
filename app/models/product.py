@@ -1,12 +1,20 @@
+from __future__ import annotations
+
 from datetime import datetime
 
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..constants import CODE_MAX, DESC_MAX, NOMINAL_CODE_MAX
 from .base import Base, utcnow
+
+if TYPE_CHECKING:
+    from .ewc_code import EwcCode
+    from .lookups import Destination
+    from .lookups_misc import ProductGroup, TaxRate, Unit
 
 
 class Product(Base):
@@ -17,11 +25,11 @@ class Product(Base):
     description: Mapped[str] = mapped_column(String(DESC_MAX), nullable=False)
     sales_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("product_groups.id"))
-    product_group: Mapped["ProductGroup | None"] = relationship("ProductGroup")
+    product_group: Mapped[ProductGroup | None] = relationship("ProductGroup")
     unit_id: Mapped[int | None] = mapped_column(ForeignKey("units.id"), nullable=True)
-    unit: Mapped["Unit | None"] = relationship("Unit")
+    unit: Mapped[Unit | None] = relationship("Unit")
     tax_rate_id: Mapped[int | None] = mapped_column(ForeignKey("tax_rates.id"))
-    tax_rate: Mapped["TaxRate | None"] = relationship("TaxRate")
+    tax_rate: Mapped[TaxRate | None] = relationship("TaxRate")
     nominal_code_id: Mapped[int | None] = mapped_column(ForeignKey("nominal_codes.id"))
     nominal_code: Mapped[str | None] = mapped_column(String(NOMINAL_CODE_MAX), nullable=True)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
@@ -45,5 +53,5 @@ class Product(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow
     )
-    ewc_code: Mapped["EwcCode | None"] = relationship("EwcCode")
-    default_destination: Mapped["Destination | None"] = relationship("Destination")
+    ewc_code: Mapped[EwcCode | None] = relationship("EwcCode")
+    default_destination: Mapped[Destination | None] = relationship("Destination")
