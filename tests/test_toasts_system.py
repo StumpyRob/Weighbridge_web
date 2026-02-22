@@ -91,3 +91,5 @@ def test_toasts_script_clears_success_query_flags():
     assert '"completed"' in script
     assert '"paid"' in script
     assert '"voided"' in script
+    assert '"print_sent"' in script
+    assert '"reprint_sent"' in script

@@ -14,7 +14,21 @@
     "voided",
     "printed",
     "printed_to",
+    "print_sent",
+    "reprint_sent",
   ];
+  const SUCCESS_QUERY_EXTRA_PARAMS = {
+    print_sent: [
+      "print_job_id",
+      "print_profile",
+      "print_sent_at",
+      "print_status",
+      "print_error",
+      "print_error_detail",
+      "print_failed",
+    ],
+    reprint_sent: ["reprint_job_id", "reprint_ticket_no"],
+  };
 
   function removeToast(toast) {
     if (toast && toast.parentNode) {
@@ -66,6 +80,10 @@
     SUCCESS_QUERY_FLAGS.forEach(function (flag) {
       if (url.searchParams.get(flag) === "1") {
         url.searchParams.delete(flag);
+        const extraParams = SUCCESS_QUERY_EXTRA_PARAMS[flag] || [];
+        extraParams.forEach(function (paramName) {
+          url.searchParams.delete(paramName);
+        });
         shouldReplace = true;
       }
     });

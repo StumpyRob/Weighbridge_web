@@ -1,7 +1,17 @@
 from datetime import datetime
 
 import sqlalchemy as sa
-from sqlalchemy import JSON, Boolean, DateTime, Integer, Numeric, String, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..constants import CODE_MAX, DESC_MAX, NAME_MAX, NOMINAL_CODE_MAX
@@ -285,13 +295,19 @@ class PrintProfile(Base):
         sa.UniqueConstraint("code", name="uq_print_profiles_code"),
         sa.Index("ix_print_profiles_purpose", "purpose"),
         sa.Index("ix_print_profiles_is_active", "is_active"),
+        sa.Index("ix_print_profiles_template_id", "template_id"),
+        sa.Index("ix_print_profiles_yard_id", "yard_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String(CODE_MAX), nullable=False)
     description: Mapped[str | None] = mapped_column(String(DESC_MAX))
     purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+    template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("print_templates.id"), nullable=True
+    )
     template_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    yard_id: Mapped[int | None] = mapped_column(ForeignKey("yards.id"), nullable=True)
     transport_mode: Mapped[str] = mapped_column(String(32), nullable=False)
     transport_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -300,3 +316,72 @@ class PrintProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow
     )
+
+
+class PrintTemplate(Base):
+    __tablename__ = "print_templates"
+    __table_args__ = (
+        sa.UniqueConstraint("code", name="uq_print_templates_code"),
+        sa.Index("ix_print_templates_purpose", "purpose"),
+        sa.Index("ix_print_templates_is_active", "is_active"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(CODE_MAX), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(DESC_MAX))
+    purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
+
+
+class PrintTemplateVersion(Base):
+    __tablename__ = "print_template_versions"
+    __table_args__ = (sa.Index("ix_print_template_versions_template_id", "template_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    template_id: Mapped[int] = mapped_column(
+        ForeignKey("print_templates.id"), nullable=False
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class PrintJob(Base):
+    __tablename__ = "print_jobs"
+    __table_args__ = (
+        sa.Index("ix_print_jobs_status", "status"),
+        sa.Index("ix_print_jobs_purpose", "purpose"),
+        sa.Index("ix_print_jobs_profile_id", "profile_id"),
+        sa.Index("ix_print_jobs_template_id", "template_id"),
+        sa.Index("ix_print_jobs_ticket_id", "ticket_id"),
+        sa.Index("ix_print_jobs_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+    profile_id: Mapped[int | None] = mapped_column(
+        ForeignKey("print_profiles.id"), nullable=True
+    )
+    template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("print_templates.id"), nullable=True
+    )
+    ticket_id: Mapped[int | None] = mapped_column(ForeignKey("tickets.id"), nullable=True)
+    transport_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    transport_config_json: Mapped[dict] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    rendered_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rendered_bytes_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

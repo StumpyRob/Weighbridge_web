@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_help.html" import help %}
+
+{% block title %}Print Job {{ job.id }} | Weighbridge Web{% endblock %}
+
+{% block toast_messages %}
+  {% if saved %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Saved.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Print Job #{{ job.id }}{{ help(help_text.printing_job_concept, "printing-job-detail-title-help") }}</h1>
+      <p class="muted">Status: {{ job.status }}</p>
+    </div>
+    <div class="actions btn-group">
+      <a class="btn btn--secondary" href="/admin/printing/jobs">Back</a>
+      <form method="post" action="/admin/printing/jobs/{{ job.id }}/retry">
+        <button type="submit" class="btn btn--primary">Retry</button>
+      </form>
+      {{ help(help_text.printing_jobs_retry, "printing-job-detail-retry-help") }}
+    </div>
+  </div>
+
+  {% include "admin/printing_nav.html" %}
+
+  {% if retry_error %}
+    <div class="alert">Retry failed: {{ retry_error }}</div>
+  {% endif %}
+
+  <section class="frame">
+    <div class="frame-body">
+      <div class="form-grid">
+        <div class="field"><label>Created</label><div class="readonly">{{ job.created_at.strftime("%d/%m/%Y %H:%M:%S") if job.created_at else "-" }}</div></div>
+        <div class="field"><label>Sent</label><div class="readonly">{{ job.sent_at.strftime("%d/%m/%Y %H:%M:%S") if job.sent_at else "-" }}</div></div>
+        <div class="field"><label>Purpose</label><div class="readonly">{{ job.purpose }}</div></div>
+        <div class="field"><label>Transport</label><div class="readonly">{{ job.transport_mode }}</div></div>
+        <div class="field"><label>Profile</label><div class="readonly">{{ profile.code if profile else "-" }}</div></div>
+        <div class="field"><label>Template</label><div class="readonly">{{ template.code if template else "-" }}</div></div>
+        <div class="field"><label>Ticket</label><div class="readonly">{{ ticket.ticket_no if ticket else "-" }}</div></div>
+        <div class="field"><label>Attempts</label><div class="readonly">{{ job.attempt_count }}</div></div>
+      </div>
+      {% if job.last_error %}
+        <div class="alert">Last error: {{ job.last_error }}</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="frame" style="margin-top: 1rem;">
+    <div class="frame-header">
+      <h2>Rendered Content{{ help(help_text.printing_jobs_rendered_output, "printing-job-detail-rendered-help") }}</h2>
+    </div>
+    <div class="frame-body">
+      <pre style="white-space: pre-wrap; font-family: Consolas, monospace;">{{ job.rendered_content or "-" }}</pre>
+    </div>
+  </section>
+
+  <section class="frame" style="margin-top: 1rem;">
+    <div class="frame-header">
+      <h2>Transport Config Snapshot{{ help(help_text.printing_jobs_transport_snapshot, "printing-job-detail-transport-help") }}</h2>
+    </div>
+    <div class="frame-body">
+      {% if job.transport_mode == "LOCAL_BROWSER" %}
+        <div class="readonly">Browser-managed local print (no network transport config).</div>
+      {% else %}
+        <pre style="white-space: pre-wrap; font-family: Consolas, monospace;">{{ job.transport_config_json }}</pre>
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}

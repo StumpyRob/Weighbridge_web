@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}Template Preview | Weighbridge Web{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Template Preview: {{ template.code }}</h1>
+      <p class="muted">Previewing with Ticket: {{ ticket_label }}</p>
+    </div>
+    <div class="actions btn-group">
+      <a class="btn btn--secondary" href="/admin/printing/templates/{{ template.id }}/edit">Back</a>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="alert">
+      <strong>Template render failed</strong><br />
+      {{ error }}
+    </div>
+  {% else %}
+    <div class="frame">
+      <div class="frame-body">
+        <pre style="white-space: pre-wrap; font-family: Consolas, monospace;">{{ rendered }}</pre>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}

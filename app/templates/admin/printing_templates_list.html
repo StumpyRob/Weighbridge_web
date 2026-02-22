@@ -1,6 +1,7 @@
 {% extends "base.html" %}
+{% from "_help.html" import help %}
 
-{% block title %}Print Profiles | Weighbridge Web{% endblock %}
+{% block title %}Printing Templates | Weighbridge Web{% endblock %}
 
 {% block toast_messages %}
   {% if saved %}
@@ -14,47 +15,33 @@
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>Print Profiles</h1>
-      <p class="muted">Manage print templates and printer transport targets.</p>
+      <h1>Printing Templates{{ help(help_text.printing_template_concept, "printing-templates-title-help") }}</h1>
+      <p class="muted">Reusable print content for profiles.</p>
     </div>
     <div class="actions btn-group">
-      <a class="btn btn--primary" href="/lookups/print-profiles/new">Add Print Profile</a>
+      <a class="btn btn--primary" href="/admin/printing/templates/new">Add Template</a>
     </div>
   </div>
 
-  <div class="tabs">
-    <a class="btn btn--ghost" href="/lookups/hauliers">Hauliers</a>
-    <a class="btn btn--ghost" href="/lookups/drivers">Drivers</a>
-    <a class="btn btn--ghost" href="/lookups/containers">Containers</a>
-    <a class="btn btn--ghost" href="/lookups/destinations">Destinations</a>
-    <a class="btn btn--ghost is-active" href="/lookups/print-profiles">Print Profiles</a>
-  </div>
+  {% include "admin/printing_nav.html" %}
 
   {% if error %}
-    <div class="alert">
-      {{ error }}
-    </div>
+    <div class="alert">{{ error }}</div>
   {% endif %}
 
-  <form class="filters filters-inline" method="get" action="/lookups/print-profiles">
+  <form class="filters filters-inline" method="get" action="/admin/printing/templates">
     <div class="field">
       <label for="q">Search</label>
       <input type="text" id="q" name="q" value="{{ q }}" />
     </div>
     <div class="field checkbox">
       <input type="hidden" name="hide_inactive" value="0" />
-      <input
-        type="checkbox"
-        id="hide_inactive"
-        name="hide_inactive"
-        value="1"
-        {% if hide_inactive %}checked{% endif %}
-      />
+      <input type="checkbox" id="hide_inactive" name="hide_inactive" value="1" {% if hide_inactive %}checked{% endif %} />
       <label for="hide_inactive">Hide inactive</label>
     </div>
     <div class="actions btn-group">
       <button type="submit" class="btn btn--secondary">Search</button>
-      <a class="btn btn--ghost" href="/lookups/print-profiles">Reset</a>
+      <a class="btn btn--ghost" href="/admin/printing/templates">Reset</a>
     </div>
   </form>
 
@@ -64,31 +51,19 @@
         <tr>
           <th>Code</th>
           <th>Description</th>
-          <th>Purpose</th>
-          <th>Default</th>
-          <th>Template</th>
-          <th>Transport</th>
+          <th>Type{{ help(help_text.printing_content_type, "printing-templates-type-help") }}</th>
+          <th>Purpose{{ help(help_text.printing_purpose, "printing-templates-purpose-help") }}</th>
           <th class="status-col">Status</th>
           <th class="actions-col">Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for item in items %}
-          <tr data-row-link="/lookups/print-profiles/{{ item.id }}/edit">
+          <tr data-row-link="/admin/printing/templates/{{ item.id }}/edit">
             <td>{{ item.code }}</td>
-            <td>
-              <span class="table-cell-truncate" title="{{ item.description or '' }}">{{ item.description or "-" }}</span>
-            </td>
+            <td>{{ item.description or "-" }}</td>
+            <td>{{ item.content_type }}</td>
             <td>{{ item.purpose }}</td>
-            <td>
-              {% if item.is_default %}
-                <span class="status-pill status-info">Default</span>
-              {% else %}
-                -
-              {% endif %}
-            </td>
-            <td>{{ item.template_name }}</td>
-            <td>{{ item.transport_mode }}</td>
             <td class="status-col">
               {% if item.is_active %}
                 <span class="status-pill status-open">Active</span>
@@ -98,13 +73,16 @@
             </td>
             <td class="actions-col">
               <div class="actions btn-group lookup-actions">
-                <a class="btn btn--ghost btn--sm" href="/lookups/print-profiles/{{ item.id }}/edit">Edit</a>
+                <a class="btn btn--ghost btn--sm" href="/admin/printing/templates/{{ item.id }}/edit">Edit</a>
+                <form method="post" action="/admin/printing/templates/{{ item.id }}/duplicate">
+                  <button type="submit" class="btn btn--ghost btn--sm">Duplicate</button>
+                </form>
                 {% if item.is_active %}
-                  <form method="post" action="/lookups/print-profiles/{{ item.id }}/deactivate">
+                  <form method="post" action="/admin/printing/templates/{{ item.id }}/deactivate">
                     <button type="submit" class="btn btn--danger btn--sm">Deactivate</button>
                   </form>
                 {% elif not hide_inactive %}
-                  <form method="post" action="/lookups/print-profiles/{{ item.id }}/reactivate">
+                  <form method="post" action="/admin/printing/templates/{{ item.id }}/reactivate">
                     <button type="submit" class="btn btn--secondary btn--sm">Reactivate</button>
                   </form>
                 {% endif %}
@@ -113,7 +91,7 @@
           </tr>
         {% else %}
           <tr>
-            <td colspan="8" class="empty">No print profiles found.</td>
+            <td colspan="6" class="empty">No templates found.</td>
           </tr>
         {% endfor %}
       </tbody>

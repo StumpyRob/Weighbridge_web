@@ -31,7 +31,7 @@ def test_list_pages_render_table_wrapper(client, path):
         "/lookups/drivers",
         "/lookups/containers",
         "/lookups/destinations",
-        "/lookups/print-profiles",
+        "/admin/printing/profiles",
     ],
 )
 def test_lookup_tabs_render_table_wrapper_and_actions_column(client, path):
@@ -39,7 +39,10 @@ def test_lookup_tabs_render_table_wrapper_and_actions_column(client, path):
 
     assert response.status_code == 200
     assert 'class="table-wrap' in response.text
-    assert '<th class="actions-col">Actions</th>' in response.text
+    assert (
+        '<th class="actions-col">Actions</th>' in response.text
+        or 'class="actions-col profiles-col-actions">Actions</th>' in response.text
+    )
 
 
 def test_tickets_list_renders_status_column_markup(client, db_session):

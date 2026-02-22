@@ -31,6 +31,7 @@ HELP_TEXT = {
     "ticket_waste_producer_same_as_customer": "Copies customer details into waste producer fields for this ticket.",
     "ticket_dont_invoice": "When enabled, this ticket is excluded from invoice generation.",
     "ticket_void_reason": "Audit reason required when voiding a ticket.",
+    "ticket_receipt_wip": "WIP: Receipt printing is not part of the current release scope. Uses a separate receipt template path and may change.",
     "invoice_generate_quick_ranges": "Applies common date presets for ticket selection.",
     "invoice_paid_status": "Derived from invoice status and payment record.",
     "invoice_payment_method_summary": "Displays the method recorded when invoice was marked paid.",
@@ -42,7 +43,30 @@ HELP_TEXT.update(
     {
         "lookup_carrier_licence_number": "Waste carrier licence number used for compliance and printed documentation.",
         "lookup_destination_meaning": "Represents the final site or facility for this material and is used for compliance and reporting.",
-        "lookup_driver_linked_haulier": "If linked, selecting this driver on a ticket will auto-fill the associated haulier.",
         "lookup_container_usage": "Container type is used for operational tracking and reporting.",
+    }
+)
+
+HELP_TEXT.update(
+    {
+        "printing_overview": "Printing uses templates (layout), profiles (destination rules), and jobs (audit trail).",
+        "printing_profile_concept": "A print profile links a template, purpose, and destination settings for one print flow.",
+        "printing_template_concept": "A print template controls what the output looks like and what fields are printed.",
+        "printing_job_concept": "A print job is the delivery record created each time output is sent to a printer or browser print flow.",
+        "printing_purpose": "Purpose tells the system what you are printing: Ticket Thermal, Ticket A4, Invoice A4, etc.",
+        "printing_template_field": "Template defines layout/content. Change template to change formatting.",
+        "printing_transport_mode": "Transport mode decides how output is delivered: Browser, Network RAW 9100, Local Print Node, etc.",
+        "printing_transport_config": "Transport config holds connection settings for the selected mode. Leave empty for Browser.",
+        "printing_default_profile": "Default profiles are used automatically when printing unless a different profile is selected.",
+        "printing_active_profile": "Inactive profiles do not appear for operators and are excluded from normal selection lists.",
+        "printing_yard_scope": "Yard scope limits where a default profile applies. Global means available across all yards.",
+        "printing_send_test_ticket": "Creates a print job using sample ticket data.",
+        "printing_insert_field_picker": "Click to insert fields like ticket number, customer, weights, and totals.",
+        "printing_content_type": "TEXT is best for 80mm thermal receipts. HTML is best for A4 and styled layouts.",
+        "printing_preview_ticket_id": "Enter a numeric ticket ID. If blank or not found, preview uses the latest completed ticket.",
+        "printing_jobs_status": "Job status shows delivery state: QUEUED means pending, SENT means success, FAILED means delivery error.",
+        "printing_jobs_rendered_output": "Rendered output is the exact payload content generated from the template at print time.",
+        "printing_jobs_transport_snapshot": "Transport snapshot stores the destination settings used for this job for audit and troubleshooting.",
+        "printing_jobs_retry": "Retry submits the same job content again using the job's stored transport mode and settings.",
     }
 )

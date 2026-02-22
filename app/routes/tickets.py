@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Red
 from sqlalchemy import case, func, or_, select, text
 from sqlalchemy.orm import Session, joinedload
 
+from ..config import settings
 from ..constants import (
     ADDRESS_LINE_MAX,
     CODE_MAX,
@@ -31,6 +32,7 @@ from ..models import (
     Haulier,
     Invoice,
     InvoiceLine,
+    PrintJob,
     PrintProfile,
     Product,
     Ticket,
@@ -47,7 +49,13 @@ from ..security import validate_no_html, validate_no_html_fields
 from ..services.pricing import resolve_unit_price_for_customer_product
 from ..services.print_payload import build_ticket_print_payload
 from ..services.print_render import render_a4_html, render_thermal
-from ..services.print_transport import send as send_print_job
+from ..services.printing import (
+    PRINT_CONTENT_TYPE_HTML,
+    execute_rendered_print,
+    replay_print_job,
+    render_profile_content,
+    resolve_profile_transport,
+)
 from ..seed import seed_void_reasons
 from ..templating import templates
 
@@ -85,6 +93,8 @@ PRINT_PROFILE_PURPOSE_TICKET_A4 = "TICKET_A4"
 PRINT_PROFILE_TRANSPORT_NETWORK_RAW_9100 = "NETWORK_RAW_9100"
 PRINT_PROFILE_TRANSPORT_USB_ESC_POS = "USB_ESC_POS"
 PRINT_PROFILE_TRANSPORT_CUPS = "CUPS"
+PRINT_PROFILE_TRANSPORT_LOCAL_BROWSER = "LOCAL_BROWSER"
+PRINT_PROFILE_TRANSPORT_LOCAL_NODE_HTTP = "LOCAL_NODE_HTTP"
 PRINT_REQUIRES_COMPLETE_ERROR = "Ticket must be complete to print."
 
 
@@ -196,6 +206,11 @@ def tickets_list(
             "page_size": page_size,
             "total_pages": total_pages,
             "total_count": total_count,
+            "reprint_sent": request.query_params.get("reprint_sent") == "1",
+            "reprint_error": request.query_params.get("reprint_error", ""),
+            "reprint_error_detail": request.query_params.get("reprint_error_detail", ""),
+            "reprint_job_id": request.query_params.get("reprint_job_id", ""),
+            "reprint_ticket_no": request.query_params.get("reprint_ticket_no", ""),
             "filters": {
                 "date_from": date_from.isoformat() if date_from else "",
                 "date_to": date_to.isoformat() if date_to else "",
@@ -209,6 +224,64 @@ def tickets_list(
             },
         },
     )
+
+
+@router.post("/tickets/print-last")
+def tickets_print_last_again(db: Session = Depends(get_db)) -> RedirectResponse:
+    last_job = (
+        db.execute(
+            select(PrintJob)
+            .where(
+                PrintJob.status == "SENT",
+                PrintJob.ticket_id.is_not(None),
+                PrintJob.purpose.in_(
+                    [
+                        PRINT_PROFILE_PURPOSE_TICKET_THERMAL,
+                        PRINT_PROFILE_PURPOSE_TICKET_A4,
+                    ]
+                ),
+            )
+            .order_by(PrintJob.id.desc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    if last_job is None:
+        return RedirectResponse(
+            url="/tickets?reprint_error=No+successful+print+job+found+to+reprint.",
+            status_code=303,
+        )
+
+    try:
+        replay_result = replay_print_job(db, last_job)
+    except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
+        detail = str(exc) or "Print delivery failed."
+        error_label = _friendly_print_error_label(detail)
+        failed_job_id = _latest_print_job_id_for_ticket(
+            db,
+            ticket_id=int(last_job.ticket_id or 0),
+            profile_id=last_job.profile_id,
+            status="FAILED",
+        )
+        params = {
+            "reprint_error": error_label,
+            "reprint_error_detail": detail[:200],
+        }
+        if failed_job_id is not None:
+            params["reprint_job_id"] = str(failed_job_id)
+        return RedirectResponse(url=f"/tickets?{urlencode(params)}", status_code=303)
+
+    params = {
+        "reprint_sent": "1",
+        "reprint_ticket_no": "",
+        "reprint_job_id": str(replay_result.job.id),
+    }
+    if last_job.ticket_id:
+        ticket = db.get(Ticket, last_job.ticket_id)
+        if ticket and ticket.ticket_no:
+            params["reprint_ticket_no"] = ticket.ticket_no
+    return RedirectResponse(url=f"/tickets?{urlencode(params)}", status_code=303)
 
 
 @router.post("/tickets/new/quick", response_class=HTMLResponse)
@@ -1235,6 +1308,51 @@ def _print_profile_display_name(profile: PrintProfile) -> str:
     return description or profile.code
 
 
+def _print_profile_option_label(profile: PrintProfile) -> str:
+    purpose = str(profile.purpose or "").strip().upper()
+    purpose_label = (
+        "Thermal"
+        if purpose == PRINT_PROFILE_PURPOSE_TICKET_THERMAL
+        else ("A4" if purpose == PRINT_PROFILE_PURPOSE_TICKET_A4 else purpose)
+    )
+    return f"{_print_profile_display_name(profile)} ({purpose_label})"
+
+
+def _friendly_print_error_label(raw_message: str) -> str:
+    normalized = str(raw_message or "").strip().lower()
+    if any(
+        marker in normalized
+        for marker in (
+            "refused",
+            "timed out",
+            "timeout",
+            "unreachable",
+            "no route to host",
+            "getaddrinfo",
+            "name or service not known",
+            "temporary failure in name resolution",
+        )
+    ):
+        return "Printer unreachable"
+    return "Print failed"
+
+
+def _latest_print_job_id_for_ticket(
+    db: Session,
+    *,
+    ticket_id: int,
+    profile_id: int | None = None,
+    status: str | None = None,
+) -> int | None:
+    query = select(PrintJob.id).where(PrintJob.ticket_id == ticket_id)
+    if profile_id:
+        query = query.where(PrintJob.profile_id == profile_id)
+    if status:
+        query = query.where(PrintJob.status == status)
+    row = db.execute(query.order_by(PrintJob.id.desc()).limit(1)).first()
+    return int(row[0]) if row else None
+
+
 def _load_active_ticket_print_profiles(db: Session) -> list[PrintProfile]:
     return list(
         db.execute(
@@ -1250,6 +1368,7 @@ def _load_active_ticket_print_profiles(db: Session) -> list[PrintProfile]:
             )
             .order_by(
                 PrintProfile.purpose.asc(),
+                PrintProfile.yard_id.asc().nullsfirst(),
                 PrintProfile.is_default.desc(),
                 PrintProfile.code.asc(),
             )
@@ -1257,11 +1376,33 @@ def _load_active_ticket_print_profiles(db: Session) -> list[PrintProfile]:
     )
 
 
-def _default_profile_for_purpose(profiles: list[PrintProfile]) -> PrintProfile | None:
-    default_profile = next((profile for profile in profiles if profile.is_default), None)
-    if default_profile is not None:
-        return default_profile
-    return profiles[0] if profiles else None
+def _default_profile_for_purpose(
+    profiles: list[PrintProfile],
+    *,
+    yard_id: int | None = None,
+) -> PrintProfile | None:
+    if not profiles:
+        return None
+
+    if yard_id is not None:
+        yard_profiles = [row for row in profiles if row.yard_id == yard_id]
+        global_profiles = [row for row in profiles if row.yard_id is None]
+        for pool in (yard_profiles, global_profiles):
+            default_profile = next((row for row in pool if row.is_default), None)
+            if default_profile is not None:
+                return default_profile
+            if pool:
+                return pool[0]
+
+    global_profiles = [row for row in profiles if row.yard_id is None]
+    default_global = next((row for row in global_profiles if row.is_default), None)
+    if default_global is not None:
+        return default_global
+    if global_profiles:
+        return global_profiles[0]
+
+    default_any = next((row for row in profiles if row.is_default), None)
+    return default_any or profiles[0]
 
 
 def _select_ticket_print_profile(
@@ -1270,6 +1411,7 @@ def _select_ticket_print_profile(
     profile_id: int | None = None,
     profile_code: str | None = None,
     purpose: str | None = None,
+    yard_id: int | None = None,
 ) -> PrintProfile:
     profiles = _load_active_ticket_print_profiles(db)
     if not profiles:
@@ -1300,23 +1442,24 @@ def _select_ticket_print_profile(
 
     normalized_purpose = (purpose or "").strip().upper()
     if normalized_purpose == PRINT_PROFILE_PURPOSE_TICKET_A4:
-        a4_default = _default_profile_for_purpose(a4_profiles)
+        a4_default = _default_profile_for_purpose(a4_profiles, yard_id=yard_id)
         if a4_default is None:
             raise ValueError("No active A4 print profile is configured.")
         return a4_default
     if normalized_purpose == PRINT_PROFILE_PURPOSE_TICKET_THERMAL:
-        thermal_default = _default_profile_for_purpose(thermal_profiles)
+        thermal_default = _default_profile_for_purpose(thermal_profiles, yard_id=yard_id)
         return thermal_default or profiles[0]
 
     # Default selection for primary print action when no profile is specified:
-    # default thermal -> first thermal -> first active profile.
-    thermal_default = _default_profile_for_purpose(thermal_profiles)
+    # yard thermal default -> global thermal default -> first thermal -> first active.
+    thermal_default = _default_profile_for_purpose(thermal_profiles, yard_id=yard_id)
     return thermal_default or profiles[0]
 
 
 def _ticket_print_profile_context(
     db: Session,
     selected_profile_id: int | None = None,
+    yard_id: int | None = None,
     print_advanced_open: bool = False,
 ) -> dict[str, object]:
     profiles = _load_active_ticket_print_profiles(db)
@@ -1327,11 +1470,15 @@ def _ticket_print_profile_context(
         row for row in profiles if row.purpose == PRINT_PROFILE_PURPOSE_TICKET_A4
     ]
 
-    primary_profile = _default_profile_for_purpose(thermal_profiles) or (
+    primary_profile = _default_profile_for_purpose(
+        thermal_profiles, yard_id=yard_id
+    ) or (
         profiles[0] if profiles else None
     )
-    default_thermal_profile = _default_profile_for_purpose(thermal_profiles)
-    default_a4_profile = _default_profile_for_purpose(a4_profiles)
+    default_thermal_profile = _default_profile_for_purpose(
+        thermal_profiles, yard_id=yard_id
+    )
+    default_a4_profile = _default_profile_for_purpose(a4_profiles, yard_id=yard_id)
 
     selected_profile = next(
         (row for row in profiles if selected_profile_id and row.id == selected_profile_id),
@@ -1357,12 +1504,23 @@ def _ticket_print_profile_context(
         (str(profile.id), _print_profile_display_name(profile))
         for profile in a4_profiles
     ]
+    primary_options = [
+        (str(profile.id), _print_profile_option_label(profile))
+        for profile in profiles
+    ]
+    primary_selected = (
+        selected_profile.id
+        if selected_profile
+        else (primary_profile.id if primary_profile else "")
+    )
 
     return {
         "has_print_profiles": bool(profiles),
         "print_primary_profile_name": (
             _print_profile_display_name(primary_profile) if primary_profile else ""
         ),
+        "print_profile_options": primary_options,
+        "print_selected_profile_id": str(primary_selected) if primary_selected else "",
         "thermal_profile_options": thermal_options,
         "a4_profile_options": a4_options,
         "show_thermal_profile_selector": len(thermal_profiles) > 1,
@@ -1373,31 +1531,6 @@ def _ticket_print_profile_context(
         "print_has_a4_profiles": bool(a4_profiles),
         "print_advanced_open": bool(print_advanced_open),
     }
-
-
-def _render_ticket_print_content(payload: dict, profile: PrintProfile) -> str:
-    purpose = (profile.purpose or "").strip().upper()
-    if purpose == PRINT_PROFILE_PURPOSE_TICKET_A4:
-        return render_a4_html(payload, template_name=profile.template_name)
-    if purpose == PRINT_PROFILE_PURPOSE_TICKET_THERMAL:
-        return render_thermal(payload, template_name=profile.template_name)
-    raise ValueError(f"Unsupported print profile purpose: {profile.purpose}")
-
-
-def _resolve_transport(profile: PrintProfile) -> tuple[str, dict]:
-    transport_mode = (profile.transport_mode or "").strip().upper()
-    transport_config = (
-        dict(profile.transport_config)
-        if isinstance(profile.transport_config, dict)
-        else {}
-    )
-    if transport_mode == PRINT_PROFILE_TRANSPORT_NETWORK_RAW_9100:
-        return "network", transport_config
-    if transport_mode == PRINT_PROFILE_TRANSPORT_CUPS:
-        return "cups", transport_config
-    if transport_mode == PRINT_PROFILE_TRANSPORT_USB_ESC_POS:
-        return "usb", transport_config
-    raise ValueError(f"Unsupported print transport mode: {profile.transport_mode}")
 
 
 @router.get("/tickets/{ticket_id:int}", response_class=HTMLResponse)
@@ -1439,9 +1572,12 @@ def tickets_edit(
         product_id=ticket.product_id,
     )
     selected_profile_id = _parse_int(request.query_params.get("print_profile_id", ""))
+    print_advanced_open = request.query_params.get("print_advanced") == "1"
     print_profile_context = _ticket_print_profile_context(
         db,
         selected_profile_id=selected_profile_id,
+        yard_id=ticket.yard_id,
+        print_advanced_open=print_advanced_open,
     )
     return templates.TemplateResponse(request, 
         "tickets/edit.html",
@@ -1454,7 +1590,13 @@ def tickets_edit(
             "completed": request.query_params.get("completed") == "1",
             "voided": request.query_params.get("voided") == "1",
             "printed": request.query_params.get("printed") == "1",
+            "print_failed": request.query_params.get("print_failed") == "1",
+            "print_error_label": request.query_params.get("print_error", ""),
+            "print_error_detail": request.query_params.get("print_error_detail", ""),
             "printed_to": request.query_params.get("printed_to", ""),
+            "print_status": request.query_params.get("print_status") == "1",
+            "print_sent_at": request.query_params.get("print_sent_at", ""),
+            "print_job_id": request.query_params.get("print_job_id", ""),
             "ticket": ticket,
             "ticket_void": ticket_void,
             "ticket_void_reason": ticket_void_reason,
@@ -1492,6 +1634,7 @@ def tickets_edit(
             "options": options,
             "product_unit_meta": _load_product_unit_meta(db),
             "enums": _ticket_enums(),
+            "receipts_wip_enabled": bool(settings.receipts_wip_enabled),
             **print_profile_context,
             **_active_lookup_options(ticket, db),
         },
@@ -1537,6 +1680,87 @@ def tickets_print_a4_preview(
 
 
 @router.get(
+    "/tickets/{ticket_id:int}/print/browser",
+    response_class=HTMLResponse,
+)
+def tickets_print_browser(
+    ticket_id: int,
+    request: Request,
+    profile_id: int | None = Query(None),
+    purpose: str | None = Query(None),
+    job_id: int | None = Query(None),
+    printed_to: str | None = Query(None),
+    print_profile: str | None = Query(None),
+    print_sent_at: str | None = Query(None),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        return HTMLResponse("Ticket not found.", status_code=404)
+    if _status_value(ticket.status) != TicketStatusEnum.COMPLETE.value:
+        return HTMLResponse(PRINT_REQUIRES_COMPLETE_ERROR, status_code=400)
+
+    try:
+        profile = _select_ticket_print_profile(
+            db,
+            profile_id=profile_id,
+            purpose=(purpose or "").strip().upper() or None,
+            yard_id=ticket.yard_id,
+        )
+        payload = build_ticket_print_payload(db, ticket)
+        rendered = render_profile_content(db, payload=payload, profile=profile)
+    except ValueError as exc:
+        return HTMLResponse(str(exc) or "Print profile is invalid.", status_code=400)
+    except (RuntimeError, OSError, NotImplementedError) as exc:
+        return HTMLResponse(f"Print render failed: {exc}", status_code=400)
+
+    profile_display_name = _print_profile_display_name(profile)
+    resolved_printed_to = str(printed_to or profile_display_name).strip() or profile_display_name
+    resolved_print_profile = (
+        str(print_profile or resolved_printed_to).strip() or profile_display_name
+    )
+    resolved_sent_at = (
+        str(print_sent_at or "").strip() or datetime.now().strftime("%H:%M")
+    )
+
+    back_params = {"print_profile_id": str(profile.id), "print_advanced": "1"}
+    if job_id is not None:
+        back_params.update(
+            {
+                "printed": "1",
+                "print_sent": "1",
+                "print_status": "1",
+                "printed_to": resolved_printed_to,
+                "print_profile": resolved_print_profile,
+                "print_sent_at": resolved_sent_at,
+                "print_job_id": str(job_id),
+            }
+        )
+    back_url = f"/tickets/{ticket.id}?{urlencode(back_params)}"
+
+    return templates.TemplateResponse(
+        request,
+        "tickets/print_browser.html",
+        {
+            "request": request,
+            "ticket": ticket,
+            "profile": profile,
+            "profile_display_name": profile_display_name,
+            "job_id": job_id,
+            "is_text": rendered.content_type != PRINT_CONTENT_TYPE_HTML,
+            "rendered_content": rendered.rendered_content,
+            "back_url": back_url,
+        },
+    )
+
+
+def _render_ticket_receipt_html(*, ticket: Ticket, payload: dict) -> str:
+    # WIP_RECEIPTS renderer path
+    receipt_template = templates.env.get_template("tickets/receipt.html")
+    return receipt_template.render(ticket=ticket, payload=payload)
+
+
+@router.get(
     "/tickets/{ticket_id:int}/receipt",
     response_class=HTMLResponse,
 )
@@ -1549,16 +1773,26 @@ def tickets_receipt(
     if not ticket:
         return HTMLResponse("Ticket not found.", status_code=404)
 
+    # WIP_RECEIPTS: Receipt printing gated behind RECEIPTS_WIP_ENABLED in operator UI.
     payload = build_ticket_print_payload(db, ticket)
-    return templates.TemplateResponse(
-        request,
-        "tickets/receipt.html",
-        {
-            "request": request,
-            "ticket": ticket,
-            "payload": payload,
-        },
-    )
+    rendered_html = _render_ticket_receipt_html(ticket=ticket, payload=payload)
+    try:
+        result = execute_rendered_print(
+            db,
+            purpose="RECEIPT_THERMAL",
+            rendered_content=rendered_html,
+            content_type=PRINT_CONTENT_TYPE_HTML,
+            transport_mode=PRINT_PROFILE_TRANSPORT_LOCAL_BROWSER,
+            transport_config={},
+            profile_id=None,
+            template_id=None,
+            ticket_id=ticket.id,
+            created_by_user_id=None,
+        )
+    except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
+        return HTMLResponse(f"Receipt render failed: {exc}", status_code=400)
+
+    return HTMLResponse(result.browser_content or rendered_html)
 
 
 @router.post("/tickets/{ticket_id:int}/print")
@@ -1616,6 +1850,7 @@ async def tickets_print_dispatch(
             profile_id=profile_id,
             profile_code=profile_code,
             purpose=purpose,
+            yard_id=ticket.yard_id,
         )
     except ValueError as exc:
         message = str(exc) or "Print profile is invalid."
@@ -1633,9 +1868,8 @@ async def tickets_print_dispatch(
 
     try:
         payload = build_ticket_print_payload(db, ticket)
-        rendered = _render_ticket_print_content(payload, profile)
-        mode, transport_config = _resolve_transport(profile)
-        send_print_job(rendered.encode("utf-8"), mode, transport_config)
+        rendered = render_profile_content(db, payload=payload, profile=profile)
+        _, transport_config = resolve_profile_transport(profile)
     except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
         message = str(exc) or "Print failed."
         if expects_json:
@@ -1650,23 +1884,110 @@ async def tickets_print_dispatch(
             status_code=400,
         )
 
+    try:
+        result = execute_rendered_print(
+            db,
+            purpose=profile.purpose,
+            rendered_content=rendered.rendered_content,
+            content_type=rendered.content_type,
+            transport_mode=profile.transport_mode,
+            transport_config=transport_config,
+            profile_id=profile.id,
+            template_id=rendered.template_id,
+            ticket_id=ticket.id,
+            created_by_user_id=None,
+        )
+    except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
+        detail = str(exc) or "Print delivery failed."
+        error_label = _friendly_print_error_label(detail)
+        failed_job_id = _latest_print_job_id_for_ticket(
+            db,
+            ticket_id=ticket.id,
+            profile_id=profile.id,
+            status="FAILED",
+        )
+        if expects_json:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": detail,
+                    "error_label": error_label,
+                    "detail": detail,
+                    "job_id": failed_job_id,
+                },
+                status_code=400,
+            )
+        query_data = {
+            "print_failed": "1",
+            "print_error": error_label,
+            "print_error_detail": detail[:200],
+            "print_profile_id": str(profile.id),
+            "print_profile": _print_profile_display_name(profile),
+            "print_advanced": "1",
+        }
+        if failed_job_id is not None:
+            query_data["print_job_id"] = str(failed_job_id)
+        return RedirectResponse(
+            url=f"/tickets/{ticket.id}?{urlencode(query_data)}",
+            status_code=303,
+        )
+
     profile_display_name = _print_profile_display_name(profile)
+    print_sent_at = datetime.now().strftime("%H:%M")
+    success_query_data = {
+        "print_sent": "1",
+        "printed": "1",
+        "print_status": "1",
+        "printed_to": profile_display_name,
+        "print_profile": profile_display_name,
+        "print_sent_at": print_sent_at,
+        "print_profile_id": str(profile.id),
+        "print_job_id": str(result.job.id),
+    }
+
+    is_local_browser = (
+        str(profile.transport_mode or "").strip().upper()
+        == PRINT_PROFILE_TRANSPORT_LOCAL_BROWSER
+    )
     if expects_json:
-        return JSONResponse(
+        payload = {
+            "ok": True,
+            "profile_code": profile.code,
+            "profile_id": profile.id,
+            "profile_display_name": profile_display_name,
+            "job_id": result.job.id,
+        }
+        if is_local_browser:
+            browser_query = urlencode(
+                {
+                    "profile_id": str(profile.id),
+                    "job_id": str(result.job.id),
+                    "printed_to": profile_display_name,
+                    "print_profile": profile_display_name,
+                    "print_sent_at": print_sent_at,
+                }
+            )
+            payload["browser_print_url"] = (
+                f"/tickets/{ticket.id}/print/browser?{browser_query}"
+            )
+        return JSONResponse(payload)
+
+    if is_local_browser:
+        browser_query = urlencode(
             {
-                "ok": True,
-                "profile_code": profile.code,
-                "profile_id": profile.id,
-                "profile_display_name": profile_display_name,
+                "profile_id": str(profile.id),
+                "job_id": str(result.job.id),
+                "printed_to": profile_display_name,
+                "print_profile": profile_display_name,
+                "print_sent_at": print_sent_at,
             }
         )
-    query = urlencode(
-        {
-            "printed": "1",
-            "printed_to": profile_display_name,
-            "print_profile_id": str(profile.id),
-        }
-    )
+        return RedirectResponse(
+            url=f"/tickets/{ticket.id}/print/browser?{browser_query}",
+            status_code=303,
+        )
+
+    query = urlencode(success_query_data)
     return RedirectResponse(
         url=f"/tickets/{ticket.id}?{query}",
         status_code=303,
@@ -4099,6 +4420,7 @@ def _render_ticket_edit(
     print_profile_context = _ticket_print_profile_context(
         db,
         selected_profile_id=selected_print_profile_id,
+        yard_id=ticket.yard_id,
         print_advanced_open=print_advanced_open,
     )
     return templates.TemplateResponse(request, 
@@ -4111,7 +4433,13 @@ def _render_ticket_edit(
             "saved": False,
             "completed": False,
             "printed": False,
+            "print_failed": False,
+            "print_error_label": "",
+            "print_error_detail": "",
             "printed_to": "",
+            "print_status": False,
+            "print_sent_at": "",
+            "print_job_id": "",
             "ticket": ticket,
             "ticket_void": ticket_void,
             "ticket_void_reason": ticket_void_reason,
@@ -4155,6 +4483,7 @@ def _render_ticket_edit(
             "options": options,
             "product_unit_meta": _load_product_unit_meta(db),
             "enums": _ticket_enums(),
+            "receipts_wip_enabled": bool(settings.receipts_wip_enabled),
             **print_profile_context,
             **_active_lookup_options(ticket, db),
         },

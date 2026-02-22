@@ -8,7 +8,10 @@
     <h1>Tickets</h1>
     <p class="muted">Filter and review ticket activity.</p>
   </div>
-  <div class="actions">
+  <div class="actions btn-group">
+    <form method="post" action="/tickets/print-last">
+      <button class="btn btn--secondary" type="submit">Print Last Ticket Again</button>
+    </form>
     <form method="post" action="/tickets/new/quick">
       <button class="btn btn--primary" type="submit">New Ticket</button>
     </form>

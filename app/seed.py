@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 import logging
+from pathlib import Path
 
 from .models.base import utcnow
 
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models import (
     PaymentMethod,
+    PrintTemplate,
     PrintProfile,
     Product,
     TaxRate,
@@ -91,15 +93,56 @@ SEED_VEHICLE_TYPES = [
 
 PRINT_PROFILE_PURPOSE_TICKET_THERMAL = "TICKET_THERMAL"
 PRINT_PROFILE_PURPOSE_TICKET_A4 = "TICKET_A4"
+PRINT_PROFILE_PURPOSE_RECEIPT_THERMAL = "RECEIPT_THERMAL"
+PRINT_PROFILE_PURPOSE_INVOICE_A4 = "INVOICE_A4"
+PRINT_PROFILE_PURPOSE_WTN_A4 = "WTN_A4"
 PRINT_TRANSPORT_NETWORK_RAW_9100 = "NETWORK_RAW_9100"
 PRINT_TRANSPORT_USB_ESC_POS = "USB_ESC_POS"
 PRINT_TRANSPORT_CUPS = "CUPS"
+PRINT_TRANSPORT_LOCAL_BROWSER = "LOCAL_BROWSER"
+PRINT_TRANSPORT_LOCAL_NODE_HTTP = "LOCAL_NODE_HTTP"
+
+
+def _read_builtin_print_template(filename: str, fallback: str) -> str:
+    candidate = Path(__file__).resolve().parent / "templates" / "print" / filename
+    if not candidate.is_file():
+        return fallback
+    try:
+        content = candidate.read_text(encoding="utf-8")
+    except OSError:
+        return fallback
+    return content or fallback
+
+
+SEED_PRINT_TEMPLATES = [
+    {
+        "code": "TICKET_THERMAL_DEFAULT",
+        "description": "Default thermal ticket template",
+        "purpose": PRINT_PROFILE_PURPOSE_TICKET_THERMAL,
+        "content_type": "TEXT",
+        "content": _read_builtin_print_template(
+            "thermal_default.txt",
+            "Ticket: {{ payload.ticket_no }}",
+        ),
+    },
+    {
+        "code": "TICKET_A4_DEFAULT",
+        "description": "Default A4 ticket template",
+        "purpose": PRINT_PROFILE_PURPOSE_TICKET_A4,
+        "content_type": "HTML",
+        "content": _read_builtin_print_template(
+            "a4_default.html",
+            "<html><body><h1>Ticket {{ payload.ticket_no }}</h1></body></html>",
+        ),
+    },
+]
 
 SEED_PRINT_PROFILES = [
     {
         "code": "THERMAL_DEFAULT",
         "description": "Default thermal ticket print profile",
         "purpose": PRINT_PROFILE_PURPOSE_TICKET_THERMAL,
+        "template_code": "TICKET_THERMAL_DEFAULT",
         "template_name": "thermal_default.txt",
         "transport_mode": PRINT_TRANSPORT_NETWORK_RAW_9100,
         "transport_config": {"host": "127.0.0.1", "port": 9100},
@@ -109,6 +152,7 @@ SEED_PRINT_PROFILES = [
         "code": "A4_DEFAULT",
         "description": "Default A4 ticket print profile",
         "purpose": PRINT_PROFILE_PURPOSE_TICKET_A4,
+        "template_code": "TICKET_A4_DEFAULT",
         "template_name": "a4_default.html",
         "transport_mode": PRINT_TRANSPORT_CUPS,
         "transport_config": {"printer_name": "default"},
@@ -445,6 +489,15 @@ def seed_print_profiles(session: Session | None = None) -> int:
             description = (entry.get("description") or "").strip() or None
             purpose = (entry.get("purpose") or "").strip().upper()
             template_name = (entry.get("template_name") or "").strip()
+            template_code = (entry.get("template_code") or "").strip()
+            template = None
+            if template_code:
+                template = target_session.execute(
+                    select(PrintTemplate).where(
+                        func.lower(PrintTemplate.code) == template_code.lower()
+                    )
+                ).scalar_one_or_none()
+            template_id = template.id if template else None
             transport_mode = (entry.get("transport_mode") or "").strip().upper()
             transport_config = dict(entry.get("transport_config") or {})
             is_default = bool(entry.get("is_default"))
@@ -461,6 +514,9 @@ def seed_print_profiles(session: Session | None = None) -> int:
                     updated = True
                 if exists.purpose != purpose:
                     exists.purpose = purpose
+                    updated = True
+                if exists.template_id != template_id:
+                    exists.template_id = template_id
                     updated = True
                 if exists.template_name != template_name:
                     exists.template_name = template_name
@@ -487,10 +543,65 @@ def seed_print_profiles(session: Session | None = None) -> int:
                     code=code,
                     description=description,
                     purpose=purpose,
+                    template_id=template_id,
                     template_name=template_name,
                     transport_mode=transport_mode,
                     transport_config=transport_config,
                     is_default=is_default,
+                    is_active=True,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            created += 1
+            dirty = True
+        return created, dirty
+
+    if session is None:
+        with SessionLocal() as local_session:
+            created, dirty = seed_rows(local_session)
+            if dirty:
+                local_session.commit()
+            return created
+
+    created, dirty = seed_rows(session)
+    if dirty:
+        session.commit()
+    return created
+
+
+def seed_print_templates(session: Session | None = None) -> int:
+    now = utcnow()
+
+    def seed_rows(target_session: Session) -> tuple[int, bool]:
+        created = 0
+        dirty = False
+        for entry in SEED_PRINT_TEMPLATES:
+            code = entry["code"].strip()
+            exists = target_session.execute(
+                select(PrintTemplate).where(func.lower(PrintTemplate.code) == code.lower())
+            ).scalar_one_or_none()
+            if exists:
+                updated = False
+                for field in ("description", "purpose", "content_type", "content"):
+                    incoming = entry.get(field)
+                    if getattr(exists, field) != incoming:
+                        setattr(exists, field, incoming)
+                        updated = True
+                if not exists.is_active:
+                    exists.is_active = True
+                    updated = True
+                if updated:
+                    exists.updated_at = now
+                    dirty = True
+                continue
+            target_session.add(
+                PrintTemplate(
+                    code=code,
+                    description=entry.get("description"),
+                    purpose=entry.get("purpose"),
+                    content_type=entry.get("content_type"),
+                    content=entry.get("content"),
                     is_active=True,
                     created_at=now,
                     updated_at=now,
@@ -521,6 +632,7 @@ def main() -> None:
     created_invoice_void_reasons = seed_invoice_void_reasons()
     created_payment_methods = seed_payment_methods()
     created_vehicle_types = seed_vehicle_types()
+    created_print_templates = seed_print_templates()
     created_print_profiles = seed_print_profiles()
     logger.info("Seeded units: %s", created_units)
     logger.info("Seeded tax rates: %s", created_tax_rates)
@@ -528,6 +640,7 @@ def main() -> None:
     logger.info("Seeded invoice void reasons: %s", created_invoice_void_reasons)
     logger.info("Seeded payment methods: %s", created_payment_methods)
     logger.info("Seeded vehicle types: %s", created_vehicle_types)
+    logger.info("Seeded print templates: %s", created_print_templates)
     logger.info("Seeded print profiles: %s", created_print_profiles)
 
 

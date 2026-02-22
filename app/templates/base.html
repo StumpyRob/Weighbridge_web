@@ -10,24 +10,92 @@
   <body>
     <header class="site-header">
       <div class="brand">Weighbridge Web</div>
-      <nav class="site-nav">
-        <a href="/tickets" class="{% if request.url.path.startswith('/tickets') %}is-active{% endif %}" {% if request.url.path.startswith('/tickets') %}aria-current="page"{% endif %}>Tickets</a>
-        <a href="/customers" class="{% if request.url.path.startswith('/customers') %}is-active{% endif %}" {% if request.url.path.startswith('/customers') %}aria-current="page"{% endif %}>Customers</a>
-        <a href="/vehicles" class="{% if request.url.path.startswith('/vehicles') %}is-active{% endif %}" {% if request.url.path.startswith('/vehicles') %}aria-current="page"{% endif %}>Vehicles</a>
-        <a href="/products" class="{% if request.url.path.startswith('/products') %}is-active{% endif %}" {% if request.url.path.startswith('/products') %}aria-current="page"{% endif %}>Products</a>
-        <a href="/invoices" class="{% if request.url.path.startswith('/invoices') %}is-active{% endif %}" {% if request.url.path.startswith('/invoices') %}aria-current="page"{% endif %}>Invoices</a>
-        <a href="/lookups/hauliers" class="{% if request.url.path.startswith('/lookups') %}is-active{% endif %}" {% if request.url.path.startswith('/lookups') %}aria-current="page"{% endif %}>Lookups</a>
-        <a href="/reports" class="{% if request.url.path.startswith('/reports') %}is-active{% endif %}" {% if request.url.path.startswith('/reports') %}aria-current="page"{% endif %}>Reports</a>
-        <a href="/admin" class="{% if request.url.path.startswith('/admin') %}is-active{% endif %}" {% if request.url.path.startswith('/admin') %}aria-current="page"{% endif %}>Admin</a>
-      </nav>
+      <div class="site-header__right">
+        <nav class="site-nav">
+          <a href="/tickets" class="{% if request.url.path.startswith('/tickets') %}is-active{% endif %}" {% if request.url.path.startswith('/tickets') %}aria-current="page"{% endif %}>Tickets</a>
+          <a href="/customers" class="{% if request.url.path.startswith('/customers') %}is-active{% endif %}" {% if request.url.path.startswith('/customers') %}aria-current="page"{% endif %}>Customers</a>
+          <a href="/vehicles" class="{% if request.url.path.startswith('/vehicles') %}is-active{% endif %}" {% if request.url.path.startswith('/vehicles') %}aria-current="page"{% endif %}>Vehicles</a>
+          <a href="/products" class="{% if request.url.path.startswith('/products') %}is-active{% endif %}" {% if request.url.path.startswith('/products') %}aria-current="page"{% endif %}>Products</a>
+          <a href="/invoices" class="{% if request.url.path.startswith('/invoices') %}is-active{% endif %}" {% if request.url.path.startswith('/invoices') %}aria-current="page"{% endif %}>Invoices</a>
+          <a href="/lookups/hauliers" class="{% if request.url.path.startswith('/lookups') %}is-active{% endif %}" {% if request.url.path.startswith('/lookups') %}aria-current="page"{% endif %}>Lookups</a>
+          <a href="/reports" class="{% if request.url.path.startswith('/reports') %}is-active{% endif %}" {% if request.url.path.startswith('/reports') %}aria-current="page"{% endif %}>Reports</a>
+          <a href="/admin/printing/profiles" class="{% if request.url.path.startswith('/admin/printing') %}is-active{% endif %}" {% if request.url.path.startswith('/admin/printing') %}aria-current="page"{% endif %}>Printing</a>
+          <a href="/admin" class="{% if request.url.path == '/admin' %}is-active{% endif %}" {% if request.url.path == '/admin' %}aria-current="page"{% endif %}>Admin</a>
+        </nav>
+        {% if DEV_MODE %}
+          <span class="dev-mode-pill">DEV MODE</span>
+        {% endif %}
+      </div>
     </header>
     {% block toasts %}
       {% set toast_messages_markup %}
         {% block toast_messages %}{% endblock %}
       {% endset %}
-      {% if toast_messages_markup | trim %}
+      {% set print_sent = request.query_params.get("print_sent") == "1" %}
+      {% set print_failed = request.query_params.get("print_failed") == "1" %}
+      {% set print_job_id = request.query_params.get("print_job_id", "") %}
+      {% set print_profile = request.query_params.get("print_profile", "") %}
+      {% set print_error = request.query_params.get("print_error", "") %}
+      {% set print_error_detail = request.query_params.get("print_error_detail", "") %}
+      {% set reprint_sent = request.query_params.get("reprint_sent") == "1" %}
+      {% set reprint_job_id = request.query_params.get("reprint_job_id", "") %}
+      {% set reprint_ticket_no = request.query_params.get("reprint_ticket_no", "") %}
+      {% set reprint_error = request.query_params.get("reprint_error", "") %}
+      {% set reprint_error_detail = request.query_params.get("reprint_error_detail", "") %}
+      {% set has_print_toasts = print_sent or print_failed or reprint_sent or reprint_error %}
+      {% if toast_messages_markup | trim or has_print_toasts %}
         <div id="flash-toasts" class="flash-toasts" aria-live="polite">
           {{ toast_messages_markup | safe }}
+          {% if print_sent %}
+            <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1" data-timeout-ms="7000">
+              <div class="flash-toast__content">
+                Sent to printer{% if print_profile %}: {{ print_profile }}{% endif %}{% if print_job_id %} (Job {{ print_job_id }}){% endif %}.
+                {% if print_job_id %}
+                  <a href="/admin/printing/jobs/{{ print_job_id }}">View job</a>
+                {% endif %}
+              </div>
+              <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+            </div>
+          {% endif %}
+          {% if reprint_sent %}
+            <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1" data-timeout-ms="7000">
+              <div class="flash-toast__content">
+                Reprinted ticket{% if reprint_ticket_no %} {{ reprint_ticket_no }}{% endif %}{% if reprint_job_id %} (Job {{ reprint_job_id }}){% endif %}.
+                {% if reprint_job_id %}
+                  <a href="/admin/printing/jobs/{{ reprint_job_id }}">View job</a>
+                {% endif %}
+              </div>
+              <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+            </div>
+          {% endif %}
+          {% if print_failed %}
+            <div class="flash-toast flash-toast--error" data-flash-toast>
+              <div class="flash-toast__content">
+                {{ print_error or "Print failed" }}{% if print_job_id %} (Job {{ print_job_id }}){% endif %}.
+                {% if print_error_detail %}
+                  {{ print_error_detail }}
+                {% endif %}
+                {% if print_job_id %}
+                  <a href="/admin/printing/jobs/{{ print_job_id }}">View job</a>
+                {% endif %}
+              </div>
+              <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+            </div>
+          {% endif %}
+          {% if reprint_error %}
+            <div class="flash-toast flash-toast--error" data-flash-toast>
+              <div class="flash-toast__content">
+                {{ reprint_error }}{% if reprint_job_id %} (Job {{ reprint_job_id }}){% endif %}.
+                {% if reprint_error_detail %}
+                  {{ reprint_error_detail }}
+                {% endif %}
+                {% if reprint_job_id %}
+                  <a href="/admin/printing/jobs/{{ reprint_job_id }}">View job</a>
+                {% endif %}
+              </div>
+              <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+            </div>
+          {% endif %}
         </div>
       {% endif %}
     {% endblock %}

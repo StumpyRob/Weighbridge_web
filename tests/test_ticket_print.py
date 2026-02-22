@@ -8,6 +8,7 @@ from app.models import (
     DirectionEnum,
     Driver,
     Haulier,
+    PrintJob,
     Product,
     Ticket,
     TicketStatusEnum,
@@ -337,3 +338,30 @@ def test_ticket_receipt_contains_core_fields(client, db_session):
     assert "Unit price" in response.text
     assert "Total" in response.text
     assert "23.00" in response.text
+
+
+def test_ticket_receipt_route_creates_print_job_log_entry(client, db_session):
+    ticket = Ticket(
+        ticket_no="T-PRINT-RECEIPT-JOB-1",
+        datetime=datetime(2026, 2, 19, 14, 0, 0),
+        status=TicketStatusEnum.COMPLETE.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    response = client.get(f"/tickets/{ticket.id}/receipt")
+    assert response.status_code == 200
+
+    job = (
+        db_session.query(PrintJob)
+        .filter(PrintJob.ticket_id == ticket.id, PrintJob.purpose == "RECEIPT_THERMAL")
+        .order_by(PrintJob.id.desc())
+        .first()
+    )
+    assert job is not None
+    assert job.transport_mode == "LOCAL_BROWSER"
+    assert job.status == "SENT"

@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     dev_mode: bool = False
     print_network_enabled: bool = False
     print_template_override_dir: str = "/config/print_templates"
+    receipts_wip_enabled: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="")
 

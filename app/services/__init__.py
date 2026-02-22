@@ -6,6 +6,16 @@ from .pricing import (
 )
 from .print_payload import build_ticket_print_payload
 from .print_render import render_a4_html, render_thermal
+from .printing import (
+    PRINT_JOB_STATUS_FAILED,
+    PRINT_JOB_STATUS_QUEUED,
+    PRINT_JOB_STATUS_SENT,
+    execute_rendered_print,
+    render_profile_content,
+    resolve_profile_template,
+    resolve_profile_transport,
+    retry_print_job,
+)
 from .print_transport import send as send_print_job
 
 __all__ = [
@@ -17,5 +27,13 @@ __all__ = [
     "build_ticket_print_payload",
     "render_a4_html",
     "render_thermal",
+    "resolve_profile_transport",
+    "resolve_profile_template",
+    "render_profile_content",
+    "execute_rendered_print",
+    "retry_print_job",
+    "PRINT_JOB_STATUS_QUEUED",
+    "PRINT_JOB_STATUS_SENT",
+    "PRINT_JOB_STATUS_FAILED",
     "send_print_job",
 ]

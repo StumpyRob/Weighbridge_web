@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% from "_help.html" import help %}
+
+{% block title %}Printing Jobs | Weighbridge Web{% endblock %}
+
+{% block toast_messages %}
+  {% if saved %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Saved.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Printing Jobs{{ help(help_text.printing_job_concept, "printing-jobs-title-help") }}</h1>
+      <p class="muted">Audit, errors, and retry actions.</p>
+    </div>
+  </div>
+
+  {% include "admin/printing_nav.html" %}
+
+  <form class="filters filters-inline" method="get" action="/admin/printing/jobs">
+    <div class="field">
+      <label for="status">Status</label>
+      <select id="status" name="status">
+        <option value="">All</option>
+        {% for option in status_options %}
+          <option value="{{ option }}" {% if filters.status == option %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="purpose">Purpose</label>
+      <select id="purpose" name="purpose">
+        <option value="">All</option>
+        {% for option in purpose_options %}
+          <option value="{{ option }}" {% if filters.purpose == option %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="profile_id">Profile</label>
+      <select id="profile_id" name="profile_id">
+        <option value="">All</option>
+        {% for profile in profiles %}
+          <option value="{{ profile.id }}" {% if filters.profile_id == profile.id|string %}selected{% endif %}>{{ profile.code }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="date_from">From</label>
+      <input type="date" id="date_from" name="date_from" value="{{ filters.date_from }}" />
+    </div>
+    <div class="field">
+      <label for="date_to">To</label>
+      <input type="date" id="date_to" name="date_to" value="{{ filters.date_to }}" />
+    </div>
+    <div class="actions btn-group">
+      <button type="submit" class="btn btn--secondary">Filter</button>
+      <a class="btn btn--ghost" href="/admin/printing/jobs">Reset</a>
+    </div>
+  </form>
+
+  <p class="printing-status-inline">
+    Status{{ help(help_text.printing_jobs_status, "printing-jobs-status-legend-help") }}:
+    <strong>QUEUED</strong> = pending &bull;
+    <strong>SENT</strong> = delivered &bull;
+    <strong>FAILED</strong> = error / retry
+  </p>
+
+  <div class="table-wrap list-table-wrap">
+    <table class="data-table list-table printing-jobs-table">
+      <thead>
+        <tr>
+          <th class="jobs-col-id">ID</th>
+          <th class="jobs-col-ticket">Ticket No</th>
+          <th class="jobs-col-profile">Profile</th>
+          <th class="jobs-col-template">Template</th>
+          <th class="jobs-col-target">Target{{ help(help_text.printing_jobs_transport_snapshot, "printing-jobs-transport-help") }}</th>
+          <th class="jobs-col-purpose">Purpose</th>
+          <th class="jobs-col-status">Status{{ help(help_text.printing_jobs_status, "printing-jobs-status-help") }}</th>
+          <th class="jobs-col-created">Created</th>
+          <th class="jobs-col-sent">Sent at</th>
+          <th class="jobs-col-error">Error summary</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+          {% set ticket = tickets_by_id.get(item.ticket_id) if item.ticket_id else None %}
+          {% set profile = profiles_by_id.get(item.profile_id) if item.profile_id else None %}
+          {% set template = templates_by_id.get(item.template_id) if item.template_id else None %}
+          {% set target_label = job_targets.get(item.id, "-") %}
+          {% set error_summary = job_error_summaries.get(item.id, "") %}
+          <tr data-row-link="/admin/printing/jobs/{{ item.id }}">
+            <td class="jobs-col-id">{{ item.id }}</td>
+            <td class="jobs-col-ticket">{{ ticket.ticket_no if ticket else "-" }}</td>
+            <td class="jobs-col-profile">
+              {% if profile %}
+                <div class="printing-job-profile-code" title="{{ profile.code }}">{{ profile.code }}</div>
+                {% if profile.description %}
+                  <div class="printing-job-profile-description" title="{{ profile.description }}">{{ profile.description }}</div>
+                {% endif %}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td class="jobs-col-template">
+              <span class="table-cell-truncate" title="{{ template.code if template else '-' }}">
+                {{ template.code if template else "-" }}
+              </span>
+            </td>
+            <td class="jobs-col-target">
+              <span class="table-cell-truncate" title="{{ target_label }}">{{ target_label }}</span>
+            </td>
+            <td class="jobs-col-purpose">{{ item.purpose }}</td>
+            <td class="jobs-col-status">
+              {% if item.status == "SENT" %}
+                <span class="status-pill status-open">SENT</span>
+              {% elif item.status == "FAILED" %}
+                <span class="status-pill status-void">FAILED</span>
+              {% else %}
+                <span class="status-pill status-info">{{ item.status }}</span>
+              {% endif %}
+            </td>
+            <td class="jobs-col-created">{{ item.created_at.strftime("%d/%m/%Y %H:%M:%S") if item.created_at else "-" }}</td>
+            <td class="jobs-col-sent">{{ item.sent_at.strftime("%d/%m/%Y %H:%M:%S") if item.sent_at else "-" }}</td>
+            <td class="jobs-col-error">
+              {% if item.status == "FAILED" and error_summary %}
+                <span class="table-cell-truncate" title="{{ item.last_error or error_summary }}">{{ error_summary }}</span>
+              {% else %}
+                -
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="10" class="empty">No print jobs found.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

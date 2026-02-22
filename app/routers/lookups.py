@@ -1,4 +1,3 @@
-import json
 import re
 from urllib.parse import urlencode
 
@@ -8,30 +7,14 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, true
 from sqlalchemy.orm import Session
 
-from ..constants import CODE_MAX, DESC_MAX, NAME_MAX
+from ..constants import CODE_MAX, NAME_MAX
 from ..db import get_db
-from ..models import Container, Destination, Driver, Haulier, PrintProfile, Ticket
+from ..models import Container, Destination, Driver, Haulier, Ticket
 from ..security import validate_no_html_fields
 from ..templating import templates
 
 router = APIRouter(prefix="/lookups")
 templates = Jinja2Templates(directory="app/templates")
-
-PRINT_PROFILE_PURPOSE_OPTIONS = (
-    ("TICKET_THERMAL", "Ticket Thermal"),
-    ("TICKET_A4", "Ticket A4"),
-)
-PRINT_PROFILE_TRANSPORT_OPTIONS = (
-    ("NETWORK_RAW_9100", "Network RAW 9100"),
-    ("USB_ESC_POS", "USB ESC/POS"),
-    ("CUPS", "CUPS"),
-)
-PRINT_PROFILE_PURPOSE_VALUES = {value for value, _ in PRINT_PROFILE_PURPOSE_OPTIONS}
-PRINT_PROFILE_TRANSPORT_VALUES = {
-    value for value, _ in PRINT_PROFILE_TRANSPORT_OPTIONS
-}
-PRINT_PROFILE_TEMPLATE_NAME_MAX = 255
-
 
 def _lookup_redirect_url(request: Request, base_path: str) -> str:
     params: dict[str, str] = {"saved": "1"}
@@ -100,198 +83,6 @@ def _render_lookup_list(
             "error": error,
         },
     )
-
-
-def _empty_print_profile_form() -> dict[str, object]:
-    return {
-        "code": "",
-        "description": "",
-        "purpose": "TICKET_THERMAL",
-        "template_name": "thermal_default.txt",
-        "transport_mode": "NETWORK_RAW_9100",
-        "transport_config": '{\n  "host": "127.0.0.1",\n  "port": 9100\n}',
-        "is_default": False,
-        "is_active": True,
-    }
-
-
-def _print_profile_to_form(profile: PrintProfile) -> dict[str, object]:
-    config = profile.transport_config if isinstance(profile.transport_config, dict) else {}
-    return {
-        "code": profile.code,
-        "description": profile.description or "",
-        "purpose": profile.purpose,
-        "template_name": profile.template_name,
-        "transport_mode": profile.transport_mode,
-        "transport_config": json.dumps(config, indent=2, sort_keys=True),
-        "is_default": bool(profile.is_default),
-        "is_active": bool(profile.is_active),
-    }
-
-
-def _render_print_profile_list(
-    request: Request,
-    db: Session,
-    q: str | None,
-    hide_inactive: int,
-    error: str | None = None,
-) -> HTMLResponse:
-    query = select(PrintProfile)
-    if hide_inactive:
-        query = query.where(PrintProfile.is_active == true())
-    if q:
-        q_lower = q.strip().lower()
-        query = query.where(
-            func.lower(PrintProfile.code).contains(q_lower)
-            | func.lower(func.coalesce(PrintProfile.description, "")).contains(q_lower)
-            | func.lower(PrintProfile.purpose).contains(q_lower)
-            | func.lower(PrintProfile.template_name).contains(q_lower)
-        )
-    items = db.execute(query.order_by(PrintProfile.code.asc())).scalars().all()
-    return templates.TemplateResponse(
-        request,
-        "lookups/print_profiles_list.html",
-        {
-            "request": request,
-            "items": items,
-            "q": q or "",
-            "hide_inactive": bool(hide_inactive),
-            "saved": request.query_params.get("saved") == "1",
-            "error": error,
-        },
-    )
-
-
-def _render_print_profile_form(
-    request: Request,
-    *,
-    mode: str,
-    form_data: dict[str, object],
-    error: str | None,
-    status_code: int = 200,
-) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request,
-        "lookups/print_profiles_form.html",
-        {
-            "request": request,
-            "mode": mode,
-            "form_data": form_data,
-            "error": error,
-            "purpose_options": PRINT_PROFILE_PURPOSE_OPTIONS,
-            "transport_options": PRINT_PROFILE_TRANSPORT_OPTIONS,
-        },
-        status_code=status_code,
-    )
-
-
-def _parse_print_profile_form(
-    form_data,
-    db: Session,
-    *,
-    existing_id: int | None = None,
-) -> tuple[dict[str, object], str | None]:
-    raw_code = str(form_data.get("code", ""))
-    raw_description = str(form_data.get("description", ""))
-    raw_template_name = str(form_data.get("template_name", ""))
-    raw_transport_config = str(form_data.get("transport_config", "")).strip()
-
-    code = re.sub(r"\s+", " ", raw_code.strip()).upper()
-    description = re.sub(r"\s+", " ", raw_description.strip())
-    template_name = raw_template_name.strip()
-    purpose = str(form_data.get("purpose", "")).strip().upper()
-    transport_mode = str(form_data.get("transport_mode", "")).strip().upper()
-    is_default = _is_truthy(str(form_data.get("is_default", "")))
-    is_active = _is_truthy(str(form_data.get("is_active", "")))
-
-    parsed_transport_config: dict = {}
-    if raw_transport_config:
-        try:
-            parsed_json = json.loads(raw_transport_config)
-        except json.JSONDecodeError:
-            parsed_json = None
-        if parsed_json is None or not isinstance(parsed_json, dict):
-            return (
-                {
-                    "code": code,
-                    "description": description,
-                    "purpose": purpose,
-                    "template_name": template_name,
-                    "transport_mode": transport_mode,
-                    "transport_config": raw_transport_config,
-                    "is_default": is_default,
-                    "is_active": is_active,
-                },
-                "Transport config must be valid JSON object syntax.",
-            )
-        parsed_transport_config = parsed_json
-
-    error = _html_validation_error(
-        {
-            "Code": code,
-            "Description": description,
-            "Template name": template_name,
-        }
-    )
-    if not error:
-        if not code:
-            error = "Code is required."
-        elif len(code) > CODE_MAX:
-            error = f"Code must be {CODE_MAX} characters or fewer."
-        elif description and len(description) > DESC_MAX:
-            error = f"Description must be {DESC_MAX} characters or fewer."
-        elif not purpose or purpose not in PRINT_PROFILE_PURPOSE_VALUES:
-            error = "Purpose is invalid."
-        elif not template_name:
-            error = "Template name is required."
-        elif len(template_name) > PRINT_PROFILE_TEMPLATE_NAME_MAX:
-            error = "Template name must be 255 characters or fewer."
-        elif (
-            not transport_mode
-            or transport_mode not in PRINT_PROFILE_TRANSPORT_VALUES
-        ):
-            error = "Transport mode is invalid."
-        else:
-            duplicate_query = select(PrintProfile).where(
-                func.lower(PrintProfile.code) == code.lower()
-            )
-            if existing_id is not None:
-                duplicate_query = duplicate_query.where(PrintProfile.id != existing_id)
-            duplicate = db.execute(duplicate_query).scalar_one_or_none()
-            if duplicate:
-                error = "Code already exists."
-
-    normalized = {
-        "code": code,
-        "description": description,
-        "purpose": purpose,
-        "template_name": template_name,
-        "transport_mode": transport_mode,
-        "transport_config": json.dumps(parsed_transport_config, indent=2, sort_keys=True),
-        "transport_config_dict": parsed_transport_config,
-        "is_default": is_default,
-        "is_active": is_active,
-    }
-    return normalized, error
-
-
-def _clear_other_defaults_for_purpose(
-    db: Session,
-    *,
-    purpose: str,
-    keep_profile_id: int | None,
-) -> None:
-    others = list(
-        db.execute(
-            select(PrintProfile).where(
-                PrintProfile.purpose == purpose,
-                PrintProfile.is_default.is_(True),
-                PrintProfile.id != (keep_profile_id or -1),
-            )
-        ).scalars()
-    )
-    for row in others:
-        row.is_default = False
 
 
 @router.get("/hauliers", response_class=HTMLResponse)
@@ -1266,187 +1057,55 @@ def print_profiles_list(
     request: Request,
     q: str | None = None,
     hide_inactive: int | None = Query(None),
-    db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    resolved_hide = _resolve_hide_inactive(request, hide_inactive)
-    return _render_print_profile_list(
-        request,
-        db,
-        q,
-        resolved_hide,
-    )
+    params: dict[str, str] = {}
+    if q:
+        params["q"] = q
+    if hide_inactive is not None:
+        params["hide_inactive"] = "1" if hide_inactive else "0"
+    target = "/admin/printing/profiles"
+    if params:
+        target = f"{target}?{urlencode(params)}"
+    return RedirectResponse(url=target, status_code=301)
 
 
 @router.get("/print-profiles/new", response_class=HTMLResponse)
-def print_profiles_new(request: Request) -> HTMLResponse:
-    return _render_print_profile_form(
-        request,
-        mode="new",
-        form_data=_empty_print_profile_form(),
-        error=None,
-    )
+def print_profiles_new() -> HTMLResponse:
+    return RedirectResponse(url="/admin/printing/profiles/new", status_code=301)
 
 
 @router.post("/print-profiles/new", response_class=HTMLResponse)
-async def print_profiles_create(
-    request: Request, db: Session = Depends(get_db)
-) -> HTMLResponse:
-    form = await request.form()
-    normalized, error = _parse_print_profile_form(form, db)
-    if error:
-        return _render_print_profile_form(
-            request,
-            mode="new",
-            form_data=normalized,
-            error=error,
-            status_code=400,
-        )
-
-    profile = PrintProfile(
-        code=str(normalized["code"]),
-        description=str(normalized["description"]).strip() or None,
-        purpose=str(normalized["purpose"]),
-        template_name=str(normalized["template_name"]),
-        transport_mode=str(normalized["transport_mode"]),
-        transport_config=dict(normalized["transport_config_dict"]),
-        is_default=bool(normalized["is_default"]),
-        is_active=bool(normalized["is_active"]),
-    )
-    db.add(profile)
-    db.flush()
-    if profile.is_default:
-        _clear_other_defaults_for_purpose(
-            db,
-            purpose=profile.purpose,
-            keep_profile_id=profile.id,
-        )
-    db.commit()
-    return RedirectResponse(
-        url=_lookup_redirect_url(request, "/lookups/print-profiles"),
-        status_code=303,
-    )
+def print_profiles_create() -> HTMLResponse:
+    return RedirectResponse(url="/admin/printing/profiles/new", status_code=307)
 
 
 @router.get("/print-profiles/{profile_id}/edit", response_class=HTMLResponse)
-def print_profiles_edit(
-    profile_id: int, request: Request, db: Session = Depends(get_db)
-) -> HTMLResponse:
-    profile = db.get(PrintProfile, profile_id)
-    if not profile:
-        return templates.TemplateResponse(
-            request,
-            "lookups/not_found.html",
-            {
-                "request": request,
-                "entity": "Print profile",
-                "entity_id": profile_id,
-                "base_path": "/lookups/print-profiles",
-            },
-            status_code=404,
-        )
-    return _render_print_profile_form(
-        request,
-        mode="edit",
-        form_data=_print_profile_to_form(profile),
-        error=None,
+def print_profiles_edit(profile_id: int) -> HTMLResponse:
+    return RedirectResponse(
+        url=f"/admin/printing/profiles/{profile_id}/edit",
+        status_code=301,
     )
 
 
 @router.post("/print-profiles/{profile_id}/edit", response_class=HTMLResponse)
-async def print_profiles_update(
-    profile_id: int, request: Request, db: Session = Depends(get_db)
-) -> HTMLResponse:
-    profile = db.get(PrintProfile, profile_id)
-    if not profile:
-        return templates.TemplateResponse(
-            request,
-            "lookups/not_found.html",
-            {
-                "request": request,
-                "entity": "Print profile",
-                "entity_id": profile_id,
-                "base_path": "/lookups/print-profiles",
-            },
-            status_code=404,
-        )
-
-    form = await request.form()
-    normalized, error = _parse_print_profile_form(form, db, existing_id=profile.id)
-    if error:
-        return _render_print_profile_form(
-            request,
-            mode="edit",
-            form_data=normalized,
-            error=error,
-            status_code=400,
-        )
-
-    profile.code = str(normalized["code"])
-    profile.description = str(normalized["description"]).strip() or None
-    profile.purpose = str(normalized["purpose"])
-    profile.template_name = str(normalized["template_name"])
-    profile.transport_mode = str(normalized["transport_mode"])
-    profile.transport_config = dict(normalized["transport_config_dict"])
-    profile.is_default = bool(normalized["is_default"])
-    profile.is_active = bool(normalized["is_active"])
-    if profile.is_default:
-        _clear_other_defaults_for_purpose(
-            db,
-            purpose=profile.purpose,
-            keep_profile_id=profile.id,
-        )
-    db.commit()
+def print_profiles_update(profile_id: int) -> HTMLResponse:
     return RedirectResponse(
-        url=_lookup_redirect_url(request, "/lookups/print-profiles"),
-        status_code=303,
+        url=f"/admin/printing/profiles/{profile_id}/edit",
+        status_code=307,
     )
 
 
 @router.post("/print-profiles/{profile_id}/deactivate", response_class=HTMLResponse)
-def print_profiles_deactivate(
-    profile_id: int, request: Request, db: Session = Depends(get_db)
-) -> HTMLResponse:
-    profile = db.get(PrintProfile, profile_id)
-    if not profile:
-        return templates.TemplateResponse(
-            request,
-            "lookups/not_found.html",
-            {
-                "request": request,
-                "entity": "Print profile",
-                "entity_id": profile_id,
-                "base_path": "/lookups/print-profiles",
-            },
-            status_code=404,
-        )
-    profile.is_active = False
-    db.commit()
+def print_profiles_deactivate(profile_id: int) -> HTMLResponse:
     return RedirectResponse(
-        url=_lookup_redirect_url(request, "/lookups/print-profiles"),
-        status_code=303,
+        url=f"/admin/printing/profiles/{profile_id}/deactivate",
+        status_code=307,
     )
 
 
 @router.post("/print-profiles/{profile_id}/reactivate", response_class=HTMLResponse)
-def print_profiles_reactivate(
-    profile_id: int, request: Request, db: Session = Depends(get_db)
-) -> HTMLResponse:
-    profile = db.get(PrintProfile, profile_id)
-    if not profile:
-        return templates.TemplateResponse(
-            request,
-            "lookups/not_found.html",
-            {
-                "request": request,
-                "entity": "Print profile",
-                "entity_id": profile_id,
-                "base_path": "/lookups/print-profiles",
-            },
-            status_code=404,
-        )
-    profile.is_active = True
-    db.commit()
+def print_profiles_reactivate(profile_id: int) -> HTMLResponse:
     return RedirectResponse(
-        url=_lookup_redirect_url(request, "/lookups/print-profiles"),
-        status_code=303,
+        url=f"/admin/printing/profiles/{profile_id}/reactivate",
+        status_code=307,
     )

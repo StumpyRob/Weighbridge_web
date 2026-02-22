@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+{% from "_help.html" import help %}
+
+{% block title %}
+  {% if mode == "edit" %}Edit Printing Template{% else %}New Printing Template{% endif %} | Weighbridge Web
+{% endblock %}
+
+{% block toast_messages %}
+  {% if saved %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Saved.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{% if mode == "edit" %}Edit Printing Template{% else %}New Printing Template{% endif %}{{ help(help_text.printing_template_concept, "printing-template-form-title-help") }}</h1>
+      <p class="muted">Template save performs a sample render validation.</p>
+    </div>
+  </div>
+
+  {% include "admin/printing_nav.html" %}
+
+  {% if error %}
+    <div class="alert">{{ error }}</div>
+  {% endif %}
+  {% if duplicated %}
+    <div class="notice">Template duplicated. Update code and description, then save.</div>
+  {% endif %}
+
+  <form class="ticket-form" method="post">
+    <div class="field">
+      <label for="code">Code</label>
+      <input type="text" id="code" name="code" maxlength="{{ limits.CODE_MAX }}" value="{{ form_data.code }}" required />
+    </div>
+
+    <div class="field">
+      <label for="description">Description</label>
+      <input type="text" id="description" name="description" maxlength="{{ limits.DESC_MAX }}" value="{{ form_data.description }}" />
+    </div>
+
+    <div class="field">
+      <label for="purpose">Purpose</label>
+      <select id="purpose" name="purpose" required>
+        {% for value, label in purpose_options %}
+          <option value="{{ value }}" {% if form_data.purpose == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field">
+      <label for="content_type">Content type{{ help(help_text.printing_content_type, "printing-template-content-type-help") }}</label>
+      <select id="content_type" name="content_type" required>
+        {% for value, label in content_type_options %}
+          <option value="{{ value }}" {% if form_data.content_type == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <p class="hint">TEXT = best for 80mm thermal. HTML = best for A4 / styled layouts.</p>
+    </div>
+
+    <div class="field">
+      <label for="content">Template content</label>
+      <label for="insert_field_token">Insert field token{{ help(help_text.printing_insert_field_picker, "printing-template-insert-token-help") }}</label>
+      <select id="insert_field_token">
+        <option value="">Insert field...</option>
+        {% for group_label, group_items in insert_token_groups %}
+          <optgroup label="{{ group_label }}">
+            {% for item_label, item_token in group_items %}
+              <option value="{{ item_token }}">{{ item_label }}</option>
+            {% endfor %}
+          </optgroup>
+        {% endfor %}
+      </select>
+      <div class="printing-template-quick-insert" role="group" aria-label="Common tokens">
+        <span class="muted">Common tokens:</span>
+        <button type="button" class="btn btn--ghost btn--sm" data-quick-token="{% raw %}{{ ticket.number }}{% endraw %}">Ticket number</button>
+        <button type="button" class="btn btn--ghost btn--sm" data-quick-token="{% raw %}{{ customer.name }}{% endraw %}">Customer name</button>
+        <button type="button" class="btn btn--ghost btn--sm" data-quick-token="{% raw %}{{ weights.net_kg_display }}{% endraw %}">Net weight</button>
+        <button type="button" class="btn btn--ghost btn--sm" data-quick-token="{% raw %}{{ pricing.total_display }}{% endraw %}">Total price</button>
+      </div>
+      <p class="hint">Some fields may be blank depending on ticket type.</p>
+      {% if mode == "new" %}
+        <div class="actions btn-group" style="margin-top: 0.5rem;">
+          <button type="button" class="btn btn--ghost btn--sm" id="insert_default_ticket_layout">
+            Insert Default Ticket Layout
+          </button>
+        </div>
+        <p class="hint">Adds a sensible starter layout for the selected purpose/content type.</p>
+      {% endif %}
+      <textarea id="content" name="content" rows="20" style="font-family: Consolas, monospace;">{{ form_data.content }}</textarea>
+    </div>
+
+    <div class="field checkbox">
+      <input type="checkbox" id="is_active" name="is_active" value="1" {% if form_data.is_active %}checked{% endif %} />
+      <label for="is_active">Active</label>
+    </div>
+
+    <div class="actions btn-group">
+      <button type="submit" class="btn btn--primary">Save</button>
+      {% if mode == "edit" and template %}
+        <a
+          class="btn btn--secondary"
+          href="/admin/printing/templates/{{ template.id }}/preview"
+          target="_blank"
+          rel="noopener"
+        >
+          Preview
+        </a>
+      {% else %}
+        <button type="button" class="btn btn--secondary" disabled title="Save template first to preview.">Preview</button>
+      {% endif %}
+      {% if mode == "edit" and template %}
+        <button
+          type="submit"
+          class="btn btn--secondary"
+          formaction="/admin/printing/templates/{{ template.id }}/reset-default"
+          formmethod="post"
+          onclick="return window.confirm('Reset this template content back to the seeded default?');"
+        >
+          Restore Default Template
+        </button>
+      {% endif %}
+      <a class="btn btn--secondary" href="/admin/printing/templates">Back</a>
+    </div>
+  </form>
+
+  {% if mode == "edit" and template %}
+    <section class="frame" style="margin-top: 1rem;">
+      <div class="frame-header">
+        <h2>Preview</h2>
+      </div>
+      <div class="frame-body">
+        <form class="filters filters-inline" method="get" action="/admin/printing/templates/{{ template.id }}/preview" target="_blank">
+          <div class="field template-preview-ticket-field">
+            <label for="ticket_id">Preview Ticket ID (optional){{ help(help_text.printing_preview_ticket_id, "printing-template-preview-ticket-id-help") }}</label>
+            <div class="template-preview-ticket-row">
+              <input type="text" id="ticket_id" name="ticket_id" value="{{ preview_ticket_id }}" />
+              <button type="submit" class="btn btn--secondary">Open Preview</button>
+            </div>
+            <p class="hint">Enter a numeric ticket ID. If blank or not found, preview uses the latest completed ticket.</p>
+          </div>
+        </form>
+      </div>
+    </section>
+  {% endif %}
+
+  {% if mode == "new" %}
+    <script id="default_ticket_layouts_json" type="application/json">{{ default_ticket_layouts_json | safe }}</script>
+  {% endif %}
+
+  <script>
+    (function () {
+      const picker = document.getElementById("insert_field_token");
+      const textarea = document.getElementById("content");
+      const quickInsertButtons = Array.from(
+        document.querySelectorAll("[data-quick-token]")
+      );
+      const purpose = document.getElementById("purpose");
+      const contentType = document.getElementById("content_type");
+      const insertDefaultButton = document.getElementById("insert_default_ticket_layout");
+      if (!(picker instanceof HTMLSelectElement) || !(textarea instanceof HTMLTextAreaElement)) {
+        return;
+      }
+
+      function insertAtCursor(token) {
+        const start = Number.isInteger(textarea.selectionStart) ? textarea.selectionStart : textarea.value.length;
+        const end = Number.isInteger(textarea.selectionEnd) ? textarea.selectionEnd : textarea.value.length;
+        const before = textarea.value.slice(0, start);
+        const after = textarea.value.slice(end);
+        textarea.value = before + token + after;
+        const next = start + token.length;
+        textarea.focus();
+        textarea.setSelectionRange(next, next);
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+
+      picker.addEventListener("change", function () {
+        const token = picker.value;
+        if (!token) {
+          return;
+        }
+        insertAtCursor(token);
+        picker.value = "";
+      });
+
+      quickInsertButtons.forEach(function (button) {
+        if (!(button instanceof HTMLButtonElement)) {
+          return;
+        }
+        button.addEventListener("click", function () {
+          const token = String(button.getAttribute("data-quick-token") || "").trim();
+          if (!token) {
+            return;
+          }
+          insertAtCursor(token);
+        });
+      });
+
+      if (!(insertDefaultButton instanceof HTMLButtonElement)) {
+        return;
+      }
+
+      const layoutsScript = document.getElementById("default_ticket_layouts_json");
+      let starterLayouts = {};
+      if (layoutsScript) {
+        try {
+          starterLayouts = JSON.parse(layoutsScript.textContent || "{}");
+        } catch (_error) {
+          starterLayouts = {};
+        }
+      }
+
+      function selectStarterLayout() {
+        const selectedPurpose = purpose instanceof HTMLSelectElement ? purpose.value : "";
+        const selectedType = contentType instanceof HTMLSelectElement ? contentType.value : "";
+        const exact = starterLayouts[`${selectedPurpose}|${selectedType}`];
+        if (typeof exact === "string" && exact.length > 0) {
+          return exact;
+        }
+        const fallbackByType = starterLayouts[`*|${selectedType}`];
+        if (typeof fallbackByType === "string" && fallbackByType.length > 0) {
+          return fallbackByType;
+        }
+        return "";
+      }
+
+      insertDefaultButton.addEventListener("click", function () {
+        const starter = selectStarterLayout();
+        if (!starter) {
+          return;
+        }
+        textarea.value = starter;
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    })();
+  </script>
+{% endblock %}

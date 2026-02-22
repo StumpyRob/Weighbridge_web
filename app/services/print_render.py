@@ -37,10 +37,58 @@ def _render_from_template_name(payload: dict, template_name: str) -> str:
     override_path = _resolve_override_template_path(template_name)
     if override_path is not None:
         template_text = override_path.read_text(encoding="utf-8")
-        return templates.env.from_string(template_text).render(payload=payload)
+        return render_from_content(payload, template_text)
 
     template = templates.env.get_template(_resolve_builtin_template_path(template_name))
     return template.render(payload=payload)
+
+
+def load_template_source(template_name: str) -> str:
+    override_path = _resolve_override_template_path(template_name)
+    if override_path is not None:
+        return override_path.read_text(encoding="utf-8")
+    template = templates.env.get_template(_resolve_builtin_template_path(template_name))
+    # Jinja keeps the original source in loader-backed templates.
+    source, _, _ = template.environment.loader.get_source(  # type: ignore[union-attr]
+        template.environment,
+        _resolve_builtin_template_path(template_name),
+    )
+    return source
+
+
+def _alias_context(payload: dict) -> dict:
+    customer = payload.get("customer") if isinstance(payload.get("customer"), dict) else {}
+    weights = payload.get("weights") if isinstance(payload.get("weights"), dict) else {}
+    pricing = {
+        "qty": weights.get("qty"),
+        "qty_display": weights.get("qty_display"),
+        "unit_price": weights.get("unit_price"),
+        "unit_price_display": weights.get("unit_price_display"),
+        "total": weights.get("total"),
+        "total_display": weights.get("total_display"),
+    }
+    ticket = {
+        "id": payload.get("ticket_id"),
+        "number": payload.get("ticket_no"),
+        "datetime": payload.get("datetime_display"),
+        "datetime_iso": payload.get("datetime_iso"),
+        "status": payload.get("status"),
+        "direction": payload.get("direction"),
+        "transaction_type": payload.get("transaction_type"),
+        "po_number": payload.get("po_number"),
+    }
+    return {
+        "ticket": ticket,
+        "customer": customer,
+        "weights": weights,
+        "pricing": pricing,
+    }
+
+
+def render_from_content(payload: dict, content: str) -> str:
+    context = {"payload": payload}
+    context.update(_alias_context(payload))
+    return templates.env.from_string(content).render(**context)
 
 
 def render_thermal(

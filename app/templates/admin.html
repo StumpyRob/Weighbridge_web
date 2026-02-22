@@ -3,6 +3,20 @@
 {% block title %}Admin | Weighbridge Web{% endblock %}
 
 {% block content %}
-<h1>Admin</h1>
-<p>Placeholder page for administration tools.</p>
+  <div class="page-header">
+    <div>
+      <h1>Admin</h1>
+      <p class="muted">System configuration and maintenance.</p>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a class="btn btn--ghost{% if request.url.path.startswith('/admin/printing') %} is-active{% endif %}" href="/admin/printing/profiles">Printing</a>
+  </div>
+
+  <section class="frame">
+    <div class="frame-body">
+      <p>Use <a href="/admin/printing/profiles">Admin → Printing</a> to manage profiles, templates, and print jobs.</p>
+    </div>
+  </section>
 {% endblock %}

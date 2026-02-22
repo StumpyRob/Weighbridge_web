@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Print Ticket {{ ticket.ticket_no }}</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+
+      body {
+        margin: 0;
+        background: #ffffff;
+        color: #111827;
+        font-family: "Segoe UI", Tahoma, sans-serif;
+      }
+
+      .print-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #d1d5db;
+        background: #f9fafb;
+        font-size: 0.9rem;
+      }
+
+      .print-meta__actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .print-meta__actions a,
+      .print-meta__actions button {
+        border: 1px solid #9ca3af;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #111827;
+        padding: 0.35rem 0.6rem;
+        text-decoration: none;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .print-body {
+        padding: 1rem;
+      }
+
+      .print-body--text pre {
+        margin: 0;
+        white-space: pre-wrap;
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 12px;
+        line-height: 1.25;
+      }
+
+      @media print {
+        .print-meta {
+          display: none;
+        }
+
+        .print-body {
+          padding: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="print-meta">
+      <div>
+        <strong>Ticket {{ ticket.ticket_no }}</strong>
+        <span>Profile: {{ profile_display_name }}</span>
+        {% if job_id %}
+          <span>Job #{{ job_id }}</span>
+        {% endif %}
+      </div>
+      <div class="print-meta__actions">
+        <a href="{{ back_url }}">Back to ticket</a>
+        <button type="button" onclick="window.print()">Print</button>
+      </div>
+    </div>
+
+    <main class="print-body{% if is_text %} print-body--text{% endif %}">
+      {% if is_text %}
+        <pre>{{ rendered_content }}</pre>
+      {% else %}
+        {{ rendered_content | safe }}
+      {% endif %}
+    </main>
+
+    <script>
+      (function () {
+        window.addEventListener(
+          "load",
+          function () {
+            window.setTimeout(function () {
+              window.print();
+            }, 60);
+          },
+          { once: true }
+        );
+      })();
+    </script>
+  </body>
+</html>
