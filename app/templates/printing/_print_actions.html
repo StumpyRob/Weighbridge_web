@@ -1,0 +1,193 @@
+﻿{% set actions = print_actions if print_actions is defined else {} %}
+{% set entity_type = actions.entity_type or "ticket" %}
+{% set entity_id = actions.entity_id or 0 %}
+{% set drawer_id = "print-actions-drawer-" ~ entity_type ~ "-" ~ entity_id %}
+{% set purpose_select_id = "print_purpose_primary" if entity_type == "ticket" else ("print-purpose-" ~ entity_type ~ "-" ~ entity_id) %}
+{% set profile_select_id = "print_profile_id_primary" if entity_type == "ticket" else ("print-profile-" ~ entity_type ~ "-" ~ entity_id) %}
+{% set default_profile_map = actions.default_profile_ids_by_purpose or {} %}
+{% set send_enabled_map = actions.send_enabled_by_purpose or {} %}
+{% set selected_purpose = actions.selected_purpose or "" %}
+{% set selected_profile_id = actions.selected_profile_id or "" %}
+{% set show_advanced = DEV_MODE or actions.show_advanced_menu %}
+
+<div
+  class="print-actions print-actions--{{ entity_type }}"
+  data-print-actions
+  data-require-default-profile="{{ "1" if actions.require_default_profile else "0" }}"
+  data-selected-purpose="{{ selected_purpose }}"
+  data-default-profile-map='{{ default_profile_map | tojson }}'
+  data-send-enabled-map='{{ send_enabled_map | tojson }}'
+>
+  <form class="print-actions__form" method="post" action="{{ actions.send_url or "#" }}">
+    <input type="hidden" name="purpose" value="{{ selected_purpose }}" data-print-actions-purpose-hidden />
+    <input type="hidden" name="profile_id" value="{{ selected_profile_id }}" data-print-actions-profile-hidden />
+
+    <button
+      type="submit"
+      class="btn btn--primary"
+      data-print-actions-send
+      {% if not actions.send_enabled %}disabled aria-disabled="true"{% endif %}
+    >
+      {{ actions.send_label or "Send to Printer" }}
+    </button>
+
+    <button
+      {% if actions.preview_button_id %}id="{{ actions.preview_button_id }}"{% endif %}
+      type="submit"
+      class="btn btn--secondary"
+      formaction="{{ actions.preview_url or "#" }}"
+      formmethod="get"
+      formtarget="_blank"
+    >
+      {{ actions.preview_label or "Preview" }}
+    </button>
+
+    {% if actions.download_url %}
+      <a
+        class="btn btn--secondary"
+        href="{{ actions.download_url }}"
+      >
+        {{ actions.download_label or "Download PDF" }}
+      </a>
+    {% endif %}
+  </form>
+
+  {% if actions.show_resolved_default_label and actions.selected_default_profile_label %}
+    <p class="print-actions__default-label muted">
+      Default printer: {{ actions.selected_default_profile_label }}
+    </p>
+  {% endif %}
+
+  {% if show_advanced %}
+    <details class="print-actions__details" data-print-actions-details {% if actions.options_open %}open{% endif %}>
+      <summary class="btn btn--ghost print-actions__summary" aria-controls="{{ drawer_id }}">
+        Advanced printing
+        <span class="print-actions__caret" aria-hidden="true">&#9662;</span>
+      </summary>
+      <div id="{{ drawer_id }}" class="print-actions__drawer" role="group" aria-label="Advanced printing options">
+        {% if actions.show_purpose_toggle and (actions.purposes | length) > 1 %}
+          <div class="field print-actions__field">
+            <label for="{{ purpose_select_id }}">Purpose</label>
+            <select id="{{ purpose_select_id }}" data-print-actions-purpose>
+              {% for value, label in actions.purposes %}
+                <option value="{{ value }}" {% if selected_purpose == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        {% endif %}
+
+        <div class="field print-actions__field">
+          <label for="{{ profile_select_id }}">Printer</label>
+          <select id="{{ profile_select_id }}" data-print-actions-profile>
+            {% if actions.profiles %}
+              <option value="" disabled {% if not selected_profile_id %}selected{% endif %}>Select printer</option>
+              {% for profile in actions.profiles or [] %}
+                <option
+                  value="{{ profile.id }}"
+                  data-purpose="{{ profile.purpose }}"
+                  title="{{ profile.option_label }}"
+                  {% if selected_profile_id == profile.id %}selected{% endif %}
+                >
+                  {{ profile.option_label }}
+                </option>
+              {% endfor %}
+            {% else %}
+              <option value="" selected>No printer configured</option>
+            {% endif %}
+          </select>
+        </div>
+
+      </div>
+    </details>
+  {% endif %}
+</div>
+
+<script>
+  (function () {
+    function parseMap(raw) {
+      try {
+        const parsed = JSON.parse(raw || "{}");
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function firstVisibleOption(selectEl) {
+      if (!selectEl) return null;
+      const options = Array.from(selectEl.options || []);
+      return options.find(function (opt) {
+        return !opt.disabled && !opt.hidden && String(opt.value || "").trim();
+      }) || null;
+    }
+
+    document.querySelectorAll("[data-print-actions]").forEach(function (root) {
+      const purposeHidden = root.querySelector("[data-print-actions-purpose-hidden]");
+      const profileHidden = root.querySelector("[data-print-actions-profile-hidden]");
+      const purposeSelect = root.querySelector("[data-print-actions-purpose]");
+      const profileSelect = root.querySelector("[data-print-actions-profile]");
+      const sendButton = root.querySelector("[data-print-actions-send]");
+      const requireDefault = root.getAttribute("data-require-default-profile") === "1";
+      const defaultProfileMap = parseMap(root.getAttribute("data-default-profile-map"));
+      const sendEnabledMap = parseMap(root.getAttribute("data-send-enabled-map"));
+
+      function selectedPurpose() {
+        if (purposeSelect && purposeSelect.value) {
+          return purposeSelect.value;
+        }
+        if (purposeHidden && purposeHidden.value) {
+          return purposeHidden.value;
+        }
+        return String(root.getAttribute("data-selected-purpose") || "");
+      }
+
+      function updateProfileVisibility(purpose) {
+        if (!profileSelect) {
+          return;
+        }
+        Array.from(profileSelect.options || []).forEach(function (option) {
+          const optionPurpose = String(option.getAttribute("data-purpose") || "");
+          const matches = !purpose || !optionPurpose || optionPurpose === purpose;
+          option.hidden = !matches;
+          option.disabled = !matches;
+        });
+        const selected = profileSelect.selectedOptions[0];
+        if (!selected || selected.hidden || selected.disabled) {
+          const defaultProfileId = String(defaultProfileMap[purpose] || "");
+          const explicitDefault = Array.from(profileSelect.options || []).find(function (option) {
+            return !option.disabled && !option.hidden && option.value === defaultProfileId;
+          });
+          const fallback = explicitDefault || firstVisibleOption(profileSelect);
+          profileSelect.value = fallback ? fallback.value : "";
+        }
+      }
+
+      function syncState() {
+        const purpose = selectedPurpose();
+        updateProfileVisibility(purpose);
+        const selectedProfile = profileSelect ? String(profileSelect.value || "") : "";
+        if (purposeHidden) {
+          purposeHidden.value = purpose;
+        }
+        if (profileHidden) {
+          profileHidden.value = selectedProfile;
+        }
+
+        const purposeSendEnabled = Boolean(sendEnabledMap[purpose]);
+        const shouldDisableSend = requireDefault && !purposeSendEnabled;
+        if (sendButton) {
+          sendButton.disabled = shouldDisableSend;
+          sendButton.setAttribute("aria-disabled", shouldDisableSend ? "true" : "false");
+        }
+      }
+
+      if (purposeSelect) {
+        purposeSelect.addEventListener("change", syncState);
+      }
+      if (profileSelect) {
+        profileSelect.addEventListener("change", syncState);
+      }
+      syncState();
+    });
+  })();
+</script>

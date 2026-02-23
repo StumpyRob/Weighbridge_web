@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Print Invoice {{ invoice.invoice_no }}</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+
+      body {
+        margin: 0;
+        background: #ffffff;
+        color: #111827;
+        font-family: "Segoe UI", Tahoma, sans-serif;
+      }
+
+      .print-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #d1d5db;
+        background: #f9fafb;
+        font-size: 0.9rem;
+      }
+
+      .print-meta__actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .print-meta__hint {
+        flex-basis: 100%;
+        margin: 0;
+        color: #6b7280;
+        font-size: 0.8rem;
+      }
+
+      .print-meta__actions a,
+      .print-meta__actions button {
+        border: 1px solid #9ca3af;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #111827;
+        padding: 0.35rem 0.6rem;
+        text-decoration: none;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      @media print {
+        body {
+          margin: 0;
+        }
+
+        .print-document {
+          margin: 12mm;
+        }
+
+        .no-print {
+          display: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="print-meta no-print">
+      <div>
+        <strong>Invoice {{ invoice.invoice_no }}</strong>
+        {% if job_id %}
+          <span>Job #{{ job_id }}</span>
+        {% endif %}
+      </div>
+      <div class="print-meta__actions no-print">
+        <a class="no-print" href="{{ back_url }}">Back to invoice</a>
+        <button class="no-print" type="button" onclick="window.print()">Print</button>
+      </div>
+      <p class="print-meta__hint no-print">
+        To remove URL/date headers, disable "Headers and footers" in your browser print dialog.
+      </p>
+    </div>
+
+    <main class="print-document">
+      {{ rendered_html | safe }}
+    </main>
+
+    <script>
+      (function () {
+        window.addEventListener(
+          "load",
+          function () {
+            window.setTimeout(function () {
+              window.print();
+            }, 60);
+          },
+          { once: true }
+        );
+      })();
+    </script>
+  </body>
+</html>

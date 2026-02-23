@@ -34,6 +34,7 @@ from ..models import (
     InvoiceLine,
     PrintJob,
     PrintProfile,
+    PrintTemplate,
     Product,
     Ticket,
     TicketVoid,
@@ -48,14 +49,17 @@ from ..models import (
 from ..security import validate_no_html, validate_no_html_fields
 from ..services.pricing import resolve_unit_price_for_customer_product
 from ..services.print_payload import build_ticket_print_payload
-from ..services.print_render import render_a4_html, render_thermal
+from ..services.print_render import render_a4_html, render_from_content, render_thermal
+from ..services.pdf import resolve_default_template_for_purpose
 from ..services.printing import (
     PRINT_CONTENT_TYPE_HTML,
+    PRINT_CONTENT_TYPE_TEXT,
     execute_rendered_print,
     replay_print_job,
     render_profile_content,
     resolve_profile_transport,
 )
+from ..services.wip_snapshots import ticket_wip_snapshot
 from ..seed import seed_void_reasons
 from ..templating import templates
 
@@ -1171,6 +1175,13 @@ def _is_open_ticket(ticket: Ticket) -> bool:
     return _status_value(ticket.status) == TicketStatusEnum.OPEN.value
 
 
+def _ticket_dev_preview_enabled() -> bool:
+    explicit_flag = templates.env.globals.get("DEV_MODE")
+    if explicit_flag is not None:
+        return bool(explicit_flag)
+    return bool(settings.dev_mode or settings.debug)
+
+
 def _is_ticket_invoiced(ticket: Ticket, db: Session | None = None) -> bool:
     if ticket.invoice_id is not None:
         return True
@@ -1405,6 +1416,37 @@ def _default_profile_for_purpose(
     return default_any or profiles[0]
 
 
+def _default_only_profile_for_purpose(
+    profiles: list[PrintProfile],
+    *,
+    yard_id: int | None = None,
+) -> PrintProfile | None:
+    if not profiles:
+        return None
+
+    if yard_id is not None:
+        yard_default = next(
+            (row for row in profiles if row.yard_id == yard_id and row.is_default),
+            None,
+        )
+        if yard_default is not None:
+            return yard_default
+        global_default = next(
+            (row for row in profiles if row.yard_id is None and row.is_default),
+            None,
+        )
+        if global_default is not None:
+            return global_default
+
+    global_default = next(
+        (row for row in profiles if row.yard_id is None and row.is_default),
+        None,
+    )
+    if global_default is not None:
+        return global_default
+    return next((row for row in profiles if row.is_default), None)
+
+
 def _select_ticket_print_profile(
     db: Session,
     *,
@@ -1415,12 +1457,12 @@ def _select_ticket_print_profile(
 ) -> PrintProfile:
     profiles = _load_active_ticket_print_profiles(db)
     if not profiles:
-        raise ValueError("No active print profiles configured.")
+        raise ValueError("No active printers configured.")
 
     if profile_id is not None:
         explicit_by_id = next((row for row in profiles if row.id == profile_id), None)
         if explicit_by_id is None:
-            raise ValueError("Print profile not found or inactive.")
+            raise ValueError("Printer not found or inactive.")
         return explicit_by_id
 
     normalized_code = (profile_code or "").strip()
@@ -1430,7 +1472,7 @@ def _select_ticket_print_profile(
             None,
         )
         if explicit_by_code is None:
-            raise ValueError("Print profile not found or inactive.")
+            raise ValueError("Printer not found or inactive.")
         return explicit_by_code
 
     thermal_profiles = [
@@ -1442,25 +1484,36 @@ def _select_ticket_print_profile(
 
     normalized_purpose = (purpose or "").strip().upper()
     if normalized_purpose == PRINT_PROFILE_PURPOSE_TICKET_A4:
-        a4_default = _default_profile_for_purpose(a4_profiles, yard_id=yard_id)
+        a4_default = _default_only_profile_for_purpose(a4_profiles, yard_id=yard_id)
         if a4_default is None:
-            raise ValueError("No active A4 print profile is configured.")
+            raise ValueError("No printer configured. Contact admin.")
         return a4_default
     if normalized_purpose == PRINT_PROFILE_PURPOSE_TICKET_THERMAL:
-        thermal_default = _default_profile_for_purpose(thermal_profiles, yard_id=yard_id)
-        return thermal_default or profiles[0]
+        thermal_default = _default_only_profile_for_purpose(
+            thermal_profiles,
+            yard_id=yard_id,
+        )
+        if thermal_default is None:
+            raise ValueError("No printer configured. Contact admin.")
+        return thermal_default
 
     # Default selection for primary print action when no profile is specified:
-    # yard thermal default -> global thermal default -> first thermal -> first active.
-    thermal_default = _default_profile_for_purpose(thermal_profiles, yard_id=yard_id)
-    return thermal_default or profiles[0]
+    # yard thermal default -> global thermal default.
+    thermal_default = _default_only_profile_for_purpose(thermal_profiles, yard_id=yard_id)
+    if thermal_default is None:
+        raise ValueError("No printer configured. Contact admin.")
+    return thermal_default
 
 
 def _ticket_print_profile_context(
     db: Session,
+    *,
+    ticket_id: int,
     selected_profile_id: int | None = None,
+    selected_purpose: str | None = None,
     yard_id: int | None = None,
     print_advanced_open: bool = False,
+    is_admin: bool = False,
 ) -> dict[str, object]:
     profiles = _load_active_ticket_print_profiles(db)
     thermal_profiles = [
@@ -1470,19 +1523,48 @@ def _ticket_print_profile_context(
         row for row in profiles if row.purpose == PRINT_PROFILE_PURPOSE_TICKET_A4
     ]
 
-    primary_profile = _default_profile_for_purpose(
-        thermal_profiles, yard_id=yard_id
-    ) or (
-        profiles[0] if profiles else None
+    primary_profile = _default_only_profile_for_purpose(
+        thermal_profiles,
+        yard_id=yard_id,
     )
     default_thermal_profile = _default_profile_for_purpose(
         thermal_profiles, yard_id=yard_id
     )
     default_a4_profile = _default_profile_for_purpose(a4_profiles, yard_id=yard_id)
+    default_thermal_profile_only = _default_only_profile_for_purpose(
+        thermal_profiles,
+        yard_id=yard_id,
+    )
+    default_a4_profile_only = _default_only_profile_for_purpose(
+        a4_profiles,
+        yard_id=yard_id,
+    )
 
     selected_profile = next(
         (row for row in profiles if selected_profile_id and row.id == selected_profile_id),
         None,
+    )
+    normalized_selected_purpose = str(selected_purpose or "").strip().upper()
+    selected_purpose_resolved = (
+        selected_profile.purpose
+        if selected_profile
+        else (
+            normalized_selected_purpose
+            if normalized_selected_purpose
+            in {
+                PRINT_PROFILE_PURPOSE_TICKET_THERMAL,
+                PRINT_PROFILE_PURPOSE_TICKET_A4,
+            }
+            else (
+            PRINT_PROFILE_PURPOSE_TICKET_THERMAL
+            if default_thermal_profile_only
+            else (
+                PRINT_PROFILE_PURPOSE_TICKET_A4
+                if default_a4_profile_only
+                else PRINT_PROFILE_PURPOSE_TICKET_THERMAL
+            )
+            )
+        )
     )
 
     thermal_selected = (
@@ -1513,6 +1595,71 @@ def _ticket_print_profile_context(
         if selected_profile
         else (primary_profile.id if primary_profile else "")
     )
+    selected_profile_resolved = (
+        str(selected_profile.id)
+        if selected_profile is not None
+        else (
+            str(default_thermal_profile_only.id)
+            if selected_purpose_resolved == PRINT_PROFILE_PURPOSE_TICKET_THERMAL
+            and default_thermal_profile_only is not None
+            else (
+                str(default_a4_profile_only.id)
+                if selected_purpose_resolved == PRINT_PROFILE_PURPOSE_TICKET_A4
+                and default_a4_profile_only is not None
+                else ""
+            )
+        )
+    )
+    default_profile_ids_by_purpose = {
+        PRINT_PROFILE_PURPOSE_TICKET_THERMAL: (
+            str(default_thermal_profile_only.id)
+            if default_thermal_profile_only is not None
+            else ""
+        ),
+        PRINT_PROFILE_PURPOSE_TICKET_A4: (
+            str(default_a4_profile_only.id) if default_a4_profile_only is not None else ""
+        ),
+    }
+    default_profile_labels_by_purpose = {
+        PRINT_PROFILE_PURPOSE_TICKET_THERMAL: (
+            _print_profile_display_name(default_thermal_profile_only)
+            if default_thermal_profile_only is not None
+            else ""
+        ),
+        PRINT_PROFILE_PURPOSE_TICKET_A4: (
+            _print_profile_display_name(default_a4_profile_only)
+            if default_a4_profile_only is not None
+            else ""
+        ),
+    }
+    send_enabled_by_purpose = {
+        PRINT_PROFILE_PURPOSE_TICKET_THERMAL: bool(default_thermal_profile_only),
+        PRINT_PROFILE_PURPOSE_TICKET_A4: bool(default_a4_profile_only),
+    }
+    selected_default_profile_id = default_profile_ids_by_purpose.get(
+        selected_purpose_resolved,
+        "",
+    )
+    selected_default_profile_label = default_profile_labels_by_purpose.get(
+        selected_purpose_resolved,
+        "",
+    )
+    send_enabled = bool(send_enabled_by_purpose.get(selected_purpose_resolved, False))
+    drawer_profiles = [
+        {
+            "id": str(profile.id),
+            "label": _print_profile_display_name(profile),
+            "option_label": _print_profile_option_label(profile),
+            "purpose": str(profile.purpose or "").strip().upper(),
+            "is_default": bool(profile.is_default),
+            "transport_mode": str(profile.transport_mode or "").strip().upper(),
+        }
+        for profile in profiles
+    ]
+    purpose_options = [
+        (PRINT_PROFILE_PURPOSE_TICKET_THERMAL, "Ticket (Thermal)"),
+        (PRINT_PROFILE_PURPOSE_TICKET_A4, "Ticket (A4)"),
+    ]
 
     return {
         "has_print_profiles": bool(profiles),
@@ -1530,6 +1677,31 @@ def _ticket_print_profile_context(
         "print_has_thermal_profiles": bool(thermal_profiles),
         "print_has_a4_profiles": bool(a4_profiles),
         "print_advanced_open": bool(print_advanced_open),
+        "print_missing_default": not send_enabled,
+        "print_actions": {
+            "entity_type": "ticket",
+            "entity_id": int(ticket_id),
+            "send_url": f"/tickets/{ticket_id}/print",
+            "preview_url": f"/tickets/{ticket_id}/print/browser",
+            "purposes": purpose_options,
+            "profiles": drawer_profiles,
+            "selected_purpose": selected_purpose_resolved,
+            "selected_profile_id": selected_profile_resolved,
+            "default_profile_id": selected_default_profile_id,
+            "default_profile_ids_by_purpose": default_profile_ids_by_purpose,
+            "default_profile_labels_by_purpose": default_profile_labels_by_purpose,
+            "selected_default_profile_label": selected_default_profile_label,
+            "send_enabled": send_enabled,
+            "send_enabled_by_purpose": send_enabled_by_purpose,
+            "send_label": "Send to Printer",
+            "preview_label": "Preview",
+            "preview_button_id": "preview_browser_print_button",
+            "options_open": bool(print_advanced_open),
+            "no_default_message": "No printer configured. Contact admin.",
+            "require_default_profile": True,
+            "show_purpose_toggle": True,
+            "show_advanced_menu": bool(is_admin),
+        },
     }
 
 
@@ -1572,12 +1744,21 @@ def tickets_edit(
         product_id=ticket.product_id,
     )
     selected_profile_id = _parse_int(request.query_params.get("print_profile_id", ""))
-    print_advanced_open = request.query_params.get("print_advanced") == "1"
+    selected_purpose = (
+        str(request.query_params.get("print_purpose", "")).strip().upper() or None
+    )
+    print_advanced_open = (
+        request.query_params.get("print_options") == "1"
+        or request.query_params.get("print_advanced") == "1"
+    )
     print_profile_context = _ticket_print_profile_context(
         db,
+        ticket_id=ticket.id,
         selected_profile_id=selected_profile_id,
+        selected_purpose=selected_purpose,
         yard_id=ticket.yard_id,
         print_advanced_open=print_advanced_open,
+        is_admin=is_admin,
     )
     return templates.TemplateResponse(request, 
         "tickets/edit.html",
@@ -1602,6 +1783,10 @@ def tickets_edit(
             "ticket_void_reason": ticket_void_reason,
             "invoice": invoice,
             "is_admin": is_admin,
+            "allow_dev_preview": (
+                _ticket_dev_preview_enabled()
+                and _status_value(ticket.status) != TicketStatusEnum.COMPLETE.value
+            ),
             "is_open": _is_open_ticket(ticket),
             "is_locked": _is_ticket_locked(ticket),
             "can_void": _can_void_ticket(ticket),
@@ -1686,7 +1871,7 @@ def tickets_print_a4_preview(
 def tickets_print_browser(
     ticket_id: int,
     request: Request,
-    profile_id: int | None = Query(None),
+    profile_id: str | None = Query(None),
     purpose: str | None = Query(None),
     job_id: int | None = Query(None),
     printed_to: str | None = Query(None),
@@ -1697,24 +1882,81 @@ def tickets_print_browser(
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         return HTMLResponse("Ticket not found.", status_code=404)
-    if _status_value(ticket.status) != TicketStatusEnum.COMPLETE.value:
+    is_complete = _status_value(ticket.status) == TicketStatusEnum.COMPLETE.value
+    allow_draft_preview = bool(not is_complete and _ticket_dev_preview_enabled())
+    if not is_complete and not allow_draft_preview:
         return HTMLResponse(PRINT_REQUIRES_COMPLETE_ERROR, status_code=400)
 
+    resolved_profile_id = _parse_int(str(profile_id or "").strip())
+
+    normalized_purpose = str(purpose or "").strip().upper()
+    if normalized_purpose not in {
+        PRINT_PROFILE_PURPOSE_TICKET_THERMAL,
+        PRINT_PROFILE_PURPOSE_TICKET_A4,
+    }:
+        normalized_purpose = PRINT_PROFILE_PURPOSE_TICKET_THERMAL
+
+    payload = build_ticket_print_payload(db, ticket)
+    profile: PrintProfile | None = None
+    rendered_content = ""
+    rendered_content_type = PRINT_CONTENT_TYPE_TEXT
     try:
         profile = _select_ticket_print_profile(
             db,
-            profile_id=profile_id,
-            purpose=(purpose or "").strip().upper() or None,
+            profile_id=resolved_profile_id,
+            purpose=normalized_purpose,
             yard_id=ticket.yard_id,
         )
-        payload = build_ticket_print_payload(db, ticket)
         rendered = render_profile_content(db, payload=payload, profile=profile)
+        rendered_content = rendered.rendered_content
+        rendered_content_type = rendered.content_type
     except ValueError as exc:
-        return HTMLResponse(str(exc) or "Print profile is invalid.", status_code=400)
+        if resolved_profile_id is not None:
+            return HTMLResponse(str(exc) or "Printer is invalid.", status_code=400)
+        fallback_template = resolve_default_template_for_purpose(
+            db,
+            purpose=normalized_purpose,
+            require_active=True,
+        )
+        if fallback_template is None:
+            fallback_template = (
+                db.execute(
+                    select(PrintTemplate)
+                    .where(
+                        PrintTemplate.purpose == normalized_purpose,
+                        PrintTemplate.is_active.is_(True),
+                    )
+                    .order_by(PrintTemplate.code.asc())
+                    .limit(1)
+                )
+                .scalars()
+                .first()
+            )
+        if fallback_template is not None:
+            rendered_content = render_from_content(payload, fallback_template.content)
+            rendered_content_type = (
+                str(fallback_template.content_type or PRINT_CONTENT_TYPE_TEXT).strip().upper()
+                or PRINT_CONTENT_TYPE_TEXT
+            )
+        elif normalized_purpose == PRINT_PROFILE_PURPOSE_TICKET_A4:
+            rendered_content = render_a4_html(payload)
+            rendered_content_type = PRINT_CONTENT_TYPE_HTML
+        else:
+            rendered_content = render_thermal(payload)
+            rendered_content_type = PRINT_CONTENT_TYPE_TEXT
     except (RuntimeError, OSError, NotImplementedError) as exc:
         return HTMLResponse(f"Print render failed: {exc}", status_code=400)
 
-    profile_display_name = _print_profile_display_name(profile)
+    purpose_label = (
+        "Ticket (A4)"
+        if normalized_purpose == PRINT_PROFILE_PURPOSE_TICKET_A4
+        else "Ticket (Thermal)"
+    )
+    profile_display_name = (
+        _print_profile_display_name(profile)
+        if profile is not None
+        else f"Default template ({purpose_label})"
+    )
     resolved_printed_to = str(printed_to or profile_display_name).strip() or profile_display_name
     resolved_print_profile = (
         str(print_profile or resolved_printed_to).strip() or profile_display_name
@@ -1723,7 +1965,11 @@ def tickets_print_browser(
         str(print_sent_at or "").strip() or datetime.now().strftime("%H:%M")
     )
 
-    back_params = {"print_profile_id": str(profile.id), "print_advanced": "1"}
+    back_params = {
+        "print_purpose": normalized_purpose,
+    }
+    if profile is not None:
+        back_params["print_profile_id"] = str(profile.id)
     if job_id is not None:
         back_params.update(
             {
@@ -1747,8 +1993,9 @@ def tickets_print_browser(
             "profile": profile,
             "profile_display_name": profile_display_name,
             "job_id": job_id,
-            "is_text": rendered.content_type != PRINT_CONTENT_TYPE_HTML,
-            "rendered_content": rendered.rendered_content,
+            "is_text": rendered_content_type != PRINT_CONTENT_TYPE_HTML,
+            "is_draft_preview": allow_draft_preview,
+            "rendered_content": rendered_content,
             "back_url": back_url,
         },
     )
@@ -1853,7 +2100,7 @@ async def tickets_print_dispatch(
             yard_id=ticket.yard_id,
         )
     except ValueError as exc:
-        message = str(exc) or "Print profile is invalid."
+        message = str(exc) or "Printer is invalid."
         if expects_json:
             return JSONResponse({"ok": False, "error": message}, status_code=400)
         return _render_ticket_edit(
@@ -1862,6 +2109,7 @@ async def tickets_print_dispatch(
             db,
             errors=[message],
             selected_print_profile_id=profile_id,
+            selected_print_purpose=purpose or None,
             print_advanced_open=True,
             status_code=400,
         )
@@ -1880,6 +2128,7 @@ async def tickets_print_dispatch(
             db,
             errors=[f"Print failed: {message}"],
             selected_print_profile_id=profile.id,
+            selected_print_purpose=profile.purpose,
             print_advanced_open=True,
             status_code=400,
         )
@@ -1922,8 +2171,9 @@ async def tickets_print_dispatch(
             "print_error": error_label,
             "print_error_detail": detail[:200],
             "print_profile_id": str(profile.id),
+            "print_purpose": str(profile.purpose or ""),
             "print_profile": _print_profile_display_name(profile),
-            "print_advanced": "1",
+            "print_options": "1",
         }
         if failed_job_id is not None:
             query_data["print_job_id"] = str(failed_job_id)
@@ -1942,6 +2192,7 @@ async def tickets_print_dispatch(
         "print_profile": profile_display_name,
         "print_sent_at": print_sent_at,
         "print_profile_id": str(profile.id),
+        "print_purpose": str(profile.purpose or ""),
         "print_job_id": str(result.job.id),
     }
 
@@ -1961,6 +2212,7 @@ async def tickets_print_dispatch(
             browser_query = urlencode(
                 {
                     "profile_id": str(profile.id),
+                    "purpose": str(profile.purpose or ""),
                     "job_id": str(result.job.id),
                     "printed_to": profile_display_name,
                     "print_profile": profile_display_name,
@@ -1976,6 +2228,7 @@ async def tickets_print_dispatch(
         browser_query = urlencode(
             {
                 "profile_id": str(profile.id),
+                "purpose": str(profile.purpose or ""),
                 "job_id": str(result.job.id),
                 "printed_to": profile_display_name,
                 "print_profile": profile_display_name,
@@ -2267,6 +2520,13 @@ async def tickets_update(
         ) or ticket.net_kg
         ticket.pricing_billable_qty_snapshot = (
             pricing_info.get("billable_qty") if pricing_info else None
+        )
+        snapshot_customer = (
+            db.get(Customer, ticket.customer_id) if ticket.customer_id else None
+        )
+        ticket.wip_snapshot_json = ticket_wip_snapshot(
+            customer=snapshot_customer,
+            product=product,
         )
         ticket.status = TicketStatusEnum.COMPLETE.value
         db.commit()
@@ -4355,6 +4615,7 @@ def _render_ticket_edit(
     weight_warning: bool | None = None,
     direction_warning: bool | None = None,
     selected_print_profile_id: int | None = None,
+    selected_print_purpose: str | None = None,
     print_advanced_open: bool = False,
     status_code: int = 400,
 ) -> HTMLResponse:
@@ -4419,9 +4680,12 @@ def _render_ticket_edit(
     )
     print_profile_context = _ticket_print_profile_context(
         db,
+        ticket_id=ticket.id,
         selected_profile_id=selected_print_profile_id,
+        selected_purpose=selected_print_purpose,
         yard_id=ticket.yard_id,
         print_advanced_open=print_advanced_open,
+        is_admin=False,
     )
     return templates.TemplateResponse(request, 
         "tickets/edit.html",
@@ -4445,6 +4709,10 @@ def _render_ticket_edit(
             "ticket_void_reason": ticket_void_reason,
             "invoice": invoice,
             "is_admin": False,
+            "allow_dev_preview": (
+                _ticket_dev_preview_enabled()
+                and _status_value(ticket.status) != TicketStatusEnum.COMPLETE.value
+            ),
             "is_open": _is_open_ticket(ticket),
             "is_locked": _is_ticket_locked(ticket),
             "can_void": _can_void_ticket(ticket),

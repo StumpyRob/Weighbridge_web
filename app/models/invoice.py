@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, JSON, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..constants import CODE_MAX
@@ -24,3 +24,4 @@ class Invoice(Base):
     net_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     vat_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     gross_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    customer_snapshot_json: Mapped[dict | None] = mapped_column(JSON)

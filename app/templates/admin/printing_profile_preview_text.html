@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Profile Preview | Weighbridge Web{% endblock %}
+{% block title %}Printer Preview | Weighbridge Web{% endblock %}
 
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>Profile Preview: {{ profile.code }}</h1>
+      <h1>Printer Preview: {{ profile.code }}</h1>
       <p class="muted">Template: {{ template_label }}</p>
       <p class="muted">Ticket: {{ ticket.ticket_no if ticket else "Sample payload" }}</p>
     </div>

@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Health | Weighbridge Web{% endblock %}
+
+{% block content %}
+  {% set logo_badge_label = "OK (LOGO SET)" if report.logo.status == "ok" else report.logo.summary %}
+  {% set print_jobs_badge_label = (report.print_jobs.status | upper) ~ " (" ~ report.print_jobs.details.count ~ ")" %}
+
+  <div class="page-header">
+    <div>
+      <h1>System Health</h1>
+      <p class="muted">DEV diagnostics for printing, PDFs, uploads, and data safety.</p>
+    </div>
+    <a class="btn btn--ghost" href="/admin">Back to Admin</a>
+  </div>
+
+  <section class="health-grid">
+    <article class="card health-card">
+      <header class="card-header">
+        <h2>Renderer</h2>
+        <span class="health-badge health-badge--{{ report.renderer.status }}">{{ report.renderer.summary }}</span>
+      </header>
+      <div class="card-body">
+        <p><strong>Fallback mode:</strong> {{ "Yes" if report.renderer.details.fallback_mode_active else "No" }}</p>
+        <p><strong>WeasyPrint version:</strong> {{ report.renderer.details.version or "-" }}</p>
+        {% if report.renderer.details.error %}
+          <p><strong>Error:</strong> {{ report.renderer.details.error }}</p>
+        {% endif %}
+      </div>
+    </article>
+
+    <article class="card health-card">
+      <header class="card-header">
+        <h2>Templates</h2>
+        <span class="health-badge health-badge--{{ report.templates.status }}">{{ report.templates.summary }}</span>
+      </header>
+      <div class="card-body">
+        <table class="health-table">
+          <thead>
+            <tr>
+              <th class="health-col-purpose">Purpose</th>
+              <th class="health-col-status">Status</th>
+              <th class="health-col-default">Default</th>
+              <th class="health-col-warnings">Warnings</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for purpose, detail in report.templates.details.purposes.items() %}
+              <tr>
+                <td class="health-col-purpose">{{ purpose }}</td>
+                <td class="health-col-status">
+                  <span class="health-badge health-badge--{{ detail.status }}">
+                    {{ detail.status | upper }}
+                  </span>
+                </td>
+                <td class="health-col-default">
+                  <span
+                    class="health-code health-truncate"
+                    title="{{ detail.resolved_template_code or '-' }}"
+                  >
+                    {{ detail.resolved_template_code or "-" }}
+                  </span>
+                </td>
+                <td class="health-col-warnings">
+                  {% if detail.warnings %}
+                    {{ detail.warnings | join(" ") }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="card health-card">
+      <header class="card-header">
+        <h2>Logo</h2>
+        <span class="health-badge health-badge--{{ report.logo.status }}">{{ logo_badge_label }}</span>
+      </header>
+      <div class="card-body">
+        <p>
+          <strong>Path:</strong>
+          <span class="health-path" title="{{ report.logo.details.logo_path or '-' }}">
+            {{ report.logo.details.logo_path or "-" }}
+          </span>
+          {% if report.logo.details.logo_path %}
+            <button
+              type="button"
+              class="health-copy"
+              data-copy-text="{{ report.logo.details.logo_path }}"
+            >
+              Copy
+            </button>
+          {% endif %}
+        </p>
+        <p><strong>Exists:</strong> {{ "Yes" if report.logo.details.exists else "No" }}</p>
+        <p><strong>Type:</strong> {{ report.logo.details.mime_type or "-" }}</p>
+        <p><strong>Size:</strong> {{ report.logo.details.size_bytes }} bytes</p>
+      </div>
+    </article>
+
+    <article class="card health-card">
+      <header class="card-header">
+        <h2>Uploads</h2>
+        <span class="health-badge health-badge--{{ report.uploads.status }}">{{ report.uploads.summary }}</span>
+      </header>
+      <div class="card-body">
+        <p>
+          <strong>Path:</strong>
+          <span class="health-path" title="{{ report.uploads.details.path }}">
+            {{ report.uploads.details.path }}
+          </span>
+          <button
+            type="button"
+            class="health-copy"
+            data-copy-text="{{ report.uploads.details.path }}"
+          >
+            Copy
+          </button>
+        </p>
+        <p><strong>Writable:</strong> {{ "Yes" if report.uploads.details.writable else "No" }}</p>
+        <p><strong>Files:</strong> {{ report.uploads.details.file_count }}</p>
+        <p><strong>Size:</strong> {{ report.uploads.details.size_bytes }} bytes</p>
+      </div>
+    </article>
+
+    <article class="card health-card">
+      <header class="card-header">
+        <h2>PDF Storage</h2>
+        <span class="health-badge health-badge--{{ report.pdf_storage.status }}">{{ report.pdf_storage.summary }}</span>
+      </header>
+      <div class="card-body">
+        <p><strong>PDF files on disk:</strong> {{ "Yes" if report.pdf_storage.details.pdfs_on_disk else "No" }}</p>
+        <p><strong>Count:</strong> {{ report.pdf_storage.details.count }}</p>
+        {% if report.pdf_storage.details.sample_paths %}
+          <p><strong>Examples:</strong></p>
+          <ul class="health-list">
+            {% for item in report.pdf_storage.details.sample_paths %}
+              <li><code>{{ item }}</code></li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+    </article>
+
+    <article class="card health-card">
+      <header class="card-header">
+        <h2>Print Jobs</h2>
+        <span class="health-badge health-badge--{{ report.print_jobs.status }}">{{ print_jobs_badge_label }}</span>
+      </header>
+      <div class="card-body">
+        <p><strong>Total rows:</strong> {{ report.print_jobs.details.count }}</p>
+        <p><strong>Oldest:</strong> {{ report.print_jobs.details.oldest or "-" }}</p>
+        <p><strong>Newest:</strong> {{ report.print_jobs.details.newest or "-" }}</p>
+      </div>
+    </article>
+
+    <article class="card health-card">
+      <header class="card-header">
+        <h2>Database</h2>
+        <span class="health-badge health-badge--{{ report.db.status }}">{{ report.db.summary }}</span>
+      </header>
+      <div class="card-body">
+        <p><strong>Engine:</strong> {{ report.db.details.engine or "-" }}</p>
+        {% if report.db.details.path %}
+          <p>
+            <strong>Path:</strong>
+            <span class="health-path" title="{{ report.db.details.path }}">
+              {{ report.db.details.path }}
+            </span>
+            <button
+              type="button"
+              class="health-copy"
+              data-copy-text="{{ report.db.details.path }}"
+            >
+              Copy
+            </button>
+          </p>
+        {% endif %}
+        <p><strong>Size:</strong> {{ report.db.details.size_bytes if report.db.details.size_bytes is not none else "-" }} bytes</p>
+      </div>
+    </article>
+  </section>
+
+  <script>
+    (function () {
+      function setCopiedState(button) {
+        var original = button.dataset.copyOriginal || button.textContent;
+        button.dataset.copyOriginal = original;
+        button.textContent = "Copied";
+        button.classList.add("is-copied");
+        window.setTimeout(function () {
+          button.textContent = original;
+          button.classList.remove("is-copied");
+        }, 1200);
+      }
+
+      function fallbackCopy(text, button) {
+        var input = document.createElement("textarea");
+        input.value = text;
+        input.setAttribute("readonly", "readonly");
+        input.style.position = "fixed";
+        input.style.opacity = "0";
+        document.body.appendChild(input);
+        input.select();
+        try {
+          document.execCommand("copy");
+          setCopiedState(button);
+        } finally {
+          document.body.removeChild(input);
+        }
+      }
+
+      document.addEventListener("click", function (event) {
+        var button = event.target.closest(".health-copy[data-copy-text]");
+        if (!button) {
+          return;
+        }
+        var text = button.getAttribute("data-copy-text") || "";
+        if (!text) {
+          return;
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(
+            function () {
+              setCopiedState(button);
+            },
+            function () {
+              fallbackCopy(text, button);
+            }
+          );
+          return;
+        }
+        fallbackCopy(text, button);
+      });
+    })();
+  </script>
+{% endblock %}

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Invoice Preview {{ invoice.invoice_no }}</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+
+      body {
+        margin: 0;
+        background: #ffffff;
+        color: #111827;
+        font-family: "Segoe UI", Tahoma, sans-serif;
+      }
+
+      .preview-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #d1d5db;
+        background: #f9fafb;
+        font-size: 0.9rem;
+      }
+
+      .preview-meta__actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .preview-meta__hint {
+        flex-basis: 100%;
+        margin: 0;
+        color: #6b7280;
+        font-size: 0.8rem;
+      }
+
+      .preview-meta__actions a,
+      .preview-meta__actions button {
+        border: 1px solid #9ca3af;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #111827;
+        padding: 0.35rem 0.6rem;
+        text-decoration: none;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      @media print {
+        body {
+          margin: 0;
+        }
+
+        .preview-document {
+          margin: 12mm;
+        }
+
+        .no-print {
+          display: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="preview-meta no-print">
+      <div>
+        <strong>Invoice Preview {{ invoice.invoice_no }}</strong>
+      </div>
+      <div class="preview-meta__actions no-print">
+        <a class="no-print" href="{{ back_url }}">Back to invoice</a>
+        <button class="no-print" type="button" onclick="window.print()">Print</button>
+      </div>
+      <p class="preview-meta__hint no-print">
+        To remove URL/date headers, disable "Headers and footers" in your browser print dialog.
+      </p>
+    </div>
+
+    <main class="preview-document">
+      {{ rendered_html | safe }}
+    </main>
+  </body>
+</html>

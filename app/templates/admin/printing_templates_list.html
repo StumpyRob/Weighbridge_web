@@ -15,11 +15,18 @@
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>Printing Templates{{ help(help_text.printing_template_concept, "printing-templates-title-help") }}</h1>
-      <p class="muted">Reusable print content for profiles.</p>
+      {% if purpose == "INVOICE_PDF" %}
+        <h1>Invoice PDF Templates{{ help(help_text.printing_template_concept, "printing-templates-title-help") }}</h1>
+        <p class="muted">Editable HTML templates used by invoice PDF download.</p>
+      {% else %}
+        <h1>Printing Templates{{ help(help_text.printing_template_concept, "printing-templates-title-help") }}</h1>
+        <p class="muted">Reusable print content for printers.</p>
+      {% endif %}
     </div>
     <div class="actions btn-group">
-      <a class="btn btn--primary" href="/admin/printing/templates/new">Add Template</a>
+      <a class="btn btn--primary" href="/admin/printing/templates/new{% if purpose %}?purpose={{ purpose }}{% endif %}">
+        {% if purpose == "INVOICE_PDF" %}Add Invoice PDF Template{% else %}Add Template{% endif %}
+      </a>
     </div>
   </div>
 
@@ -30,6 +37,15 @@
   {% endif %}
 
   <form class="filters filters-inline" method="get" action="/admin/printing/templates">
+    <div class="field">
+      <label for="purpose">Purpose</label>
+      <select id="purpose" name="purpose">
+        <option value="">All purposes</option>
+        {% for value, label in purpose_options %}
+          <option value="{{ value }}" {% if purpose == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <div class="field">
       <label for="q">Search</label>
       <input type="text" id="q" name="q" value="{{ q }}" />
@@ -63,7 +79,12 @@
             <td>{{ item.code }}</td>
             <td>{{ item.description or "-" }}</td>
             <td>{{ item.content_type }}</td>
-            <td>{{ item.purpose }}</td>
+            <td>
+              {{ item.purpose }}
+              {% if default_template_ids.get(item.purpose) and item.id == default_template_ids.get(item.purpose) %}
+                <span class="status-pill status-open">Default</span>
+              {% endif %}
+            </td>
             <td class="status-col">
               {% if item.is_active %}
                 <span class="status-pill status-open">Active</span>
@@ -77,13 +98,41 @@
                 <form method="post" action="/admin/printing/templates/{{ item.id }}/duplicate">
                   <button type="submit" class="btn btn--ghost btn--sm">Duplicate</button>
                 </form>
-                {% if item.is_active %}
-                  <form method="post" action="/admin/printing/templates/{{ item.id }}/deactivate">
-                    <button type="submit" class="btn btn--danger btn--sm">Deactivate</button>
+                {% if item.purpose in ["TICKET_THERMAL", "TICKET_A4", "INVOICE_PDF"] %}
+                  <form method="post" action="/admin/printing/templates/{{ item.id }}/set-default">
+                    <button type="submit" class="btn btn--ghost btn--sm">
+                      {% if default_template_ids.get(item.purpose) and item.id == default_template_ids.get(item.purpose) %}
+                        Default Template
+                      {% else %}
+                        Set Default
+                      {% endif %}
+                    </button>
                   </form>
+                {% endif %}
+                {% if item.is_active %}
+                  {% if default_template_ids.get(item.purpose) and item.id == default_template_ids.get(item.purpose) %}
+                    <button type="button" class="btn btn--danger btn--sm" disabled title="Default template cannot be deactivated.">Deactivate</button>
+                  {% else %}
+                    <form method="post" action="/admin/printing/templates/{{ item.id }}/deactivate">
+                      <button type="submit" class="btn btn--danger btn--sm">Deactivate</button>
+                    </form>
+                  {% endif %}
                 {% elif not hide_inactive %}
                   <form method="post" action="/admin/printing/templates/{{ item.id }}/reactivate">
                     <button type="submit" class="btn btn--secondary btn--sm">Reactivate</button>
+                  </form>
+                {% endif %}
+                {% if default_template_ids.get(item.purpose) and item.id == default_template_ids.get(item.purpose) %}
+                  <button type="button" class="btn btn--danger btn--sm" disabled title="Default template cannot be deleted.">Delete</button>
+                {% else %}
+                  <form method="post" action="/admin/printing/templates/{{ item.id }}/delete">
+                    <button
+                      type="submit"
+                      class="btn btn--danger btn--sm"
+                      onclick="return window.confirm('Delete template {{ item.code }}?');"
+                    >
+                      Delete
+                    </button>
                   </form>
                 {% endif %}
               </div>

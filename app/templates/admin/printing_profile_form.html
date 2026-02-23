@@ -2,7 +2,7 @@
 {% from "_help.html" import help %}
 
 {% block title %}
-  {% if mode == "edit" %}Edit Printing Profile{% else %}New Printing Profile{% endif %} | Weighbridge Web
+  {% if mode == "edit" %}Edit Printer{% else %}Add Printer{% endif %} | Weighbridge Web
 {% endblock %}
 
 {% block toast_messages %}
@@ -17,7 +17,7 @@
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>{% if mode == "edit" %}Edit Printing Profile{% else %}New Printing Profile{% endif %}{{ help(help_text.printing_profile_concept, "printing-profile-form-title-help") }}</h1>
+      <h1>{% if mode == "edit" %}Edit Printer{% else %}Add Printer{% endif %}{{ help(help_text.printing_profile_concept, "printing-profile-form-title-help") }}</h1>
       <p class="muted">Manage transport targets, scope, and template selection.</p>
     </div>
   </div>
@@ -30,12 +30,12 @@
   <form class="ticket-form printing-profile-form" method="post">
     <section class="frame compact">
       <div class="frame-header">
-        <h2>Profile Details</h2>
+        <h2>Printer Details</h2>
       </div>
       <div class="frame-body">
         <div class="form-grid">
           <div class="field">
-            <label for="code">Code</label>
+            <label for="code">Printer name</label>
             <input type="text" id="code" name="code" maxlength="{{ limits.CODE_MAX }}" value="{{ form_data.code }}" required />
           </div>
           <div class="field">
@@ -49,7 +49,7 @@
                 <option value="{{ value }}" {% if form_data.purpose == value %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
             </select>
-            <p class="hint">What you are printing: Ticket Thermal, Ticket A4, Invoice A4, etc.</p>
+            <p class="hint">What you are printing: Ticket Thermal, Ticket A4, Invoice (PDF), etc.</p>
           </div>
           <div class="field">
             <label for="yard_id">Yard Scope</label>
@@ -166,13 +166,13 @@
         <div class="field checkbox">
           <input type="checkbox" id="is_default" name="is_default" value="1" {% if form_data.is_default %}checked{% endif %} />
           <label for="is_default">Default for purpose + scope{{ help(help_text.printing_default_profile, "printing-profile-default-help") }}</label>
-          <p class="hint">Used automatically when printing unless a different profile is selected.</p>
+          <p class="hint">Used automatically when printing unless a different printer is selected.</p>
         </div>
 
         <div class="field checkbox">
           <input type="checkbox" id="is_active" name="is_active" value="1" {% if form_data.is_active %}checked{% endif %} />
           <label for="is_active">Active{{ help(help_text.printing_active_profile, "printing-profile-active-help") }}</label>
-          <p class="hint">Inactive profiles won&rsquo;t appear for operators.</p>
+          <p class="hint">Inactive printers won&rsquo;t appear for operators.</p>
         </div>
       </div>
     </section>

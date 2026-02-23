@@ -38,13 +38,28 @@
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}
+
+  {% if print_missing_default %}
+    <div class="flash-toast flash-toast--error" data-flash-toast>
+      <div class="flash-toast__content">No printer configured. Contact admin.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
 <div class="invoice-detail">
-  <div class="invoice-header">
-    <div class="invoice-header__left">
+  <div class="page-header ticket-edit-header invoice-edit-header">
+    <div>
       <h1>Invoice {{ invoice.invoice_no }}</h1>
+      <div class="ticket-meta">
+        <span>
+          Status:
+          <span class="invoice-status-badge invoice-status-badge--{{ invoice.status | lower }}">{{ invoice.status }}</span>
+        </span>
+        <span>Invoice Date: {{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "-" }}</span>
+        <span>Due Date: {{ invoice.due_date.strftime("%d/%m/%Y") if invoice.due_date else "-" }}</span>
+      </div>
       <p class="muted">{{ customer.name if customer else "" }}</p>
       {% if customer and customer.account_code %}
         <p class="muted">Account: {{ customer.account_code }}</p>
@@ -57,31 +72,18 @@
         </div>
       {% endif %}
     </div>
-    <div class="invoice-header__right">
-      <!-- TODO: add dedicated /invoices/{id}/print template (no operator controls). -->
-      <div class="invoice-header__actions">
-        {% if created %}
-          <a class="btn btn--ghost" href="/invoices/generate">Back to Generate Invoices</a>
-        {% endif %}
-        <button type="button" class="btn btn--ghost" disabled title="Print coming soon">Print</button>
-        <a class="btn btn--secondary" href="/invoices">Back</a>
-      </div>
-      <div class="invoice-header__meta">
-        <div class="invoice-header__meta-item">
-          <span class="summary-label">Status</span>
-          <span class="summary-value"><span class="invoice-status-badge invoice-status-badge--{{ invoice.status | lower }}">{{ invoice.status }}</span></span>
-        </div>
-        <div class="invoice-header__meta-item">
-          <span class="summary-label">Invoice Date</span>
-          <span class="summary-value">{{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "-" }}</span>
-        </div>
-        <div class="invoice-header__meta-item">
-          <span class="summary-label">Due Date</span>
-          <span class="summary-value">{{ invoice.due_date.strftime("%d/%m/%Y") if invoice.due_date else "-" }}</span>
-        </div>
+    <div class="actions btn-group ticket-header-actions invoice-header-actions">
+      <div id="print-actions" class="ticket-header-actions__primary">
+        {% include "printing/_print_actions.html" %}
       </div>
     </div>
   </div>
+
+  {% if invoice.status == "VOID" %}
+    <div class="alert alert--warning">
+      <strong>Warning:</strong> This invoice is VOID. Send to Printer and Preview remain available for audit/reference only.
+    </div>
+  {% endif %}
 
   {% if invoice.status == "VOID" and invoice_void %}
     <div class="notice">
@@ -362,5 +364,6 @@
     paidAt.addEventListener("input", syncButtonState);
     syncButtonState();
   })();
+
 </script>
 {% endblock %}

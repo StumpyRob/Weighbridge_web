@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Integer, Numeric, String
+from sqlalchemy import ForeignKey, Integer, JSON, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..constants import DESC_MAX
@@ -19,3 +19,4 @@ class InvoiceLine(Base):
     net: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     vat: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     gross: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    product_snapshot_json: Mapped[dict | None] = mapped_column(JSON)

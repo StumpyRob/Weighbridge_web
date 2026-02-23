@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_help.html" import help %}
 
-{% block title %}Printing Profiles | Weighbridge Web{% endblock %}
+{% block title %}Printers | Weighbridge Web{% endblock %}
 
 {% block toast_messages %}
   {% if saved %}
@@ -15,11 +15,11 @@
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>Printing Profiles{{ help(help_text.printing_profile_concept, "printing-profiles-title-help") }}</h1>
+      <h1>Printers{{ help(help_text.printing_profile_concept, "printing-profiles-title-help") }}</h1>
       <p class="muted">Configure print transports and defaults.</p>
     </div>
     <div class="actions btn-group">
-      <a class="btn btn--primary" href="/admin/printing/profiles/new">Add Profile</a>
+      <a class="btn btn--primary" href="/admin/printing/profiles/new">Add Printer</a>
     </div>
   </div>
 
@@ -49,10 +49,10 @@
     <table class="data-table list-table printing-profiles-table">
       <thead>
         <tr>
-          <th class="profiles-col-profile">Profile</th>
+          <th class="profiles-col-profile">Printer</th>
           <th class="profiles-col-purpose">Purpose{{ help(help_text.printing_purpose, "printing-profiles-purpose-help") }}</th>
           <th class="profiles-col-yard">Yard{{ help(help_text.printing_yard_scope, "printing-profiles-yard-help") }}</th>
-          <th class="profiles-col-default">Default{{ help(help_text.printing_default_profile, "printing-profiles-default-help") }}</th>
+          <th class="profiles-col-default">Default printer{{ help(help_text.printing_default_profile, "printing-profiles-default-help") }}</th>
           <th class="profiles-col-template">Template{{ help(help_text.printing_template_field, "printing-profiles-template-help") }}</th>
           <th class="profiles-col-transport">Transport{{ help(help_text.printing_transport_mode, "printing-profiles-transport-help") }}</th>
           <th class="status-col profiles-col-status">Status{{ help(help_text.printing_active_profile, "printing-profiles-active-help") }}</th>
@@ -65,19 +65,21 @@
           {% set yard_row = yards_by_id.get(item.yard_id) if item.yard_id else None %}
           <tr data-row-link="/admin/printing/profiles/{{ item.id }}/edit">
             <td class="profiles-col-profile">
-              <div class="printing-profile-cell">
-                <div class="printing-profile-code" title="{{ item.code }}">{{ item.code }}</div>
-                <div class="printing-profile-description" title="{{ item.description or '-' }}">{{ item.description or "-" }}</div>
-              </div>
+              <span
+                class="printing-profile-code table-cell-truncate"
+                title="{{ item.description if item.description else item.code }}"
+              >
+                {{ item.code }}
+              </span>
             </td>
             <td class="profiles-col-purpose">
-              <span class="status-pill printing-compact-pill printing-compact-pill--purpose" title="{{ item.purpose }}">
-                <span class="printing-pill-text">{{ item.purpose }}</span>
+              <span class="printing-profile-purpose table-cell-truncate" title="{{ item.purpose }}">
+                {{ item.purpose }}
               </span>
             </td>
             <td class="profiles-col-yard">
-              <span class="status-pill printing-compact-pill" title="{{ yard_row.code if yard_row else 'Global' }}">
-                <span class="printing-pill-text">{{ yard_row.code if yard_row else "Global" }}</span>
+              <span class="printing-profile-yard table-cell-truncate" title="{{ yard_row.code if yard_row else 'Global' }}">
+                {{ yard_row.code if yard_row else "Global" }}
               </span>
             </td>
             <td class="profiles-col-default">{% if item.is_default %}<span class="status-pill status-info">Default</span>{% else %}-{% endif %}</td>
@@ -85,8 +87,8 @@
               <span class="table-cell-truncate" title="{{ template_row.code if template_row else item.template_name }}">{{ template_row.code if template_row else item.template_name }}</span>
             </td>
             <td class="profiles-col-transport">
-              <span class="status-pill printing-compact-pill" title="{{ item.transport_mode }}">
-                <span class="printing-pill-text">{{ item.transport_mode }}</span>
+              <span class="printing-profile-transport table-cell-truncate" title="{{ item.transport_mode }}">
+                {{ item.transport_mode }}
               </span>
             </td>
             <td class="status-col profiles-col-status">
@@ -138,7 +140,7 @@
           </tr>
         {% else %}
           <tr>
-            <td colspan="8" class="empty">No profiles found.</td>
+            <td colspan="8" class="empty">No printers found.</td>
           </tr>
         {% endfor %}
       </tbody>

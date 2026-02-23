@@ -40,7 +40,7 @@
         <div class="field"><label>Sent</label><div class="readonly">{{ job.sent_at.strftime("%d/%m/%Y %H:%M:%S") if job.sent_at else "-" }}</div></div>
         <div class="field"><label>Purpose</label><div class="readonly">{{ job.purpose }}</div></div>
         <div class="field"><label>Transport</label><div class="readonly">{{ job.transport_mode }}</div></div>
-        <div class="field"><label>Profile</label><div class="readonly">{{ profile.code if profile else "-" }}</div></div>
+        <div class="field"><label>Printer</label><div class="readonly">{{ profile.code if profile else "-" }}</div></div>
         <div class="field"><label>Template</label><div class="readonly">{{ template.code if template else "-" }}</div></div>
         <div class="field"><label>Ticket</label><div class="readonly">{{ ticket.ticket_no if ticket else "-" }}</div></div>
         <div class="field"><label>Attempts</label><div class="readonly">{{ job.attempt_count }}</div></div>

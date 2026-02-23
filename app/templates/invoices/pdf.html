@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Invoice {{ invoice.invoice_no }}</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 15mm;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        color: #1e293b;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 10.5px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      h1,
+      h2,
+      h3,
+      h4 {
+        font-weight: 500;
+        letter-spacing: -0.01em;
+      }
+
+      .text-strong {
+        color: #0f172a;
+        font-weight: 600;
+      }
+
+      .text-muted {
+        color: #64748b;
+      }
+
+      .invoice-container {
+        margin: 0 auto;
+        max-width: 210mm;
+      }
+
+      .header {
+        align-items: flex-start;
+        border-bottom: 2px solid #f1f5f9;
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 24px;
+        padding-bottom: 20px;
+      }
+
+      .company-section {
+        display: flex;
+        flex-direction: column;
+        max-width: 60%;
+      }
+
+      .company-logo {
+        display: block;
+        height: 48px;
+        margin-bottom: 12px;
+        object-fit: contain;
+        object-position: left;
+        width: auto;
+      }
+
+      .company-name {
+        color: #0f172a;
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        margin-bottom: 6px;
+      }
+
+      .company-line {
+        color: #475569;
+        font-size: 10px;
+        margin: 2px 0;
+      }
+
+      .invoice-section {
+        min-width: 200px;
+        text-align: right;
+      }
+
+      .invoice-title {
+        color: #0f172a;
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        line-height: 1;
+        margin-bottom: 12px;
+      }
+
+      .meta-grid {
+        align-items: baseline;
+        display: grid;
+        gap: 6px 12px;
+        grid-template-columns: auto 1fr;
+      }
+
+      .meta-label {
+        color: #64748b;
+        font-weight: 500;
+      }
+
+      .meta-value {
+        color: #0f172a;
+        font-weight: 600;
+        text-align: right;
+      }
+
+      .status-badge {
+        background: #fef3c7;
+        border-radius: 30px;
+        color: #92400e;
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        padding: 4px 12px;
+      }
+
+      .section-title {
+        color: #334155;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        margin: 20px 0 8px 0;
+        text-transform: uppercase;
+      }
+
+      .customer-block {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        margin-bottom: 4px;
+        max-width: 100%;
+        min-width: 280px;
+        padding: 14px 16px;
+        width: fit-content;
+      }
+
+      .customer-name {
+        color: #0f172a;
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+
+      .customer-line {
+        color: #334155;
+        font-size: 10.5px;
+        margin: 2px 0;
+      }
+
+      .vat-number {
+        border-top: 1px dashed #cbd5e1;
+        margin-top: 6px;
+        padding-top: 6px;
+      }
+
+      .items-table {
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 10.5px;
+        margin: 8px 0 16px;
+        width: 100%;
+      }
+
+      .items-table th {
+        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
+        border-bottom: 2px solid #cbd5e1;
+        color: #334155;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        padding: 12px 8px;
+        text-transform: uppercase;
+      }
+
+      .items-table th:not(.description-col) {
+        text-align: right;
+      }
+
+      .items-table td {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        padding: 12px 8px;
+        vertical-align: top;
+      }
+
+      .items-table tr:first-child td {
+        border-top: none;
+      }
+
+      .description-col {
+        text-align: left;
+        width: 44%;
+      }
+
+      .qty-col {
+        width: 7%;
+      }
+
+      .description-main {
+        color: #0f172a;
+        font-weight: 500;
+        margin-bottom: 4px;
+      }
+
+      .description-meta {
+        color: #64748b;
+        display: block;
+        font-size: 9.5px;
+        line-height: 1.4;
+      }
+
+      .num {
+        font-family: "JetBrains Mono", "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", monospace;
+        font-weight: 500;
+        text-align: right;
+      }
+
+      .currency {
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        margin-right: 2px;
+      }
+
+      .totals-wrapper {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 20px;
+      }
+
+      .totals-block {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 16px;
+        width: 280px;
+      }
+
+      .total-row {
+        align-items: center;
+        display: flex;
+        justify-content: space-between;
+        padding: 6px 0;
+      }
+
+      .total-label {
+        color: #475569;
+        font-size: 11px;
+        font-weight: 500;
+      }
+
+      .total-value {
+        color: #0f172a;
+        font-family: "JetBrains Mono", "SF Mono", monospace;
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .total-row.grand-total {
+        border-top: 2px solid #0f172a;
+        margin-top: 8px;
+        padding-top: 10px;
+      }
+
+      .total-row.grand-total .total-label {
+        color: #0f172a;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .total-row.grand-total .total-value {
+        color: #0f172a;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .footer-note {
+        border-top: 1px solid #e2e8f0;
+        color: #94a3b8;
+        font-size: 9px;
+        margin-top: 32px;
+        padding-top: 16px;
+        text-align: center;
+      }
+
+      hr {
+        border: none;
+        border-top: 1px solid #e2e8f0;
+        margin: 12px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="invoice-container">
+      <div class="header">
+        <div class="company-section">
+          {% if company.logo_url %}
+            <img src="{{ company.logo_url }}" alt="{{ company.name }}" class="company-logo" />
+          {% endif %}
+          <div class="company-name">{{ company_name }}</div>
+          {% for line in company_lines %}
+            <div class="company-line">{{ line }}</div>
+          {% endfor %}
+        </div>
+
+        <div class="invoice-section">
+          <div class="invoice-title">INVOICE</div>
+          <div class="meta-grid">
+            <span class="meta-label">Number:</span>
+            <span class="meta-value">{{ invoice.invoice_no }}</span>
+
+            <span class="meta-label">Date:</span>
+            <span class="meta-value">{{ invoice.invoice_date or "-" }}</span>
+
+            <span class="meta-label">Due Date:</span>
+            <span class="meta-value">{{ invoice.due_date or "-" }}</span>
+
+            <span class="meta-label">Status:</span>
+            <span class="meta-value">
+              <span class="status-badge">{{ invoice.status or "-" }}</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title">Bill To:</div>
+      <div class="customer-block">
+        <div class="customer-name">{{ customer.name }}</div>
+        {% for line in customer.billing_lines %}
+          <div class="customer-line">{{ line }}</div>
+        {% endfor %}
+        {% if customer.vat_number %}
+          <div class="customer-line vat-number">
+            <span class="text-strong">VAT:</span> {{ customer.vat_number }}
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="section-title">Line Items:</div>
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th class="description-col">Description</th>
+            <th class="qty-col">Qty</th>
+            <th>Unit Price</th>
+            <th>Net</th>
+            <th>VAT</th>
+            <th>Gross</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in lines %}
+            <tr>
+              <td>
+                <div class="description-main">{{ line.description }}</div>
+                <span class="description-meta">
+                  Final disposal: {{ "Yes" if line.final_disposal_wip else "No" }} | Used on site: {{ "Yes" if line.used_on_site_wip else "No" }}
+                </span>
+              </td>
+              <td class="num">{{ line.qty }}</td>
+              <td class="num"><span class="currency">£</span>{{ line.unit_price }}</td>
+              <td class="num"><span class="currency">£</span>{{ line.net }}</td>
+              <td class="num"><span class="currency">£</span>{{ line.vat }}</td>
+              <td class="num"><span class="currency">£</span>{{ line.gross }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <div class="totals-wrapper">
+        <div class="totals-block">
+          <div class="total-row">
+            <span class="total-label">Net Total:</span>
+            <span class="total-value"><span class="currency">£</span>{{ totals.net }}</span>
+          </div>
+          <div class="total-row">
+            <span class="total-label">VAT Total:</span>
+            <span class="total-value"><span class="currency">£</span>{{ totals.vat }}</span>
+          </div>
+          <div class="total-row grand-total">
+            <span class="total-label">Total Due:</span>
+            <span class="total-value"><span class="currency">£</span>{{ totals.gross }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-note">
+        Thank you for your business
+      </div>
+    </div>
+  </body>
+</html>

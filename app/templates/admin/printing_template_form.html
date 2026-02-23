@@ -2,7 +2,12 @@
 {% from "_help.html" import help %}
 
 {% block title %}
-  {% if mode == "edit" %}Edit Printing Template{% else %}New Printing Template{% endif %} | Weighbridge Web
+  {% if invoice_mode %}
+    {% if mode == "edit" %}Edit Invoice PDF Template{% else %}New Invoice PDF Template{% endif %}
+  {% else %}
+    {% if mode == "edit" %}Edit Printing Template{% else %}New Printing Template{% endif %}
+  {% endif %}
+  | Weighbridge Web
 {% endblock %}
 
 {% block toast_messages %}
@@ -17,8 +22,13 @@
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>{% if mode == "edit" %}Edit Printing Template{% else %}New Printing Template{% endif %}{{ help(help_text.printing_template_concept, "printing-template-form-title-help") }}</h1>
-      <p class="muted">Template save performs a sample render validation.</p>
+      {% if invoice_mode %}
+        <h1>{% if mode == "edit" %}Edit Invoice PDF Template{% else %}New Invoice PDF Template{% endif %}{{ help(help_text.printing_template_concept, "printing-template-form-title-help") }}</h1>
+        <p class="muted">Template save validates syntax. Provide a sample invoice ID to validate render context.</p>
+      {% else %}
+        <h1>{% if mode == "edit" %}Edit Printing Template{% else %}New Printing Template{% endif %}{{ help(help_text.printing_template_concept, "printing-template-form-title-help") }}</h1>
+        <p class="muted">Template save validates syntax. Provide a sample ticket ID to validate render context.</p>
+      {% endif %}
     </div>
   </div>
 
@@ -29,6 +39,9 @@
   {% endif %}
   {% if duplicated %}
     <div class="notice">Template duplicated. Update code and description, then save.</div>
+  {% endif %}
+  {% if default_template_set %}
+    <div class="notice">Default template updated.</div>
   {% endif %}
 
   <form class="ticket-form" method="post">
@@ -58,13 +71,18 @@
           <option value="{{ value }}" {% if form_data.content_type == value %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
-      <p class="hint">TEXT = best for 80mm thermal. HTML = best for A4 / styled layouts.</p>
+      {% if not invoice_mode %}
+        <p class="hint">TEXT = best for 80mm thermal. HTML = best for A4 / styled layouts.</p>
+      {% endif %}
     </div>
 
     <div class="field">
-      <label for="content">Template content</label>
+      <label for="content">Template content{{ help(help_text.printing_template_content_editor, "printing-template-content-editor-help") }}</label>
       <label for="insert_field_token">Insert field token{{ help(help_text.printing_insert_field_picker, "printing-template-insert-token-help") }}</label>
-      <select id="insert_field_token">
+      <select
+        id="insert_field_token"
+        title="Select a token to insert at the current cursor position in template content."
+      >
         <option value="">Insert field...</option>
         {% for group_label, group_items in insert_token_groups %}
           <optgroup label="{{ group_label }}">
@@ -74,23 +92,43 @@
           </optgroup>
         {% endfor %}
       </select>
-      <div class="printing-template-quick-insert" role="group" aria-label="Common tokens">
-        <span class="muted">Common tokens:</span>
-        <button type="button" class="btn btn--ghost btn--sm" data-quick-token="{% raw %}{{ ticket.number }}{% endraw %}">Ticket number</button>
-        <button type="button" class="btn btn--ghost btn--sm" data-quick-token="{% raw %}{{ customer.name }}{% endraw %}">Customer name</button>
-        <button type="button" class="btn btn--ghost btn--sm" data-quick-token="{% raw %}{{ weights.net_kg_display }}{% endraw %}">Net weight</button>
-        <button type="button" class="btn btn--ghost btn--sm" data-quick-token="{% raw %}{{ pricing.total_display }}{% endraw %}">Total price</button>
-      </div>
-      <p class="hint">Some fields may be blank depending on ticket type.</p>
       {% if mode == "new" %}
         <div class="actions btn-group" style="margin-top: 0.5rem;">
-          <button type="button" class="btn btn--ghost btn--sm" id="insert_default_ticket_layout">
-            Insert Default Ticket Layout
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm"
+            id="insert_default_ticket_layout"
+            title="Insert a starter layout that you can edit safely."
+          >
+            {% if invoice_mode %}Insert Default Invoice PDF Layout{% else %}Insert Default Ticket Layout{% endif %}
           </button>
         </div>
         <p class="hint">Adds a sensible starter layout for the selected purpose/content type.</p>
       {% endif %}
       <textarea id="content" name="content" rows="20" style="font-family: Consolas, monospace;">{{ form_data.content }}</textarea>
+    </div>
+
+    <div class="field">
+      {% if invoice_mode %}
+        <label for="sample_invoice_id">Sample Invoice ID for Save Validation (optional)</label>
+        <input
+          type="text"
+          id="sample_invoice_id"
+          name="sample_invoice_id"
+          value="{{ sample_invoice_id_value }}"
+        />
+      {% else %}
+        <label for="sample_ticket_id">Sample Ticket ID for Save Validation (optional)</label>
+        <input
+          type="text"
+          id="sample_ticket_id"
+          name="sample_ticket_id"
+          value="{{ sample_ticket_id_value }}"
+        />
+      {% endif %}
+      {% if validation_hint %}
+        <p class="hint">{{ validation_hint }}</p>
+      {% endif %}
     </div>
 
     <div class="field checkbox">
@@ -122,6 +160,17 @@
         >
           Restore Default Template
         </button>
+        {% if form_data.purpose in ["TICKET_THERMAL", "TICKET_A4", "INVOICE_PDF"] %}
+          <button
+            type="submit"
+            class="btn btn--secondary"
+            formaction="/admin/printing/templates/{{ template.id }}/set-default"
+            formmethod="post"
+            {% if is_default_template %}disabled title="This is already the default template."{% endif %}
+          >
+            {% if is_default_template %}Default Template{% else %}Set as Default Template{% endif %}
+          </button>
+        {% endif %}
       {% endif %}
       <a class="btn btn--secondary" href="/admin/printing/templates">Back</a>
     </div>
@@ -135,12 +184,18 @@
       <div class="frame-body">
         <form class="filters filters-inline" method="get" action="/admin/printing/templates/{{ template.id }}/preview" target="_blank">
           <div class="field template-preview-ticket-field">
-            <label for="ticket_id">Preview Ticket ID (optional){{ help(help_text.printing_preview_ticket_id, "printing-template-preview-ticket-id-help") }}</label>
+            <label for="preview_record_id">
+              Preview {{ preview_entity_label }} (optional)
+              {% if not invoice_mode %}{{ help(help_text.printing_preview_ticket_id, "printing-template-preview-ticket-id-help") }}{% endif %}
+            </label>
             <div class="template-preview-ticket-row">
-              <input type="text" id="ticket_id" name="ticket_id" value="{{ preview_ticket_id }}" />
+              <input type="text" id="preview_record_id" name="{{ preview_param_name }}" value="{{ preview_id_value }}" />
               <button type="submit" class="btn btn--secondary">Open Preview</button>
             </div>
-            <p class="hint">Enter a numeric ticket ID. If blank or not found, preview uses the latest completed ticket.</p>
+            <p class="hint">{{ preview_hint }}</p>
+            {% if validation_hint %}
+              <p class="hint">{{ validation_hint }}</p>
+            {% endif %}
           </div>
         </form>
       </div>
@@ -148,16 +203,13 @@
   {% endif %}
 
   {% if mode == "new" %}
-    <script id="default_ticket_layouts_json" type="application/json">{{ default_ticket_layouts_json | safe }}</script>
+    <script id="default_ticket_layouts_json" type="application/json">{{ default_layouts_json | safe }}</script>
   {% endif %}
 
   <script>
     (function () {
       const picker = document.getElementById("insert_field_token");
       const textarea = document.getElementById("content");
-      const quickInsertButtons = Array.from(
-        document.querySelectorAll("[data-quick-token]")
-      );
       const purpose = document.getElementById("purpose");
       const contentType = document.getElementById("content_type");
       const insertDefaultButton = document.getElementById("insert_default_ticket_layout");
@@ -184,19 +236,6 @@
         }
         insertAtCursor(token);
         picker.value = "";
-      });
-
-      quickInsertButtons.forEach(function (button) {
-        if (!(button instanceof HTMLButtonElement)) {
-          return;
-        }
-        button.addEventListener("click", function () {
-          const token = String(button.getAttribute("data-quick-token") || "").trim();
-          if (!token) {
-            return;
-          }
-          insertAtCursor(token);
-        });
       });
 
       if (!(insertDefaultButton instanceof HTMLButtonElement)) {

@@ -1,4 +1,4 @@
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
 
 from fastapi import APIRouter, Depends, Request
@@ -97,6 +97,9 @@ async def customers_create(
         city=payload["city"],
         postcode=payload["postcode"],
         country=payload["country"],
+        vat_number=payload["vat_number"],
+        credit_limit_pence=payload["credit_limit_pence"],
+        is_cash_account=payload["is_cash_account"],
         payment_terms=payload["payment_terms"],
         invoice_frequency=payload["invoice_frequency"],
         payment_terms_days=payload["payment_terms_days"],
@@ -189,6 +192,9 @@ async def customers_update(
     customer.city = payload["city"]
     customer.postcode = payload["postcode"]
     customer.country = payload["country"]
+    customer.vat_number = payload["vat_number"]
+    customer.credit_limit_pence = payload["credit_limit_pence"]
+    customer.is_cash_account = payload["is_cash_account"]
     if payload["payment_terms_provided"]:
         customer.payment_terms = payload["payment_terms"]
     customer.invoice_frequency = payload["invoice_frequency"]
@@ -603,6 +609,7 @@ def _parse_customer_form(form) -> dict:
     payment_terms = value("payment_terms")
     invoice_frequency_raw = value("invoice_frequency").upper()
     payment_terms_days_raw = value("payment_terms_days")
+    credit_limit_pounds_raw = value("credit_limit_pounds") or value("credit_limit")
 
     validate_no_html_fields(
         {
@@ -619,15 +626,21 @@ def _parse_customer_form(form) -> dict:
             "Payment terms": payment_terms,
             "Invoice frequency": invoice_frequency_raw,
             "Payment terms (days)": payment_terms_days_raw,
+            "Credit limit": credit_limit_pounds_raw,
         },
         errors,
     )
 
     payment_terms_days = _parse_int(payment_terms_days_raw)
+    credit_limit_pence = _parse_money_to_pence(credit_limit_pounds_raw)
     if payment_terms_days_raw and payment_terms_days is None:
         errors.append("Payment terms (days) must be a whole number.")
     elif payment_terms_days is not None and payment_terms_days < 0:
         errors.append("Payment terms (days) cannot be negative.")
+    if credit_limit_pounds_raw and credit_limit_pence is None:
+        errors.append("Credit limit must be a valid amount.")
+    elif credit_limit_pence is not None and credit_limit_pence < 0:
+        errors.append("Credit limit cannot be negative.")
     if invoice_frequency_raw and invoice_frequency_raw not in INVOICE_FREQUENCIES:
         errors.append("Invoice frequency must be WEEKLY, MONTHLY, or ADHOC.")
 
@@ -679,8 +692,10 @@ def _parse_customer_form(form) -> dict:
             "invoice_frequency_id": value("invoice_frequency_id"),
             "invoice_frequency": invoice_frequency_raw,
             "payment_terms_days": payment_terms_days_raw,
+            "credit_limit_pounds": credit_limit_pounds_raw,
             "credit_limit": value("credit_limit"),
             "on_stop": value("on_stop"),
+            "is_cash_account": value("is_cash_account"),
             "cash_account": value("cash_account"),
             "do_not_invoice": value("do_not_invoice"),
             "must_have_po": value("must_have_po"),
@@ -700,6 +715,8 @@ def _parse_customer_form(form) -> dict:
         "invoice_frequency_id": _parse_int(value("invoice_frequency_id")),
         "invoice_frequency": invoice_frequency_raw or None,
         "payment_terms_days": payment_terms_days,
+        "credit_limit_pence": credit_limit_pence,
+        "is_cash_account": value("is_cash_account") == "on",
         "credit_limit": _parse_decimal(value("credit_limit")),
         "on_stop": value("on_stop") == "on",
         "cash_account": value("cash_account") == "on",
@@ -724,8 +741,10 @@ def _empty_form() -> dict:
         "invoice_frequency_id": "",
         "invoice_frequency": "",
         "payment_terms_days": "",
+        "credit_limit_pounds": "",
         "credit_limit": "",
         "on_stop": "",
+        "is_cash_account": "",
         "cash_account": "",
         "do_not_invoice": "",
         "must_have_po": "",
@@ -752,8 +771,10 @@ def _customer_to_form(customer: Customer) -> dict:
             if customer.payment_terms_days is not None
             else ""
         ),
+        "credit_limit_pounds": _format_pence_as_money(customer.credit_limit_pence),
         "credit_limit": _format_decimal(customer.credit_limit),
         "on_stop": "on" if customer.on_stop else "",
+        "is_cash_account": "on" if customer.is_cash_account else "",
         "cash_account": "on" if customer.cash_account else "",
         "do_not_invoice": "on" if customer.do_not_invoice else "",
         "must_have_po": "on" if customer.must_have_po else "",
@@ -778,7 +799,24 @@ def _parse_decimal(value: str) -> Decimal | None:
         return None
 
 
+def _parse_money_to_pence(value: str) -> int | None:
+    if not value:
+        return None
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    quantized = amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return int(quantized * 100)
+
+
 def _format_decimal(value: Decimal | None) -> str:
     if value is None:
         return ""
     return f"{value:.2f}"
+
+
+def _format_pence_as_money(value: int | None) -> str:
+    if value is None:
+        return ""
+    return f"{(Decimal(value) / Decimal(100)):.2f}"

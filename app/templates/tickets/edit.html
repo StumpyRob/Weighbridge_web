@@ -21,6 +21,12 @@
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}
+  {% if form.status == "COMPLETE" and print_missing_default %}
+    <div class="flash-toast flash-toast--error" data-flash-toast>
+      <div class="flash-toast__content">No printer configured. Contact admin.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
@@ -46,107 +52,48 @@
   <div class="actions btn-group ticket-header-actions">
     {% if is_complete %}
       <div id="print-actions" class="ticket-header-actions__primary">
-        <form class="ticket-print-form" method="post" action="/tickets/{{ ticket.id }}/print">
-          <label class="sr-only" for="print_profile_id_primary">Send using profile</label>
-          <select id="print_profile_id_primary" name="profile_id" {% if not has_print_profiles %}disabled aria-disabled="true"{% endif %}>
-            {% for profile_id, label in print_profile_options %}
-              <option value="{{ profile_id }}" {% if print_selected_profile_id == profile_id %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-          <button type="submit" class="btn btn--primary" {% if not has_print_profiles %}disabled aria-disabled="true"{% endif %}>
-            Send to Printer
-          </button>
-          <button
-            id="preview_browser_print_button"
-            type="submit"
-            class="btn btn--secondary"
-            formaction="/tickets/{{ ticket.id }}/print/browser"
-            formmethod="get"
-            formtarget="_blank"
-            {% if not has_print_profiles %}disabled aria-disabled="true"{% endif %}
-          >
-            Preview (Browser Print)
-          </button>
-        </form>
+        {% include "printing/_print_actions.html" %}
       </div>
-      {% if (print_status or printed) and print_job_id %}
-        <div class="ticket-print-status-inline" role="status">
-          Last print: Sent to printer <strong>{{ printed_to or print_primary_profile_name or "Printer" }}</strong>
-          (Job #<code>{{ print_job_id }}</code>)
-          {% if print_sent_at %}at {{ print_sent_at }}{% endif %}.
-          <a href="/admin/printing/jobs/{{ print_job_id }}" target="_blank" rel="noopener">View job</a>
-        </div>
-      {% endif %}
-      <details class="ticket-print-advanced" {% if print_advanced_open %}open{% endif %}>
-        <summary class="ticket-print-advanced__toggle">Printer options</summary>
-        <div class="ticket-print-advanced__panel">
-          <div class="ticket-print-advanced__row ticket-print-advanced__row--prints">
-            <div class="ticket-print-advanced__cell">
-              {% if show_thermal_profile_selector %}
-                <form class="ticket-print-form ticket-print-form--advanced" method="post" action="/tickets/{{ ticket.id }}/print">
-                  <input type="hidden" name="purpose" value="TICKET_THERMAL" />
-                  <label class="sr-only" for="print_profile_id_thermal">Thermal profile</label>
-                  <select id="print_profile_id_thermal" name="profile_id">
-                    {% for profile_id, label in thermal_profile_options %}
-                      <option value="{{ profile_id }}" {% if print_thermal_selected_profile_id == profile_id %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
-                  </select>
-                  <button type="submit" class="btn btn--secondary">Print (Thermal)</button>
-                </form>
-              {% else %}
-                <form class="ticket-print-form ticket-print-form--advanced" method="post" action="/tickets/{{ ticket.id }}/print">
-                  <input type="hidden" name="purpose" value="TICKET_THERMAL" />
-                  <input type="hidden" name="profile_id" value="{{ print_thermal_selected_profile_id }}" />
-                  <button type="submit" class="btn btn--secondary" {% if not print_has_thermal_profiles and not has_print_profiles %}disabled aria-disabled="true"{% endif %}>Print (Thermal)</button>
-                </form>
-              {% endif %}
-            </div>
-
-            <div class="ticket-print-advanced__cell">
-              {% if show_a4_profile_selector %}
-                <form class="ticket-print-form ticket-print-form--advanced" method="post" action="/tickets/{{ ticket.id }}/print">
-                  <input type="hidden" name="purpose" value="TICKET_A4" />
-                  <label class="sr-only" for="print_profile_id_a4">A4 profile</label>
-                  <select id="print_profile_id_a4" name="profile_id">
-                    {% for profile_id, label in a4_profile_options %}
-                      <option value="{{ profile_id }}" {% if print_a4_selected_profile_id == profile_id %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
-                  </select>
-                  <button type="submit" class="btn btn--secondary">Print (A4)</button>
-                </form>
-              {% else %}
-                <form class="ticket-print-form ticket-print-form--advanced" method="post" action="/tickets/{{ ticket.id }}/print">
-                  <input type="hidden" name="purpose" value="TICKET_A4" />
-                  <input type="hidden" name="profile_id" value="{{ print_a4_selected_profile_id }}" />
-                  <button type="submit" class="btn btn--secondary" {% if not print_has_a4_profiles %}disabled aria-disabled="true"{% endif %}>Print (A4)</button>
-                </form>
-              {% endif %}
-            </div>
-          </div>
-
-          <div class="ticket-print-advanced__row ticket-print-advanced__links">
-            <a class="btn btn--ghost btn--sm" href="/tickets/{{ ticket.id }}/print/thermal" target="_blank" rel="noopener">Preview thermal</a>
-            <a class="btn btn--ghost btn--sm" href="/tickets/{{ ticket.id }}/print/a4" target="_blank" rel="noopener">Preview A4</a>
-            {# WIP_RECEIPTS UI toggle #}
-            {% if receipts_wip_enabled and (is_admin or DEV_MODE) %}
-              <a class="btn btn--ghost btn--sm" href="/tickets/{{ ticket.id }}/receipt" target="_blank" rel="noopener">
-                Receipt Preview (WIP)
-              </a>
-              {{ help(help_text.ticket_receipt_wip, "ticket-receipt-wip-help") }}
-            {% endif %}
-          </div>
-        </div>
-      </details>
     {% elif is_open %}
       <div class="ticket-header-actions__primary">
         <button type="submit" class="btn btn--primary" form="ticket-form" name="action" value="complete">
           Mark Complete
         </button>
+        {% if allow_dev_preview %}
+          <form method="get" action="{{ print_actions.preview_url or ('/tickets/' ~ ticket.id ~ '/print/browser') }}" target="_blank">
+            <input type="hidden" name="purpose" value="{{ print_actions.selected_purpose or '' }}" />
+            <input type="hidden" name="profile_id" value="{{ print_actions.selected_profile_id or '' }}" />
+            <button type="submit" class="btn btn--secondary" id="preview_browser_print_button">
+              Preview
+            </button>
+          </form>
+        {% endif %}
       </div>
-      <p class="ticket-print-availability-hint muted">Printing available once ticket is complete.</p>
+      <p class="ticket-print-availability-hint muted">
+        Printing available once ticket is complete.
+        {% if allow_dev_preview %}DEV mode preview enabled (DRAFT banner shown).{% endif %}
+      </p>
     {% endif %}
   </div>
 </div>
+
+{% if is_complete and (print_status or printed) and print_job_id %}
+  <div class="ticket-print-status-inline" role="status">
+    Last print: Sent to printer <strong>{{ printed_to or print_primary_profile_name or "Printer" }}</strong>
+    (Job #<code>{{ print_job_id }}</code>)
+    {% if print_sent_at %}at {{ print_sent_at }}{% endif %}.
+    <a href="/admin/printing/jobs/{{ print_job_id }}" target="_blank" rel="noopener">View job</a>
+  </div>
+{% endif %}
+{# WIP_RECEIPTS UI toggle #}
+{% if is_complete and receipts_wip_enabled and (is_admin or DEV_MODE) %}
+  <div class="ticket-print-receipt-link">
+    <a class="btn btn--ghost btn--sm" href="/tickets/{{ ticket.id }}/receipt" target="_blank" rel="noopener">
+      Receipt Preview (WIP)
+    </a>
+    {{ help(help_text.ticket_receipt_wip, "ticket-receipt-wip-help") }}
+  </div>
+{% endif %}
 
 {% if is_locked %}
   <div class="alert alert--warning">

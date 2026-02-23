@@ -34,6 +34,13 @@
         gap: 0.5rem;
       }
 
+      .print-meta__hint {
+        flex-basis: 100%;
+        margin: 0;
+        color: #6b7280;
+        font-size: 0.8rem;
+      }
+
       .print-meta__actions a,
       .print-meta__actions button {
         border: 1px solid #9ca3af;
@@ -44,6 +51,33 @@
         text-decoration: none;
         font: inherit;
         cursor: pointer;
+      }
+
+      .draft-badge {
+        display: inline-flex;
+        align-items: center;
+        margin-left: 0.45rem;
+        padding: 0.1rem 0.45rem;
+        border-radius: 999px;
+        border: 1px solid #fca5a5;
+        background: #fee2e2;
+        color: #991b1b;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .draft-preview-banner {
+        margin: 0;
+        padding: 0.45rem 1rem;
+        border-bottom: 1px solid #fecaca;
+        background: #fff1f2;
+        color: #9f1239;
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
       }
 
       .print-body {
@@ -59,8 +93,16 @@
       }
 
       @media print {
-        .print-meta {
-          display: none;
+        body {
+          margin: 0;
+        }
+
+        .print-document {
+          margin: 12mm;
+        }
+
+        .no-print {
+          display: none !important;
         }
 
         .print-body {
@@ -70,21 +112,30 @@
     </style>
   </head>
   <body>
-    <div class="print-meta">
+    <div class="print-meta no-print">
       <div>
         <strong>Ticket {{ ticket.ticket_no }}</strong>
-        <span>Profile: {{ profile_display_name }}</span>
+        {% if is_draft_preview %}
+          <span class="draft-badge">Draft</span>
+        {% endif %}
+        <span>Printer: {{ profile_display_name }}</span>
         {% if job_id %}
           <span>Job #{{ job_id }}</span>
         {% endif %}
       </div>
-      <div class="print-meta__actions">
-        <a href="{{ back_url }}">Back to ticket</a>
-        <button type="button" onclick="window.print()">Print</button>
+      <div class="print-meta__actions no-print">
+        <a class="no-print" href="{{ back_url }}">Back to ticket</a>
+        <button class="no-print" type="button" onclick="window.print()">Print</button>
       </div>
+      <p class="print-meta__hint no-print">
+        To remove URL/date headers, disable "Headers and footers" in your browser print dialog.
+      </p>
     </div>
+    {% if is_draft_preview %}
+      <p class="draft-preview-banner">DRAFT - PREVIEW ONLY</p>
+    {% endif %}
 
-    <main class="print-body{% if is_text %} print-body--text{% endif %}">
+    <main class="print-document print-body{% if is_text %} print-body--text{% endif %}">
       {% if is_text %}
         <pre>{{ rendered_content }}</pre>
       {% else %}

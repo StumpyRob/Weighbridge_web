@@ -1,12 +1,15 @@
 from datetime import date, datetime, time, timedelta
 import logging
 from decimal import Decimal, ROUND_HALF_UP
+import re
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.orm import Session, joinedload
 
+from ..config import settings
 from ..constants import NOTES_MAX
 from ..db import get_db
 from ..models.base import utcnow
@@ -16,6 +19,9 @@ from ..models import (
     InvoiceLine,
     InvoiceVoid,
     PaymentMethod,
+    PrintJob,
+    PrintProfile,
+    PrintTemplate,
     Product,
     TaxRate,
     Ticket,
@@ -25,6 +31,22 @@ from ..models import (
 )
 from ..security import validate_no_html
 from ..seed import seed_invoice_void_reasons, seed_payment_methods
+from ..services.pdf import (
+    check_invoice_pdf_renderer,
+    ensure_seed_invoice_pdf_template,
+    find_seeded_invoice_pdf_template,
+    render_invoice_pdf,
+    render_invoice_pdf_html,
+    resolve_default_invoice_pdf_template,
+)
+from ..services.wip_snapshots import customer_wip_snapshot, product_wip_snapshot
+from ..services.printing import (
+    PRINT_CONTENT_TYPE_HTML,
+    PRINT_JOB_STATUS_FAILED,
+    ensure_default_invoice_pdf_profile,
+    execute_rendered_print,
+    resolve_profile_transport,
+)
 from ..templating import templates
 
 router = APIRouter()
@@ -42,6 +64,7 @@ INVOICE_EXCLUSION_MISSING_NET_WEIGHT = "Missing net weight"
 INVOICE_EXCLUSION_ZERO_TOTAL = "Zero total"
 INVOICE_EXCLUSION_UNKNOWN_UNIT_TYPE = "Unknown unit type"
 WASTE_TRANSACTION_TYPES = {"WASTEIN", "WASTEOUT"}
+PRINT_PROFILE_PURPOSE_INVOICE_PDF = "INVOICE_PDF"
 
 
 @router.get("/invoices", response_class=HTMLResponse)
@@ -335,6 +358,7 @@ async def invoices_generate_confirm(
             net_total=Decimal("0.00"),
             vat_total=Decimal("0.00"),
             gross_total=Decimal("0.00"),
+            customer_snapshot_json=customer_wip_snapshot(customer),
         )
         db.add(invoice)
         db.flush()
@@ -381,6 +405,7 @@ async def invoices_generate_confirm(
                 net=net,
                 vat=vat,
                 gross=gross,
+                product_snapshot_json=product_wip_snapshot(product),
             )
             db.add(line)
             ticket.invoice_id = invoice.id
@@ -440,6 +465,300 @@ def invoices_detail(
             paid=paid == 1,
             voided=voided == 1,
         ),
+    )
+
+
+@router.get("/invoices/{invoice_id}/pdf")
+def invoices_download_pdf(
+    invoice_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    invoice = db.get(Invoice, invoice_id)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found.")
+    has_line_items = db.execute(
+        select(InvoiceLine.id).where(InvoiceLine.invoice_id == invoice.id).limit(1)
+    ).first()
+    if not has_line_items:
+        raise HTTPException(status_code=400, detail="Invoice has no line items.")
+
+    renderer_status = check_invoice_pdf_renderer()
+    if not renderer_status.available:
+        detail = renderer_status.detail or "Unknown WeasyPrint dependency error."
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Renderer unavailable for invoice {invoice.id}. "
+                f"Please contact support. ({detail})"
+            ),
+        )
+
+    invoice_template = _resolve_invoice_pdf_template_for_request(
+        db,
+        strict_mode=_invoice_pdf_strict_mode_enabled(),
+    )
+    try:
+        pdf_bytes = render_invoice_pdf(
+            invoice_id,
+            db,
+            template=invoice_template,
+            allow_builtin_template_fallback=False,
+            base_url=str(request.base_url),
+            allow_fallback=False,
+            include_fallback_warning=False,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Renderer unavailable for invoice {invoice.id}. "
+                f"Please contact support. ({str(exc)})"
+            ),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    safe_invoice_no = _safe_invoice_filename_token(invoice.invoice_no)
+    filename = f"Invoice-{safe_invoice_no}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@router.get("/invoices/{invoice_id}/pdf/html", response_class=HTMLResponse)
+def invoices_pdf_html_debug(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    if not _invoice_pdf_debug_route_enabled():
+        raise HTTPException(status_code=404, detail="Not found.")
+    invoice_template = _resolve_invoice_pdf_template_for_request(
+        db,
+        strict_mode=_invoice_pdf_strict_mode_enabled(),
+    )
+    try:
+        html = render_invoice_pdf_html(
+            invoice_id,
+            db,
+            template=invoice_template,
+            allow_builtin_template_fallback=False,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return HTMLResponse(content=html)
+
+
+@router.get("/invoices/{invoice_id}/preview", response_class=HTMLResponse)
+def invoices_preview(
+    invoice_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    invoice = db.get(Invoice, invoice_id)
+    if not invoice:
+        return templates.TemplateResponse(
+            request,
+            "invoices/not_found.html",
+            {"request": request, "invoice_id": invoice_id},
+            status_code=404,
+        )
+
+    try:
+        rendered_html, _ = _render_invoice_print_html(
+            db,
+            invoice_id=invoice.id,
+            profile=None,
+        )
+    except HTTPException as exc:
+        return HTMLResponse(str(exc.detail), status_code=exc.status_code)
+    except (RuntimeError, ValueError, LookupError) as exc:
+        return HTMLResponse(
+            f"Invoice preview failed: {exc}",
+            status_code=400,
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "invoices/preview.html",
+        {
+            "request": request,
+            "invoice": invoice,
+            "rendered_html": rendered_html,
+            "back_url": f"/invoices/{invoice.id}",
+        },
+    )
+
+
+@router.post("/invoices/{invoice_id}/print")
+async def invoices_print_dispatch(
+    invoice_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    invoice = db.get(Invoice, invoice_id)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found.")
+
+    form = await request.form()
+    purpose = str(form.get("purpose", "")).strip().upper() or PRINT_PROFILE_PURPOSE_INVOICE_PDF
+    if purpose != PRINT_PROFILE_PURPOSE_INVOICE_PDF:
+        purpose = PRINT_PROFILE_PURPOSE_INVOICE_PDF
+    profile_id = _parse_int(str(form.get("profile_id", "")).strip())
+
+    try:
+        profile = _resolve_invoice_print_profile(
+            db,
+            profile_id=profile_id,
+            require_default=True,
+        )
+        rendered_html, rendered_template_id = _render_invoice_print_html(
+            db,
+            invoice_id=invoice_id,
+            profile=profile,
+        )
+
+        if profile is not None:
+            _, transport_config = resolve_profile_transport(profile)
+            transport_mode = str(profile.transport_mode or "").strip().upper()
+            profile_ref = profile.id
+        else:
+            transport_config = {}
+            transport_mode = "LOCAL_BROWSER"
+            profile_ref = None
+
+        result = execute_rendered_print(
+            db,
+            purpose=purpose,
+            rendered_content=rendered_html,
+            content_type=PRINT_CONTENT_TYPE_HTML,
+            transport_mode=transport_mode,
+            transport_config=transport_config,
+            profile_id=profile_ref,
+            template_id=rendered_template_id,
+            ticket_id=None,
+            created_by_user_id=None,
+        )
+    except HTTPException:
+        raise
+    except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
+        failed_job_id = _latest_invoice_print_job_id(db)
+        query = {
+            "print_failed": "1",
+            "print_error": f"Invoice print failed for invoice {invoice.id}.",
+            "print_error_detail": str(exc) or "Print delivery failed.",
+            "invoice_id": str(invoice.id),
+            "print_purpose": purpose,
+        }
+        if profile_id is not None:
+            query["print_profile_id"] = str(profile_id)
+        if failed_job_id is not None:
+            query["print_job_id"] = str(failed_job_id)
+        return RedirectResponse(
+            url=f"/invoices/{invoice.id}?{urlencode(query)}",
+            status_code=303,
+        )
+
+    browser_query = urlencode(
+        {
+            "purpose": purpose,
+            "profile_id": str(profile.id) if profile is not None else "",
+            "job_id": str(result.job.id),
+            "invoice_print_sent": "1",
+            "invoice_print_job_id": str(result.job.id),
+        }
+    )
+    return RedirectResponse(
+        url=f"/invoices/{invoice.id}/print/browser?{browser_query}",
+        status_code=303,
+    )
+
+
+@router.get("/invoices/{invoice_id}/print/browser", response_class=HTMLResponse)
+def invoices_print_browser(
+    invoice_id: int,
+    request: Request,
+    profile_id: str | None = Query(None),
+    purpose: str | None = Query(None),
+    job_id: int | None = Query(None),
+    invoice_print_job_id: int | None = Query(None),
+    invoice_print_sent: int | None = Query(None),
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    invoice = db.get(Invoice, invoice_id)
+    if not invoice:
+        return templates.TemplateResponse(
+            request,
+            "invoices/not_found.html",
+            {"request": request, "invoice_id": invoice_id},
+            status_code=404,
+        )
+
+    resolved_profile_id = _parse_int(str(profile_id or "").strip())
+
+    rendered_html = ""
+    resolved_job_id = invoice_print_job_id or job_id
+    if resolved_job_id:
+        job = db.get(PrintJob, resolved_job_id)
+        if (
+            job
+            and str(job.purpose or "").strip().upper() == "INVOICE_PDF"
+            and str(job.rendered_content or "").strip()
+        ):
+            rendered_html = str(job.rendered_content or "")
+    if not rendered_html:
+        try:
+            selected_profile = _resolve_invoice_print_profile(
+                db,
+                profile_id=resolved_profile_id,
+            )
+            rendered_html, _ = _render_invoice_print_html(
+                db,
+                invoice_id=invoice_id,
+                profile=selected_profile,
+            )
+        except HTTPException as exc:
+            return HTMLResponse(str(exc.detail), status_code=exc.status_code)
+        except (RuntimeError, ValueError, LookupError) as exc:
+            return HTMLResponse(
+                f"Invoice print preview failed: {exc}",
+                status_code=400,
+            )
+
+    back_query: dict[str, str] = {}
+    if invoice_print_sent == 1:
+        back_query["invoice_print_sent"] = "1"
+    if resolved_job_id is not None:
+        back_query["invoice_print_job_id"] = str(resolved_job_id)
+    normalized_purpose = str(purpose or "").strip().upper() or PRINT_PROFILE_PURPOSE_INVOICE_PDF
+    back_query["print_purpose"] = normalized_purpose
+    if resolved_profile_id is not None:
+        back_query["print_profile_id"] = str(resolved_profile_id)
+    back_query["invoice_id"] = str(invoice.id)
+    back_url = (
+        f"/invoices/{invoice.id}?{urlencode(back_query)}"
+        if back_query
+        else f"/invoices/{invoice.id}"
+    )
+    return templates.TemplateResponse(
+        request,
+        "invoices/print_browser.html",
+        {
+            "request": request,
+            "invoice": invoice,
+            "job_id": resolved_job_id,
+            "rendered_html": rendered_html,
+            "back_url": back_url,
+        },
     )
 
 
@@ -719,6 +1038,213 @@ def _parse_int(value: str) -> int | None:
         return None
 
 
+def _safe_invoice_filename_token(value: str | None) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value or "").strip())
+    cleaned = cleaned.strip("-")
+    return cleaned or "invoice"
+
+
+def _latest_invoice_print_job_id(db: Session) -> int | None:
+    row = db.execute(
+        select(PrintJob.id)
+        .where(PrintJob.purpose == "INVOICE_PDF", PrintJob.status == PRINT_JOB_STATUS_FAILED)
+        .order_by(PrintJob.id.desc())
+        .limit(1)
+    ).first()
+    return int(row[0]) if row else None
+
+
+def _invoice_print_profile_display_name(profile: PrintProfile) -> str:
+    description = str(profile.description or "").strip()
+    return description or str(profile.code or "").strip()
+
+
+def _load_active_invoice_print_profiles(db: Session) -> list[PrintProfile]:
+    return list(
+        db.execute(
+            select(PrintProfile)
+            .where(
+                PrintProfile.is_active.is_(True),
+                PrintProfile.purpose == PRINT_PROFILE_PURPOSE_INVOICE_PDF,
+            )
+            .order_by(PrintProfile.is_default.desc(), PrintProfile.code.asc())
+        ).scalars()
+    )
+
+
+def _default_invoice_print_profile(
+    profiles: list[PrintProfile],
+) -> PrintProfile | None:
+    return next((row for row in profiles if row.is_default), None)
+
+
+def _resolve_invoice_print_profile(
+    db: Session,
+    *,
+    profile_id: int | None = None,
+    require_default: bool = False,
+) -> PrintProfile | None:
+    if require_default:
+        ensure_default_invoice_pdf_profile(db)
+
+    profiles = _load_active_invoice_print_profiles(db)
+    if profile_id is not None:
+        selected = next((row for row in profiles if row.id == profile_id), None)
+        if selected is None:
+            raise ValueError("Printer not found or inactive.")
+        return selected
+    default_profile = _default_invoice_print_profile(profiles)
+    if require_default and default_profile is None:
+        raise ValueError("No printer configured. Contact admin.")
+    return default_profile
+
+
+def _render_invoice_print_html(
+    db: Session,
+    *,
+    invoice_id: int,
+    profile: PrintProfile | None = None,
+) -> tuple[str, int | None]:
+    invoice_template = _resolve_invoice_pdf_template_for_request(
+        db,
+        strict_mode=_invoice_pdf_strict_mode_enabled(),
+    )
+    if profile is not None and profile.template_id:
+        profile_template = db.get(PrintTemplate, profile.template_id)
+        if (
+            profile_template is not None
+            and bool(profile_template.is_active)
+            and str(profile_template.purpose or "").strip().upper()
+            == PRINT_PROFILE_PURPOSE_INVOICE_PDF
+        ):
+            invoice_template = profile_template
+    rendered_html = render_invoice_pdf_html(
+        invoice_id=invoice_id,
+        db=db,
+        template=invoice_template,
+        allow_builtin_template_fallback=False,
+    )
+    template_id = int(invoice_template.id) if invoice_template is not None else None
+    return rendered_html, template_id
+
+
+def _invoice_print_actions_context(
+    request: Request,
+    db: Session,
+    invoice_id: int,
+    *,
+    is_admin: bool = False,
+) -> dict[str, object]:
+    ensure_default_invoice_pdf_profile(db)
+    profiles = _load_active_invoice_print_profiles(db)
+    default_profile = _default_invoice_print_profile(profiles)
+    selected_profile_id = _parse_int(
+        str(request.query_params.get("print_profile_id", "")).strip()
+    )
+    selected_profile = next(
+        (row for row in profiles if selected_profile_id and row.id == selected_profile_id),
+        None,
+    )
+    selected_profile_id_value = (
+        str(selected_profile.id)
+        if selected_profile is not None
+        else (str(default_profile.id) if default_profile is not None else "")
+    )
+    selected_purpose = PRINT_PROFILE_PURPOSE_INVOICE_PDF
+    profiles_payload = [
+        {
+            "id": str(profile.id),
+            "label": _invoice_print_profile_display_name(profile),
+            "option_label": _invoice_print_profile_display_name(profile),
+            "purpose": PRINT_PROFILE_PURPOSE_INVOICE_PDF,
+            "is_default": bool(profile.is_default),
+            "transport_mode": str(profile.transport_mode or "").strip().upper(),
+        }
+        for profile in profiles
+    ]
+    default_profile_map = {
+        PRINT_PROFILE_PURPOSE_INVOICE_PDF: (
+            str(default_profile.id) if default_profile is not None else ""
+        )
+    }
+    default_profile_label_map = {
+        PRINT_PROFILE_PURPOSE_INVOICE_PDF: (
+            _invoice_print_profile_display_name(default_profile)
+            if default_profile is not None
+            else ""
+        )
+    }
+    send_enabled = default_profile is not None
+
+    return {
+        "print_missing_default": not send_enabled,
+        "print_actions": {
+            "entity_type": "invoice",
+            "entity_id": int(invoice_id),
+            "send_url": f"/invoices/{invoice_id}/print",
+            "preview_url": f"/invoices/{invoice_id}/preview",
+            "purposes": [(PRINT_PROFILE_PURPOSE_INVOICE_PDF, "Invoice (PDF)")],
+            "profiles": profiles_payload,
+            "selected_purpose": selected_purpose,
+            "selected_profile_id": selected_profile_id_value,
+            "default_profile_id": default_profile_map[PRINT_PROFILE_PURPOSE_INVOICE_PDF],
+            "default_profile_ids_by_purpose": default_profile_map,
+            "default_profile_labels_by_purpose": default_profile_label_map,
+            "selected_default_profile_label": default_profile_label_map[
+                PRINT_PROFILE_PURPOSE_INVOICE_PDF
+            ],
+            "send_enabled": send_enabled,
+            "send_enabled_by_purpose": {PRINT_PROFILE_PURPOSE_INVOICE_PDF: send_enabled},
+            "send_label": "Send to Printer",
+            "preview_label": "Preview",
+            "preview_button_id": "",
+            "download_url": f"/invoices/{invoice_id}/pdf",
+            "download_label": "Download PDF",
+            "options_open": request.query_params.get("print_options") == "1",
+            "no_default_message": "No printer configured. Contact admin.",
+            "require_default_profile": True,
+            "show_purpose_toggle": False,
+            "show_advanced_menu": bool(is_admin),
+            "show_resolved_default_label": True,
+        }
+    }
+
+
+def _resolve_invoice_pdf_template_for_request(
+    db: Session,
+    *,
+    strict_mode: bool,
+):
+    default_template = resolve_default_invoice_pdf_template(db)
+    if default_template is not None:
+        return default_template
+
+    if strict_mode:
+        raise HTTPException(
+            status_code=500,
+            detail="No default invoice PDF template configured",
+        )
+
+    seeded_template = find_seeded_invoice_pdf_template(db, require_active=True)
+    if seeded_template is not None:
+        return seeded_template
+
+    seeded_template, changed = ensure_seed_invoice_pdf_template(db)
+    if changed:
+        db.commit()
+    return seeded_template
+
+
+def _invoice_pdf_debug_route_enabled() -> bool:
+    if settings.dev_mode or settings.debug:
+        return True
+    return bool(templates.env.globals.get("DEV_MODE"))
+
+
+def _invoice_pdf_strict_mode_enabled() -> bool:
+    return bool(settings.debug)
+
+
 def _decimal(value) -> Decimal:
     if value is None:
         return Decimal("0")
@@ -828,6 +1354,13 @@ def _invoice_detail_context(
         }
         for ticket, vehicle_registration in ticket_rows
     ]
+    is_admin = False
+    print_actions_context = _invoice_print_actions_context(
+        request,
+        db,
+        invoice.id,
+        is_admin=is_admin,
+    )
     return {
         "request": request,
         "invoice": invoice,
@@ -846,6 +1379,8 @@ def _invoice_detail_context(
         "created": created,
         "paid": paid,
         "voided": voided,
+        "is_admin": is_admin,
+        **print_actions_context,
     }
 
 

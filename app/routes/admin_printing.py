@@ -19,9 +19,21 @@ from ..models import (
     PrintJob,
     PrintProfile,
     PrintTemplate,
+    Invoice,
     Ticket,
     TicketStatusEnum,
     Yard,
+)
+from ..services.pdf import (
+    INVOICE_PDF_TEMPLATE_PURPOSE,
+    build_invoice_pdf_preview_context,
+    default_template_ids_by_purpose,
+    ensure_seed_invoice_pdf_template,
+    is_template_default_for_purpose,
+    managed_template_default_purposes,
+    render_invoice_template_content,
+    resolve_default_template_for_purpose,
+    set_default_template_for_purpose,
 )
 from ..services.print_payload import build_ticket_print_payload
 from ..services.print_render import render_from_content
@@ -42,10 +54,11 @@ router = APIRouter()
 PRINT_PROFILE_PURPOSE_OPTIONS = (
     ("TICKET_THERMAL", "Ticket Thermal"),
     ("RECEIPT_THERMAL", "Receipt Thermal"),
-    ("INVOICE_A4", "Invoice A4"),
+    (INVOICE_PDF_TEMPLATE_PURPOSE, "Invoice (PDF)"),
     ("WTN_A4", "WTN A4"),
     ("TICKET_A4", "Ticket A4 (Legacy)"),
 )
+PRINT_TEMPLATE_PURPOSE_OPTIONS = PRINT_PROFILE_PURPOSE_OPTIONS
 PRINT_PROFILE_TRANSPORT_OPTIONS = (
     ("NETWORK_RAW_9100", "Network RAW 9100"),
     ("USB_ESC_POS", "USB ESC/POS"),
@@ -64,13 +77,14 @@ LOCAL_NODE_TIMEOUT_MIN_MS = 1
 LOCAL_NODE_TIMEOUT_MAX_MS = 120000
 
 PRINT_PROFILE_PURPOSE_VALUES = {value for value, _ in PRINT_PROFILE_PURPOSE_OPTIONS}
+PRINT_TEMPLATE_PURPOSE_VALUES = {value for value, _ in PRINT_TEMPLATE_PURPOSE_OPTIONS}
 PRINT_PROFILE_TRANSPORT_VALUES = {
     value for value, _ in PRINT_PROFILE_TRANSPORT_OPTIONS
 }
 PRINT_TEMPLATE_CONTENT_TYPE_VALUES = {
     value for value, _ in PRINT_TEMPLATE_CONTENT_TYPE_OPTIONS
 }
-PRINT_TEMPLATE_INSERT_TOKEN_GROUPS = (
+PRINT_TEMPLATE_INSERT_TOKEN_GROUPS_TICKET = (
     (
         "Ticket fields",
         (
@@ -112,12 +126,65 @@ PRINT_TEMPLATE_INSERT_TOKEN_GROUPS = (
         ),
     ),
 )
+PRINT_TEMPLATE_INSERT_TOKEN_GROUPS_INVOICE = (
+    (
+        "Invoice fields",
+        (
+            ("Invoice number", "{{ invoice.invoice_no }}"),
+            ("Invoice date", "{{ invoice.invoice_date }}"),
+            ("Due date", "{{ invoice.due_date }}"),
+            ("Status", "{{ invoice.status }}"),
+        ),
+    ),
+    (
+        "Customer fields",
+        (
+            ("Customer name", "{{ customer.name }}"),
+            ("Billing lines", "{{ customer.billing_lines | join(', ') }}"),
+            ("VAT number", "{{ customer.vat_number }}"),
+        ),
+    ),
+    (
+        "Totals fields",
+        (
+            ("Net total", "{{ totals.net }}"),
+            ("VAT total", "{{ totals.vat }}"),
+            ("Gross total", "{{ totals.gross }}"),
+        ),
+    ),
+    (
+        "Lines loop",
+        (
+            ("For each line (start)", "{% for line in lines %}"),
+            ("For each line (end)", "{% endfor %}"),
+            ("Line description", "{{ line.description }}"),
+            ("Line qty", "{{ line.qty }}"),
+            ("Line unit price", "{{ line.unit_price }}"),
+            ("Line net", "{{ line.net }}"),
+            ("Line VAT", "{{ line.vat }}"),
+            ("Line gross", "{{ line.gross }}"),
+        ),
+    ),
+)
+
+MANAGED_TEMPLATE_DEFAULT_PURPOSES = managed_template_default_purposes()
+REQUIRED_TEMPLATE_BOOTSTRAP = {
+    "TICKET_THERMAL": (
+        "TICKET_THERMAL_DEFAULT",
+        "Default thermal ticket template",
+        PRINT_CONTENT_TYPE_TEXT,
+    ),
+    "TICKET_A4": (
+        "TICKET_A4_DEFAULT",
+        "Default A4 ticket template",
+        PRINT_CONTENT_TYPE_HTML,
+    ),
+}
 
 _DEFAULT_TEMPLATE_BY_PURPOSE_AND_TYPE = {
     ("TICKET_THERMAL", PRINT_CONTENT_TYPE_TEXT): "thermal_default.txt",
     ("RECEIPT_THERMAL", PRINT_CONTENT_TYPE_TEXT): "thermal_default.txt",
     ("TICKET_A4", PRINT_CONTENT_TYPE_HTML): "a4_default.html",
-    ("INVOICE_A4", PRINT_CONTENT_TYPE_HTML): "a4_default.html",
     ("WTN_A4", PRINT_CONTENT_TYPE_HTML): "a4_default.html",
 }
 _DEFAULT_TEMPLATE_BY_TYPE = {
@@ -128,9 +195,26 @@ _DEFAULT_TEMPLATE_FALLBACK_BY_TYPE = {
     PRINT_CONTENT_TYPE_TEXT: "Ticket: {{ ticket.number }}",
     PRINT_CONTENT_TYPE_HTML: "<html><body><h1>Ticket {{ ticket.number }}</h1></body></html>",
 }
+_DEFAULT_INVOICE_PDF_FALLBACK = (
+    "<html><body><h1>Invoice {{ invoice.invoice_no }}</h1></body></html>"
+)
 
 _TRANSPORT_RAW_KEYS = {"host", "port", "timeout_seconds"}
 _TRANSPORT_LOCAL_NODE_KEYS = {"url", "api_key", "timeout_ms"}
+DEFAULT_TEMPLATE_PROTECTION_ERROR = (
+    "You can't deactivate/delete the default template. Set another default first."
+)
+JOB_PURPOSE_LABELS = {
+    "TICKET_THERMAL": "Ticket (Thermal)",
+    "TICKET_A4": "Ticket (A4)",
+    "INVOICE_PDF": "Invoice (PDF)",
+    "RECEIPT_THERMAL": "Receipt (Thermal)",
+}
+JOB_STATUS_FILTER_OPTIONS = (
+    (PRINT_JOB_STATUS_SENT, "Sent"),
+    (PRINT_JOB_STATUS_FAILED, "Failed"),
+    ("QUEUED", "Queued"),
+)
 
 
 def _is_truthy(value: str | None) -> bool:
@@ -165,10 +249,13 @@ def _printing_redirect_url(
         params["saved"] = "1"
     q = request.query_params.get("q")
     hide_inactive = request.query_params.get("hide_inactive")
+    purpose = request.query_params.get("purpose")
     if q:
         params["q"] = q
     if hide_inactive is not None:
         params["hide_inactive"] = hide_inactive
+    if purpose:
+        params["purpose"] = purpose
     if extra:
         params.update(extra)
     return f"{base_path}?{urlencode(params)}"
@@ -211,9 +298,25 @@ def _read_builtin_print_template(filename: str, fallback: str) -> str:
     return content or fallback
 
 
+def _read_builtin_invoice_pdf_template() -> str:
+    candidate = Path(__file__).resolve().parents[1] / "templates" / "invoices" / "pdf.html"
+    if not candidate.is_file():
+        return _DEFAULT_INVOICE_PDF_FALLBACK
+    try:
+        content = candidate.read_text(encoding="utf-8")
+    except OSError:
+        return _DEFAULT_INVOICE_PDF_FALLBACK
+    return content or _DEFAULT_INVOICE_PDF_FALLBACK
+
+
 def _default_template_content(*, purpose: str, content_type: str) -> str:
     normalized_purpose = str(purpose or "").strip().upper()
     normalized_type = str(content_type or "").strip().upper()
+    if (
+        normalized_purpose == INVOICE_PDF_TEMPLATE_PURPOSE
+        and normalized_type == PRINT_CONTENT_TYPE_HTML
+    ):
+        return _read_builtin_invoice_pdf_template()
     filename = _DEFAULT_TEMPLATE_BY_PURPOSE_AND_TYPE.get(
         (normalized_purpose, normalized_type)
     ) or _DEFAULT_TEMPLATE_BY_TYPE.get(normalized_type)
@@ -226,9 +329,9 @@ def _default_template_content(*, purpose: str, content_type: str) -> str:
     return _read_builtin_print_template(filename, fallback)
 
 
-def _default_ticket_layout_map() -> dict[str, str]:
+def _default_template_layout_map() -> dict[str, str]:
     layouts: dict[str, str] = {}
-    for purpose, _ in PRINT_PROFILE_PURPOSE_OPTIONS:
+    for purpose, _ in PRINT_TEMPLATE_PURPOSE_OPTIONS:
         for content_type, _ in PRINT_TEMPLATE_CONTENT_TYPE_OPTIONS:
             layouts[f"{purpose}|{content_type}"] = _default_template_content(
                 purpose=purpose,
@@ -291,13 +394,31 @@ def _profile_to_form(profile: PrintProfile) -> dict[str, object]:
     }
 
 
-def _empty_template_form() -> dict[str, object]:
+def _template_insert_token_groups(purpose: str) -> tuple:
+    normalized = str(purpose or "").strip().upper()
+    if normalized == INVOICE_PDF_TEMPLATE_PURPOSE:
+        return PRINT_TEMPLATE_INSERT_TOKEN_GROUPS_INVOICE
+    return PRINT_TEMPLATE_INSERT_TOKEN_GROUPS_TICKET
+
+
+def _empty_template_form(purpose: str | None = None) -> dict[str, object]:
+    resolved_purpose = str(purpose or "TICKET_THERMAL").strip().upper()
+    if resolved_purpose not in PRINT_TEMPLATE_PURPOSE_VALUES:
+        resolved_purpose = "TICKET_THERMAL"
+    default_content_type = (
+        PRINT_CONTENT_TYPE_HTML
+        if resolved_purpose == INVOICE_PDF_TEMPLATE_PURPOSE
+        else PRINT_CONTENT_TYPE_TEXT
+    )
     return {
         "code": "",
         "description": "",
-        "purpose": "TICKET_THERMAL",
-        "content_type": PRINT_CONTENT_TYPE_TEXT,
-        "content": "Ticket: {{ payload.ticket_no }}",
+        "purpose": resolved_purpose,
+        "content_type": default_content_type,
+        "content": _default_template_content(
+            purpose=resolved_purpose,
+            content_type=default_content_type,
+        ),
         "is_active": True,
     }
 
@@ -370,6 +491,14 @@ def _sample_payload_for_render(
     if ticket is None:
         return _minimal_ticket_payload(), None
     return build_ticket_print_payload(db, ticket), ticket
+
+
+def _sample_invoice_context_for_render(
+    db: Session,
+    *,
+    invoice_id: int | None = None,
+) -> tuple[dict[str, object], Invoice | None]:
+    return build_invoice_pdf_preview_context(db, invoice_id=invoice_id)
 
 
 def _parse_transport_config_json(raw_transport_config: str) -> tuple[dict, str | None]:
@@ -628,7 +757,7 @@ def _parse_template_form(
         error = f"Code must be {CODE_MAX} characters or fewer."
     elif description and len(description) > DESC_MAX:
         error = f"Description must be {DESC_MAX} characters or fewer."
-    elif purpose not in PRINT_PROFILE_PURPOSE_VALUES:
+    elif purpose not in PRINT_TEMPLATE_PURPOSE_VALUES:
         error = "Purpose is invalid."
     elif content_type not in PRINT_TEMPLATE_CONTENT_TYPE_VALUES:
         error = "Content type is invalid."
@@ -676,14 +805,246 @@ def _clear_other_defaults_for_scope(
 
 
 def _validate_template_render(
-    db: Session, *, content: str, ticket_id: int | None = None
+    db: Session,
+    *,
+    content: str,
+    purpose: str = "",
+    ticket_id: int | None = None,
+    invoice_id: int | None = None,
 ) -> str | None:
-    sample_payload, _ = _sample_payload_for_render(db, ticket_id=ticket_id)
+    normalized_purpose = str(purpose or "").strip().upper()
     try:
-        render_from_content(sample_payload, content)
-    except Exception as exc:  # noqa: BLE001
+        if normalized_purpose == INVOICE_PDF_TEMPLATE_PURPOSE:
+            context, _ = _sample_invoice_context_for_render(db, invoice_id=invoice_id)
+            render_invoice_template_content(content, context)
+        else:
+            sample_payload, _ = _sample_payload_for_render(db, ticket_id=ticket_id)
+            render_from_content(sample_payload, content)
+    except Exception as exc:
         return f"Template render failed: {exc}"
     return None
+
+
+def _validate_template_syntax(content: str) -> str | None:
+    try:
+        templates.env.parse(content)
+    except Exception as exc:
+        return f"Template syntax failed: {exc}"
+    return None
+
+
+def _parse_optional_sample_id(
+    value: object,
+    *,
+    label: str,
+) -> tuple[int | None, str | None]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None, None
+    try:
+        resolved = int(raw)
+    except ValueError:
+        return None, f"{label} must be a whole number."
+    if resolved <= 0:
+        return None, f"{label} must be greater than zero."
+    return resolved, None
+
+
+def _template_validation_sample_ids(
+    form_data,
+    *,
+    purpose: str,
+) -> tuple[int | None, int | None, str | None]:
+    normalized_purpose = str(purpose or "").strip().upper()
+    ticket_id: int | None = None
+    invoice_id: int | None = None
+    if normalized_purpose == INVOICE_PDF_TEMPLATE_PURPOSE:
+        invoice_id, error = _parse_optional_sample_id(
+            form_data.get("sample_invoice_id", ""),
+            label="Sample invoice ID",
+        )
+        if error:
+            return None, None, error
+        return None, invoice_id, None
+
+    ticket_id, error = _parse_optional_sample_id(
+        form_data.get("sample_ticket_id", ""),
+        label="Sample ticket ID",
+    )
+    if error:
+        return None, None, error
+    return ticket_id, None, None
+
+
+def _default_template_id_for_purpose(
+    db: Session,
+    *,
+    purpose: str,
+) -> int | None:
+    template = resolve_default_template_for_purpose(
+        db,
+        purpose=purpose,
+        require_active=False,
+    )
+    return int(template.id) if template is not None else None
+
+
+def _default_template_ids(db: Session) -> dict[str, int]:
+    return default_template_ids_by_purpose(
+        db,
+        purposes=MANAGED_TEMPLATE_DEFAULT_PURPOSES,
+        require_active=False,
+    )
+
+
+def _is_default_template(db: Session, template: PrintTemplate) -> bool:
+    return is_template_default_for_purpose(db, template)
+
+
+def _set_default_template(db: Session, template: PrintTemplate) -> None:
+    set_default_template_for_purpose(db, template=template, force_active=True)
+
+
+def _next_available_template_code(db: Session, preferred: str) -> str:
+    candidate = preferred
+    suffix = 2
+    while db.execute(
+        select(PrintTemplate.id).where(func.lower(PrintTemplate.code) == candidate.lower())
+    ).first():
+        candidate = f"{preferred}_{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _normalize_default_template_identity(
+    db: Session,
+    *,
+    purpose: str,
+    template: PrintTemplate,
+) -> bool:
+    template_blueprint = REQUIRED_TEMPLATE_BOOTSTRAP.get(purpose)
+    if template_blueprint is None:
+        return False
+
+    expected_code, expected_description, _ = template_blueprint
+    changed = False
+    current_code = str(template.code or "").strip()
+
+    if current_code.lower() == expected_code.lower():
+        if str(template.description or "") != expected_description:
+            template.description = expected_description
+            changed = True
+        return changed
+
+    conflict_template = (
+        db.execute(
+            select(PrintTemplate)
+            .where(
+                PrintTemplate.id != template.id,
+                PrintTemplate.purpose == purpose,
+                func.lower(PrintTemplate.code) == expected_code.lower(),
+            )
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    if conflict_template is None:
+        template.code = expected_code
+        template.description = expected_description
+        return True
+
+    if not bool(conflict_template.is_active):
+        conflict_template.is_active = True
+        changed = True
+    if str(conflict_template.description or "") != expected_description:
+        conflict_template.description = expected_description
+        changed = True
+    if int(conflict_template.id) != int(template.id):
+        _set_default_template(db, conflict_template)
+        changed = True
+    return changed
+
+
+def _ensure_required_template_defaults(db: Session) -> bool:
+    changed = False
+    for purpose in MANAGED_TEMPLATE_DEFAULT_PURPOSES:
+        default_template = resolve_default_template_for_purpose(
+            db,
+            purpose=purpose,
+            require_active=True,
+        )
+        if default_template is not None:
+            if _normalize_default_template_identity(
+                db,
+                purpose=purpose,
+                template=default_template,
+            ):
+                changed = True
+            continue
+
+        if purpose == INVOICE_PDF_TEMPLATE_PURPOSE:
+            _, seeded_changed = ensure_seed_invoice_pdf_template(db)
+            changed = changed or seeded_changed
+            continue
+
+        active_template = (
+            db.execute(
+                select(PrintTemplate)
+                .where(
+                    PrintTemplate.purpose == purpose,
+                    PrintTemplate.is_active.is_(True),
+                )
+                .order_by(PrintTemplate.id.asc())
+                .limit(1)
+            )
+            .scalars()
+            .first()
+        )
+        if active_template is None:
+            fallback_template = (
+                db.execute(
+                    select(PrintTemplate)
+                    .where(PrintTemplate.purpose == purpose)
+                    .order_by(PrintTemplate.id.asc())
+                    .limit(1)
+                )
+                .scalars()
+                .first()
+            )
+            if fallback_template is None:
+                template_blueprint = REQUIRED_TEMPLATE_BOOTSTRAP.get(purpose)
+                if template_blueprint is None:
+                    continue
+                preferred_code, description, content_type = template_blueprint
+                fallback_template = PrintTemplate(
+                    code=_next_available_template_code(db, preferred_code),
+                    description=description,
+                    purpose=purpose,
+                    content_type=content_type,
+                    content=_default_template_content(
+                        purpose=purpose,
+                        content_type=content_type,
+                    ),
+                    is_active=True,
+                )
+                db.add(fallback_template)
+                db.flush()
+                changed = True
+            elif not bool(fallback_template.is_active):
+                fallback_template.is_active = True
+                changed = True
+            active_template = fallback_template
+
+        _set_default_template(db, active_template)
+        changed = True
+        if _normalize_default_template_identity(
+            db,
+            purpose=purpose,
+            template=active_template,
+        ):
+            changed = True
+    return changed
 
 
 def _latest_job_id_for_profile(db: Session, profile_id: int) -> int | None:
@@ -738,7 +1099,24 @@ def _job_target_label(job: PrintJob, profile: PrintProfile | None) -> str:
     return mode or "-"
 
 
-def _job_error_summary(error: str | None, max_len: int = 60) -> str:
+def _job_purpose_label(purpose: str | None) -> str:
+    normalized = str(purpose or "").strip().upper()
+    if not normalized:
+        return "-"
+    if normalized in JOB_PURPOSE_LABELS:
+        return JOB_PURPOSE_LABELS[normalized]
+    return normalized.replace("_", " ").title()
+
+
+def _job_when_label(job: PrintJob) -> str:
+    if job.sent_at:
+        return job.sent_at.strftime("%d/%m %H:%M")
+    if job.created_at:
+        return job.created_at.strftime("%d/%m %H:%M")
+    return "-"
+
+
+def _job_error_summary(error: str | None, max_len: int = 50) -> str:
     text = re.sub(r"\s+", " ", str(error or "").strip())
     if not text:
         return ""
@@ -756,13 +1134,14 @@ def _inject_preview_banner_into_html(
     rendered_html: str,
     template_id: int,
     template_code: str,
-    ticket_label: str,
+    preview_subject: str,
+    preview_label: str,
 ) -> str:
     banner_html = (
         "<div style=\"font-family: system-ui, sans-serif; font-size: 12px; "
         "padding: 8px 12px; border-bottom: 1px solid #d1d5db; background: #f3f4f6; "
         "color: #111827;\">"
-        f"Previewing with Ticket: <strong>{html_escape(ticket_label)}</strong>"
+        f"Previewing with {html_escape(preview_subject)}: <strong>{html_escape(preview_label)}</strong>"
         f" &middot; Template: <strong>{html_escape(template_code)}</strong>"
         f" &middot; <a href=\"/admin/printing/templates/{template_id}/edit\">Back to template</a>"
         "</div>"
@@ -923,9 +1302,18 @@ def _render_template_list(
     *,
     q: str | None,
     hide_inactive: int,
+    purpose: str | None,
     error: str | None = None,
 ) -> HTMLResponse:
     query = select(PrintTemplate)
+    normalized_purpose = str(purpose or "").strip().upper()
+    purpose_filter = (
+        normalized_purpose
+        if normalized_purpose in PRINT_TEMPLATE_PURPOSE_VALUES
+        else ""
+    )
+    if purpose_filter:
+        query = query.where(PrintTemplate.purpose == purpose_filter)
     if hide_inactive:
         query = query.where(PrintTemplate.is_active.is_(True))
     if q:
@@ -936,6 +1324,7 @@ def _render_template_list(
             | func.lower(PrintTemplate.purpose).contains(q_lower)
         )
     items = list(db.execute(query.order_by(PrintTemplate.code.asc())).scalars())
+    default_template_id_map = _default_template_ids(db)
     return templates.TemplateResponse(
         request,
         "admin/printing_templates_list.html",
@@ -945,7 +1334,10 @@ def _render_template_list(
             "items": items,
             "q": q or "",
             "hide_inactive": bool(hide_inactive),
+            "purpose": purpose_filter,
+            "purpose_options": PRINT_TEMPLATE_PURPOSE_OPTIONS,
             "saved": request.query_params.get("saved") == "1",
+            "default_template_ids": default_template_id_map,
             "error": error,
         },
     )
@@ -959,8 +1351,40 @@ def _render_template_form(
     template: PrintTemplate | None,
     form_data: dict[str, object],
     error: str | None,
+    sample_ticket_id_value: str | None = None,
+    sample_invoice_id_value: str | None = None,
     status_code: int = 200,
 ) -> HTMLResponse:
+    selected_purpose = str(form_data.get("purpose", "")).strip().upper()
+    invoice_mode = selected_purpose == INVOICE_PDF_TEMPLATE_PURPOSE
+    selected_default_id = _default_template_id_for_purpose(
+        db,
+        purpose=selected_purpose,
+    )
+    selected_content_type = str(form_data.get("content_type", "")).strip().upper()
+    preview_param_name = "invoice_id" if invoice_mode else "ticket_id"
+    preview_entity_label = "Invoice ID" if invoice_mode else "Ticket ID"
+    preview_id_value = request.query_params.get(preview_param_name, "")
+    preview_hint = (
+        "Enter a numeric invoice ID. If blank or not found, preview uses the latest invoice with line items."
+        if invoice_mode
+        else "Enter a numeric ticket ID. If blank or not found, preview uses the latest completed ticket."
+    )
+    content_type_options = (
+        ((PRINT_CONTENT_TYPE_HTML, "HTML"),)
+        if invoice_mode
+        else PRINT_TEMPLATE_CONTENT_TYPE_OPTIONS
+    )
+    resolved_sample_ticket_id = (
+        sample_ticket_id_value
+        if sample_ticket_id_value is not None
+        else request.query_params.get("sample_ticket_id", "")
+    )
+    resolved_sample_invoice_id = (
+        sample_invoice_id_value
+        if sample_invoice_id_value is not None
+        else request.query_params.get("sample_invoice_id", "")
+    )
     return templates.TemplateResponse(
         request,
         "admin/printing_template_form.html",
@@ -973,13 +1397,31 @@ def _render_template_form(
             "error": error,
             "saved": request.query_params.get("saved") == "1",
             "duplicated": request.query_params.get("duplicated") == "1",
-            "purpose_options": PRINT_PROFILE_PURPOSE_OPTIONS,
-            "content_type_options": PRINT_TEMPLATE_CONTENT_TYPE_OPTIONS,
-            "insert_token_groups": PRINT_TEMPLATE_INSERT_TOKEN_GROUPS,
-            "default_ticket_layouts_json": json.dumps(
-                _default_ticket_layout_map()
+            "default_template_set": request.query_params.get("default_template_set")
+            == "1"
+            or request.query_params.get("invoice_default_set") == "1",
+            "purpose_options": PRINT_TEMPLATE_PURPOSE_OPTIONS,
+            "content_type_options": content_type_options,
+            "insert_token_groups": _template_insert_token_groups(selected_purpose),
+            "default_layouts_json": json.dumps(
+                _default_template_layout_map()
             ).replace("</", "<\\/"),
-            "preview_ticket_id": request.query_params.get("ticket_id", ""),
+            "invoice_mode": invoice_mode,
+            "preview_param_name": preview_param_name,
+            "preview_entity_label": preview_entity_label,
+            "preview_id_value": preview_id_value,
+            "preview_hint": preview_hint,
+            "validation_hint": (
+                ""
+                if invoice_mode
+                else "Provide a sample invoice/ticket to validate render."
+            ),
+            "sample_ticket_id_value": resolved_sample_ticket_id,
+            "sample_invoice_id_value": resolved_sample_invoice_id,
+            "is_default_template": (
+                bool(template and selected_default_id and template.id == selected_default_id)
+            ),
+            "selected_content_type": selected_content_type,
         },
         status_code=status_code,
     )
@@ -988,6 +1430,22 @@ def _render_template_form(
 @router.get("/admin/printing")
 def admin_printing_index() -> RedirectResponse:
     return RedirectResponse(url="/admin/printing/profiles", status_code=303)
+
+
+@router.get("/admin/printing/invoice-pdf-templates")
+def admin_printing_invoice_pdf_templates() -> RedirectResponse:
+    return RedirectResponse(
+        url=f"/admin/printing/templates?purpose={INVOICE_PDF_TEMPLATE_PURPOSE}",
+        status_code=303,
+    )
+
+
+@router.get("/admin/printing/invoice-pdf-templates/new")
+def admin_printing_invoice_pdf_templates_new() -> RedirectResponse:
+    return RedirectResponse(
+        url=f"/admin/printing/templates/new?purpose={INVOICE_PDF_TEMPLATE_PURPOSE}",
+        status_code=303,
+    )
 
 
 @router.get("/admin/printing/profiles", response_class=HTMLResponse)
@@ -1068,7 +1526,7 @@ def admin_print_profiles_edit(
 ) -> HTMLResponse:
     profile = db.get(PrintProfile, profile_id)
     if profile is None:
-        return HTMLResponse("Print profile not found.", status_code=404)
+        return HTMLResponse("Printer not found.", status_code=404)
     return _render_profile_form(
         request,
         db,
@@ -1087,7 +1545,7 @@ async def admin_print_profiles_update(
 ) -> HTMLResponse:
     profile = db.get(PrintProfile, profile_id)
     if profile is None:
-        return HTMLResponse("Print profile not found.", status_code=404)
+        return HTMLResponse("Printer not found.", status_code=404)
     form = await request.form()
     normalized, error = _parse_profile_form(form, db, existing_id=profile.id)
     if error:
@@ -1136,7 +1594,7 @@ def admin_print_profiles_deactivate(
 ) -> Response:
     profile = db.get(PrintProfile, profile_id)
     if profile is None:
-        return HTMLResponse("Print profile not found.", status_code=404)
+        return HTMLResponse("Printer not found.", status_code=404)
     profile.is_active = False
     db.commit()
     return RedirectResponse(
@@ -1153,7 +1611,7 @@ def admin_print_profiles_reactivate(
 ) -> Response:
     profile = db.get(PrintProfile, profile_id)
     if profile is None:
-        return HTMLResponse("Print profile not found.", status_code=404)
+        return HTMLResponse("Printer not found.", status_code=404)
     profile.is_active = True
     db.commit()
     return RedirectResponse(
@@ -1170,7 +1628,7 @@ def admin_print_profiles_duplicate(
 ) -> Response:
     source = db.get(PrintProfile, profile_id)
     if source is None:
-        return HTMLResponse("Print profile not found.", status_code=404)
+        return HTMLResponse("Printer not found.", status_code=404)
 
     duplicate = PrintProfile(
         code=_next_profile_duplicate_code(db, source.code),
@@ -1209,12 +1667,12 @@ def admin_print_profiles_preview(
 ) -> HTMLResponse:
     profile = db.get(PrintProfile, profile_id)
     if profile is None:
-        return HTMLResponse("Print profile not found.", status_code=404)
+        return HTMLResponse("Printer not found.", status_code=404)
     resolved_ticket_id = _normalize_optional_int(ticket_id)
     payload, ticket = _sample_payload_for_render(db, ticket_id=resolved_ticket_id)
     try:
         rendered = render_profile_content(db, payload=payload, profile=profile)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return templates.TemplateResponse(
             request,
             "admin/printing_profile_preview_text.html",
@@ -1254,7 +1712,7 @@ def admin_print_profiles_test_print(
 ) -> Response:
     profile = db.get(PrintProfile, profile_id)
     if profile is None:
-        return HTMLResponse("Print profile not found.", status_code=404)
+        return HTMLResponse("Printer not found.", status_code=404)
     return_to = request.query_params.get("return_to", "").strip().lower()
     base_path = (
         "/admin/printing/profiles"
@@ -1270,7 +1728,7 @@ def admin_print_profiles_test_print(
             f"Datetime: {now}",
             "App: weighbridge_web",
             "Version: dev",
-            f"Profile: {profile.code}",
+            f"Printer: {profile.code}",
             f"Purpose: {profile.purpose}",
             f"Transport: {profile.transport_mode}",
             "",
@@ -1291,7 +1749,7 @@ def admin_print_profiles_test_print(
             ticket_id=None,
             created_by_user_id=None,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         job_id = _latest_job_id_for_profile(db, profile.id)
         extra = {
             "print_failed": "1",
@@ -1329,24 +1787,39 @@ def admin_print_profiles_test_print(
 def admin_print_templates_list(
     request: Request,
     q: str | None = None,
+    purpose: str | None = None,
+    error: str | None = Query(None),
     hide_inactive: int | None = Query(None),
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    if _ensure_required_template_defaults(db):
+        db.commit()
     resolved_hide = _resolve_hide_inactive(request, hide_inactive)
-    return _render_template_list(request, db, q=q, hide_inactive=resolved_hide)
+    return _render_template_list(
+        request,
+        db,
+        q=q,
+        purpose=purpose,
+        hide_inactive=resolved_hide,
+        error=error,
+    )
 
 
 @router.get("/admin/printing/templates/new", response_class=HTMLResponse)
 def admin_print_templates_new(
     request: Request,
+    purpose: str | None = Query(None),
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    if _ensure_required_template_defaults(db):
+        db.commit()
+    initial_form = _empty_template_form(purpose=purpose)
     return _render_template_form(
         request,
         db,
         mode="new",
         template=None,
-        form_data=_empty_template_form(),
+        form_data=initial_form,
         error=None,
     )
 
@@ -1357,9 +1830,30 @@ async def admin_print_templates_create(
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     form = await request.form()
+    raw_sample_ticket_id = str(form.get("sample_ticket_id", "")).strip()
+    raw_sample_invoice_id = str(form.get("sample_invoice_id", "")).strip()
     normalized, error = _parse_template_form(form, db)
+    if (
+        str(normalized.get("purpose", "")).strip().upper()
+        == INVOICE_PDF_TEMPLATE_PURPOSE
+    ):
+        normalized["content_type"] = PRINT_CONTENT_TYPE_HTML
+    sample_ticket_id, sample_invoice_id, sample_error = _template_validation_sample_ids(
+        form,
+        purpose=str(normalized.get("purpose", "")),
+    )
+    if not error and sample_error:
+        error = sample_error
     if not error:
-        error = _validate_template_render(db, content=str(normalized["content"]))
+        error = _validate_template_syntax(str(normalized["content"]))
+    if not error and (sample_ticket_id is not None or sample_invoice_id is not None):
+        error = _validate_template_render(
+            db,
+            content=str(normalized["content"]),
+            purpose=str(normalized.get("purpose", "")),
+            ticket_id=sample_ticket_id,
+            invoice_id=sample_invoice_id,
+        )
     if error:
         return _render_template_form(
             request,
@@ -1368,6 +1862,8 @@ async def admin_print_templates_create(
             template=None,
             form_data=normalized,
             error=error,
+            sample_ticket_id_value=raw_sample_ticket_id,
+            sample_invoice_id_value=raw_sample_invoice_id,
             status_code=400,
         )
 
@@ -1380,6 +1876,16 @@ async def admin_print_templates_create(
         is_active=bool(normalized["is_active"]),
     )
     db.add(template)
+    db.flush()
+    template_purpose = str(template.purpose or "").strip().upper()
+    if template_purpose in MANAGED_TEMPLATE_DEFAULT_PURPOSES:
+        existing_default = resolve_default_template_for_purpose(
+            db,
+            purpose=template_purpose,
+            require_active=False,
+        )
+        if existing_default is None:
+            _set_default_template(db, template)
     db.commit()
     return RedirectResponse(
         url=_printing_redirect_url(request, base_path="/admin/printing/templates"),
@@ -1393,6 +1899,8 @@ def admin_print_templates_edit(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    if _ensure_required_template_defaults(db):
+        db.commit()
     template = db.get(PrintTemplate, template_id)
     if template is None:
         return HTMLResponse("Print template not found.", status_code=404)
@@ -1448,25 +1956,41 @@ def admin_print_templates_preview(
     template_id: int,
     request: Request,
     ticket_id: str | None = Query(None),
+    invoice_id: str | None = Query(None),
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     template = db.get(PrintTemplate, template_id)
     if template is None:
         return HTMLResponse("Print template not found.", status_code=404)
 
-    resolved_ticket_id = _normalize_optional_int(ticket_id)
-    payload, ticket = _sample_payload_for_render(db, ticket_id=resolved_ticket_id)
-    ticket_label = _ticket_preview_label(ticket)
+    template_purpose = str(template.purpose or "").strip().upper()
+    preview_subject = "Ticket"
+    preview_label = "Sample payload"
     try:
-        rendered_content = render_from_content(payload, template.content)
-    except Exception as exc:  # noqa: BLE001
+        if template_purpose == INVOICE_PDF_TEMPLATE_PURPOSE:
+            resolved_invoice_id = _normalize_optional_int(invoice_id)
+            context, invoice = _sample_invoice_context_for_render(
+                db,
+                invoice_id=resolved_invoice_id,
+            )
+            preview_subject = "Invoice"
+            preview_label = invoice.invoice_no if invoice and invoice.invoice_no else "Sample invoice"
+            rendered_content = render_invoice_template_content(template.content, context)
+        else:
+            resolved_ticket_id = _normalize_optional_int(ticket_id)
+            payload, ticket = _sample_payload_for_render(db, ticket_id=resolved_ticket_id)
+            preview_subject = "Ticket"
+            preview_label = _ticket_preview_label(ticket)
+            rendered_content = render_from_content(payload, template.content)
+    except Exception as exc:
         return templates.TemplateResponse(
             request,
             "admin/printing_template_preview_text.html",
             {
                 "request": request,
                 "template": template,
-                "ticket_label": ticket_label,
+                "preview_subject": preview_subject,
+                "preview_label": preview_label,
                 "rendered": "",
                 "error": f"Template render failed: {exc}",
             },
@@ -1478,7 +2002,8 @@ def admin_print_templates_preview(
             rendered_html=rendered_content,
             template_id=template.id,
             template_code=template.code,
-            ticket_label=ticket_label,
+            preview_subject=preview_subject,
+            preview_label=preview_label,
         )
         return HTMLResponse(preview_html)
 
@@ -1488,7 +2013,8 @@ def admin_print_templates_preview(
         {
             "request": request,
             "template": template,
-            "ticket_label": ticket_label,
+            "preview_subject": preview_subject,
+            "preview_label": preview_label,
             "rendered": rendered_content,
             "error": None,
         },
@@ -1506,9 +2032,37 @@ async def admin_print_templates_update(
         return HTMLResponse("Print template not found.", status_code=404)
 
     form = await request.form()
+    raw_sample_ticket_id = str(form.get("sample_ticket_id", "")).strip()
+    raw_sample_invoice_id = str(form.get("sample_invoice_id", "")).strip()
     normalized, error = _parse_template_form(form, db, existing_id=template.id)
+    if (
+        str(normalized.get("purpose", "")).strip().upper()
+        == INVOICE_PDF_TEMPLATE_PURPOSE
+    ):
+        normalized["content_type"] = PRINT_CONTENT_TYPE_HTML
+    sample_ticket_id, sample_invoice_id, sample_error = _template_validation_sample_ids(
+        form,
+        purpose=str(normalized.get("purpose", "")),
+    )
+    if not error and sample_error:
+        error = sample_error
     if not error:
-        error = _validate_template_render(db, content=str(normalized["content"]))
+        error = _validate_template_syntax(str(normalized["content"]))
+    if not error and (sample_ticket_id is not None or sample_invoice_id is not None):
+        error = _validate_template_render(
+            db,
+            content=str(normalized["content"]),
+            purpose=str(normalized.get("purpose", "")),
+            ticket_id=sample_ticket_id,
+            invoice_id=sample_invoice_id,
+        )
+    current_purpose = str(template.purpose or "").strip().upper()
+    target_purpose = str(normalized["purpose"]).strip().upper()
+    if not error and _is_default_template(db, template):
+        if not bool(normalized["is_active"]):
+            error = DEFAULT_TEMPLATE_PROTECTION_ERROR
+        elif current_purpose != target_purpose:
+            error = "Can't change purpose on the default template. Set another default first."
     if error:
         return _render_template_form(
             request,
@@ -1517,6 +2071,8 @@ async def admin_print_templates_update(
             template=template,
             form_data=normalized,
             error=error,
+            sample_ticket_id_value=raw_sample_ticket_id,
+            sample_invoice_id_value=raw_sample_invoice_id,
             status_code=400,
         )
 
@@ -1527,6 +2083,15 @@ async def admin_print_templates_update(
     template.content_type = str(normalized["content_type"])
     template.content = new_content
     template.is_active = bool(normalized["is_active"])
+    updated_purpose = str(template.purpose or "").strip().upper()
+    if updated_purpose in MANAGED_TEMPLATE_DEFAULT_PURPOSES:
+        existing_default = resolve_default_template_for_purpose(
+            db,
+            purpose=updated_purpose,
+            require_active=False,
+        )
+        if existing_default is None:
+            _set_default_template(db, template)
     db.commit()
     return RedirectResponse(
         url=_printing_redirect_url(
@@ -1535,6 +2100,45 @@ async def admin_print_templates_update(
         ),
         status_code=303,
     )
+
+
+@router.post("/admin/printing/templates/{template_id:int}/set-default")
+def admin_print_templates_set_default(
+    template_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    if _ensure_required_template_defaults(db):
+        db.commit()
+    template = db.get(PrintTemplate, template_id)
+    if template is None:
+        return HTMLResponse("Print template not found.", status_code=404)
+    template_purpose = str(template.purpose or "").strip().upper()
+    if template_purpose not in MANAGED_TEMPLATE_DEFAULT_PURPOSES:
+        return HTMLResponse(
+            "Default template selection is only supported for Ticket Thermal, "
+            "Ticket A4, and Invoice PDF.",
+            status_code=400,
+        )
+    _set_default_template(db, template)
+    db.commit()
+    return RedirectResponse(
+        url=_printing_redirect_url(
+            request,
+            base_path=f"/admin/printing/templates/{template.id}/edit",
+            extra={"default_template_set": "1"},
+        ),
+        status_code=303,
+    )
+
+
+@router.post("/admin/printing/templates/{template_id:int}/set-default-invoice-pdf")
+def admin_print_templates_set_default_invoice_pdf(
+    template_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    return admin_print_templates_set_default(template_id, request, db)
 
 
 @router.post("/admin/printing/templates/{template_id:int}/reset-default")
@@ -1569,10 +2173,68 @@ def admin_print_templates_deactivate(
     request: Request,
     db: Session = Depends(get_db),
 ) -> Response:
+    if _ensure_required_template_defaults(db):
+        db.commit()
     template = db.get(PrintTemplate, template_id)
     if template is None:
         return HTMLResponse("Print template not found.", status_code=404)
+    if _is_default_template(db, template):
+        return RedirectResponse(
+            url=_printing_redirect_url(
+                request,
+                base_path="/admin/printing/templates",
+                extra={
+                    "error": DEFAULT_TEMPLATE_PROTECTION_ERROR
+                },
+                include_saved=False,
+            ),
+            status_code=303,
+        )
     template.is_active = False
+    db.commit()
+    return RedirectResponse(
+        url=_printing_redirect_url(request, base_path="/admin/printing/templates"),
+        status_code=303,
+    )
+
+
+@router.post("/admin/printing/templates/{template_id:int}/delete")
+def admin_print_templates_delete(
+    template_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    if _ensure_required_template_defaults(db):
+        db.commit()
+    template = db.get(PrintTemplate, template_id)
+    if template is None:
+        return HTMLResponse("Print template not found.", status_code=404)
+    if _is_default_template(db, template):
+        return RedirectResponse(
+            url=_printing_redirect_url(
+                request,
+                base_path="/admin/printing/templates",
+                extra={"error": DEFAULT_TEMPLATE_PROTECTION_ERROR},
+                include_saved=False,
+            ),
+            status_code=303,
+        )
+    is_used_by_profile = db.execute(
+        select(PrintProfile.id)
+        .where(PrintProfile.template_id == template.id)
+        .limit(1)
+    ).first()
+    if is_used_by_profile:
+        return RedirectResponse(
+            url=_printing_redirect_url(
+                request,
+                base_path="/admin/printing/templates",
+                extra={"error": "Template is in use by one or more printers."},
+                include_saved=False,
+            ),
+            status_code=303,
+        )
+    db.delete(template)
     db.commit()
     return RedirectResponse(
         url=_printing_redirect_url(request, base_path="/admin/printing/templates"),
@@ -1590,6 +2252,15 @@ def admin_print_templates_reactivate(
     if template is None:
         return HTMLResponse("Print template not found.", status_code=404)
     template.is_active = True
+    template_purpose = str(template.purpose or "").strip().upper()
+    if template_purpose in MANAGED_TEMPLATE_DEFAULT_PURPOSES:
+        existing_default = resolve_default_template_for_purpose(
+            db,
+            purpose=template_purpose,
+            require_active=False,
+        )
+        if existing_default is None:
+            _set_default_template(db, template)
     db.commit()
     return RedirectResponse(
         url=_printing_redirect_url(request, base_path="/admin/printing/templates"),
@@ -1657,7 +2328,12 @@ def admin_print_jobs_list(
         )
         for row in items
     }
+    job_purpose_labels = {row.id: _job_purpose_label(row.purpose) for row in items}
+    job_when_labels = {row.id: _job_when_label(row) for row in items}
     job_error_summaries = {row.id: _job_error_summary(row.last_error) for row in items}
+    purpose_filter_options = [
+        (value, _job_purpose_label(value)) for value, _ in PRINT_TEMPLATE_PURPOSE_OPTIONS
+    ]
     return templates.TemplateResponse(
         request,
         "admin/printing_jobs_list.html",
@@ -1670,9 +2346,11 @@ def admin_print_jobs_list(
             "templates_by_id": templates_by_id,
             "tickets_by_id": tickets_by_id,
             "job_targets": job_targets,
+            "job_purpose_labels": job_purpose_labels,
+            "job_when_labels": job_when_labels,
             "job_error_summaries": job_error_summaries,
-            "status_options": [PRINT_JOB_STATUS_SENT, PRINT_JOB_STATUS_FAILED, "QUEUED"],
-            "purpose_options": [value for value, _ in PRINT_PROFILE_PURPOSE_OPTIONS],
+            "status_options": JOB_STATUS_FILTER_OPTIONS,
+            "purpose_options": purpose_filter_options,
             "filters": {
                 "status": status or "",
                 "purpose": purpose or "",
@@ -1724,7 +2402,7 @@ def admin_print_job_retry(
         return RedirectResponse(url="/admin/printing/jobs", status_code=303)
     try:
         retry_print_job(db, job)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return RedirectResponse(
             url=_printing_redirect_url(
                 request,

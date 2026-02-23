@@ -154,8 +154,8 @@ async def products_create(
         excess_trigger=payload["excess_trigger"],
         excess_price=payload["excess_price"],
         is_hazardous=payload["is_hazardous"],
-        final_disposal=payload["final_disposal"],
-        used_on_site=payload["used_on_site"],
+        final_disposal_wip=payload["final_disposal_wip"],
+        used_on_site_wip=payload["used_on_site_wip"],
         ewc_code_id=payload["ewc_code_id"],
         default_destination_id=payload["default_destination_id"],
     )
@@ -754,8 +754,8 @@ async def products_update(
     product.excess_trigger = payload["excess_trigger"]
     product.excess_price = payload["excess_price"]
     product.is_hazardous = payload["is_hazardous"]
-    product.final_disposal = payload["final_disposal"]
-    product.used_on_site = payload["used_on_site"]
+    product.final_disposal_wip = payload["final_disposal_wip"]
+    product.used_on_site_wip = payload["used_on_site_wip"]
     product.ewc_code_id = payload["ewc_code_id"]
     product.default_destination_id = payload["default_destination_id"]
     product.updated_at = utcnow()
@@ -967,8 +967,8 @@ def _parse_product_form(form) -> dict:
             "ewc_code_label": value("ewc_code_label"),
             "default_destination_id": value("default_destination_id"),
             "is_hazardous": value("is_hazardous"),
-            "final_disposal": value("final_disposal"),
-            "used_on_site": value("used_on_site"),
+            "final_disposal_wip": value("final_disposal_wip"),
+            "used_on_site_wip": value("used_on_site_wip"),
         },
         "sale_type": sale_type,
         "code": code,
@@ -991,8 +991,8 @@ def _parse_product_form(form) -> dict:
         "ewc_code_label": value("ewc_code_label"),
         "default_destination_id": _parse_int(value("default_destination_id")),
         "is_hazardous": value("is_hazardous") == "on",
-        "final_disposal": value("final_disposal") == "on",
-        "used_on_site": value("used_on_site") == "on",
+        "final_disposal_wip": value("final_disposal_wip") == "on",
+        "used_on_site_wip": value("used_on_site_wip") == "on",
     }
 
 
@@ -1020,8 +1020,8 @@ def _empty_form() -> dict:
         "ewc_code_label": "",
         "default_destination_id": "",
         "is_hazardous": "",
-        "final_disposal": "",
-        "used_on_site": "",
+        "final_disposal_wip": "",
+        "used_on_site_wip": "",
     }
 
 
@@ -1056,8 +1056,8 @@ def _product_to_form(product: Product) -> dict:
         ),
         "default_destination_id": str(product.default_destination_id or ""),
         "is_hazardous": "on" if product.is_hazardous else "",
-        "final_disposal": "on" if product.final_disposal else "",
-        "used_on_site": "on" if product.used_on_site else "",
+        "final_disposal_wip": "on" if product.final_disposal_wip else "",
+        "used_on_site_wip": "on" if product.used_on_site_wip else "",
     }
 
 

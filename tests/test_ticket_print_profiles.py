@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 from urllib.parse import parse_qs, urlparse
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.config import settings
 from app.models import (
@@ -16,6 +16,7 @@ from app.models import (
     TransactionTypeEnum,
 )
 import app.services.printing as printing_service
+from app.services.pdf import set_default_template_for_purpose
 from app.templating import templates
 from app.services.print_render import render_thermal
 
@@ -309,7 +310,12 @@ def test_ticket_edit_shows_primary_print_button(client, db_session):
     )
     db_session.commit()
 
-    response = client.get(f"/tickets/{ticket.id}")
+    original_dev_mode = templates.env.globals.get("DEV_MODE", False)
+    templates.env.globals["DEV_MODE"] = False
+    try:
+        response = client.get(f"/tickets/{ticket.id}")
+    finally:
+        templates.env.globals["DEV_MODE"] = original_dev_mode
 
     assert response.status_code == 200
     assert '<div class="actions btn-group ticket-header-actions">' in response.text
@@ -344,7 +350,12 @@ def test_ticket_edit_complete_enables_print_and_preview(client, db_session):
     )
     db_session.commit()
 
-    response = client.get(f"/tickets/{ticket.id}")
+    original_dev_mode = templates.env.globals.get("DEV_MODE", False)
+    templates.env.globals["DEV_MODE"] = False
+    try:
+        response = client.get(f"/tickets/{ticket.id}")
+    finally:
+        templates.env.globals["DEV_MODE"] = original_dev_mode
 
     assert response.status_code == 200
     assert 'id="print-actions"' in response.text
@@ -354,14 +365,134 @@ def test_ticket_edit_complete_enables_print_and_preview(client, db_session):
     )
     assert primary_print_button is not None
     assert "disabled" not in primary_print_button.group(1).lower()
-    assert "Preview (Browser Print)" in response.text
+    assert "Preview" in response.text
     assert "Receipt Preview (WIP)" not in response.text
     assert "Printing available once ticket is complete." not in response.text
-    assert "Printer options" in response.text
+    assert "Advanced printing" not in response.text
     assert 'name="action" value="complete"' not in response.text
 
 
-def test_ticket_edit_advanced_selector_only_when_multiple_profiles_exist(client, db_session):
+def test_ticket_print_actions_hidden_for_operator_mode(
+    client,
+    db_session,
+):
+    ticket = _create_ticket(
+        db_session,
+        ticket_no="T-PRINT-ACTIONS-COLLAPSED-1",
+        status=TicketStatusEnum.COMPLETE.value,
+    )
+    profile = PrintProfile(
+        code="THERMAL_COLLAPSED_DEFAULT",
+        description="Collapsed default profile",
+        purpose="TICKET_THERMAL",
+        template_name="thermal_default.txt",
+        transport_mode="LOCAL_BROWSER",
+        transport_config={},
+        is_default=True,
+        is_active=True,
+    )
+    db_session.add(profile)
+    db_session.commit()
+
+    original_dev_mode = templates.env.globals.get("DEV_MODE", False)
+    templates.env.globals["DEV_MODE"] = False
+    try:
+        response = client.get(f"/tickets/{ticket.id}")
+    finally:
+        templates.env.globals["DEV_MODE"] = original_dev_mode
+
+    assert response.status_code == 200
+    assert "Advanced printing" not in response.text
+    assert 'id="print_profile_id_primary"' not in response.text
+    assert "Manage printers" not in response.text
+    assert "View jobs" not in response.text
+    assert "Test print" not in response.text
+
+
+def test_ticket_edit_complete_shows_no_printer_toast_when_no_default_profile(
+    client,
+    db_session,
+):
+    ticket = _create_ticket(
+        db_session,
+        ticket_no="T-PRINT-NO-DEFAULT-TOAST-1",
+        status=TicketStatusEnum.COMPLETE.value,
+    )
+    existing_profiles = db_session.execute(
+        select(PrintProfile).where(
+            PrintProfile.purpose.in_(["TICKET_THERMAL", "TICKET_A4"])
+        )
+    ).scalars().all()
+    for profile in existing_profiles:
+        profile.is_default = False
+    db_session.add(
+        PrintProfile(
+            code="THERMAL_NO_DEFAULT_ONLY",
+            description="Thermal no default",
+            purpose="TICKET_THERMAL",
+            template_name="thermal_default.txt",
+            transport_mode="LOCAL_BROWSER",
+            transport_config={},
+            is_default=False,
+            is_active=True,
+        )
+    )
+    db_session.commit()
+
+    original_dev_mode = templates.env.globals.get("DEV_MODE", False)
+    templates.env.globals["DEV_MODE"] = False
+    try:
+        response = client.get(f"/tickets/{ticket.id}")
+    finally:
+        templates.env.globals["DEV_MODE"] = original_dev_mode
+
+    assert response.status_code == 200
+    assert "No printer configured. Contact admin." in response.text
+    send_button = re.search(
+        r'(<button[^>]*data-print-actions-send[^>]*>\s*Send to Printer\s*</button>)',
+        response.text,
+    )
+    assert send_button is not None
+    assert "disabled" in send_button.group(1).lower()
+
+
+def test_ticket_edit_open_shows_dev_preview_button_without_send_button(
+    client,
+    db_session,
+):
+    ticket = _create_ticket(
+        db_session,
+        ticket_no="T-OPEN-DEV-PREVIEW-1",
+        status=TicketStatusEnum.OPEN.value,
+    )
+    profile = PrintProfile(
+        code="THERMAL_OPEN_DEV_PREVIEW",
+        description="Open dev preview profile",
+        purpose="TICKET_THERMAL",
+        template_name="thermal_default.txt",
+        transport_mode="LOCAL_BROWSER",
+        transport_config={},
+        is_default=True,
+        is_active=True,
+    )
+    db_session.add(profile)
+    db_session.commit()
+
+    original_dev_mode = templates.env.globals.get("DEV_MODE", False)
+    templates.env.globals["DEV_MODE"] = True
+    try:
+        response = client.get(f"/tickets/{ticket.id}")
+    finally:
+        templates.env.globals["DEV_MODE"] = original_dev_mode
+
+    assert response.status_code == 200
+    assert 'action="/tickets/' in response.text
+    assert f'action="/tickets/{ticket.id}/print/browser"' in response.text
+    assert "Preview" in response.text
+    assert "Send to Printer" not in response.text
+
+
+def test_ticket_edit_advanced_selector_only_visible_in_dev_mode(client, db_session):
     ticket = _create_ticket(
         db_session,
         ticket_no="T-PRINT-UI-2",
@@ -381,9 +512,16 @@ def test_ticket_edit_advanced_selector_only_when_multiple_profiles_exist(client,
     )
     db_session.commit()
 
-    single_response = client.get(f"/tickets/{ticket.id}")
+    original_dev_mode = templates.env.globals.get("DEV_MODE", False)
+    templates.env.globals["DEV_MODE"] = False
+    try:
+        single_response = client.get(f"/tickets/{ticket.id}")
+    finally:
+        templates.env.globals["DEV_MODE"] = original_dev_mode
     assert single_response.status_code == 200
-    assert 'id="print_profile_id_thermal"' not in single_response.text
+    assert 'id="print_profile_id_primary"' not in single_response.text
+    assert "Single thermal (Thermal)" not in single_response.text
+    assert "Second thermal (Thermal)" not in single_response.text
 
     db_session.add(
         PrintProfile(
@@ -399,9 +537,19 @@ def test_ticket_edit_advanced_selector_only_when_multiple_profiles_exist(client,
     )
     db_session.commit()
 
-    multi_response = client.get(f"/tickets/{ticket.id}")
+    templates.env.globals["DEV_MODE"] = True
+    try:
+        multi_response = client.get(f"/tickets/{ticket.id}")
+    finally:
+        templates.env.globals["DEV_MODE"] = original_dev_mode
     assert multi_response.status_code == 200
-    assert 'id="print_profile_id_thermal"' in multi_response.text
+    assert "Advanced printing" in multi_response.text
+    assert 'id="print_profile_id_primary"' in multi_response.text
+    assert "Single thermal (Thermal)" in multi_response.text
+    assert "Second thermal (Thermal)" in multi_response.text
+    assert "Manage printers" not in multi_response.text
+    assert "View jobs" not in multi_response.text
+    assert "Test print" not in multi_response.text
 
 
 def test_ticket_print_without_profile_uses_default_thermal_and_shows_toast(
@@ -640,6 +788,52 @@ def test_template_save_blocks_invalid_render(client):
         follow_redirects=False,
     )
     assert response.status_code == 400
+    assert "Template syntax failed" in response.text
+
+
+def test_template_save_skips_render_validation_when_no_sample_id(client, db_session):
+    response = client.post(
+        "/admin/printing/templates/new",
+        data={
+            "code": "TMPL_NO_SAMPLE_RENDER",
+            "description": "No sample render validation",
+            "purpose": "INVOICE_PDF",
+            "content_type": "HTML",
+            "content": "<html><body>{{ payload.ticket_no }}</body></html>",
+            "is_active": "1",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    saved = db_session.execute(
+        select(PrintTemplate).where(PrintTemplate.code == "TMPL_NO_SAMPLE_RENDER")
+    ).scalar_one_or_none()
+    assert saved is not None
+
+
+def test_template_save_runs_render_validation_when_sample_id_provided(
+    client,
+    db_session,
+):
+    ticket = _create_ticket(
+        db_session,
+        ticket_no="T-SAMPLE-VALIDATE-1",
+        status=TicketStatusEnum.COMPLETE.value,
+    )
+    response = client.post(
+        "/admin/printing/templates/new",
+        data={
+            "code": "TMPL_SAMPLE_RENDER_FAIL",
+            "description": "Sample render fail",
+            "purpose": "TICKET_THERMAL",
+            "content_type": "TEXT",
+            "content": "{{ 1 / 0 }}",
+            "sample_ticket_id": str(ticket.id),
+            "is_active": "1",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
     assert "Template render failed" in response.text
 
 
@@ -682,12 +876,12 @@ def test_print_template_form_shows_insert_field_dropdown(client):
     response = client.get("/admin/printing/templates/new")
     assert response.status_code == 200
     assert 'id="insert_field_token"' in response.text
-    assert "Common tokens:" in response.text
-    assert 'data-quick-token="{{ ticket.number }}"' in response.text
-    assert 'data-quick-token="{{ customer.name }}"' in response.text
-    assert 'data-quick-token="{{ weights.net_kg_display }}"' in response.text
-    assert 'data-quick-token="{{ pricing.total_display }}"' in response.text
-    assert "Some fields may be blank depending on ticket type." in response.text
+    assert "Common tokens:" not in response.text
+    assert "Some fields may be blank depending on ticket type." not in response.text
+    assert (
+        'title="Select a token to insert at the current cursor position in template content."'
+        in response.text
+    )
     assert 'id="insert_default_ticket_layout"' in response.text
     assert "Insert Default Ticket Layout" in response.text
     assert 'id="default_ticket_layouts_json"' in response.text
@@ -741,13 +935,52 @@ def test_template_reset_to_default_restores_seeded_content(client, db_session):
     )
     assert response.status_code == 303
     db_session.refresh(template)
-    assert template.content.startswith("WEIGHBRIDGE TICKET")
+    assert "WEIGHBRIDGE TICKET" in template.content
 
     versions = db_session.execute(
         select(PrintTemplateVersion)
         .where(PrintTemplateVersion.template_id == template.id)
     ).scalars().all()
     assert versions == []
+
+
+def test_templates_list_renames_default_thermal_template_code_without_touching_non_default(
+    client,
+    db_session,
+):
+    thermal_default = PrintTemplate(
+        code="TESTPRINTPROFILE",
+        description="Legacy thermal default",
+        purpose="TICKET_THERMAL",
+        content_type="TEXT",
+        content="Ticket {{ ticket.number }}",
+        is_active=True,
+    )
+    thermal_custom = PrintTemplate(
+        code="THERMAL_CUSTOM_LAYOUT",
+        description="Custom thermal layout",
+        purpose="TICKET_THERMAL",
+        content_type="TEXT",
+        content="Custom {{ ticket.number }}",
+        is_active=True,
+    )
+    db_session.add_all([thermal_default, thermal_custom])
+    db_session.flush()
+    set_default_template_for_purpose(
+        db_session,
+        template=thermal_default,
+        force_active=True,
+    )
+    db_session.commit()
+
+    response = client.get("/admin/printing/templates")
+    assert response.status_code == 200
+
+    db_session.refresh(thermal_default)
+    db_session.refresh(thermal_custom)
+    assert thermal_default.code == "TICKET_THERMAL_DEFAULT"
+    assert thermal_default.description == "Default thermal ticket template"
+    assert thermal_custom.code == "THERMAL_CUSTOM_LAYOUT"
 
 
 def test_template_rollback_endpoint_is_not_available(client, db_session):
@@ -925,11 +1158,22 @@ def test_ticket_edit_primary_print_dropdown_uses_default_profile(client, db_sess
     db_session.add_all([default_profile, second_profile])
     db_session.commit()
 
-    response = client.get(f"/tickets/{ticket.id}")
+    original_dev_mode = templates.env.globals.get("DEV_MODE", False)
+    templates.env.globals["DEV_MODE"] = False
+    try:
+        response = client.get(f"/tickets/{ticket.id}")
+    finally:
+        templates.env.globals["DEV_MODE"] = original_dev_mode
     assert response.status_code == 200
-    assert 'id="print_profile_id_primary"' in response.text
-    assert f'value="{default_profile.id}" selected' in response.text
-    assert "Default dropdown profile (Thermal)" in response.text
+    assert 'id="print_profile_id_primary"' not in response.text
+    assert (
+        re.search(
+            rf'name="profile_id" value="{default_profile.id}" data-print-actions-profile-hidden',
+            response.text,
+        )
+        is not None
+    )
+    assert "Default dropdown profile (Thermal)" not in response.text
 
 
 def test_ticket_print_failure_redirects_with_error_toast_and_job_id(
@@ -955,7 +1199,7 @@ def test_ticket_print_failure_redirects_with_error_toast_and_job_id(
     db_session.add(profile)
     db_session.commit()
 
-    def _fail_send(*args, **kwargs):  # noqa: ANN002, ANN003
+    def _fail_send(*_args, **_kwargs):
         raise OSError("Connection refused")
 
     monkeypatch.setattr(printing_service, "send_print_job", _fail_send)
@@ -1204,7 +1448,7 @@ def test_profile_test_print_failure_redirect_includes_job_id(
     db_session.add(profile)
     db_session.commit()
 
-    def _fail_send(*args, **kwargs):  # noqa: ANN002, ANN003
+    def _fail_send(*_args, **_kwargs):
         raise OSError("Connection refused")
 
     monkeypatch.setattr(printing_service, "send_print_job", _fail_send)
@@ -1247,12 +1491,16 @@ def test_profiles_list_uses_compact_profile_column_and_actions_menu(client, db_s
 
     response = client.get("/admin/printing/profiles")
     assert response.status_code == 200
-    assert '<th class="profiles-col-profile">Profile</th>' in response.text
+    assert '<th class="profiles-col-profile">Printer</th>' in response.text
     assert "profiles-col-code" not in response.text
     assert "profiles-col-description" not in response.text
     assert "printing-profile-code" in response.text
-    assert "printing-profile-description" in response.text
-    assert "printing-compact-pill" in response.text
+    assert "printing-profile-description" not in response.text
+    assert f'title="{profile.description}"' in response.text
+    assert "printing-profile-transport" in response.text
+    assert "printing-profile-purpose" in response.text
+    assert "printing-profile-yard" in response.text
+    assert "printing-compact-pill" not in response.text
     assert "printing-profile-actions-menu" in response.text
     assert f'aria-label="More actions for {profile.code}"' in response.text
     assert 'aria-haspopup="menu"' in response.text
@@ -1386,15 +1634,96 @@ def test_print_jobs_list_shows_ticket_no_and_profile_columns(client, db_session)
     response = client.get("/admin/printing/jobs")
     assert response.status_code == 200
     assert "Ticket No" in response.text
-    assert "Profile" in response.text
+    assert "Printer" in response.text
     assert "Template" in response.text
     assert "Target" in response.text
-    assert "Error summary" in response.text
+    assert "When" in response.text
+    assert "Error" in response.text
+    assert "Created" not in response.text
+    assert "Sent at" not in response.text
+    header_order = ["ID", "Ticket No", "Purpose", "Status", "When", "Target", "Printer", "Template", "Error"]
+    thead_html = response.text.split("<thead>", 1)[1].split("</thead>", 1)[0]
+    offsets = [thead_html.find(f">{header}<") for header in header_order]
+    assert all(offset >= 0 for offset in offsets)
+    assert offsets == sorted(offsets)
     assert ticket.ticket_no in response.text
+    assert "Ticket (Thermal)" in response.text
+    assert "Sent" in response.text
     assert profile.code in response.text
-    assert profile.description in response.text
+    assert f'title="{profile.description}"' in response.text
     assert template.code in response.text
     assert "Browser" in response.text
+
+
+def test_print_jobs_list_when_column_prefers_sent_at_else_created_at(client, db_session):
+    ticket = _create_ticket(
+        db_session,
+        ticket_no="T-JOBS-WHEN-1",
+        status=TicketStatusEnum.COMPLETE.value,
+    )
+    template = PrintTemplate(
+        code="TMPL_JOBS_WHEN",
+        description="Jobs when template",
+        purpose="TICKET_THERMAL",
+        content_type="TEXT",
+        content="Ticket {{ payload.ticket_no }}",
+        is_active=True,
+    )
+    db_session.add(template)
+    db_session.flush()
+
+    profile = PrintProfile(
+        code="THERMAL_JOBS_WHEN",
+        description="Jobs when profile",
+        purpose="TICKET_THERMAL",
+        template_id=template.id,
+        template_name="thermal_default.txt",
+        transport_mode="LOCAL_BROWSER",
+        transport_config={},
+        is_default=True,
+        is_active=True,
+    )
+    db_session.add(profile)
+    db_session.flush()
+
+    sent_at = datetime(2026, 2, 21, 9, 15, 0)
+    created_at = datetime(2026, 2, 21, 10, 20, 0)
+    db_session.add_all(
+        [
+            PrintJob(
+                purpose="TICKET_THERMAL",
+                profile_id=profile.id,
+                template_id=template.id,
+                ticket_id=ticket.id,
+                transport_mode="LOCAL_BROWSER",
+                transport_config_json={},
+                rendered_content="sent row",
+                status="SENT",
+                attempt_count=1,
+                sent_at=sent_at,
+                created_at=sent_at,
+            ),
+            PrintJob(
+                purpose="TICKET_THERMAL",
+                profile_id=profile.id,
+                template_id=template.id,
+                ticket_id=ticket.id,
+                transport_mode="LOCAL_BROWSER",
+                transport_config_json={},
+                rendered_content="queued row",
+                status="QUEUED",
+                attempt_count=0,
+                created_at=created_at,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get("/admin/printing/jobs")
+    assert response.status_code == 200
+    assert sent_at.strftime("%d/%m %H:%M") in response.text
+    assert created_at.strftime("%d/%m %H:%M") in response.text
+    assert "(queued)" not in response.text
 
 
 def test_print_profile_form_validates_typed_network_port(client):
@@ -1535,6 +1864,74 @@ def test_ticket_print_post_local_browser_redirects_to_browser_print_page(
     assert job.status == "SENT"
 
 
+def test_ticket_browser_print_blocks_incomplete_ticket_outside_dev_mode(
+    client,
+    db_session,
+):
+    ticket = _create_ticket(
+        db_session,
+        ticket_no="T-BROWSER-INCOMPLETE-BLOCKED-1",
+        status=TicketStatusEnum.OPEN.value,
+    )
+
+    original_dev_mode = templates.env.globals.get("DEV_MODE", False)
+    templates.env.globals["DEV_MODE"] = False
+    try:
+        response = client.get(f"/tickets/{ticket.id}/print/browser")
+    finally:
+        templates.env.globals["DEV_MODE"] = original_dev_mode
+
+    assert response.status_code == 400
+    assert "Ticket must be complete to print." in response.text
+
+
+def test_ticket_browser_print_allows_incomplete_ticket_in_dev_mode_and_shows_draft_banner(
+    client,
+    db_session,
+):
+    ticket = _create_ticket(
+        db_session,
+        ticket_no="T-BROWSER-INCOMPLETE-DEV-1",
+        status=TicketStatusEnum.OPEN.value,
+    )
+
+    original_dev_mode = templates.env.globals.get("DEV_MODE", False)
+    templates.env.globals["DEV_MODE"] = True
+    try:
+        response = client.get(f"/tickets/{ticket.id}/print/browser")
+    finally:
+        templates.env.globals["DEV_MODE"] = original_dev_mode
+
+    assert response.status_code == 200
+    assert "DRAFT - PREVIEW ONLY" in response.text
+    assert "window.print()" in response.text
+
+
+def test_ticket_browser_print_accepts_empty_profile_id_query_for_a4_without_printer(
+    client,
+    db_session,
+):
+    ticket = _create_ticket(
+        db_session,
+        ticket_no="T-BROWSER-A4-EMPTY-PROFILE-1",
+        status=TicketStatusEnum.COMPLETE.value,
+    )
+    db_session.execute(
+        delete(PrintProfile).where(
+            PrintProfile.purpose.in_(["TICKET_THERMAL", "TICKET_A4"])
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"/tickets/{ticket.id}/print/browser",
+        params={"purpose": "TICKET_A4", "profile_id": ""},
+    )
+
+    assert response.status_code == 200
+    assert "window.print()" in response.text
+
+
 def test_ticket_browser_print_page_renders_text_in_pre_and_autoprints(
     client,
     db_session,
@@ -1647,6 +2044,43 @@ def test_ticket_browser_print_preview_uses_selected_profile_template_and_default
     assert "PREVIEWTEST-123" not in fallback_response.text
 
 
+def test_ticket_browser_print_preview_uses_default_template_when_no_profiles_exist(
+    client,
+    db_session,
+):
+    ticket = _create_ticket(
+        db_session,
+        ticket_no="T-BROWSER-FALLBACK-NO-PROFILE-1",
+        status=TicketStatusEnum.COMPLETE.value,
+    )
+    template = PrintTemplate(
+        code="TMPL_BROWSER_NO_PROFILE_FALLBACK",
+        description="Browser no profile fallback",
+        purpose="TICKET_THERMAL",
+        content_type="TEXT",
+        content="NOPROFILE-MARKER {{ payload.ticket_no }}",
+        is_active=True,
+    )
+    db_session.add(template)
+    db_session.flush()
+    set_default_template_for_purpose(
+        db_session,
+        template=template,
+        force_active=True,
+    )
+    db_session.execute(
+        delete(PrintProfile).where(
+            PrintProfile.purpose.in_(["TICKET_THERMAL", "TICKET_A4"])
+        )
+    )
+    db_session.commit()
+
+    response = client.get(f"/tickets/{ticket.id}/print/browser")
+    assert response.status_code == 200
+    assert "NOPROFILE-MARKER" in response.text
+    assert ticket.ticket_no in response.text
+
+
 def test_ticket_browser_print_page_renders_html_profile_content(
     client,
     db_session,
@@ -1702,7 +2136,7 @@ def test_admin_printing_pages_show_profiles_only_collapsible_overview(client):
     assert 'id="printing-overview-collapsible"' in profiles_page.text
     assert 'id="printing-overview-collapsible" open' not in profiles_page.text
     assert "Template</strong> = what the output looks like (TEXT/HTML)." in profiles_page.text
-    assert "Profile</strong> = template + destination + purpose." in profiles_page.text
+    assert "Printer</strong> = template + destination + purpose." in profiles_page.text
     assert "Send to Printer</strong> creates a <strong>Print Job</strong>." in profiles_page.text
 
     assert templates_page.status_code == 200
@@ -1724,7 +2158,7 @@ def test_admin_printing_direct_urls_land_on_the_matching_tab(client):
     assert jobs_page.status_code == 200
 
     assert (
-        '<a class="btn btn--ghost is-active" href="/admin/printing/profiles">Profiles</a>'
+        '<a class="btn btn--ghost is-active" href="/admin/printing/profiles">Printers</a>'
         in profiles_page.text
     )
     assert (
@@ -1741,7 +2175,7 @@ def test_print_profile_form_has_tooltips_and_helper_lines(client):
     response = client.get("/admin/printing/profiles/new")
     assert response.status_code == 200
 
-    assert "Profile Details" in response.text
+    assert "Printer Details" in response.text
     assert "Layout" in response.text
     assert "Destination" in response.text
     assert "Behaviour" in response.text
@@ -1753,13 +2187,15 @@ def test_print_profile_form_has_tooltips_and_helper_lines(client):
     assert "printing-profile-default-help" in response.text
     assert "printing-profile-active-help" in response.text
 
-    assert "What you are printing: Ticket Thermal, Ticket A4, Invoice A4, etc." in response.text
+    assert "Invoice (PDF)" in response.text
+    assert "Invoice A4" not in response.text
+    assert "What you are printing: Ticket Thermal, Ticket A4, Invoice (PDF), etc." in response.text
     assert "Defines layout/content. Change template to change formatting." in response.text
     assert "How the output is delivered: Browser, Network RAW 9100, Local Print Node." in response.text
     assert "Switch transport mode to show the right connection fields below." in response.text
     assert "Connection settings for the transport. Leave empty for Browser." in response.text
-    assert "Used automatically when printing unless a different profile is selected." in response.text
-    assert "Inactive profiles won&rsquo;t appear for operators." in response.text
+    assert "Used automatically when printing unless a different printer is selected." in response.text
+    assert "Inactive printers won&rsquo;t appear for operators." in response.text
 
 
 def test_print_template_form_has_editor_tooltips(client, db_session):
@@ -1778,9 +2214,10 @@ def test_print_template_form_has_editor_tooltips(client, db_session):
     assert new_response.status_code == 200
     assert "printing-template-content-type-help" in new_response.text
     assert "printing-template-insert-token-help" in new_response.text
+    assert "printing-template-content-editor-help" in new_response.text
     assert "TEXT = best for 80mm thermal. HTML = best for A4 / styled layouts." in new_response.text
-    assert "Common tokens:" in new_response.text
-    assert "Some fields may be blank depending on ticket type." in new_response.text
+    assert "Common tokens:" not in new_response.text
+    assert "Some fields may be blank depending on ticket type." not in new_response.text
 
     edit_response = client.get(f"/admin/printing/templates/{template.id}/edit")
     assert edit_response.status_code == 200
@@ -1819,9 +2256,10 @@ def test_jobs_pages_show_status_legend_and_diagnostic_tooltips(client, db_sessio
     jobs_list = client.get("/admin/printing/jobs")
     assert jobs_list.status_code == 200
     assert "Status legend" not in jobs_list.text
-    assert "QUEUED</strong> = pending" in jobs_list.text
-    assert "SENT</strong> = delivered" in jobs_list.text
-    assert "FAILED</strong> = error / retry" in jobs_list.text
+    assert "Queued</strong> = pending" not in jobs_list.text
+    assert "Sent</strong> = delivered" not in jobs_list.text
+    assert "Failed</strong> = error / retry" not in jobs_list.text
+    assert "printing-jobs-status-legend-help" not in jobs_list.text
     assert "printing-jobs-status-help" in jobs_list.text
 
     detail = client.get(f"/admin/printing/jobs/{job_id}")
@@ -1853,12 +2291,19 @@ def test_ticket_edit_complete_uses_send_to_printer_and_browser_preview_labels(
     db_session.add(profile)
     db_session.commit()
 
-    response = client.get(f"/tickets/{ticket.id}")
+    original_dev_mode = templates.env.globals.get("DEV_MODE", False)
+    templates.env.globals["DEV_MODE"] = False
+    try:
+        response = client.get(f"/tickets/{ticket.id}")
+    finally:
+        templates.env.globals["DEV_MODE"] = original_dev_mode
     assert response.status_code == 200
     assert "Send to Printer" in response.text
-    assert "Preview (Browser Print)" in response.text
+    assert "Preview" in response.text
+    assert "Preview (Browser Print)" not in response.text
     assert f'formaction="/tickets/{ticket.id}/print/browser"' in response.text
     assert 'id="preview_browser_print_button"' in response.text
+    assert "Advanced printing" not in response.text
     assert "Receipt Preview (WIP)" not in response.text
     assert f'href="/tickets/{ticket.id}/receipt"' not in response.text
     assert "ticket-receipt-wip-help" not in response.text

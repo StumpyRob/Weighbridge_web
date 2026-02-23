@@ -3,14 +3,17 @@ from __future__ import annotations
 import base64
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from functools import lru_cache
+import mimetypes
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..models import (
     Area,
+    CompanySetting,
     Container,
     Customer,
     Destination,
@@ -71,23 +74,106 @@ def _format_money(value: Any) -> str:
     return f"£{decimal_value:,.2f}"
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-LOGO_FILENAME = "logo.png"
+def _company_logo_src(db: Session) -> str:
+    company = (
+        db.execute(select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1))
+        .scalars()
+        .first()
+    )
+    logo_path = _company_logo_path(company)
+    if not logo_path:
+        return ""
+    if logo_path.startswith("data:"):
+        return logo_path
+    if logo_path.startswith(("http://", "https://")):
+        return logo_path
+
+    data_uri = _company_logo_data_uri(logo_path)
+    if data_uri:
+        return data_uri
+    if logo_path.startswith("/"):
+        return logo_path
+    return ""
 
 
-@lru_cache(maxsize=1)
-def _logo_data_uri() -> str:
-    logo_path = PROJECT_ROOT / LOGO_FILENAME
-    if not logo_path.is_file():
+def _company_logo_path(company: CompanySetting | None) -> str:
+    if company is None:
+        return ""
+    current = str(company.company_logo_path or "").strip()
+    if current:
+        return current
+    legacy_url = str(company.logo_url or "").strip()
+    if legacy_url:
+        return legacy_url
+    legacy_file = str(company.logo_file_path or "").strip().lstrip("/")
+    if legacy_file:
+        return f"/media/{legacy_file}"
+    return ""
+
+
+def _company_logo_data_uri(logo_path: str) -> str:
+    source = _resolve_logo_file_path(logo_path)
+    if source is None or not source.is_file():
         return ""
     try:
-        logo_bytes = logo_path.read_bytes()
+        payload = source.read_bytes()
     except OSError:
         return ""
-    if not logo_bytes:
+    if not payload:
         return ""
-    encoded_logo = base64.b64encode(logo_bytes).decode("ascii")
-    return f"data:image/png;base64,{encoded_logo}"
+    mime = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
+    encoded = base64.b64encode(payload).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
+
+
+def _resolve_logo_file_path(logo_path: str) -> Path | None:
+    normalized = str(logo_path or "").strip()
+    if not normalized:
+        return None
+
+    if normalized.startswith("/static/uploads/company/"):
+        filename = Path(normalized).name
+        if not filename:
+            return None
+        for upload_root in _logo_upload_root_candidates():
+            candidate = (upload_root / filename).resolve()
+            if candidate.is_file():
+                return candidate
+        return None
+
+    if normalized.startswith("/media/"):
+        media_root = Path(str(settings.media_root or "").strip() or "app/media")
+        relative = normalized.removeprefix("/media/").strip().lstrip("/\\")
+        if not relative:
+            return None
+        candidate = (media_root.resolve() / relative).resolve()
+        return candidate if candidate.is_file() else None
+
+    maybe_absolute = Path(normalized)
+    if maybe_absolute.is_absolute() and maybe_absolute.is_file():
+        return maybe_absolute.resolve()
+    return None
+
+
+def _logo_upload_root_candidates() -> tuple[Path, ...]:
+    configured = Path(
+        str(settings.company_logo_upload_dir or "").strip() or "app/static/uploads/company"
+    )
+    service_default = Path("app/static/uploads/company")
+    package_default = Path(__file__).resolve().parents[1] / "static" / "uploads" / "company"
+    docker_alt = Path("/app/static/uploads/company")
+    docker_repo = Path("/app/app/static/uploads/company")
+
+    candidates: list[Path] = []
+    for root in (configured, service_default, package_default, docker_alt, docker_repo):
+        try:
+            resolved = root.resolve()
+        except OSError:
+            continue
+        if resolved in candidates:
+            continue
+        candidates.append(resolved)
+    return tuple(candidates)
 
 
 def _lookup_or_none(
@@ -124,7 +210,7 @@ def build_ticket_print_payload(db: Session, ticket: Ticket) -> dict[str, Any]:
     status = _enum_value(ticket.status)
 
     unit = product.unit if product else None
-    logo_data_uri = _logo_data_uri()
+    logo_data_uri = _company_logo_src(db)
 
     return {
         "ticket_id": ticket.id,

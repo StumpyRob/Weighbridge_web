@@ -29,6 +29,10 @@ class Customer(Base):
     postcode: Mapped[str | None] = mapped_column(String(POSTCODE_MAX))
     country: Mapped[str | None] = mapped_column(String(NAME_MAX))
     vat_number: Mapped[str | None] = mapped_column(String(CODE_MAX))
+    credit_limit_pence: Mapped[int | None] = mapped_column(Integer)
+    is_cash_account: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     invoice_frequency_id: Mapped[int | None] = mapped_column(
         ForeignKey("invoice_frequencies.id")
     )

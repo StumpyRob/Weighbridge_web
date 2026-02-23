@@ -43,6 +43,12 @@ class Product(Base):
     is_hazardous: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     final_disposal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     used_on_site: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    final_disposal_wip: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    used_on_site_wip: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     ewc_code_id: Mapped[int | None] = mapped_column(
         ForeignKey("ewc_codes.id", ondelete="SET NULL")
     )

@@ -1,55 +1,411 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ticket {{ payload.ticket_no }}</title>
     <style>
-      body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
-      .ticket-header { display: flex; align-items: flex-start; gap: 18px; margin-bottom: 12px; }
-      .ticket-logo { max-width: 140px; max-height: 64px; width: auto; height: auto; display: block; object-fit: contain; }
-      .ticket-logo-placeholder { width: 140px; height: 64px; border: 1px dashed #9ca3af; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; color: #6b7280; }
-      .ticket-heading { min-width: 0; }
-      h1 { margin: 0 0 8px; }
-      .muted { color: #4b5563; margin: 0; }
-      h2 { margin: 20px 0 8px; font-size: 1rem; }
-      .grid { display: grid; grid-template-columns: 220px 1fr; gap: 6px 16px; }
-      .label { color: #374151; font-weight: 600; }
-      .value { color: #111827; }
+      @page {
+        size: A4;
+        margin: 15mm;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        color: #1e293b;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 10.5px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .ticket-container {
+        margin: 0 auto;
+        max-width: 210mm;
+      }
+
+      .ticket-header {
+        align-items: flex-start;
+        border-bottom: 2px solid #f1f5f9;
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 24px;
+        padding-bottom: 20px;
+      }
+
+      .ticket-company-section {
+        display: flex;
+        flex-direction: column;
+        max-width: 58%;
+      }
+
+      .ticket-logo {
+        display: block;
+        height: 48px;
+        margin-bottom: 12px;
+        max-width: 220px;
+        object-fit: contain;
+        object-position: left;
+        width: auto;
+      }
+
+      .ticket-logo-placeholder {
+        align-items: center;
+        border: 1px dashed #cbd5e1;
+        border-radius: 6px;
+        color: #64748b;
+        display: flex;
+        font-size: 10px;
+        height: 48px;
+        justify-content: center;
+        margin-bottom: 12px;
+        width: 160px;
+      }
+
+      .ticket-company-name {
+        color: #0f172a;
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        margin-bottom: 6px;
+      }
+
+      .ticket-company-line {
+        color: #475569;
+        font-size: 10px;
+        margin: 2px 0;
+      }
+
+      .ticket-heading {
+        min-width: 210px;
+        text-align: right;
+      }
+
+      h1 {
+        color: #0f172a;
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        line-height: 1;
+        margin-bottom: 10px;
+      }
+
+      .status-badge {
+        background: #dbeafe;
+        border-radius: 999px;
+        color: #1e3a8a;
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        margin-top: 6px;
+        padding: 4px 10px;
+        text-transform: uppercase;
+      }
+
+      .meta-grid {
+        display: grid;
+        gap: 6px 12px;
+        grid-template-columns: auto 1fr;
+      }
+
+      .meta-label {
+        color: #64748b;
+        font-weight: 500;
+      }
+
+      .meta-value {
+        color: #0f172a;
+        font-weight: 600;
+        text-align: right;
+      }
+
+      .section-title {
+        color: #334155;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        margin: 18px 0 8px 0;
+        text-transform: uppercase;
+      }
+
+      .detail-block {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 14px 16px;
+      }
+
+      .detail-grid {
+        column-gap: 12px;
+        display: grid;
+        grid-template-columns: 160px 1fr;
+        row-gap: 5px;
+      }
+
+      .detail-label {
+        color: #475569;
+        font-weight: 500;
+      }
+
+      .detail-value {
+        color: #0f172a;
+        font-weight: 600;
+      }
+
+      .items-table {
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 10.5px;
+        margin-top: 8px;
+        width: 100%;
+      }
+
+      .items-table th {
+        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
+        border-bottom: 2px solid #cbd5e1;
+        color: #334155;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        padding: 10px 8px;
+        text-transform: uppercase;
+      }
+
+      .items-table th:first-child {
+        text-align: left;
+      }
+
+      .items-table th:not(:first-child) {
+        text-align: right;
+      }
+
+      .items-table td {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        padding: 10px 8px;
+        vertical-align: top;
+      }
+
+      .items-table td:first-child {
+        text-align: left;
+        width: 42%;
+      }
+
+      .num {
+        font-family: "JetBrains Mono", "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", monospace;
+        font-weight: 500;
+        text-align: right;
+      }
+
+      .row-main {
+        color: #0f172a;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+
+      .row-sub {
+        color: #64748b;
+        display: block;
+        font-size: 9.5px;
+        line-height: 1.35;
+      }
+
+      .totals-wrapper {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 18px;
+      }
+
+      .totals-block {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 14px 16px;
+        width: 280px;
+      }
+
+      .total-row {
+        align-items: center;
+        display: flex;
+        justify-content: space-between;
+        padding: 5px 0;
+      }
+
+      .total-label {
+        color: #475569;
+        font-size: 11px;
+        font-weight: 500;
+      }
+
+      .total-value {
+        color: #0f172a;
+        font-family: "JetBrains Mono", "SF Mono", monospace;
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .grand-total {
+        border-top: 2px solid #0f172a;
+        margin-top: 8px;
+        padding-top: 9px;
+      }
+
+      .grand-total .total-label,
+      .grand-total .total-value {
+        color: #0f172a;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .footer-note {
+        border-top: 1px solid #e2e8f0;
+        color: #94a3b8;
+        font-size: 9px;
+        margin-top: 30px;
+        padding-top: 14px;
+        text-align: center;
+      }
     </style>
   </head>
   <body>
-    <div class="ticket-header">
-      {% if payload.branding is defined and payload.branding.logo_data_uri %}
-        <img src="{{ payload.branding.logo_data_uri }}" alt="Logo" class="ticket-logo" />
-      {% else %}
-        <div class="ticket-logo-placeholder">LOGO</div>
-      {% endif %}
-      <div class="ticket-heading">
-        <h1>Ticket {{ payload.ticket_no }}</h1>
-        <p class="muted">{{ payload.datetime_display }} | {{ payload.status }}</p>
-      </div>
-    </div>
+    <div class="ticket-container">
+      <div class="ticket-header">
+        <div class="ticket-company-section">
+          {% if payload.branding is defined and payload.branding.logo_data_uri %}
+            <img src="{{ payload.branding.logo_data_uri }}" alt="Logo" class="ticket-logo" />
+          {% else %}
+            <div class="ticket-logo-placeholder">LOGO</div>
+          {% endif %}
+          <div class="ticket-company-name">Weighbridge Ticket</div>
+          <div class="ticket-company-line">Ticket No: {{ payload.ticket_no }}</div>
+          {% if payload.logistics.yard %}
+            <div class="ticket-company-line">Yard: {{ payload.logistics.yard }}</div>
+          {% endif %}
+        </div>
 
-    <h2>Summary</h2>
-    <div class="grid">
-      <div class="label">Direction</div><div class="value">{{ payload.direction }}</div>
-      <div class="label">Transaction</div><div class="value">{{ payload.transaction_type }}</div>
-      <div class="label">Registration</div><div class="value">{{ payload.vehicle.registration or "-" }}</div>
-      <div class="label">Customer</div><div class="value">{{ payload.customer.name or "-" }}</div>
-      <div class="label">Account</div><div class="value">{{ payload.customer.account_code or "-" }}</div>
-      <div class="label">Walk-in sale</div><div class="value">{{ "Yes" if payload.walk_in_sale else "No" }}</div>
-      <div class="label">Product</div><div class="value">{{ payload.product.code }} {{ payload.product.description }}</div>
-      <div class="label">Unit</div><div class="value">{{ payload.product.unit_name or "-" }}</div>
-      <div class="label">Gross</div><div class="value">{{ payload.weights.gross_kg_display }}</div>
-      <div class="label">Tare</div><div class="value">{{ payload.weights.tare_kg_display }}</div>
-      <div class="label">Net</div><div class="value">{{ payload.weights.net_kg_display }}</div>
-      <div class="label">Qty</div><div class="value">{{ payload.weights.qty_display }}</div>
-      <div class="label">Unit price</div><div class="value">{{ payload.weights.unit_price_display }}</div>
-      <div class="label">Total</div><div class="value">{{ payload.weights.total_display }}</div>
-      <div class="label">PO</div><div class="value">{{ payload.po_number or "-" }}</div>
-      <div class="label">EWC</div><div class="value">{{ payload.compliance.ewc_code_display or payload.compliance.ewc_code_6 or "-" }}</div>
-      <div class="label">Hazardous</div><div class="value">{{ "Yes" if payload.compliance.ewc_hazardous else "No" }}</div>
+        <div class="ticket-heading">
+          <h1>Ticket {{ payload.ticket_no }}</h1>
+          <div class="meta-grid">
+            <span class="meta-label">Date:</span>
+            <span class="meta-value">{{ payload.datetime_display or "-" }}</span>
+            <span class="meta-label">Direction:</span>
+            <span class="meta-value">{{ payload.direction or "-" }}</span>
+            <span class="meta-label">Type:</span>
+            <span class="meta-value">{{ payload.transaction_type or "-" }}</span>
+          </div>
+          <span class="status-badge">{{ payload.status or "-" }}</span>
+        </div>
+      </div>
+
+      <div class="section-title">Ticket Details</div>
+      <div class="detail-block">
+        <div class="detail-grid">
+          <div class="detail-label">Customer</div>
+          <div class="detail-value">{{ payload.customer.name or "-" }}</div>
+
+          <div class="detail-label">Account</div>
+          <div class="detail-value">{{ payload.customer.account_code or "-" }}</div>
+
+          <div class="detail-label">Vehicle</div>
+          <div class="detail-value">{{ payload.vehicle.registration or "-" }}</div>
+
+          <div class="detail-label">PO Number</div>
+          <div class="detail-value">{{ payload.po_number or "-" }}</div>
+
+          <div class="detail-label">Product</div>
+          <div class="detail-value">
+            {{ payload.product.code or "-" }}
+            {% if payload.product.description %} - {{ payload.product.description }}{% endif %}
+          </div>
+
+          <div class="detail-label">Unit</div>
+          <div class="detail-value">{{ payload.product.unit_name or "-" }}</div>
+        </div>
+      </div>
+
+      <div class="section-title">Weights and Pricing</div>
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th>Qty</th>
+            <th>Unit Price</th>
+            <th>Gross</th>
+            <th>Tare</th>
+            <th>Net</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="row-main">{{ payload.product.description or "Ticket line" }}</div>
+              <span class="row-sub">
+                EWC: {{ payload.compliance.ewc_code_display or payload.compliance.ewc_code_6 or "-" }} |
+                Hazardous: {{ "Yes" if payload.compliance.ewc_hazardous else "No" }}
+              </span>
+            </td>
+            <td class="num">{{ payload.weights.qty_display or "-" }}</td>
+            <td class="num">
+              {% if payload.weights.unit_price is not none %}
+                &pound;{{ "%.2f"|format(payload.weights.unit_price) }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td class="num">{{ payload.weights.gross_kg_display or "-" }}</td>
+            <td class="num">{{ payload.weights.tare_kg_display or "-" }}</td>
+            <td class="num">{{ payload.weights.net_kg_display or "-" }}</td>
+            <td class="num">
+              {% if payload.weights.total is not none %}
+                &pound;{{ "%.2f"|format(payload.weights.total) }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="totals-wrapper">
+        <div class="totals-block">
+          <div class="total-row">
+            <span class="total-label">Quantity</span>
+            <span class="total-value">{{ payload.weights.qty_display or "-" }}</span>
+          </div>
+          <div class="total-row">
+            <span class="total-label">Unit Price</span>
+            <span class="total-value">
+              {% if payload.weights.unit_price is not none %}
+                &pound;{{ "%.2f"|format(payload.weights.unit_price) }}
+              {% else %}
+                -
+              {% endif %}
+            </span>
+          </div>
+          <div class="total-row grand-total">
+            <span class="total-label">Total</span>
+            <span class="total-value">
+              {% if payload.weights.total is not none %}
+                &pound;{{ "%.2f"|format(payload.weights.total) }}
+              {% else %}
+                -
+              {% endif %}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-note">
+        Generated from weighbridge ticket {{ payload.ticket_no }}
+      </div>
     </div>
   </body>
 </html>

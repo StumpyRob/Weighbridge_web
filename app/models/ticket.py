@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     Numeric,
     String,
     Text,
@@ -131,6 +132,7 @@ class Ticket(Base):
     pricing_qty_snapshot: Mapped[float | None] = mapped_column(Numeric(12, 3))
     pricing_net_kg_snapshot: Mapped[float | None] = mapped_column(Numeric(12, 3))
     pricing_billable_qty_snapshot: Mapped[float | None] = mapped_column(Numeric(12, 3))
+    wip_snapshot_json: Mapped[dict | None] = mapped_column(JSON)
     po_number: Mapped[str | None] = mapped_column(String(PO_NUMBER_MAX))
     dont_invoice: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     paid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

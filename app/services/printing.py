@@ -4,6 +4,7 @@ import base64
 from dataclasses import dataclass
 from typing import Any
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..models.base import utcnow
@@ -23,6 +24,12 @@ TRANSPORT_MODE_USB_ESC_POS = "USB_ESC_POS"
 TRANSPORT_MODE_CUPS = "CUPS"
 TRANSPORT_MODE_LOCAL_BROWSER = "LOCAL_BROWSER"
 TRANSPORT_MODE_LOCAL_NODE_HTTP = "LOCAL_NODE_HTTP"
+
+PRINT_PROFILE_PURPOSE_INVOICE_PDF = "INVOICE_PDF"
+LEGACY_PRINT_PROFILE_PURPOSE_INVOICE_A4 = "INVOICE_A4"
+DEFAULT_INVOICE_PDF_PROFILE_CODE = "INVOICE_PDF_DEFAULT"
+DEFAULT_INVOICE_PDF_PROFILE_DESCRIPTION = "Default invoice printer"
+DEFAULT_INVOICE_PDF_TEMPLATE_NAME = "invoice_default.html"
 
 
 @dataclass(slots=True)
@@ -320,3 +327,105 @@ def _transport_literal_from_profile_mode(mode: str) -> PrintMode:
     if normalized == TRANSPORT_MODE_LOCAL_NODE_HTTP:
         return "local_node_http"
     raise ValueError(f"Unsupported print transport mode: {mode}")
+
+
+def _next_profile_code(db: Session, base_code: str) -> str:
+    normalized_base = str(base_code or "").strip().upper() or DEFAULT_INVOICE_PDF_PROFILE_CODE
+    candidate = normalized_base
+    suffix = 1
+    while True:
+        exists = db.execute(
+            select(PrintProfile.id)
+            .where(func.lower(PrintProfile.code) == candidate.lower())
+            .limit(1)
+        ).first()
+        if not exists:
+            return candidate
+        suffix += 1
+        candidate = f"{normalized_base}_{suffix}"
+
+
+def migrate_legacy_invoice_a4_purposes(db: Session) -> int:
+    updated = 0
+
+    legacy_templates = list(
+        db.execute(
+            select(PrintTemplate).where(
+                PrintTemplate.purpose == LEGACY_PRINT_PROFILE_PURPOSE_INVOICE_A4
+            )
+        ).scalars()
+    )
+    for template in legacy_templates:
+        template.purpose = PRINT_PROFILE_PURPOSE_INVOICE_PDF
+        updated += 1
+
+    legacy_profiles = list(
+        db.execute(
+            select(PrintProfile).where(
+                PrintProfile.purpose == LEGACY_PRINT_PROFILE_PURPOSE_INVOICE_A4
+            )
+        ).scalars()
+    )
+    for profile in legacy_profiles:
+        profile.purpose = PRINT_PROFILE_PURPOSE_INVOICE_PDF
+        updated += 1
+
+    legacy_jobs = list(
+        db.execute(
+            select(PrintJob).where(
+                PrintJob.purpose == LEGACY_PRINT_PROFILE_PURPOSE_INVOICE_A4
+            )
+        ).scalars()
+    )
+    for job in legacy_jobs:
+        job.purpose = PRINT_PROFILE_PURPOSE_INVOICE_PDF
+        updated += 1
+
+    if updated:
+        db.flush()
+    return updated
+
+
+def ensure_default_invoice_pdf_profile(db: Session) -> tuple[PrintProfile, bool]:
+    changed = bool(migrate_legacy_invoice_a4_purposes(db))
+
+    profiles = list(
+        db.execute(
+            select(PrintProfile)
+            .where(
+                PrintProfile.is_active.is_(True),
+                PrintProfile.purpose == PRINT_PROFILE_PURPOSE_INVOICE_PDF,
+            )
+            .order_by(PrintProfile.is_default.desc(), PrintProfile.code.asc())
+        ).scalars()
+    )
+    default_profile = next((row for row in profiles if row.is_default), None)
+    if default_profile is not None:
+        if changed:
+            db.commit()
+            db.refresh(default_profile)
+        return default_profile, changed
+
+    if profiles:
+        selected = profiles[0]
+        selected.is_default = True
+        db.commit()
+        db.refresh(selected)
+        return selected, True
+
+    created_profile = PrintProfile(
+        code=_next_profile_code(db, DEFAULT_INVOICE_PDF_PROFILE_CODE),
+        description=DEFAULT_INVOICE_PDF_PROFILE_DESCRIPTION,
+        purpose=PRINT_PROFILE_PURPOSE_INVOICE_PDF,
+        template_id=None,
+        template_name=DEFAULT_INVOICE_PDF_TEMPLATE_NAME,
+        yard_id=None,
+        transport_mode=TRANSPORT_MODE_LOCAL_BROWSER,
+        transport_config={},
+        is_default=True,
+        is_active=True,
+    )
+    db.add(created_profile)
+    db.commit()
+    db.refresh(created_profile)
+    return created_profile, True

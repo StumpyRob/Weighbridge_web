@@ -1,4 +1,5 @@
 from .base import Base
+from .company_setting import CompanySetting
 from .customer import Customer
 from .customer_product_price import CustomerProductPrice
 from .ewc_code import EwcCode
@@ -49,6 +50,7 @@ from .vehicle_tare import VehicleTare
 
 __all__ = [
     "Base",
+    "CompanySetting",
     "Customer",
     "CustomerProductPrice",
     "EwcCode",

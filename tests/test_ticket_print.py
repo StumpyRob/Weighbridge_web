@@ -1,7 +1,9 @@
 from datetime import datetime
 from decimal import Decimal
 
+from app.config import settings
 from app.models import (
+    CompanySetting,
     Container,
     Customer,
     Destination,
@@ -63,6 +65,42 @@ def test_build_ticket_print_payload_sale_fields(db_session):
     assert "weights" in payload
     assert "logistics" in payload
     assert "compliance" in payload
+
+
+def test_build_ticket_print_payload_uses_company_uploaded_logo(
+    db_session,
+    monkeypatch,
+    tmp_path,
+):
+    upload_dir = tmp_path / "uploads" / "company"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    logo_file = upload_dir / "ticket-logo.png"
+    logo_file.write_bytes(b"\x89PNG\r\n\x1a\nlogo-bytes")
+    monkeypatch.setattr(settings, "company_logo_upload_dir", str(upload_dir))
+
+    db_session.add(
+        CompanySetting(
+            name="Ticket Logo Co",
+            company_logo_path="/static/uploads/company/ticket-logo.png",
+        )
+    )
+    db_session.flush()
+
+    ticket = Ticket(
+        ticket_no="T-PRINT-LOGO-1",
+        datetime=datetime(2026, 2, 19, 9, 45, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    payload = build_ticket_print_payload(db_session, ticket)
+
+    assert payload["branding"]["logo_data_uri"].startswith("data:image/png;base64,")
 
 
 def test_build_ticket_print_payload_waste_fields(db_session):

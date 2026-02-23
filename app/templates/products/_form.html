@@ -1,5 +1,4 @@
 {% from "_help.html" import help %}
-{% from "_wip.html" import wip_field %}
 {% if help_text is not defined %}{% set help_text = {} %}{% endif %}
 
 <section class="card product-main-card">
@@ -434,9 +433,27 @@
       <label for="is_hazardous">Hazardous</label>
       {{ help(help_text.product_hazardous, "product-hazardous-help") }}
     </div>
-    {% if DEV_MODE %}
-      {{ wip_field("final_disposal_wip", "Final disposal", "", "Not implemented. Intended for waste compliance / reporting logic.", input_type="checkbox", help_text=help_text.product_wip_final_disposal) }}
-      {{ wip_field("used_on_site_wip", "Used on site", "", "Not implemented. Intended for internal consumption / stock tracking.", input_type="checkbox", help_text=help_text.product_wip_used_on_site) }}
-    {% endif %}
+    <div class="field checkbox">
+      <input
+        type="checkbox"
+        id="final_disposal_wip"
+        name="final_disposal_wip"
+        {% if form.final_disposal_wip %}checked{% endif %}
+      />
+      <label for="final_disposal_wip">
+        Final disposal <span class="badge badge--muted" title="Stored only - not enforced yet">WIP</span>
+      </label>
+    </div>
+    <div class="field checkbox">
+      <input
+        type="checkbox"
+        id="used_on_site_wip"
+        name="used_on_site_wip"
+        {% if form.used_on_site_wip %}checked{% endif %}
+      />
+      <label for="used_on_site_wip">
+        Used on site <span class="badge badge--muted" title="Stored only - not enforced yet">WIP</span>
+      </label>
+    </div>
   </div>
 </section>

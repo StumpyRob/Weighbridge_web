@@ -17,6 +17,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://weighbridge:weighbridge@db:5432/weighbridge
       SECRET_KEY: change-me
+    volumes:
+      - ./uploads:/app/app/static/uploads
     ports:
       - "8000:8000"
     depends_on:

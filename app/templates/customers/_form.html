@@ -1,5 +1,4 @@
 {% from "_help.html" import help %}
-{% from "_wip.html" import wip_field %}
 {% if help_text is not defined %}{% set help_text = {} %}{% endif %}
 
 <section class="card">
@@ -110,10 +109,35 @@
         maxlength="{{ limits.NAME_MAX }}"
       />
     </div>
-    {% if DEV_MODE %}
-      {{ wip_field("vat_number_wip", "VAT number", "", "Not implemented yet.") }}
-      {{ wip_field("credit_limit_wip", "Credit limit", "", "Not implemented yet.", input_type="number") }}
-    {% endif %}
+    <div class="field">
+      <label for="vat_number">
+        VAT number <span class="badge badge--muted" title="Stored only - not enforced yet">WIP</span>
+      </label>
+      <input
+        type="text"
+        id="vat_number"
+        name="vat_number"
+        value="{{ form.vat_number }}"
+        maxlength="{{ limits.CODE_MAX }}"
+      />
+    </div>
+    <div class="field">
+      <label for="credit_limit_pounds">
+        Credit limit <span class="badge badge--muted" title="Stored only - not enforced yet">WIP</span>
+      </label>
+      <div class="input-prefix">
+        <span class="input-prefix__symbol" aria-hidden="true">&pound;</span>
+        <input
+          type="number"
+          id="credit_limit_pounds"
+          name="credit_limit_pounds"
+          value="{{ form.credit_limit_pounds }}"
+          min="0"
+          step="0.01"
+          class="input-with-prefix"
+        />
+      </div>
+    </div>
   </div>
 </section>
 
@@ -145,8 +169,17 @@
       <label for="must_have_po">Must have PO</label>
       {{ help(help_text.customer_must_have_po, "customer-must-have-po-help") }}
     </div>
-    {% if DEV_MODE %}
-      {{ wip_field("cash_account_wip", "Cash account", "", "Not implemented yet.", input_type="checkbox", help_text=help_text.customer_wip_cash_account) }}
-    {% endif %}
+    <div class="field checkbox">
+      <input
+        type="checkbox"
+        id="is_cash_account"
+        name="is_cash_account"
+        {% if form.is_cash_account %}checked{% endif %}
+      />
+      <label for="is_cash_account">
+        Cash account <span class="badge badge--muted" title="Stored only - not enforced yet">WIP</span>
+      </label>
+    </div>
   </div>
 </section>
+
