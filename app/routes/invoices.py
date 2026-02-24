@@ -648,6 +648,7 @@ async def invoices_print_dispatch(
                 invoice_id=invoice.id,
                 created_by_user_id=None,
                 payload_bytes=pdf_bytes,
+                base_url=str(request.base_url),
                 email_subject=str(delivery_config.get("subject_template", "")).format(
                     invoice_no=invoice.invoice_no or "",
                     customer_name=str(
@@ -677,6 +678,7 @@ async def invoices_print_dispatch(
                 template_id=rendered_template_id,
                 invoice_id=invoice.id,
                 created_by_user_id=None,
+                base_url=str(request.base_url),
             )
     except HTTPException:
         raise
@@ -1102,11 +1104,17 @@ def _invoice_print_actions_context(
             "send_url": f"/invoices/{invoice_id}/print",
             "preview_url": f"/invoices/{invoice_id}/preview",
             "send_enabled": send_enabled,
-            "send_label": "Send Invoice",
+            "send_label": "Print locally (browser)",
+            "send_button_variant": "secondary",
             "preview_label": "Preview Invoice",
+            "preview_button_variant": "secondary",
             "preview_button_id": "",
             "download_url": f"/invoices/{invoice_id}/pdf",
             "download_label": "Download PDF",
+            "download_button_variant": "primary",
+            "browser_print_note": (
+                "Browser printing may add URL/date/time headers/footers depending on your browser settings."
+            ),
             "no_default_message": "Printing is not configured. Contact admin.",
         }
     }

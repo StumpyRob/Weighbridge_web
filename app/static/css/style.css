@@ -359,7 +359,14 @@ a.btn[aria-disabled="true"] {
   gap: 0.4rem;
   margin: 0;
   position: relative;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+}
+
+.print-actions__note {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.25;
 }
 
 .ticket-header-actions {

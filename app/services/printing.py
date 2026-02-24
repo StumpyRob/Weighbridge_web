@@ -185,6 +185,19 @@ def _delivery_type_to_send_mode(delivery_type: str) -> PrintMode:
     raise ValueError(f"Unsupported destination delivery type: {delivery_type}")
 
 
+def _prepare_html_send_payload(
+    rendered_content: str,
+    *,
+    base_url: str | None,
+) -> tuple[str, bytes]:
+    from .pdf import ensure_single_page_html, prepare_html_for_print_output
+
+    safe_html = prepare_html_for_print_output(rendered_content)
+    ensure_single_page_html(safe_html, base_url=base_url)
+    serialized = safe_html.encode("utf-8")
+    return safe_html, serialized
+
+
 def execute_rendered_print(
     db: Session,
     *,
@@ -199,6 +212,7 @@ def execute_rendered_print(
     invoice_id: int | None = None,
     created_by_user_id: int | None = None,
     payload_bytes: bytes | None = None,
+    base_url: str | None = None,
     email_subject: str | None = None,
     email_body: str | None = None,
     email_sender: Callable[..., None] | None = None,
@@ -206,7 +220,8 @@ def execute_rendered_print(
     normalized_delivery_type = _normalize_delivery_type(delivery_type)
     normalized_document_type = _normalize_document_type(document_type)
     normalized_content_type = _normalize_content_type(content_type)
-    serialized_payload = payload_bytes or str(rendered_content or "").encode("utf-8")
+    outbound_content = str(rendered_content or "")
+    serialized_payload = payload_bytes or outbound_content.encode("utf-8")
 
     job = PrintJob(
         created_by_user_id=created_by_user_id,
@@ -220,7 +235,7 @@ def execute_rendered_print(
             normalized_delivery_type,
             delivery_config,
         ),
-        rendered_content=rendered_content,
+        rendered_content=outbound_content,
         rendered_bytes_base64=_serialized_bytes(serialized_payload),
         status=PRINT_JOB_STATUS_QUEUED,
         attempt_count=0,
@@ -232,12 +247,20 @@ def execute_rendered_print(
 
     job.attempt_count = int(job.attempt_count or 0) + 1
     try:
+        if normalized_content_type == PRINT_CONTENT_TYPE_HTML:
+            outbound_content, serialized_payload = _prepare_html_send_payload(
+                outbound_content,
+                base_url=base_url,
+            )
+            job.rendered_content = outbound_content
+            job.rendered_bytes_base64 = _serialized_bytes(serialized_payload)
+
         if normalized_delivery_type == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
             _apply_job_delivery_success(job)
             db.commit()
             return PrintExecutionResult(
                 job=job,
-                browser_content=rendered_content,
+                browser_content=outbound_content,
                 browser_content_type=normalized_content_type,
             )
 
@@ -263,7 +286,7 @@ def execute_rendered_print(
             _delivery_type_to_send_mode(normalized_delivery_type),
             dict(delivery_config or {}),
             document_type=job.document_type,
-            rendered_content=rendered_content,
+            rendered_content=outbound_content,
             content_type=normalized_content_type,
             job_id=job.id,
         )
@@ -289,16 +312,25 @@ def retry_print_job(db: Session, job: PrintJob) -> PrintExecutionResult:
         if payload_source == "text"
         else payload_bytes.decode("utf-8", errors="replace")
     )
+    outbound_content = rendered_content
     normalized_content_type = _content_type_from_rendered(rendered_content)
 
     job.attempt_count = int(job.attempt_count or 0) + 1
     try:
+        if normalized_content_type == PRINT_CONTENT_TYPE_HTML:
+            outbound_content, payload_bytes = _prepare_html_send_payload(
+                outbound_content,
+                base_url=None,
+            )
+            job.rendered_content = outbound_content
+            job.rendered_bytes_base64 = _serialized_bytes(payload_bytes)
+
         if delivery_type == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
             _apply_job_delivery_success(job)
             db.commit()
             return PrintExecutionResult(
                 job=job,
-                browser_content=rendered_content,
+                browser_content=outbound_content,
                 browser_content_type=normalized_content_type,
             )
 
@@ -323,7 +355,7 @@ def retry_print_job(db: Session, job: PrintJob) -> PrintExecutionResult:
             _delivery_type_to_send_mode(delivery_type),
             delivery_config,
             document_type=str(job.document_type or ""),
-            rendered_content=rendered_content,
+            rendered_content=outbound_content,
             content_type=normalized_content_type,
             job_id=job.id,
         )

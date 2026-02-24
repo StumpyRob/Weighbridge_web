@@ -61,6 +61,7 @@ HELP_TEXT.update(
         "printing_insert_field_picker": "Click to insert fields like ticket number, customer, weights, and totals.",
         "printing_template_content_editor": "Use Jinja tokens and loops in the template body. Some values may be blank depending on ticket/invoice data.",
         "printing_content_type": "TEXT is best for thermal output. HTML is best for styled layouts and PDF rendering.",
+        "printing_single_page_rule": "Avoid height:100vh in templates; use content-based layout to keep print output on one page.",
         "printing_preview_ticket_id": "Enter a numeric ticket ID. If blank or not found, preview uses the latest completed ticket.",
         "printing_jobs_status": "Job status shows delivery state: QUEUED means pending, SENT means success, FAILED means delivery error.",
         "printing_jobs_rendered_output": "Rendered output is the exact payload content generated from the template at print time.",

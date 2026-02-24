@@ -270,12 +270,19 @@ def test_ticket_edit_shows_wtn_buttons_only_for_complete_waste(client, db_sessio
     sale_response = client.get(f"/tickets/{sale_ticket.id}")
 
     assert waste_response.status_code == 200
-    assert "Send WTN" in waste_response.text
     assert "Preview WTN" in waste_response.text
     assert "Download PDF" in waste_response.text
+    assert "Print locally (browser)" in waste_response.text
+    assert (
+        "Browser printing may add URL/date/time headers/footers depending on your browser settings."
+        in waste_response.text
+    )
+    wtn_preview_pos = waste_response.text.index("Preview WTN")
+    wtn_download_pos = waste_response.text.index("Download PDF", wtn_preview_pos)
+    wtn_local_pos = waste_response.text.index("Print locally (browser)", wtn_preview_pos)
+    assert wtn_preview_pos < wtn_download_pos < wtn_local_pos
 
     assert sale_response.status_code == 200
-    assert "Send WTN" not in sale_response.text
     assert "Preview WTN" not in sale_response.text
 
 

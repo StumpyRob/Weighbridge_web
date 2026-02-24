@@ -133,12 +133,16 @@ def test_invoice_header_print_actions_are_operator_simple(client, db_session):
     response = client.get(f"/invoices/{invoice.id}")
 
     assert response.status_code == 200
-    assert "Send Invoice" in response.text
     assert "Preview Invoice" in response.text
     assert "Download PDF" in response.text
+    assert "Print locally (browser)" in response.text
+    assert (
+        "Browser printing may add URL/date/time headers/footers depending on your browser settings."
+        in response.text
+    )
     assert "Advanced printing" not in response.text
-    assert response.text.index("Send Invoice") < response.text.index("Preview Invoice")
     assert response.text.index("Preview Invoice") < response.text.index("Download PDF")
+    assert response.text.index("Download PDF") < response.text.index("Print locally (browser)")
 
 
 def test_invoice_preview_uses_default_destination_template(client, db_session):

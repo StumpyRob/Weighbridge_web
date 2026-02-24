@@ -107,6 +107,18 @@
         </section>
 
         <section class="template-vars-section">
+          <h2>Template Capabilities &amp; Rules</h2>
+          <p>Templates support standard HTML and CSS for layout and branding.</p>
+          <p>Allowed images: logo data URIs, local app assets, and inline <code>&lt;img&gt;</code> elements.</p>
+          <p>External URLs are blocked by default in PDF rendering.</p>
+          <p>In PDF/Send output: background images and shadows/effects are removed; background colours are preserved.</p>
+          <p>Browser print note: URL/date/time headers and footers are controlled by browser print settings.</p>
+          <p>Thermal (80mm text) templates are unaffected.</p>
+          <p>For watermarks, use a faint positioned <code>&lt;img&gt;</code> (not CSS <code>background-image</code>) if you really need it.</p>
+          <p>Avoid <code>height: 100vh</code> in templates; use content-based layout for single-page output.</p>
+        </section>
+
+        <section class="template-vars-section">
           <h2>Note</h2>
           <p>Preview uses sample data unless opened from a real document.</p>
           <p><a href="/admin/printing/template-variables">View full variable list</a>.</p>

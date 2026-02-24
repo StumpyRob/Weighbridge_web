@@ -88,4 +88,21 @@
 {% endfor %}{% endraw %}</code></pre>
     </div>
   </div>
+
+  <div class="frame compact">
+    <div class="frame-header">Template Capabilities &amp; Rules</div>
+    <div class="frame-body">
+      <ul class="template-vars-list">
+        <li>Templates support standard HTML and CSS for layout and branding.</li>
+        <li>Allowed images: logo data URIs, local app assets, and inline <code>&lt;img&gt;</code> elements.</li>
+        <li>External URLs are blocked by default in PDF rendering.</li>
+        <li>In PDF/Send output, background images and shadows/effects are removed; background colours are preserved.</li>
+        <li>Browser print headers/footers (URL/date/time) are controlled by browser print settings.</li>
+        <li>Thermal (80mm text) templates are unaffected.</li>
+      </ul>
+      <p class="muted">
+        For watermarks, use a faint positioned <code>&lt;img&gt;</code> (not CSS <code>background-image</code>) if needed.
+      </p>
+    </div>
+  </div>
 {% endblock %}

@@ -12,7 +12,7 @@ from pathlib import Path
 import re
 from threading import Lock
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -41,6 +41,27 @@ INVOICE_LEGACY_TEMPLATE_CODES = (
 _logger = logging.getLogger(__name__)
 _renderer_status_lock = Lock()
 _windows_dll_dir_handles: list[object] = []
+PRINT_SAFE_STYLE_ELEMENT_ID = "print-safe-enforcement"
+SINGLE_PAGE_TEMPLATE_ERROR = (
+    "Template exceeds one page. Reduce content/margins or font sizes."
+)
+EXTERNAL_RESOURCE_BLOCK_ERROR = (
+    "External resource blocked: templates may only use local assets or data URIs."
+)
+PRINT_SAFE_CSS = """
+@page {
+  size: A4;
+  margin: 12mm;
+}
+
+* {
+  background-image: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+}
+"""
 
 
 @dataclass(slots=True, frozen=True)
@@ -143,6 +164,8 @@ def render_invoice_pdf(
         base_url=base_url,
         allow_fallback=allow_fallback,
         include_fallback_warning=include_fallback_warning,
+        enforce_print_safe=True,
+        enforce_single_page=True,
     )
 
 
@@ -152,13 +175,98 @@ def render_html_pdf_bytes(
     base_url: str | None = None,
     allow_fallback: bool = True,
     include_fallback_warning: bool = False,
+    enforce_print_safe: bool = True,
+    enforce_single_page: bool = True,
 ) -> bytes:
     return _html_to_pdf_bytes(
         html,
         base_url=base_url,
         allow_fallback=allow_fallback,
         include_fallback_warning=include_fallback_warning,
+        enforce_print_safe=enforce_print_safe,
+        enforce_single_page=enforce_single_page,
     )
+
+
+def inject_print_safe_css(html: str) -> str:
+    source = str(html or "")
+    if not source.strip():
+        return source
+    if PRINT_SAFE_STYLE_ELEMENT_ID in source:
+        return source
+
+    style_block = (
+        f"<style id=\"{PRINT_SAFE_STYLE_ELEMENT_ID}\" data-print-safe=\"1\">"
+        f"{PRINT_SAFE_CSS}</style>"
+    )
+    head_close_pattern = re.compile(r"</head>", re.IGNORECASE)
+    if head_close_pattern.search(source):
+        return head_close_pattern.sub(f"{style_block}</head>", source, count=1)
+
+    body_open_pattern = re.compile(r"<body[^>]*>", re.IGNORECASE)
+    if body_open_pattern.search(source):
+        return body_open_pattern.sub(lambda match: f"{style_block}{match.group(0)}", source, count=1)
+
+    return f"{style_block}{source}"
+
+
+def count_html_pages(
+    html: str,
+    *,
+    base_url: str | None = None,
+) -> int:
+    status = check_invoice_pdf_renderer()
+    if not status.available:
+        detail = status.detail or "Unknown WeasyPrint error."
+        raise RuntimeError(
+            "HTML print validation requires WeasyPrint. "
+            f"Renderer self-check failed: {detail}"
+        )
+
+    resolved_base_url = _resolve_pdf_base_url(base_url)
+    allowed_hosts = _allowed_template_resource_hosts(resolved_base_url)
+    try:
+        _configure_windows_weasyprint_dlls()
+        from weasyprint import HTML, default_url_fetcher  # type: ignore
+
+        document = HTML(
+            string=html,
+            base_url=resolved_base_url,
+            url_fetcher=_secure_template_url_fetcher(
+                default_url_fetcher,
+                allowed_hosts=allowed_hosts,
+            ),
+        ).render()
+    except ValueError as exc:
+        message = str(exc)
+        if EXTERNAL_RESOURCE_BLOCK_ERROR in message:
+            raise RuntimeError(message) from exc
+        raise
+    except Exception as exc:
+        message = str(exc)
+        if EXTERNAL_RESOURCE_BLOCK_ERROR in message:
+            raise RuntimeError(message) from exc
+        raise RuntimeError(
+            f"WeasyPrint rendering failed during single-page validation: {exc}"
+        ) from exc
+
+    return len(document.pages)
+
+
+def prepare_html_for_print_output(
+    html: str,
+) -> str:
+    return inject_print_safe_css(html)
+
+
+def ensure_single_page_html(
+    html: str,
+    *,
+    base_url: str | None = None,
+) -> None:
+    page_count = count_html_pages(html, base_url=base_url)
+    if page_count != 1:
+        raise ValueError(SINGLE_PAGE_TEMPLATE_ERROR)
 
 
 def render_invoice_pdf_html(
@@ -640,24 +748,60 @@ def _html_to_pdf_bytes(
     base_url: str | None = None,
     allow_fallback: bool = True,
     include_fallback_warning: bool = False,
+    enforce_print_safe: bool = False,
+    enforce_single_page: bool = False,
 ) -> bytes:
     resolved_base_url = _resolve_pdf_base_url(base_url)
+    allowed_hosts = _allowed_template_resource_hosts(resolved_base_url)
+    html_for_render = str(html or "")
+    if enforce_print_safe:
+        html_for_render = prepare_html_for_print_output(html_for_render)
+
     status = check_invoice_pdf_renderer()
+    if enforce_single_page and not status.available:
+        detail = status.detail or "Unknown WeasyPrint error."
+        raise RuntimeError(
+            "HTML print validation requires WeasyPrint. "
+            f"Renderer self-check failed: {detail}"
+        )
+
     if status.available:
         try:
-            from weasyprint import HTML  # type: ignore
+            _configure_windows_weasyprint_dlls()
+            from weasyprint import HTML, default_url_fetcher  # type: ignore
 
-            return HTML(string=html, base_url=resolved_base_url).write_pdf()
+            document_html = HTML(
+                string=html_for_render,
+                base_url=resolved_base_url,
+                url_fetcher=_secure_template_url_fetcher(
+                    default_url_fetcher,
+                    allowed_hosts=allowed_hosts,
+                ),
+            )
+            if enforce_single_page:
+                document = document_html.render()
+                if len(document.pages) != 1:
+                    raise ValueError(SINGLE_PAGE_TEMPLATE_ERROR)
+                return document.write_pdf()
+            return document_html.write_pdf()
+        except ValueError as exc:
+            message = str(exc)
+            if EXTERNAL_RESOURCE_BLOCK_ERROR in message:
+                raise RuntimeError(message) from exc
+            raise
         except Exception as exc:
+            message = str(exc)
+            if EXTERNAL_RESOURCE_BLOCK_ERROR in message:
+                raise RuntimeError(message) from exc
             _logger.exception("WeasyPrint render failed for invoice PDF.")
-            if not allow_fallback:
+            if enforce_single_page or not allow_fallback:
                 raise RuntimeError(
                     f"WeasyPrint rendering failed (FALLBACK MODE ACTIVE): {exc}"
                 ) from exc
             fallback_html = (
-                _prepend_fallback_warning(html, detail=str(exc))
+                _prepend_fallback_warning(html_for_render, detail=str(exc))
                 if include_fallback_warning
-                else html
+                else html_for_render
             )
             return _fallback_pdf_from_html(fallback_html)
 
@@ -669,9 +813,9 @@ def _html_to_pdf_bytes(
         )
 
     fallback_html = (
-        _prepend_fallback_warning(html, detail=status.detail)
+        _prepend_fallback_warning(html_for_render, detail=status.detail)
         if include_fallback_warning
-        else html
+        else html_for_render
     )
     return _fallback_pdf_from_html(fallback_html)
 
@@ -684,6 +828,54 @@ def _resolve_pdf_base_url(explicit_base_url: str | None) -> str | None:
     if configured:
         return configured
     return None
+
+
+def _allowed_template_resource_hosts(base_url: str | None) -> set[str]:
+    hosts = {"localhost", "127.0.0.1", "::1", "testserver"}
+    for candidate in (base_url, str(settings.app_public_base_url or "").strip()):
+        raw = str(candidate or "").strip()
+        if not raw:
+            continue
+        parsed = urlsplit(raw)
+        if parsed.scheme.lower() not in {"http", "https"}:
+            continue
+        hostname = str(parsed.hostname or "").strip().lower()
+        if hostname:
+            hosts.add(hostname)
+    return hosts
+
+
+def _is_template_resource_url_allowed(url: str, *, allowed_hosts: set[str]) -> bool:
+    raw = str(url or "").strip()
+    if not raw:
+        return True
+
+    parsed = urlsplit(raw)
+    scheme = parsed.scheme.lower()
+
+    if scheme == "data":
+        return True
+    if scheme == "file":
+        return True
+    if scheme in {"http", "https"}:
+        hostname = str(parsed.hostname or "").strip().lower()
+        return bool(hostname and hostname in allowed_hosts)
+    if scheme:
+        return False
+
+    if parsed.netloc:
+        hostname = str(parsed.hostname or "").strip().lower()
+        return bool(hostname and hostname in allowed_hosts)
+    return True
+
+
+def _secure_template_url_fetcher(default_fetcher, *, allowed_hosts: set[str]):
+    def _fetch(url: str, *args, **kwargs):
+        if not _is_template_resource_url_allowed(url, allowed_hosts=allowed_hosts):
+            raise ValueError(f"{EXTERNAL_RESOURCE_BLOCK_ERROR} ({url})")
+        return default_fetcher(url, *args, **kwargs)
+
+    return _fetch
 
 
 def _prepend_fallback_warning(html: str, *, detail: str | None) -> str:

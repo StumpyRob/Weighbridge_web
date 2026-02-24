@@ -1478,9 +1478,14 @@ def _ticket_print_actions_context(
             "send_url": f"/tickets/{ticket_id}/print",
             "preview_url": f"/tickets/{ticket_id}/preview",
             "send_enabled": send_enabled,
-            "send_label": "Print Ticket",
+            "send_label": "Print locally (browser)",
+            "send_button_variant": "primary",
             "preview_label": "Preview Ticket",
+            "preview_button_variant": "secondary",
             "preview_button_id": "preview_browser_print_button",
+            "browser_print_note": (
+                "Browser printing may add URL/date/time headers/footers depending on your browser settings."
+            ),
             "no_default_message": "Printing is not configured. Contact admin.",
         },
     }
@@ -1514,11 +1519,17 @@ def _ticket_wtn_actions_context(
             "send_url": f"/tickets/{ticket.id}/wtn/send",
             "preview_url": f"/tickets/{ticket.id}/wtn/preview",
             "send_enabled": send_enabled,
-            "send_label": "Send WTN",
+            "send_label": "Print locally (browser)",
+            "send_button_variant": "secondary",
             "preview_label": "Preview WTN",
+            "preview_button_variant": "secondary",
             "preview_button_id": "",
             "download_url": f"/tickets/{ticket.id}/wtn/pdf",
             "download_label": "Download PDF",
+            "download_button_variant": "primary",
+            "browser_print_note": (
+                "Browser printing may add URL/date/time headers/footers depending on your browser settings."
+            ),
             "no_default_message": "Sending is not set up yet. Ask an admin.",
         },
         "wtn_disabled_hint": (
@@ -1768,6 +1779,7 @@ def tickets_receipt(
             template_id=None,
             ticket_id=ticket.id,
             created_by_user_id=None,
+            base_url=str(request.base_url),
         )
     except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
         return HTMLResponse(f"Receipt render failed: {exc}", status_code=400)
@@ -1863,6 +1875,7 @@ async def tickets_print_dispatch(
             template_id=rendered.template_id,
             ticket_id=ticket.id,
             created_by_user_id=None,
+            base_url=str(request.base_url),
         )
     except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
         detail = str(exc) or "Print delivery failed."
@@ -2063,6 +2076,8 @@ def tickets_wtn_pdf(
             base_url=str(request.base_url),
             allow_fallback=False,
             include_fallback_warning=False,
+            enforce_print_safe=rendered.content_type == PRINT_CONTENT_TYPE_HTML,
+            enforce_single_page=rendered.content_type == PRINT_CONTENT_TYPE_HTML,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -2171,6 +2186,8 @@ async def tickets_wtn_send(
                 base_url=str(request.base_url),
                 allow_fallback=False,
                 include_fallback_warning=False,
+                enforce_print_safe=rendered.content_type == PRINT_CONTENT_TYPE_HTML,
+                enforce_single_page=rendered.content_type == PRINT_CONTENT_TYPE_HTML,
             )
             render_content_type = PRINT_CONTENT_TYPE_PDF
         result = execute_rendered_print(
@@ -2185,6 +2202,7 @@ async def tickets_wtn_send(
             ticket_id=ticket.id,
             created_by_user_id=None,
             payload_bytes=payload_bytes,
+            base_url=str(request.base_url),
         )
     except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
         detail = str(exc) or "WTN send failed."
