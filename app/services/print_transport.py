@@ -60,7 +60,7 @@ def _send_cups(job: bytes, config: dict) -> None:
 def _send_local_node_http(
     config: dict,
     *,
-    purpose: str,
+    document_type: str,
     rendered_content: str,
     content_type: str,
     job_id: int,
@@ -82,7 +82,7 @@ def _send_local_node_http(
         headers["X-API-Key"] = api_key
 
     payload = {
-        "purpose": purpose,
+        "document_type": document_type,
         "rendered_content": rendered_content,
         "content_type": content_type,
         "job_id": job_id,
@@ -105,7 +105,7 @@ def send(
     mode: PrintMode,
     config: dict,
     *,
-    purpose: str = "",
+    document_type: str = "",
     rendered_content: str = "",
     content_type: str = "TEXT",
     job_id: int = 0,
@@ -121,7 +121,7 @@ def send(
     if mode == "local_node_http":
         _send_local_node_http(
             config,
-            purpose=purpose,
+            document_type=document_type,
             rendered_content=rendered_content,
             content_type=content_type,
             job_id=job_id,

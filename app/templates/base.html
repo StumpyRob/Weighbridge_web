@@ -33,7 +33,7 @@
       {% set print_sent = request.query_params.get("print_sent") == "1" %}
       {% set print_failed = request.query_params.get("print_failed") == "1" %}
       {% set print_job_id = request.query_params.get("print_job_id", "") %}
-      {% set print_profile = request.query_params.get("print_profile", "") %}
+      {% set print_destination = request.query_params.get("print_destination", "") %}
       {% set print_error = request.query_params.get("print_error", "") %}
       {% set print_error_detail = request.query_params.get("print_error_detail", "") %}
       {% set invoice_print_sent = request.query_params.get("invoice_print_sent") == "1" %}
@@ -51,10 +51,7 @@
           {% if invoice_print_sent %}
             <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1" data-timeout-ms="7000">
               <div class="flash-toast__content">
-                Invoice sent to printer{% if invoice_print_job_id %} (Job {{ invoice_print_job_id }}){% endif %}.
-                {% if invoice_print_job_id %}
-                  <a href="/admin/printing/jobs/{{ invoice_print_job_id }}">View job</a>
-                {% endif %}
+                Invoice sent{% if invoice_print_job_id %} (Job {{ invoice_print_job_id }}){% endif %}.
               </div>
               <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
             </div>
@@ -62,10 +59,7 @@
           {% if print_sent %}
             <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1" data-timeout-ms="7000">
               <div class="flash-toast__content">
-                Sent to printer{% if print_profile %}: {{ print_profile }}{% endif %}{% if print_job_id %} (Job {{ print_job_id }}){% endif %}.
-                {% if print_job_id %}
-                  <a href="/admin/printing/jobs/{{ print_job_id }}">View job</a>
-                {% endif %}
+                Ticket sent{% if print_destination %}: {{ print_destination }}{% endif %}{% if print_job_id %} (Job {{ print_job_id }}){% endif %}.
               </div>
               <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
             </div>
@@ -74,9 +68,6 @@
             <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1" data-timeout-ms="7000">
               <div class="flash-toast__content">
                 Reprinted ticket{% if reprint_ticket_no %} {{ reprint_ticket_no }}{% endif %}{% if reprint_job_id %} (Job {{ reprint_job_id }}){% endif %}.
-                {% if reprint_job_id %}
-                  <a href="/admin/printing/jobs/{{ reprint_job_id }}">View job</a>
-                {% endif %}
               </div>
               <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
             </div>
@@ -88,9 +79,6 @@
                 {% if print_error_detail %}
                   {{ print_error_detail }}
                 {% endif %}
-                {% if print_job_id %}
-                  <a href="/admin/printing/jobs/{{ print_job_id }}">View job</a>
-                {% endif %}
               </div>
               <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
             </div>
@@ -101,9 +89,6 @@
                 {{ reprint_error }}{% if reprint_job_id %} (Job {{ reprint_job_id }}){% endif %}.
                 {% if reprint_error_detail %}
                   {{ reprint_error_detail }}
-                {% endif %}
-                {% if reprint_job_id %}
-                  <a href="/admin/printing/jobs/{{ reprint_job_id }}">View job</a>
                 {% endif %}
               </div>
               <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>

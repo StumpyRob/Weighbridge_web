@@ -6,22 +6,21 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 import mimetypes
 
-from sqlalchemy import func, text
+from sqlalchemy import text
 from sqlalchemy.engine.url import URL, make_url
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..models import CompanySetting, PrintProfile
+from ..models import CompanySetting, PrintDestination
 from .pdf import (
     check_invoice_pdf_renderer,
-    default_template_pointer_code,
-    resolve_default_template_for_purpose,
+    resolve_default_template_for_document_type,
 )
 
-HEALTH_TEMPLATE_PURPOSES: tuple[str, ...] = (
-    "TICKET_THERMAL",
-    "TICKET_A4",
-    "INVOICE_PDF",
+HEALTH_TEMPLATE_DOCUMENT_TYPES: tuple[str, ...] = (
+    "TICKET",
+    "INVOICE",
+    "WTN",
 )
 
 
@@ -87,34 +86,35 @@ def check_renderer() -> HealthCheckResult:
 
 
 def check_templates(db: Session) -> HealthCheckResult:
-    details_by_purpose: dict[str, dict[str, Any]] = {}
+    details_by_document_type: dict[str, dict[str, Any]] = {}
     has_warning = False
     ok_count = 0
 
-    for purpose in HEALTH_TEMPLATE_PURPOSES:
-        pointer_code = default_template_pointer_code(purpose)
-        pointer_profiles = list(
-            db.query(PrintProfile)
+    for document_type in HEALTH_TEMPLATE_DOCUMENT_TYPES:
+        default_destinations = list(
+            db.query(PrintDestination)
             .filter(
-                PrintProfile.purpose == purpose,
-                func.lower(PrintProfile.code) == pointer_code.lower(),
+                PrintDestination.document_type == document_type,
+                PrintDestination.is_default.is_(True),
+                PrintDestination.is_active.is_(True),
             )
+            .order_by(PrintDestination.id.asc())
             .all()
         )
-        resolved_default = resolve_default_template_for_purpose(
+        resolved_default = resolve_default_template_for_document_type(
             db,
-            purpose=purpose,
+            document_type=document_type,
             require_active=True,
         )
         warnings: list[str] = []
-        if len(pointer_profiles) != 1:
+        if len(default_destinations) != 1:
             warnings.append(
-                f"Expected exactly one default pointer profile ({pointer_code}); found {len(pointer_profiles)}."
+                f"Expected exactly one active default destination; found {len(default_destinations)}."
             )
         if resolved_default is None:
-            warnings.append("No active default template resolved.")
+            warnings.append("No active template resolved from the default destination.")
         elif not bool(resolved_default.is_active):
-            warnings.append("Default template is not active.")
+            warnings.append("Resolved template is not active.")
 
         status = "ok" if not warnings else "warning"
         if status == "warning":
@@ -122,10 +122,13 @@ def check_templates(db: Session) -> HealthCheckResult:
         else:
             ok_count += 1
 
-        details_by_purpose[purpose] = {
+        default_destination = default_destinations[0] if default_destinations else None
+        details_by_document_type[document_type] = {
             "status": status,
-            "default_pointer_code": pointer_code,
-            "pointer_count": len(pointer_profiles),
+            "default_destination_name": (
+                str(default_destination.name) if default_destination else None
+            ),
+            "default_destination_count": len(default_destinations),
             "resolved_template_id": int(resolved_default.id) if resolved_default else None,
             "resolved_template_code": str(resolved_default.code) if resolved_default else None,
             "resolved_template_active": bool(resolved_default.is_active) if resolved_default else False,
@@ -134,7 +137,7 @@ def check_templates(db: Session) -> HealthCheckResult:
 
     overall_status = "warning" if has_warning else "ok"
     summary = (
-        f"OK ({ok_count}/{len(HEALTH_TEMPLATE_PURPOSES)} purposes healthy)"
+        f"OK ({ok_count}/{len(HEALTH_TEMPLATE_DOCUMENT_TYPES)} document types healthy)"
         if not has_warning
         else "WARNING (template default issues found)"
     )
@@ -142,7 +145,7 @@ def check_templates(db: Session) -> HealthCheckResult:
         status=overall_status,
         summary=summary,
         details={
-            "purposes": details_by_purpose,
+            "document_types": details_by_document_type,
         },
     )
 

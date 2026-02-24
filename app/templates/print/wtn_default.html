@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Waste Transfer Note</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 15mm;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        color: #1e293b;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 10.5px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        max-width: 210mm;
+        margin: 0 auto;
+        padding: 0;
+      }
+
+      .text-strong {
+        font-weight: 600;
+        color: #0f172a;
+      }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 24px;
+        padding-bottom: 20px;
+        border-bottom: 2px solid #f1f5f9;
+      }
+
+      .company-section {
+        max-width: 60%;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .company-logo {
+        display: block;
+        height: 48px;
+        width: auto;
+        margin-bottom: 12px;
+        object-fit: contain;
+        object-position: left;
+      }
+
+      .company-name {
+        font-size: 18px;
+        font-weight: 600;
+        color: #0f172a;
+        margin-bottom: 6px;
+        letter-spacing: -0.02em;
+      }
+
+      .company-line {
+        color: #475569;
+        margin: 2px 0;
+        font-size: 10px;
+      }
+
+      .document-title {
+        font-size: 28px;
+        font-weight: 600;
+        color: #0f172a;
+        margin-bottom: 12px;
+        letter-spacing: -0.02em;
+        line-height: 1;
+        text-align: right;
+      }
+
+      .meta-grid {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 8px 16px;
+        align-items: baseline;
+        margin-bottom: 20px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 16px;
+      }
+
+      .meta-label {
+        color: #64748b;
+        font-weight: 500;
+        min-width: 140px;
+      }
+
+      .meta-value {
+        font-weight: 600;
+        color: #0f172a;
+      }
+
+      .section {
+        margin-top: 20px;
+      }
+
+      .section-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: #334155;
+        margin: 0 0 8px 0;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+
+      .section-content {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 16px;
+      }
+
+      .details-grid {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 8px 16px;
+        align-items: baseline;
+      }
+
+      .detail-label {
+        color: #475569;
+        font-weight: 500;
+        min-width: 140px;
+      }
+
+      .detail-value {
+        color: #0f172a;
+        font-weight: 500;
+      }
+
+      .detail-subvalue {
+        display: block;
+        margin-top: 4px;
+        color: #475569;
+        font-weight: 400;
+      }
+
+      .signatures {
+        margin-top: 40px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 30px;
+      }
+
+      .signature-item {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .signature-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: #334155;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
+
+      .signature-area {
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        background: #f8fafc;
+        min-height: 100px;
+        margin-bottom: 12px;
+      }
+
+      .print-name-row {
+        display: flex;
+        align-items: center;
+        font-size: 10px;
+        color: #334155;
+        margin-bottom: 8px;
+        width: 100%;
+      }
+
+      .print-name-label {
+        color: #64748b;
+        font-weight: 400;
+        white-space: nowrap;
+        margin-right: 4px;
+      }
+
+      .print-name-line {
+        flex: 1;
+        border-bottom: 1px solid #94a3b8;
+        height: 1em;
+        margin-left: 2px;
+      }
+
+      .date-row {
+        font-size: 10px;
+        color: #334155;
+        display: flex;
+        align-items: center;
+        border-top: none;
+        padding-top: 4px;
+      }
+
+      .date-label {
+        color: #64748b;
+        font-weight: 400;
+        margin-right: 8px;
+        white-space: nowrap;
+      }
+
+      .date-digits {
+        font-family: 'JetBrains Mono', 'SF Mono', monospace;
+        color: #0f172a;
+        letter-spacing: 2px;
+        font-weight: 500;
+        margin: 0 2px;
+      }
+
+      .date-slash {
+        font-family: 'JetBrains Mono', 'SF Mono', monospace;
+        color: #64748b;
+        margin: 0 2px;
+      }
+
+      .notes-section {
+        margin-top: 40px;
+      }
+
+      .notes-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: #334155;
+        margin: 0 0 8px 0;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+
+      .notes-container {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 16px;
+      }
+
+      .notes-lines {
+        width: 100%;
+      }
+
+      .note-line {
+        width: 100%;
+        border-bottom: 1px solid #cbd5e1;
+        margin-bottom: 16px;
+        padding-bottom: 4px;
+      }
+
+      .note-line:last-child {
+        margin-bottom: 0;
+      }
+
+      .footer-note {
+        margin-top: 40px;
+        padding-top: 16px;
+        border-top: 1px solid #e2e8f0;
+        text-align: center;
+        color: #64748b;
+        font-size: 9px;
+        font-style: italic;
+      }
+    </style>
+  </head>
+  <body>
+    {% set p = payload or {} %}
+    {% set company_name_value = company_name or (company.name if company else "") or "Your Company Name" %}
+    {% set company_lines_value = company_lines or (company.lines if company else []) or [] %}
+    {% set logo_src = p.logo_data_uri or "" %}
+
+    <div class="header">
+      <div class="company-section">
+        {% if logo_src %}
+          <img src="{{ logo_src }}" alt="{{ company_name_value }}" class="company-logo" />
+        {% endif %}
+        <div class="company-name">{{ company_name_value }}</div>
+        {% for line in company_lines_value %}
+          <div class="company-line">{{ line }}</div>
+        {% endfor %}
+      </div>
+
+      <div class="invoice-section">
+        <div class="document-title">WASTE TRANSFER NOTE</div>
+      </div>
+    </div>
+
+    <div class="meta-grid">
+      <span class="meta-label">WTN Reference:</span>
+      <span class="meta-value">{{ p.wtn_no or "-" }}</span>
+
+      <span class="meta-label">Date / Time:</span>
+      <span class="meta-value">{{ p.datetime or "-" }}</span>
+
+      <span class="meta-label">Customer:</span>
+      <span class="meta-value">{{ p.customer_name or "-" }}</span>
+
+      <span class="meta-label">Carrier / Haulier:</span>
+      <span class="meta-value">{{ p.haulier_name or p.carrier_name or "-" }}</span>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Waste Details</div>
+      <div class="section-content">
+        <div class="details-grid">
+          <span class="detail-label">Waste Description:</span>
+          <span class="detail-value">{{ p.waste_description or p.product_description or "-" }}</span>
+
+          <span class="detail-label">EWC Code:</span>
+          <span class="detail-value">
+            {{ p.ewc_code or "-" }}
+            {% if p.ewc_description and p.ewc_description != "-" %}
+              <span class="detail-subvalue">{{ p.ewc_description }}</span>
+            {% endif %}
+          </span>
+
+          <span class="detail-label">Quantity / Weight:</span>
+          <span class="detail-value">
+            {{ p.quantity_net_kg_display or p.net_kg_display or "-" }}
+            {% if p.quantity_tonnes_display and p.quantity_tonnes_display != "-" %}
+              ({{ p.quantity_tonnes_display }} tonnes)
+            {% endif %}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Transfer Details</div>
+      <div class="section-content">
+        <div class="details-grid">
+          <span class="detail-label">Origin:</span>
+          <span class="detail-value">{{ p.origin_site or "-" }}</span>
+
+          <span class="detail-label">Destination:</span>
+          <span class="detail-value">{{ p.destination_site or p.destination_name or "-" }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="signatures">
+      <div class="signature-item">
+        <div class="signature-label">PRODUCER SIGNATURE</div>
+        <div class="signature-area"></div>
+        <div class="print-name-row">
+          <span class="print-name-label">Print name:</span>
+          <span class="print-name-line"></span>
+        </div>
+        <div class="date-row">
+          <span class="date-label">Date:</span>
+          <span class="date-digits">__</span>
+          <span class="date-slash">/</span>
+          <span class="date-digits">__</span>
+          <span class="date-slash">/</span>
+          <span class="date-digits">____</span>
+        </div>
+      </div>
+
+      <div class="signature-item">
+        <div class="signature-label">CARRIER SIGNATURE</div>
+        <div class="signature-area"></div>
+        <div class="print-name-row">
+          <span class="print-name-label">Print name:</span>
+          <span class="print-name-line"></span>
+        </div>
+        <div class="date-row">
+          <span class="date-label">Date:</span>
+          <span class="date-digits">__</span>
+          <span class="date-slash">/</span>
+          <span class="date-digits">__</span>
+          <span class="date-slash">/</span>
+          <span class="date-digits">____</span>
+        </div>
+      </div>
+
+      <div class="signature-item">
+        <div class="signature-label">RECEIVER SIGNATURE</div>
+        <div class="signature-area"></div>
+        <div class="print-name-row">
+          <span class="print-name-label">Print name:</span>
+          <span class="print-name-line"></span>
+        </div>
+        <div class="date-row">
+          <span class="date-label">Date:</span>
+          <span class="date-digits">__</span>
+          <span class="date-slash">/</span>
+          <span class="date-digits">__</span>
+          <span class="date-slash">/</span>
+          <span class="date-digits">____</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="notes-section">
+      <div class="notes-title">ADDITIONAL NOTES</div>
+      <div class="notes-container">
+        <div class="notes-lines">
+          <div class="note-line"></div>
+          <div class="note-line"></div>
+          <div class="note-line"></div>
+          <div class="note-line"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-note">
+      This is a legally binding waste transfer note. Please retain for your records.
+    </div>
+  </body>
+</html>

@@ -10,7 +10,9 @@ from app.models import (
     DirectionEnum,
     Driver,
     Haulier,
+    PrintDestination,
     PrintJob,
+    PrintTemplate,
     Product,
     Ticket,
     TicketStatusEnum,
@@ -19,6 +21,38 @@ from app.models import (
     Vehicle,
 )
 from app.services.print_payload import build_ticket_print_payload
+
+
+def _set_ticket_browser_destination(
+    db_session,
+    *,
+    code: str,
+    template_format: str,
+    content: str,
+) -> None:
+    template = PrintTemplate(
+        code=code,
+        description=code,
+        document_type="TICKET",
+        format=template_format,
+        content=content,
+        is_active=True,
+    )
+    db_session.add(template)
+    db_session.flush()
+
+    destination = PrintDestination(
+        name=f"{code} Destination",
+        description=f"{code} Destination",
+        document_type="TICKET",
+        template_id=template.id,
+        delivery_type="PRINT_LOCAL_BROWSER",
+        delivery_config={},
+        is_default=True,
+        is_active=True,
+    )
+    db_session.add(destination)
+    db_session.commit()
 
 
 def test_build_ticket_print_payload_sale_fields(db_session):
@@ -57,14 +91,10 @@ def test_build_ticket_print_payload_sale_fields(db_session):
     assert payload["ticket_no"] == "T-PRINT-SALE-1"
     assert payload["transaction_type"] == "SALE"
     assert payload["is_sale"] is True
-    assert payload["customer"]["name"] == "Print Sale Customer"
-    assert payload["vehicle"]["registration"] == "PRINT123"
-    assert payload["product"]["code"] == "P-PRINT-SALE"
-    assert "branding" in payload
-    assert "logo_data_uri" in payload["branding"]
-    assert "weights" in payload
-    assert "logistics" in payload
-    assert "compliance" in payload
+    assert payload["customer_name"] == "Print Sale Customer"
+    assert payload["vehicle_reg"] == "PRINT123"
+    assert payload["product_code"] == "P-PRINT-SALE"
+    assert "logo_data_uri" in payload
 
 
 def test_build_ticket_print_payload_uses_company_uploaded_logo(
@@ -100,7 +130,7 @@ def test_build_ticket_print_payload_uses_company_uploaded_logo(
 
     payload = build_ticket_print_payload(db_session, ticket)
 
-    assert payload["branding"]["logo_data_uri"].startswith("data:image/png;base64,")
+    assert payload["logo_data_uri"].startswith("data:image/png;base64,")
 
 
 def test_build_ticket_print_payload_waste_fields(db_session):
@@ -140,11 +170,10 @@ def test_build_ticket_print_payload_waste_fields(db_session):
 
     assert payload["transaction_type"] == "WASTEIN"
     assert payload["is_waste"] is True
-    assert payload["logistics"]["haulier"] == "Print Haulier"
-    assert payload["logistics"]["driver"] == "Print Driver"
-    assert payload["logistics"]["container"] == "Print Container"
-    assert payload["logistics"]["destination"] == "Print Destination"
-    assert payload["compliance"]["ewc_code_display"] == "17 09 04"
+    assert payload["haulier_name"] == "Print Haulier"
+    assert payload["driver_name"] == "Print Driver"
+    assert payload["destination_name"] == "Print Destination"
+    assert payload["ewc_code"] == "17 09 04"
 
 
 def test_build_ticket_print_payload_walk_in_fields(db_session):
@@ -177,9 +206,9 @@ def test_build_ticket_print_payload_walk_in_fields(db_session):
 
     payload = build_ticket_print_payload(db_session, ticket)
 
-    assert payload["walk_in_sale"] is True
-    assert payload["customer"]["name"] == ""
-    assert payload["dont_invoice"] is True
+    assert payload["is_sale"] is True
+    assert payload["customer_name"] == ""
+    assert payload["ticket_no"] == "T-PRINT-WALKIN-1"
 
 
 def test_ticket_print_thermal_route_contains_key_fields(client, db_session):
@@ -213,14 +242,26 @@ def test_ticket_print_thermal_route_contains_key_fields(client, db_session):
     db_session.add(ticket)
     db_session.commit()
 
-    response = client.get(f"/tickets/{ticket.id}/print/thermal")
+    _set_ticket_browser_destination(
+        db_session,
+        code="TICKET_ROUTE_TEXT",
+        template_format="TEXT",
+        content=(
+            "Ticket: {{ payload.ticket_no }}\n"
+            "Transaction: {{ payload.transaction_type }}\n"
+            "Vehicle: {{ payload.vehicle_reg }}\n"
+            "Customer: {{ payload.customer_name }}"
+        ),
+    )
+
+    response = client.get(f"/tickets/{ticket.id}/preview")
 
     assert response.status_code == 200
-    assert "text/plain" in response.headers.get("content-type", "")
+    assert "text/html" in response.headers.get("content-type", "")
     assert "Ticket: T-PRINT-ROUTE-1" in response.text
     assert "Transaction: SALE" in response.text
-    assert "Registration: RTE123" in response.text
-    assert "Name: Print Route Customer" in response.text
+    assert "Vehicle: RTE123" in response.text
+    assert "Customer: Print Route Customer" in response.text
 
 
 def test_ticket_print_a4_route_renders_html_preview(client, db_session):
@@ -236,15 +277,22 @@ def test_ticket_print_a4_route_renders_html_preview(client, db_session):
     db_session.add(ticket)
     db_session.commit()
 
-    response = client.get(f"/tickets/{ticket.id}/print/a4")
+    _set_ticket_browser_destination(
+        db_session,
+        code="TICKET_ROUTE_HTML",
+        template_format="HTML",
+        content=(
+            "<html><body><div class=\"ticket-header\">"
+            "<h1>Ticket {{ payload.ticket_no }}</h1>"
+            "</div></body></html>"
+        ),
+    )
+
+    response = client.get(f"/tickets/{ticket.id}/preview")
 
     assert response.status_code == 200
     assert "text/html" in response.headers.get("content-type", "")
     assert "ticket-header" in response.text
-    assert (
-        'class="ticket-logo"' in response.text
-        or "ticket-logo-placeholder" in response.text
-    )
     assert "<h1>Ticket T-PRINT-A4-1</h1>" in response.text
 
 
@@ -261,10 +309,9 @@ def test_ticket_print_thermal_route_requires_complete(client, db_session):
     db_session.add(ticket)
     db_session.commit()
 
-    response = client.get(f"/tickets/{ticket.id}/print/thermal")
+    response = client.get(f"/tickets/{ticket.id}/preview")
 
     assert response.status_code == 400
-    assert "Ticket must be complete to print." in response.text
 
 
 def test_ticket_print_a4_route_requires_complete(client, db_session):
@@ -280,10 +327,9 @@ def test_ticket_print_a4_route_requires_complete(client, db_session):
     db_session.add(ticket)
     db_session.commit()
 
-    response = client.get(f"/tickets/{ticket.id}/print/a4")
+    response = client.get(f"/tickets/{ticket.id}/preview")
 
     assert response.status_code == 400
-    assert "Ticket must be complete to print." in response.text
 
 
 def test_ticket_receipt_route_returns_200_for_valid_ticket(client, db_session):
@@ -396,10 +442,10 @@ def test_ticket_receipt_route_creates_print_job_log_entry(client, db_session):
 
     job = (
         db_session.query(PrintJob)
-        .filter(PrintJob.ticket_id == ticket.id, PrintJob.purpose == "RECEIPT_THERMAL")
+        .filter(PrintJob.ticket_id == ticket.id, PrintJob.document_type == "TICKET")
         .order_by(PrintJob.id.desc())
         .first()
     )
     assert job is not None
-    assert job.transport_mode == "LOCAL_BROWSER"
+    assert job.delivery_type == "PRINT_LOCAL_BROWSER"
     assert job.status == "SENT"

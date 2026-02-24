@@ -6,7 +6,14 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.config import settings
-from app.models import CompanySetting, Customer, Invoice, InvoiceLine
+from app.models import (
+    CompanySetting,
+    Customer,
+    Invoice,
+    InvoiceLine,
+    PrintDestination,
+    PrintTemplate,
+)
 from app.services.pdf import render_invoice_pdf_html
 
 
@@ -48,6 +55,54 @@ def _make_invoice_with_line(db_session) -> Invoice:
     db_session.add(line)
     db_session.commit()
     return invoice
+
+
+def _ensure_default_invoice_destination(db_session) -> None:
+    template = db_session.execute(
+        select(PrintTemplate).where(PrintTemplate.code == "COMPANY_LOGO_INVOICE_TEMPLATE")
+    ).scalars().first()
+    if template is None:
+        template = PrintTemplate(
+            code="COMPANY_LOGO_INVOICE_TEMPLATE",
+            description="Company logo invoice template",
+            document_type="INVOICE",
+            format="HTML",
+            content=(
+                "<html><body>"
+                "<h1>{{ company.name }}</h1>"
+                "{% if company.logo_url %}<img src=\"{{ company.logo_url }}\" />{% endif %}"
+                "<div>{{ invoice.invoice_no }}</div>"
+                "</body></html>"
+            ),
+            is_active=True,
+        )
+        db_session.add(template)
+        db_session.flush()
+
+    destination = db_session.execute(
+        select(PrintDestination).where(
+            PrintDestination.document_type == "INVOICE",
+            PrintDestination.is_default.is_(True),
+            PrintDestination.is_active.is_(True),
+        )
+    ).scalars().first()
+    if destination is None:
+        destination = PrintDestination(
+            name="Company Logo Invoice Destination",
+            description="Default invoice destination for logo tests",
+            document_type="INVOICE",
+            template_id=template.id,
+            delivery_type="PRINT_LOCAL_BROWSER",
+            delivery_config={},
+            is_default=True,
+            is_active=True,
+        )
+        db_session.add(destination)
+    else:
+        destination.template_id = template.id
+        destination.is_active = True
+        destination.is_default = True
+    db_session.commit()
 
 
 def test_company_logo_upload_persists_file_and_path(client, db_session, monkeypatch, tmp_path):
@@ -96,6 +151,7 @@ def test_company_logo_upload_persists_file_and_path(client, db_session, monkeypa
 
 
 def test_invoice_pdf_html_contains_company_logo_url_when_set(db_session):
+    _ensure_default_invoice_destination(db_session)
     db_session.add(
         CompanySetting(
             name="Acme Logo Co",
@@ -116,6 +172,7 @@ def test_invoice_pdf_html_embeds_uploaded_company_logo_as_data_uri(
     monkeypatch,
     tmp_path,
 ):
+    _ensure_default_invoice_destination(db_session)
     upload_dir = tmp_path / "uploads" / "company"
     upload_dir.mkdir(parents=True, exist_ok=True)
     logo_file = upload_dir / "logo-inline.png"

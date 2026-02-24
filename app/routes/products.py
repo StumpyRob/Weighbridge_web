@@ -34,7 +34,7 @@ templates = Jinja2Templates(directory="app/templates")
 UNIT_TYPES = ("WEIGHT", "COUNT")
 SALE_TYPES = ("COUNT", "WEIGHT")
 UNIT_NAME_MAX_LEN = NAME_MAX
-SYSTEM_WEIGHT_UNIT_NAME = "tonnes"
+SYSTEM_WEIGHT_UNIT_NAME = "Tonnes"
 SYSTEM_COUNT_UNIT_NAME = "Each"
 SYSTEM_TAX_RATE_STANDARD_CODE = "Standard (20%) \u2013 UK VAT"
 SYSTEM_TAX_RATE_ZERO_CODE = "Zero (0%)"
@@ -431,18 +431,21 @@ def units_list(
     hide_inactive: int | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    _ensure_system_units(db)
     resolved_hide = _resolve_hide_inactive(request, hide_inactive)
     error = None
     error_code = request.query_params.get("error")
     if error_code == "system":
-        error = "System units (kg/tonnes) are read-only."
+        error = "System units (KG/Tonnes) are read-only."
+    elif error_code == "in_use":
+        error = "Unit is in use by one or more products and cannot be deleted."
     query = select(Unit)
     if resolved_hide:
         query = query.where(Unit.is_active.is_(True))
     if q:
         like = f"%{q.lower()}%"
         query = query.where(func.lower(Unit.name).like(like))
-    items = db.execute(query.order_by(Unit.name.asc())).scalars().all()
+    items = sorted(list(db.execute(query).scalars()), key=_unit_list_order_key)
     return templates.TemplateResponse(request, 
         "lookups/list.html",
         {
@@ -488,7 +491,7 @@ async def units_create(
     if not error and unit_type not in UNIT_TYPES:
         error = "Unit type must be WEIGHT or COUNT."
     if not error and unit_type == "WEIGHT":
-        error = "Weight units are system-defined and cannot be created."
+        error = "Weight units are system-defined (KG/Tonnes) and cannot be created."
     if error:
         return templates.TemplateResponse(request, 
             "lookups/form.html",
@@ -568,7 +571,7 @@ async def units_update(
     if not error and unit_type not in UNIT_TYPES:
         error = "Unit type must be WEIGHT or COUNT."
     if not error and unit_type == "WEIGHT":
-        error = "Weight units are system-defined and cannot be created."
+        error = "Weight units are system-defined (KG/Tonnes) and cannot be created."
     if error:
         return templates.TemplateResponse(request, 
             "lookups/form.html",
@@ -636,6 +639,42 @@ def units_reactivate(
     unit.is_active = True
     unit.updated_at = utcnow()
     db.commit()
+    return RedirectResponse(url="/products/units?saved=1", status_code=303)
+
+
+@router.post("/products/units/{unit_id}/delete", response_class=HTMLResponse)
+def units_delete(
+    unit_id: int, request: Request, db: Session = Depends(get_db)
+) -> HTMLResponse:
+    unit = db.get(Unit, unit_id)
+    if not unit:
+        return templates.TemplateResponse(
+            request,
+            "lookups/not_found.html",
+            {
+                "request": request,
+                "entity": "Unit",
+                "entity_id": unit_id,
+                "base_path": "/products/units",
+            },
+            status_code=404,
+        )
+    if unit.unit_type == "WEIGHT":
+        return RedirectResponse(url="/products/units?error=system", status_code=303)
+
+    in_use = db.execute(
+        select(func.count(Product.id)).where(Product.unit_id == unit.id)
+    ).scalar_one()
+    if in_use:
+        return RedirectResponse(url="/products/units?error=in_use", status_code=303)
+
+    try:
+        db.delete(unit)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return RedirectResponse(url="/products/units?error=in_use", status_code=303)
+
     return RedirectResponse(url="/products/units?saved=1", status_code=303)
 
 
@@ -1197,8 +1236,8 @@ def _ensure_system_units(db: Session) -> dict[str, Unit]:
         updated = True
         return unit
 
-    kg = get_or_create("kg", "WEIGHT")
-    tonnes = get_or_create("tonnes", "WEIGHT", aliases=["tonne"])
+    kg = get_or_create("KG", "WEIGHT", aliases=["kg"])
+    tonnes = get_or_create("Tonnes", "WEIGHT", aliases=["tonne", "tonnes"])
     each = get_or_create(SYSTEM_COUNT_UNIT_NAME, "COUNT")
 
     if updated:
@@ -1375,6 +1414,19 @@ def _normalize_unit_name(raw: str | None) -> str:
     if raw is None:
         return ""
     return re.sub(r"\s+", " ", str(raw).strip())
+
+
+def _unit_list_order_key(unit: Unit) -> tuple[int, str, int]:
+    normalized_name = normalize_unit_name(str(unit.name or ""))
+    is_system_weight = (
+        str(unit.unit_type or "").strip().upper() == "WEIGHT"
+        and normalized_name in {"kg", "tonne", "tonnes"}
+    )
+    return (
+        1 if is_system_weight else 0,
+        normalized_name,
+        int(unit.id or 0),
+    )
 
 
 def _normalize_unit_name_for_type(raw: str | None, unit_type: str) -> str:

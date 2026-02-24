@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models import (
     PaymentMethod,
+    PrintDestination,
     PrintTemplate,
-    PrintProfile,
     Product,
     TaxRate,
     Unit,
@@ -34,8 +34,8 @@ VOID_REASON_TYPE_INVOICE = "INVOICE"
 
 
 SEED_UNITS = [
-    {"name": "kg", "unit_type": "WEIGHT"},
-    {"name": "tonnes", "unit_type": "WEIGHT"},
+    {"name": "KG", "unit_type": "WEIGHT"},
+    {"name": "Tonnes", "unit_type": "WEIGHT"},
     {"name": "Each", "unit_type": "COUNT"},
     {"name": "Load", "unit_type": "COUNT"},
 ]
@@ -91,16 +91,13 @@ SEED_VEHICLE_TYPES = [
     {"code": "Other", "description": "Other"},
 ]
 
-PRINT_PROFILE_PURPOSE_TICKET_THERMAL = "TICKET_THERMAL"
-PRINT_PROFILE_PURPOSE_TICKET_A4 = "TICKET_A4"
-PRINT_PROFILE_PURPOSE_RECEIPT_THERMAL = "RECEIPT_THERMAL"
-PRINT_PROFILE_PURPOSE_INVOICE_A4 = "INVOICE_A4"
-PRINT_PROFILE_PURPOSE_WTN_A4 = "WTN_A4"
-PRINT_TRANSPORT_NETWORK_RAW_9100 = "NETWORK_RAW_9100"
-PRINT_TRANSPORT_USB_ESC_POS = "USB_ESC_POS"
-PRINT_TRANSPORT_CUPS = "CUPS"
-PRINT_TRANSPORT_LOCAL_BROWSER = "LOCAL_BROWSER"
-PRINT_TRANSPORT_LOCAL_NODE_HTTP = "LOCAL_NODE_HTTP"
+PRINT_DOCUMENT_TYPE_TICKET = "TICKET"
+PRINT_DOCUMENT_TYPE_INVOICE = "INVOICE"
+PRINT_DOCUMENT_TYPE_WTN = "WTN"
+PRINT_DELIVERY_LOCAL_BROWSER = "PRINT_LOCAL_BROWSER"
+PRINT_DELIVERY_NETWORK_RAW_9100 = "PRINT_NETWORK_RAW_9100"
+PRINT_DELIVERY_NODE_HTTP = "PRINT_NODE_HTTP"
+PRINT_DELIVERY_EMAIL_PDF = "EMAIL_PDF"
 
 
 def _read_builtin_print_template(filename: str, fallback: str) -> str:
@@ -116,46 +113,80 @@ def _read_builtin_print_template(filename: str, fallback: str) -> str:
 
 SEED_PRINT_TEMPLATES = [
     {
-        "code": "TICKET_THERMAL_DEFAULT",
-        "description": "Default thermal ticket template",
-        "purpose": PRINT_PROFILE_PURPOSE_TICKET_THERMAL,
-        "content_type": "TEXT",
+        "code": "TICKET_THERMAL_SYSTEM",
+        "legacy_codes": ("TICKET_DEFAULT",),
+        "description": "Thermal Ticket (System)",
+        "document_type": PRINT_DOCUMENT_TYPE_TICKET,
+        "format": "TEXT",
+        "is_system": True,
         "content": _read_builtin_print_template(
             "thermal_default.txt",
             "Ticket: {{ payload.ticket_no }}",
         ),
     },
     {
-        "code": "TICKET_A4_DEFAULT",
-        "description": "Default A4 ticket template",
-        "purpose": PRINT_PROFILE_PURPOSE_TICKET_A4,
-        "content_type": "HTML",
+        "code": "TICKET_A4_SYSTEM",
+        "description": "A4 Ticket (System)",
+        "document_type": PRINT_DOCUMENT_TYPE_TICKET,
+        "format": "HTML",
+        "is_system": True,
         "content": _read_builtin_print_template(
             "a4_default.html",
             "<html><body><h1>Ticket {{ payload.ticket_no }}</h1></body></html>",
         ),
     },
+    {
+        "code": "INVOICE_SYSTEM",
+        "legacy_codes": ("invoice_default", "invoice_a4_default", "inv_a4_standard"),
+        "description": "Invoice (System)",
+        "document_type": PRINT_DOCUMENT_TYPE_INVOICE,
+        "format": "HTML",
+        "is_system": True,
+        "content": _read_builtin_print_template(
+            "../invoices/pdf.html",
+            "<html><body><h1>Invoice {{ payload.invoice_no }}</h1></body></html>",
+        ),
+    },
+    {
+        "code": "WTN_SYSTEM",
+        "legacy_codes": ("WTN_DEFAULT",),
+        "description": "Waste Transfer Note (System)",
+        "document_type": PRINT_DOCUMENT_TYPE_WTN,
+        "format": "HTML",
+        "is_system": True,
+        "content": _read_builtin_print_template(
+            "wtn_default.html",
+            "<html><body><h1>Waste Transfer Note</h1><p>Reference: {{ payload.wtn_no | default('-', true) }}</p></body></html>",
+        ),
+    },
 ]
 
-SEED_PRINT_PROFILES = [
+SEED_PRINT_DESTINATIONS = [
     {
-        "code": "THERMAL_DEFAULT",
-        "description": "Default thermal ticket print profile",
-        "purpose": PRINT_PROFILE_PURPOSE_TICKET_THERMAL,
-        "template_code": "TICKET_THERMAL_DEFAULT",
-        "template_name": "thermal_default.txt",
-        "transport_mode": PRINT_TRANSPORT_NETWORK_RAW_9100,
-        "transport_config": {"host": "127.0.0.1", "port": 9100},
+        "name": "Ticket Printer",
+        "description": "Default ticket destination",
+        "document_type": PRINT_DOCUMENT_TYPE_TICKET,
+        "template_code": "TICKET_A4_SYSTEM",
+        "delivery_type": PRINT_DELIVERY_LOCAL_BROWSER,
+        "delivery_config": {},
         "is_default": True,
     },
     {
-        "code": "A4_DEFAULT",
-        "description": "Default A4 ticket print profile",
-        "purpose": PRINT_PROFILE_PURPOSE_TICKET_A4,
-        "template_code": "TICKET_A4_DEFAULT",
-        "template_name": "a4_default.html",
-        "transport_mode": PRINT_TRANSPORT_CUPS,
-        "transport_config": {"printer_name": "default"},
+        "name": "Invoice Browser Print",
+        "description": "Default invoice destination",
+        "document_type": PRINT_DOCUMENT_TYPE_INVOICE,
+        "template_code": "INVOICE_SYSTEM",
+        "delivery_type": PRINT_DELIVERY_LOCAL_BROWSER,
+        "delivery_config": {},
+        "is_default": True,
+    },
+    {
+        "name": "WTN Default",
+        "description": "Default WTN destination",
+        "document_type": PRINT_DOCUMENT_TYPE_WTN,
+        "template_code": "WTN_SYSTEM",
+        "delivery_type": PRINT_DELIVERY_LOCAL_BROWSER,
+        "delivery_config": {},
         "is_default": True,
     },
 ]
@@ -170,7 +201,7 @@ def seed_units() -> int:
             if entry.get("unit_type") == "WEIGHT":
                 if not is_allowed_weight_unit(entry_name):
                     raise ValueError(
-                        f"Invalid seeded WEIGHT unit: {entry_name}. Only kg/tonnes are allowed."
+                        f"Invalid seeded WEIGHT unit: {entry_name}. Only KG/Tonnes are allowed."
                     )
                 canonical = canonical_weight_unit(entry_name)
                 if canonical:
@@ -478,17 +509,16 @@ def seed_vehicle_types(session: Session | None = None) -> int:
     return created
 
 
-def seed_print_profiles(session: Session | None = None) -> int:
+def seed_print_destinations(session: Session | None = None) -> int:
     now = utcnow()
 
     def seed_rows(target_session: Session) -> tuple[int, bool]:
         created = 0
         dirty = False
-        for entry in SEED_PRINT_PROFILES:
-            code = entry["code"].strip()
+        for entry in SEED_PRINT_DESTINATIONS:
+            name = entry["name"].strip()
             description = (entry.get("description") or "").strip() or None
-            purpose = (entry.get("purpose") or "").strip().upper()
-            template_name = (entry.get("template_name") or "").strip()
+            document_type = (entry.get("document_type") or "").strip().upper()
             template_code = (entry.get("template_code") or "").strip()
             template = None
             if template_code:
@@ -497,38 +527,54 @@ def seed_print_profiles(session: Session | None = None) -> int:
                         func.lower(PrintTemplate.code) == template_code.lower()
                     )
                 ).scalar_one_or_none()
-            template_id = template.id if template else None
-            transport_mode = (entry.get("transport_mode") or "").strip().upper()
-            transport_config = dict(entry.get("transport_config") or {})
+            if template is None:
+                continue
+            template_id = template.id
+            delivery_type = (entry.get("delivery_type") or "").strip().upper()
+            delivery_config = dict(entry.get("delivery_config") or {})
             is_default = bool(entry.get("is_default"))
+            active_default = target_session.execute(
+                select(PrintDestination).where(
+                    PrintDestination.document_type == document_type,
+                    PrintDestination.is_default.is_(True),
+                    PrintDestination.is_active.is_(True),
+                )
+            ).scalar_one_or_none()
             exists = target_session.execute(
-                select(PrintProfile).where(func.lower(PrintProfile.code) == code.lower())
+                select(PrintDestination).where(
+                    func.lower(PrintDestination.name) == name.lower()
+                )
             ).scalar_one_or_none()
             if exists:
+                effective_is_default = is_default
+                if (
+                    is_default
+                    and active_default is not None
+                    and int(active_default.id) != int(exists.id)
+                ):
+                    # Respect existing defaults in configured environments.
+                    effective_is_default = False
                 updated = False
-                if exists.code != code:
-                    exists.code = code
+                if exists.name != name:
+                    exists.name = name
                     updated = True
                 if exists.description != description:
                     exists.description = description
                     updated = True
-                if exists.purpose != purpose:
-                    exists.purpose = purpose
+                if exists.document_type != document_type:
+                    exists.document_type = document_type
                     updated = True
                 if exists.template_id != template_id:
                     exists.template_id = template_id
                     updated = True
-                if exists.template_name != template_name:
-                    exists.template_name = template_name
+                if exists.delivery_type != delivery_type:
+                    exists.delivery_type = delivery_type
                     updated = True
-                if exists.transport_mode != transport_mode:
-                    exists.transport_mode = transport_mode
+                if (exists.delivery_config or {}) != delivery_config:
+                    exists.delivery_config = delivery_config
                     updated = True
-                if (exists.transport_config or {}) != transport_config:
-                    exists.transport_config = transport_config
-                    updated = True
-                if bool(exists.is_default) != is_default:
-                    exists.is_default = is_default
+                if bool(exists.is_default) != effective_is_default:
+                    exists.is_default = effective_is_default
                     updated = True
                 if not exists.is_active:
                     exists.is_active = True
@@ -538,15 +584,18 @@ def seed_print_profiles(session: Session | None = None) -> int:
                     dirty = True
                 continue
 
+            if is_default and active_default is not None:
+                # Default exists already for this document type; do not duplicate.
+                continue
+
             target_session.add(
-                PrintProfile(
-                    code=code,
+                PrintDestination(
+                    name=name,
                     description=description,
-                    purpose=purpose,
+                    document_type=document_type,
                     template_id=template_id,
-                    template_name=template_name,
-                    transport_mode=transport_mode,
-                    transport_config=transport_config,
+                    delivery_type=delivery_type,
+                    delivery_config=delivery_config,
                     is_default=is_default,
                     is_active=True,
                     created_at=now,
@@ -568,9 +617,11 @@ def seed_print_profiles(session: Session | None = None) -> int:
     if dirty:
         session.commit()
     return created
-
-
-def seed_print_templates(session: Session | None = None) -> int:
+def seed_print_templates(
+    session: Session | None = None,
+    *,
+    force_system_content: bool = False,
+) -> int:
     now = utcnow()
 
     def seed_rows(target_session: Session) -> tuple[int, bool]:
@@ -581,13 +632,44 @@ def seed_print_templates(session: Session | None = None) -> int:
             exists = target_session.execute(
                 select(PrintTemplate).where(func.lower(PrintTemplate.code) == code.lower())
             ).scalar_one_or_none()
+            if exists is None:
+                legacy_codes = [
+                    str(item).strip().lower()
+                    for item in list(entry.get("legacy_codes") or [])
+                    if str(item).strip()
+                ]
+                if legacy_codes:
+                    exists = target_session.execute(
+                        select(PrintTemplate).where(
+                            func.lower(PrintTemplate.code).in_(legacy_codes)
+                        )
+                    ).scalars().first()
             if exists:
                 updated = False
-                for field in ("description", "purpose", "content_type", "content"):
+                if str(exists.code or "").strip() != code:
+                    has_conflict = target_session.execute(
+                        select(PrintTemplate.id).where(
+                            func.lower(PrintTemplate.code) == code.lower(),
+                            PrintTemplate.id != exists.id,
+                        )
+                    ).first()
+                    if not has_conflict:
+                        exists.code = code
+                        updated = True
+                for field in ("description", "document_type", "format", "is_system"):
                     incoming = entry.get(field)
                     if getattr(exists, field) != incoming:
                         setattr(exists, field, incoming)
                         updated = True
+                incoming_content = entry.get("content")
+                should_force_content = bool(entry.get("is_system")) and force_system_content
+                if should_force_content:
+                    if exists.content != incoming_content:
+                        exists.content = incoming_content
+                        updated = True
+                elif not str(exists.content or "").strip():
+                    exists.content = incoming_content
+                    updated = True
                 if not exists.is_active:
                     exists.is_active = True
                     updated = True
@@ -599,9 +681,10 @@ def seed_print_templates(session: Session | None = None) -> int:
                 PrintTemplate(
                     code=code,
                     description=entry.get("description"),
-                    purpose=entry.get("purpose"),
-                    content_type=entry.get("content_type"),
+                    document_type=entry.get("document_type"),
+                    format=entry.get("format"),
                     content=entry.get("content"),
+                    is_system=bool(entry.get("is_system", False)),
                     is_active=True,
                     created_at=now,
                     updated_at=now,
@@ -624,6 +707,13 @@ def seed_print_templates(session: Session | None = None) -> int:
     return created
 
 
+def force_refresh_system_print_templates(session: Session | None = None) -> int:
+    """
+    Upsert canonical SYSTEM templates and forcibly overwrite repo-managed content.
+    """
+    return seed_print_templates(session, force_system_content=True)
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     created_units = seed_units()
@@ -632,8 +722,8 @@ def main() -> None:
     created_invoice_void_reasons = seed_invoice_void_reasons()
     created_payment_methods = seed_payment_methods()
     created_vehicle_types = seed_vehicle_types()
-    created_print_templates = seed_print_templates()
-    created_print_profiles = seed_print_profiles()
+    created_print_templates = force_refresh_system_print_templates()
+    created_print_destinations = seed_print_destinations()
     logger.info("Seeded units: %s", created_units)
     logger.info("Seeded tax rates: %s", created_tax_rates)
     logger.info("Seeded ticket void reasons: %s", created_ticket_void_reasons)
@@ -641,7 +731,7 @@ def main() -> None:
     logger.info("Seeded payment methods: %s", created_payment_methods)
     logger.info("Seeded vehicle types: %s", created_vehicle_types)
     logger.info("Seeded print templates: %s", created_print_templates)
-    logger.info("Seeded print profiles: %s", created_print_profiles)
+    logger.info("Seeded print destinations: %s", created_print_destinations)
 
 
 if __name__ == "__main__":

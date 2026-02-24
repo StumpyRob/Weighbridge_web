@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..models import PrintDestination, PrintJob, PrintTemplate
 from ..models.base import utcnow
-from ..models import PrintJob, PrintProfile, PrintTemplate
-from .print_render import load_template_source, render_from_content
+from .email_delivery import send_delivery_email
+from .print_render import render_from_content
 from .print_transport import PrintMode, send as send_print_job
 
 PRINT_JOB_STATUS_QUEUED = "QUEUED"
@@ -18,18 +18,16 @@ PRINT_JOB_STATUS_FAILED = "FAILED"
 
 PRINT_CONTENT_TYPE_TEXT = "TEXT"
 PRINT_CONTENT_TYPE_HTML = "HTML"
+PRINT_CONTENT_TYPE_PDF = "PDF"
 
-TRANSPORT_MODE_NETWORK_RAW_9100 = "NETWORK_RAW_9100"
-TRANSPORT_MODE_USB_ESC_POS = "USB_ESC_POS"
-TRANSPORT_MODE_CUPS = "CUPS"
-TRANSPORT_MODE_LOCAL_BROWSER = "LOCAL_BROWSER"
-TRANSPORT_MODE_LOCAL_NODE_HTTP = "LOCAL_NODE_HTTP"
+DOCUMENT_TYPE_TICKET = "TICKET"
+DOCUMENT_TYPE_INVOICE = "INVOICE"
+DOCUMENT_TYPE_WTN = "WTN"
 
-PRINT_PROFILE_PURPOSE_INVOICE_PDF = "INVOICE_PDF"
-LEGACY_PRINT_PROFILE_PURPOSE_INVOICE_A4 = "INVOICE_A4"
-DEFAULT_INVOICE_PDF_PROFILE_CODE = "INVOICE_PDF_DEFAULT"
-DEFAULT_INVOICE_PDF_PROFILE_DESCRIPTION = "Default invoice printer"
-DEFAULT_INVOICE_PDF_TEMPLATE_NAME = "invoice_default.html"
+DELIVERY_TYPE_PRINT_LOCAL_BROWSER = "PRINT_LOCAL_BROWSER"
+DELIVERY_TYPE_PRINT_NETWORK_RAW_9100 = "PRINT_NETWORK_RAW_9100"
+DELIVERY_TYPE_PRINT_NODE_HTTP = "PRINT_NODE_HTTP"
+DELIVERY_TYPE_EMAIL_PDF = "EMAIL_PDF"
 
 
 @dataclass(slots=True)
@@ -47,85 +45,91 @@ class PrintExecutionResult:
     browser_content_type: str | None = None
 
 
+def _normalize_document_type(value: str | None) -> str:
+    normalized = str(value or "").strip().upper()
+    if normalized in {DOCUMENT_TYPE_TICKET, DOCUMENT_TYPE_INVOICE, DOCUMENT_TYPE_WTN}:
+        return normalized
+    return DOCUMENT_TYPE_TICKET
+
+
 def _normalize_content_type(value: str | None) -> str:
     normalized = str(value or "").strip().upper()
     if normalized == PRINT_CONTENT_TYPE_HTML:
         return PRINT_CONTENT_TYPE_HTML
+    if normalized == PRINT_CONTENT_TYPE_PDF:
+        return PRINT_CONTENT_TYPE_PDF
     return PRINT_CONTENT_TYPE_TEXT
 
 
-def resolve_profile_transport(profile: PrintProfile) -> tuple[PrintMode, dict]:
-    transport_mode = str(profile.transport_mode or "").strip().upper()
-    transport_config = (
-        dict(profile.transport_config)
-        if isinstance(profile.transport_config, dict)
+def _normalize_delivery_type(value: str | None) -> str:
+    normalized = str(value or "").strip().upper()
+    mapping = {
+        "LOCAL_BROWSER": DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
+        "NETWORK_RAW_9100": DELIVERY_TYPE_PRINT_NETWORK_RAW_9100,
+        "LOCAL_NODE_HTTP": DELIVERY_TYPE_PRINT_NODE_HTTP,
+        DELIVERY_TYPE_PRINT_LOCAL_BROWSER: DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
+        DELIVERY_TYPE_PRINT_NETWORK_RAW_9100: DELIVERY_TYPE_PRINT_NETWORK_RAW_9100,
+        DELIVERY_TYPE_PRINT_NODE_HTTP: DELIVERY_TYPE_PRINT_NODE_HTTP,
+        DELIVERY_TYPE_EMAIL_PDF: DELIVERY_TYPE_EMAIL_PDF,
+    }
+    return mapping.get(normalized, DELIVERY_TYPE_PRINT_LOCAL_BROWSER)
+
+
+def resolve_destination_transport(destination: PrintDestination) -> tuple[PrintMode, dict]:
+    delivery_type = _normalize_delivery_type(destination.delivery_type)
+    delivery_config = (
+        dict(destination.delivery_config)
+        if isinstance(destination.delivery_config, dict)
         else {}
     )
-    if transport_mode == TRANSPORT_MODE_NETWORK_RAW_9100:
-        return "network", transport_config
-    if transport_mode == TRANSPORT_MODE_CUPS:
-        return "cups", transport_config
-    if transport_mode == TRANSPORT_MODE_USB_ESC_POS:
-        return "usb", transport_config
-    if transport_mode == TRANSPORT_MODE_LOCAL_BROWSER:
-        return "local_browser", transport_config
-    if transport_mode == TRANSPORT_MODE_LOCAL_NODE_HTTP:
-        return "local_node_http", transport_config
-    raise ValueError(f"Unsupported print transport mode: {profile.transport_mode}")
+    if delivery_type == DELIVERY_TYPE_PRINT_NETWORK_RAW_9100:
+        return "network", delivery_config
+    if delivery_type == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
+        return "local_browser", delivery_config
+    if delivery_type == DELIVERY_TYPE_PRINT_NODE_HTTP:
+        return "local_node_http", delivery_config
+    raise ValueError(f"Unsupported destination delivery type: {destination.delivery_type}")
 
 
-def _legacy_template_content_type(template_name: str) -> str:
+def resolve_destination_template(
+    db: Session,
+    destination: PrintDestination,
+) -> tuple[str, str, int, str]:
+    template = db.get(PrintTemplate, int(destination.template_id or 0))
+    if template is None:
+        raise ValueError("Destination template not found.")
+    if not bool(template.is_active):
+        raise ValueError("Destination template is inactive.")
+    if _normalize_document_type(template.document_type) != _normalize_document_type(
+        destination.document_type
+    ):
+        raise ValueError("Template document type does not match destination.")
+
     return (
-        PRINT_CONTENT_TYPE_HTML
-        if str(template_name or "").strip().lower().endswith(".html")
-        else PRINT_CONTENT_TYPE_TEXT
+        str(template.content or ""),
+        _normalize_content_type(template.format),
+        int(template.id),
+        str(template.code or template.description or f"Template {template.id}"),
     )
 
 
-def resolve_profile_template(db: Session, profile: PrintProfile) -> tuple[str, str, int | None, str]:
-    if profile.template_id:
-        template = db.get(PrintTemplate, profile.template_id)
-        if template is None:
-            raise ValueError("Profile template not found.")
-        return (
-            template.content,
-            _normalize_content_type(template.content_type),
-            template.id,
-            template.code,
-        )
-
-    template_name = str(profile.template_name or "").strip()
-    if not template_name:
-        raise ValueError("Profile template is not configured.")
-    content = load_template_source(template_name)
-    return (
-        content,
-        _legacy_template_content_type(template_name),
-        None,
-        template_name,
-    )
-
-
-def render_profile_content(
+def render_destination_content(
     db: Session,
     *,
     payload: dict[str, Any],
-    profile: PrintProfile,
+    destination: PrintDestination,
 ) -> RenderedPrint:
-    template_content, content_type, template_id, template_label = resolve_profile_template(
-        db, profile
+    template_content, content_type, template_id, template_label = resolve_destination_template(
+        db,
+        destination,
     )
-    rendered = render_from_content(payload, template_content)
+    rendered = render_from_content(payload, template_content, db=db)
     return RenderedPrint(
         rendered_content=rendered,
         content_type=content_type,
         template_id=template_id,
         template_label=template_label,
     )
-
-
-def _encode_rendered_content(rendered_content: str) -> bytes:
-    return rendered_content.encode("utf-8")
 
 
 def _serialized_bytes(job_bytes: bytes | None) -> str | None:
@@ -148,9 +152,7 @@ def _job_bytes_for_retry(job: PrintJob) -> tuple[bytes, str]:
 
 def _content_type_from_rendered(rendered_content: str) -> str:
     return _normalize_content_type(
-        PRINT_CONTENT_TYPE_HTML
-        if rendered_content.lstrip().startswith("<")
-        else PRINT_CONTENT_TYPE_TEXT
+        PRINT_CONTENT_TYPE_HTML if rendered_content.lstrip().startswith("<") else PRINT_CONTENT_TYPE_TEXT
     )
 
 
@@ -162,45 +164,64 @@ def _apply_job_delivery_success(job: PrintJob) -> None:
 
 def _apply_job_delivery_failure(job: PrintJob, exc: Exception) -> None:
     job.status = PRINT_JOB_STATUS_FAILED
-    job.last_error = str(exc) or "Print delivery failed."
+    job.last_error = str(exc) or "Delivery failed."
 
 
-def _snapshot_transport_config_for_job(mode: str, transport_config: dict) -> dict:
-    if str(mode or "").strip().upper() == TRANSPORT_MODE_LOCAL_BROWSER:
+def _snapshot_delivery_config_for_job(delivery_type: str, delivery_config: dict) -> dict:
+    normalized = _normalize_delivery_type(delivery_type)
+    if normalized == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
         return {}
-    return dict(transport_config or {})
+    return dict(delivery_config or {})
+
+
+def _delivery_type_to_send_mode(delivery_type: str) -> PrintMode:
+    normalized = _normalize_delivery_type(delivery_type)
+    if normalized == DELIVERY_TYPE_PRINT_NETWORK_RAW_9100:
+        return "network"
+    if normalized == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
+        return "local_browser"
+    if normalized == DELIVERY_TYPE_PRINT_NODE_HTTP:
+        return "local_node_http"
+    raise ValueError(f"Unsupported destination delivery type: {delivery_type}")
 
 
 def execute_rendered_print(
     db: Session,
     *,
-    purpose: str,
+    document_type: str,
     rendered_content: str,
     content_type: str,
-    transport_mode: str,
-    transport_config: dict,
-    profile_id: int | None = None,
+    delivery_type: str,
+    delivery_config: dict,
+    destination_id: int | None = None,
     template_id: int | None = None,
     ticket_id: int | None = None,
+    invoice_id: int | None = None,
     created_by_user_id: int | None = None,
+    payload_bytes: bytes | None = None,
+    email_subject: str | None = None,
+    email_body: str | None = None,
+    email_sender: Callable[..., None] | None = None,
 ) -> PrintExecutionResult:
-    normalized_transport_mode = str(transport_mode or "").strip().upper()
+    normalized_delivery_type = _normalize_delivery_type(delivery_type)
+    normalized_document_type = _normalize_document_type(document_type)
     normalized_content_type = _normalize_content_type(content_type)
-    payload_bytes = _encode_rendered_content(rendered_content)
+    serialized_payload = payload_bytes or str(rendered_content or "").encode("utf-8")
 
     job = PrintJob(
         created_by_user_id=created_by_user_id,
-        purpose=str(purpose or "").strip().upper(),
-        profile_id=profile_id,
+        document_type=normalized_document_type,
+        destination_id=destination_id,
         template_id=template_id,
         ticket_id=ticket_id,
-        transport_mode=normalized_transport_mode,
-        transport_config_json=_snapshot_transport_config_for_job(
-            normalized_transport_mode,
-            transport_config,
+        invoice_id=invoice_id,
+        delivery_type=normalized_delivery_type,
+        delivery_config_json=_snapshot_delivery_config_for_job(
+            normalized_delivery_type,
+            delivery_config,
         ),
         rendered_content=rendered_content,
-        rendered_bytes_base64=_serialized_bytes(payload_bytes),
+        rendered_bytes_base64=_serialized_bytes(serialized_payload),
         status=PRINT_JOB_STATUS_QUEUED,
         attempt_count=0,
         last_error=None,
@@ -210,9 +231,8 @@ def execute_rendered_print(
     db.flush()
 
     job.attempt_count = int(job.attempt_count or 0) + 1
-    mode = str(normalized_transport_mode).upper()
     try:
-        if mode == TRANSPORT_MODE_LOCAL_BROWSER:
+        if normalized_delivery_type == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
             _apply_job_delivery_success(job)
             db.commit()
             return PrintExecutionResult(
@@ -221,11 +241,28 @@ def execute_rendered_print(
                 browser_content_type=normalized_content_type,
             )
 
+        if normalized_delivery_type == DELIVERY_TYPE_EMAIL_PDF:
+            sender = email_sender or send_delivery_email
+            sender(
+                config=dict(delivery_config or {}),
+                document_type=normalized_document_type,
+                payload_bytes=serialized_payload,
+                payload_content_type=normalized_content_type,
+                invoice_id=invoice_id,
+                ticket_id=ticket_id,
+                job_id=job.id,
+                subject=email_subject,
+                body=email_body,
+            )
+            _apply_job_delivery_success(job)
+            db.commit()
+            return PrintExecutionResult(job=job)
+
         send_print_job(
-            payload_bytes,
-            _transport_literal_from_profile_mode(mode),
-            dict(transport_config or {}),
-            purpose=job.purpose,
+            serialized_payload,
+            _delivery_type_to_send_mode(normalized_delivery_type),
+            dict(delivery_config or {}),
+            document_type=job.document_type,
             rendered_content=rendered_content,
             content_type=normalized_content_type,
             job_id=job.id,
@@ -240,10 +277,10 @@ def execute_rendered_print(
 
 
 def retry_print_job(db: Session, job: PrintJob) -> PrintExecutionResult:
-    mode = str(job.transport_mode or "").strip().upper()
-    transport_config = (
-        dict(job.transport_config_json)
-        if isinstance(job.transport_config_json, dict)
+    delivery_type = _normalize_delivery_type(job.delivery_type)
+    delivery_config = (
+        dict(job.delivery_config_json)
+        if isinstance(job.delivery_config_json, dict)
         else {}
     )
     payload_bytes, payload_source = _job_bytes_for_retry(job)
@@ -256,7 +293,7 @@ def retry_print_job(db: Session, job: PrintJob) -> PrintExecutionResult:
 
     job.attempt_count = int(job.attempt_count or 0) + 1
     try:
-        if mode == TRANSPORT_MODE_LOCAL_BROWSER:
+        if delivery_type == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
             _apply_job_delivery_success(job)
             db.commit()
             return PrintExecutionResult(
@@ -264,11 +301,28 @@ def retry_print_job(db: Session, job: PrintJob) -> PrintExecutionResult:
                 browser_content=rendered_content,
                 browser_content_type=normalized_content_type,
             )
+
+        if delivery_type == DELIVERY_TYPE_EMAIL_PDF:
+            send_delivery_email(
+                config=delivery_config,
+                document_type=_normalize_document_type(job.document_type),
+                payload_bytes=payload_bytes,
+                payload_content_type=normalized_content_type,
+                invoice_id=job.invoice_id,
+                ticket_id=job.ticket_id,
+                job_id=job.id,
+                subject=None,
+                body=None,
+            )
+            _apply_job_delivery_success(job)
+            db.commit()
+            return PrintExecutionResult(job=job)
+
         send_print_job(
             payload_bytes,
-            _transport_literal_from_profile_mode(mode),
-            transport_config,
-            purpose=str(job.purpose or ""),
+            _delivery_type_to_send_mode(delivery_type),
+            delivery_config,
+            document_type=str(job.document_type or ""),
             rendered_content=rendered_content,
             content_type=normalized_content_type,
             job_id=job.id,
@@ -295,137 +349,22 @@ def replay_print_job(
         else payload_bytes.decode("utf-8", errors="replace")
     )
     content_type = _content_type_from_rendered(rendered_content)
-    transport_config = (
-        dict(job.transport_config_json)
-        if isinstance(job.transport_config_json, dict)
+    delivery_config = (
+        dict(job.delivery_config_json)
+        if isinstance(job.delivery_config_json, dict)
         else {}
     )
     return execute_rendered_print(
         db,
-        purpose=str(job.purpose or "").strip().upper(),
+        document_type=str(job.document_type or "").strip().upper(),
         rendered_content=rendered_content,
         content_type=content_type,
-        transport_mode=str(job.transport_mode or "").strip().upper(),
-        transport_config=transport_config,
-        profile_id=job.profile_id,
+        delivery_type=str(job.delivery_type or "").strip().upper(),
+        delivery_config=delivery_config,
+        destination_id=job.destination_id,
         template_id=job.template_id,
         ticket_id=job.ticket_id,
+        invoice_id=job.invoice_id,
         created_by_user_id=created_by_user_id,
+        payload_bytes=payload_bytes,
     )
-
-
-def _transport_literal_from_profile_mode(mode: str) -> PrintMode:
-    normalized = str(mode or "").strip().upper()
-    if normalized == TRANSPORT_MODE_NETWORK_RAW_9100:
-        return "network"
-    if normalized == TRANSPORT_MODE_CUPS:
-        return "cups"
-    if normalized == TRANSPORT_MODE_USB_ESC_POS:
-        return "usb"
-    if normalized == TRANSPORT_MODE_LOCAL_BROWSER:
-        return "local_browser"
-    if normalized == TRANSPORT_MODE_LOCAL_NODE_HTTP:
-        return "local_node_http"
-    raise ValueError(f"Unsupported print transport mode: {mode}")
-
-
-def _next_profile_code(db: Session, base_code: str) -> str:
-    normalized_base = str(base_code or "").strip().upper() or DEFAULT_INVOICE_PDF_PROFILE_CODE
-    candidate = normalized_base
-    suffix = 1
-    while True:
-        exists = db.execute(
-            select(PrintProfile.id)
-            .where(func.lower(PrintProfile.code) == candidate.lower())
-            .limit(1)
-        ).first()
-        if not exists:
-            return candidate
-        suffix += 1
-        candidate = f"{normalized_base}_{suffix}"
-
-
-def migrate_legacy_invoice_a4_purposes(db: Session) -> int:
-    updated = 0
-
-    legacy_templates = list(
-        db.execute(
-            select(PrintTemplate).where(
-                PrintTemplate.purpose == LEGACY_PRINT_PROFILE_PURPOSE_INVOICE_A4
-            )
-        ).scalars()
-    )
-    for template in legacy_templates:
-        template.purpose = PRINT_PROFILE_PURPOSE_INVOICE_PDF
-        updated += 1
-
-    legacy_profiles = list(
-        db.execute(
-            select(PrintProfile).where(
-                PrintProfile.purpose == LEGACY_PRINT_PROFILE_PURPOSE_INVOICE_A4
-            )
-        ).scalars()
-    )
-    for profile in legacy_profiles:
-        profile.purpose = PRINT_PROFILE_PURPOSE_INVOICE_PDF
-        updated += 1
-
-    legacy_jobs = list(
-        db.execute(
-            select(PrintJob).where(
-                PrintJob.purpose == LEGACY_PRINT_PROFILE_PURPOSE_INVOICE_A4
-            )
-        ).scalars()
-    )
-    for job in legacy_jobs:
-        job.purpose = PRINT_PROFILE_PURPOSE_INVOICE_PDF
-        updated += 1
-
-    if updated:
-        db.flush()
-    return updated
-
-
-def ensure_default_invoice_pdf_profile(db: Session) -> tuple[PrintProfile, bool]:
-    changed = bool(migrate_legacy_invoice_a4_purposes(db))
-
-    profiles = list(
-        db.execute(
-            select(PrintProfile)
-            .where(
-                PrintProfile.is_active.is_(True),
-                PrintProfile.purpose == PRINT_PROFILE_PURPOSE_INVOICE_PDF,
-            )
-            .order_by(PrintProfile.is_default.desc(), PrintProfile.code.asc())
-        ).scalars()
-    )
-    default_profile = next((row for row in profiles if row.is_default), None)
-    if default_profile is not None:
-        if changed:
-            db.commit()
-            db.refresh(default_profile)
-        return default_profile, changed
-
-    if profiles:
-        selected = profiles[0]
-        selected.is_default = True
-        db.commit()
-        db.refresh(selected)
-        return selected, True
-
-    created_profile = PrintProfile(
-        code=_next_profile_code(db, DEFAULT_INVOICE_PDF_PROFILE_CODE),
-        description=DEFAULT_INVOICE_PDF_PROFILE_DESCRIPTION,
-        purpose=PRINT_PROFILE_PURPOSE_INVOICE_PDF,
-        template_id=None,
-        template_name=DEFAULT_INVOICE_PDF_TEMPLATE_NAME,
-        yard_id=None,
-        transport_mode=TRANSPORT_MODE_LOCAL_BROWSER,
-        transport_config={},
-        is_default=True,
-        is_active=True,
-    )
-    db.add(created_profile)
-    db.commit()
-    db.refresh(created_profile)
-    return created_profile, True

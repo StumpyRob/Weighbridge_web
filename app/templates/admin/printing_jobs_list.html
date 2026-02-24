@@ -16,7 +16,7 @@
   <div class="page-header">
     <div>
       <h1>Printing Jobs{{ help(help_text.printing_job_concept, "printing-jobs-title-help") }}</h1>
-      <p class="muted">Audit, errors, and retry actions.</p>
+      <p class="muted">Delivery audit trail across Ticket/Invoice sends.</p>
     </div>
   </div>
 
@@ -33,20 +33,20 @@
       </select>
     </div>
     <div class="field">
-      <label for="purpose">Purpose</label>
-      <select id="purpose" name="purpose">
+      <label for="document_type">Document type</label>
+      <select id="document_type" name="document_type">
         <option value="">All</option>
-        {% for option_value, option_label in purpose_options %}
-          <option value="{{ option_value }}" {% if filters.purpose == option_value %}selected{% endif %}>{{ option_label }}</option>
+        {% for option_value, option_label in document_type_options %}
+          <option value="{{ option_value }}" {% if filters.document_type == option_value %}selected{% endif %}>{{ option_label }}</option>
         {% endfor %}
       </select>
     </div>
     <div class="field">
-      <label for="profile_id">Printer</label>
-      <select id="profile_id" name="profile_id">
+      <label for="destination_id">Destination</label>
+      <select id="destination_id" name="destination_id">
         <option value="">All</option>
-        {% for profile in profiles %}
-          <option value="{{ profile.id }}" {% if filters.profile_id == profile.id|string %}selected{% endif %}>{{ profile.code }}</option>
+        {% for destination in destinations %}
+          <option value="{{ destination.id }}" {% if filters.destination_id == destination.id|string %}selected{% endif %}>{{ destination.name }}</option>
         {% endfor %}
       </select>
     </div>
@@ -69,31 +69,24 @@
       <thead>
         <tr>
           <th class="jobs-col-id">ID</th>
-          <th class="jobs-col-ticket">Ticket No</th>
-          <th class="jobs-col-purpose">Purpose</th>
-          <th class="jobs-col-status">Status{{ help(help_text.printing_jobs_status, "printing-jobs-status-help") }}</th>
+          <th class="jobs-col-ticket">Document</th>
+          <th class="jobs-col-doc-type">Type</th>
+          <th class="jobs-col-status">Status</th>
           <th class="jobs-col-when">When</th>
-          <th class="jobs-col-target">Target{{ help(help_text.printing_jobs_transport_snapshot, "printing-jobs-transport-help") }}</th>
-          <th class="jobs-col-profile">Printer</th>
+          <th class="jobs-col-target">Destination</th>
           <th class="jobs-col-template">Template</th>
           <th class="jobs-col-error">Error</th>
         </tr>
       </thead>
       <tbody>
         {% for item in items %}
-          {% set ticket = tickets_by_id.get(item.ticket_id) if item.ticket_id else None %}
-          {% set profile = profiles_by_id.get(item.profile_id) if item.profile_id else None %}
+          {% set destination = destinations_by_id.get(item.destination_id) if item.destination_id else None %}
           {% set template = templates_by_id.get(item.template_id) if item.template_id else None %}
-          {% set target_label = job_targets.get(item.id, "-") %}
-          {% set purpose_label = job_purpose_labels.get(item.id, item.purpose) %}
-          {% set when_label = job_when_labels.get(item.id, "-") %}
-          {% set error_summary = job_error_summaries.get(item.id, "") %}
+          {% set document_ref = job_document_refs.get(item.id, '-') %}
           <tr data-row-link="/admin/printing/jobs/{{ item.id }}"{% if item.status == "FAILED" %} class="printing-job-row--failed"{% endif %}>
             <td class="jobs-col-id">{{ item.id }}</td>
-            <td class="jobs-col-ticket">{{ ticket.ticket_no if ticket else "-" }}</td>
-            <td class="jobs-col-purpose">
-              <span class="table-cell-truncate" title="{{ purpose_label }}">{{ purpose_label }}</span>
-            </td>
+            <td class="jobs-col-ticket">{{ document_ref }}</td>
+            <td class="jobs-col-doc-type">{{ item.document_type }}</td>
             <td class="jobs-col-status">
               {% if item.status == "SENT" %}
                 <span class="status-pill status-open">Sent</span>
@@ -102,40 +95,32 @@
               {% elif item.status == "QUEUED" %}
                 <span class="status-pill status-info">Queued</span>
               {% else %}
-                <span class="status-pill status-info">{{ item.status|lower|title }}</span>
+                <span class="status-pill status-info">{{ item.status }}</span>
               {% endif %}
             </td>
-            <td class="jobs-col-when">{{ when_label }}</td>
+            <td class="jobs-col-when">{{ item.created_at.strftime("%d/%m/%Y %H:%M:%S") if item.created_at else '-' }}</td>
             <td class="jobs-col-target">
-              <span class="table-cell-truncate" title="{{ target_label }}">{{ target_label }}</span>
-            </td>
-            <td class="jobs-col-profile">
-              {% if profile %}
-                <span class="table-cell-truncate printing-job-code" title="{{ profile.description or profile.code }}">
-                  {{ profile.code }}
-                </span>
-              {% endif %}
+              <span class="table-cell-truncate" title="{{ destination.name if destination else '-' }}">{{ destination.name if destination else "-" }}</span>
             </td>
             <td class="jobs-col-template">
               {% if template %}
-                <span class="table-cell-truncate printing-job-code" title="{{ template.description if template.description else template.code }}">
-                  {{ template.code }}
-                </span>
+                <span class="table-cell-truncate printing-job-code" title="{{ template.description if template.description else template.code }}">{{ template.code or ('Template ' ~ template.id) }}</span>
+              {% else %}
+                -
               {% endif %}
             </td>
             <td class="jobs-col-error">
-              {% if item.status == "FAILED" %}
-                {% set error_text = error_summary or "Failed" %}
-                <span class="printing-job-error" title="{{ item.last_error or error_text }}">
+              {% if item.status == "FAILED" and item.last_error %}
+                <span class="printing-job-error" title="{{ item.last_error }}">
                   <span class="printing-job-error-badge" aria-hidden="true">!</span>
-                  <span class="table-cell-truncate">{{ error_text }}</span>
+                  <span class="table-cell-truncate">{{ item.last_error }}</span>
                 </span>
               {% endif %}
             </td>
           </tr>
         {% else %}
           <tr>
-            <td colspan="9" class="empty">No print jobs found.</td>
+            <td colspan="8" class="empty">No print jobs found.</td>
           </tr>
         {% endfor %}
       </tbody>

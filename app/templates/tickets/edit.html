@@ -21,9 +21,26 @@
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}
+  {% if wtn_sent %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">
+        WTN sent{% if wtn_job_id %} (Job #{{ wtn_job_id }}){% endif %}.
+      </div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+  {% if wtn_failed %}
+    <div class="flash-toast flash-toast--error" data-flash-toast>
+      <div class="flash-toast__content">
+        WTN send failed.
+        {% if wtn_error_detail %} {{ wtn_error_detail }}{% endif %}
+      </div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
   {% if form.status == "COMPLETE" and print_missing_default %}
     <div class="flash-toast flash-toast--error" data-flash-toast>
-      <div class="flash-toast__content">No printer configured. Contact admin.</div>
+      <div class="flash-toast__content">Printing is not configured. Contact admin.</div>
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}
@@ -51,20 +68,30 @@
   {% set is_complete = form.status == "COMPLETE" %}
   <div class="actions btn-group ticket-header-actions">
     {% if is_complete %}
-      <div id="print-actions" class="ticket-header-actions__primary">
-        {% include "printing/_print_actions.html" %}
+      <div class="ticket-header-actions__primary">
+        <div id="print-actions">
+          {% include "printing/_print_actions.html" %}
+        </div>
+        {% if show_wtn_actions and wtn_actions %}
+          <div id="wtn-actions">
+            {% with print_actions = wtn_actions %}
+              {% include "printing/_print_actions.html" %}
+            {% endwith %}
+          </div>
+        {% endif %}
       </div>
+      {% if show_wtn_actions and wtn_disabled_hint %}
+        <p class="ticket-print-availability-hint muted">{{ wtn_disabled_hint }}</p>
+      {% endif %}
     {% elif is_open %}
       <div class="ticket-header-actions__primary">
         <button type="submit" class="btn btn--primary" form="ticket-form" name="action" value="complete">
           Mark Complete
         </button>
         {% if allow_dev_preview %}
-          <form method="get" action="{{ print_actions.preview_url or ('/tickets/' ~ ticket.id ~ '/print/browser') }}" target="_blank">
-            <input type="hidden" name="purpose" value="{{ print_actions.selected_purpose or '' }}" />
-            <input type="hidden" name="profile_id" value="{{ print_actions.selected_profile_id or '' }}" />
+          <form method="get" action="{{ print_actions.preview_url or ('/tickets/' ~ ticket.id ~ '/preview') }}" target="_blank">
             <button type="submit" class="btn btn--secondary" id="preview_browser_print_button">
-              Preview
+              Preview Ticket
             </button>
           </form>
         {% endif %}
@@ -79,10 +106,9 @@
 
 {% if is_complete and (print_status or printed) and print_job_id %}
   <div class="ticket-print-status-inline" role="status">
-    Last print: Sent to printer <strong>{{ printed_to or print_primary_profile_name or "Printer" }}</strong>
+    Last action: Printed ticket to <strong>{{ printed_to or print_primary_destination_name or "Configured output" }}</strong>
     (Job #<code>{{ print_job_id }}</code>)
     {% if print_sent_at %}at {{ print_sent_at }}{% endif %}.
-    <a href="/admin/printing/jobs/{{ print_job_id }}" target="_blank" rel="noopener">View job</a>
   </div>
 {% endif %}
 {# WIP_RECEIPTS UI toggle #}

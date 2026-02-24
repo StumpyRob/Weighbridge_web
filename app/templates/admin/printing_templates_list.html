@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_help.html" import help %}
 
-{% block title %}Printing Templates | Weighbridge Web{% endblock %}
+{% block title %}Document Templates | Weighbridge Web{% endblock %}
 
 {% block toast_messages %}
   {% if saved %}
@@ -15,18 +15,11 @@
 {% block content %}
   <div class="page-header">
     <div>
-      {% if purpose == "INVOICE_PDF" %}
-        <h1>Invoice PDF Templates{{ help(help_text.printing_template_concept, "printing-templates-title-help") }}</h1>
-        <p class="muted">Editable HTML templates used by invoice PDF download.</p>
-      {% else %}
-        <h1>Printing Templates{{ help(help_text.printing_template_concept, "printing-templates-title-help") }}</h1>
-        <p class="muted">Reusable print content for printers.</p>
-      {% endif %}
+      <h1>Document Templates{{ help(help_text.printing_template_concept, "printing-templates-title-help") }}</h1>
+      <p class="muted">Template content and format for each document type.</p>
     </div>
     <div class="actions btn-group">
-      <a class="btn btn--primary" href="/admin/printing/templates/new{% if purpose %}?purpose={{ purpose }}{% endif %}">
-        {% if purpose == "INVOICE_PDF" %}Add Invoice PDF Template{% else %}Add Template{% endif %}
-      </a>
+      <a class="btn btn--primary" href="/admin/printing/templates/new{% if document_type %}?document_type={{ document_type }}{% endif %}">Add Template</a>
     </div>
   </div>
 
@@ -38,11 +31,11 @@
 
   <form class="filters filters-inline" method="get" action="/admin/printing/templates">
     <div class="field">
-      <label for="purpose">Purpose</label>
-      <select id="purpose" name="purpose">
-        <option value="">All purposes</option>
-        {% for value, label in purpose_options %}
-          <option value="{{ value }}" {% if purpose == value %}selected{% endif %}>{{ label }}</option>
+      <label for="document_type">Document type</label>
+      <select id="document_type" name="document_type">
+        <option value="">All</option>
+        {% for value, label in document_type_options %}
+          <option value="{{ value }}" {% if document_type == value %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
     </div>
@@ -62,29 +55,42 @@
   </form>
 
   <div class="table-wrap list-table-wrap">
-    <table class="data-table list-table">
+    <table class="data-table list-table lookup-list-table printing-templates-table">
+      <colgroup>
+        <col class="templates-col-code" />
+        <col class="templates-col-description" />
+        <col class="templates-col-document-type" />
+        <col class="templates-col-format" />
+        <col class="templates-col-status" />
+        <col class="templates-col-actions" />
+      </colgroup>
       <thead>
         <tr>
-          <th>Code</th>
-          <th>Description</th>
-          <th>Type{{ help(help_text.printing_content_type, "printing-templates-type-help") }}</th>
-          <th>Purpose{{ help(help_text.printing_purpose, "printing-templates-purpose-help") }}</th>
+          <th class="truncate-col">Code</th>
+          <th class="truncate-col">Description</th>
+          <th>Document type</th>
+          <th>Format{{ help(help_text.printing_content_type, "printing-templates-format-help") }}</th>
           <th class="status-col">Status</th>
           <th class="actions-col">Actions</th>
         </tr>
       </thead>
       <tbody>
         {% for item in items %}
-          <tr data-row-link="/admin/printing/templates/{{ item.id }}/edit">
-            <td>{{ item.code }}</td>
-            <td>{{ item.description or "-" }}</td>
-            <td>{{ item.content_type }}</td>
-            <td>
-              {{ item.purpose }}
-              {% if default_template_ids.get(item.purpose) and item.id == default_template_ids.get(item.purpose) %}
-                <span class="status-pill status-open">Default</span>
-              {% endif %}
+          <tr{% if item.is_system %} class="lookup-row--system-default"{% endif %}{% if not item.is_system %} data-row-link="/admin/printing/templates/{{ item.id }}/edit"{% endif %}>
+            <td class="truncate-col">
+              <span class="printing-template-code-cell">
+                <span class="table-cell-truncate" title="{{ item.code or ('Template ' ~ item.id) }}">
+                  {{ item.code or ("Template " ~ item.id) }}
+                </span>
+              </span>
             </td>
+            <td class="truncate-col">
+              <span class="table-cell-truncate" title="{{ item.description or '-' }}">
+                {{ item.description or "-" }}
+              </span>
+            </td>
+            <td><span class="table-cell-truncate" title="{{ item.document_type }}">{{ item.document_type }}</span></td>
+            <td><span class="table-cell-truncate" title="{{ item.format }}">{{ item.format }}</span></td>
             <td class="status-col">
               {% if item.is_active %}
                 <span class="status-pill status-open">Active</span>
@@ -94,42 +100,29 @@
             </td>
             <td class="actions-col">
               <div class="actions btn-group lookup-actions">
-                <a class="btn btn--ghost btn--sm" href="/admin/printing/templates/{{ item.id }}/edit">Edit</a>
-                <form method="post" action="/admin/printing/templates/{{ item.id }}/duplicate">
-                  <button type="submit" class="btn btn--ghost btn--sm">Duplicate</button>
-                </form>
-                {% if item.purpose in ["TICKET_THERMAL", "TICKET_A4", "INVOICE_PDF"] %}
-                  <form method="post" action="/admin/printing/templates/{{ item.id }}/set-default">
-                    <button type="submit" class="btn btn--ghost btn--sm">
-                      {% if default_template_ids.get(item.purpose) and item.id == default_template_ids.get(item.purpose) %}
-                        Default Template
-                      {% else %}
-                        Set Default
-                      {% endif %}
-                    </button>
-                  </form>
+                {% if not item.is_system %}
+                  <a class="btn btn--ghost btn--sm" href="/admin/printing/templates/{{ item.id }}/edit">Edit</a>
                 {% endif %}
-                {% if item.is_active %}
-                  {% if default_template_ids.get(item.purpose) and item.id == default_template_ids.get(item.purpose) %}
-                    <button type="button" class="btn btn--danger btn--sm" disabled title="Default template cannot be deactivated.">Deactivate</button>
-                  {% else %}
+                <a class="btn btn--ghost btn--sm" href="/admin/printing/templates/{{ item.id }}/preview" target="_blank" rel="noopener">Preview</a>
+                {% if item.is_system %}
+                  <form method="post" action="/admin/printing/templates/{{ item.id }}/duplicate">
+                    <button type="submit" class="btn btn--secondary btn--sm">Duplicate</button>
+                  </form>
+                {% else %}
+                  {% if item.is_active %}
                     <form method="post" action="/admin/printing/templates/{{ item.id }}/deactivate">
                       <button type="submit" class="btn btn--danger btn--sm">Deactivate</button>
                     </form>
+                  {% elif not hide_inactive %}
+                    <form method="post" action="/admin/printing/templates/{{ item.id }}/reactivate">
+                      <button type="submit" class="btn btn--secondary btn--sm">Reactivate</button>
+                    </form>
                   {% endif %}
-                {% elif not hide_inactive %}
-                  <form method="post" action="/admin/printing/templates/{{ item.id }}/reactivate">
-                    <button type="submit" class="btn btn--secondary btn--sm">Reactivate</button>
-                  </form>
-                {% endif %}
-                {% if default_template_ids.get(item.purpose) and item.id == default_template_ids.get(item.purpose) %}
-                  <button type="button" class="btn btn--danger btn--sm" disabled title="Default template cannot be deleted.">Delete</button>
-                {% else %}
                   <form method="post" action="/admin/printing/templates/{{ item.id }}/delete">
                     <button
                       type="submit"
                       class="btn btn--danger btn--sm"
-                      onclick="return window.confirm('Delete template {{ item.code }}?');"
+                      onclick="return window.confirm('Delete template {{ item.code or item.id }}?');"
                     >
                       Delete
                     </button>

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% from "_help.html" import help %}
+
+{% block title %}Template Variables | Weighbridge Web{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Template Variables{{ help(help_text.printing_template_concept, "printing-template-variables-title-help") }}</h1>
+      <p class="muted">Use these variables in Ticket, Invoice, and WTN templates.</p>
+    </div>
+  </div>
+
+  {% include "admin/printing_nav.html" %}
+
+  <div class="frame">
+    <div class="frame-header">Available In All Templates</div>
+    <div class="frame-body">
+      <table class="list-table">
+        <thead>
+          <tr>
+            <th>Variable</th>
+            <th>Description</th>
+            <th>Example</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>company_name</code></td>
+            <td>Company name from Admin settings.</td>
+            <td>Your Company Ltd</td>
+          </tr>
+          <tr>
+            <td><code>company_lines</code></td>
+            <td>Company address lines.</td>
+            <td>[\"Line 1\", \"Town\"]</td>
+          </tr>
+          <tr>
+            <td><code>company.logo_url</code></td>
+            <td>Logo URL or data URI.</td>
+            <td>https://example.com/logo.png</td>
+          </tr>
+          <tr>
+            <td><code>payload</code></td>
+            <td>Master print payload.</td>
+            <td>{...}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="frame">
+    <div class="frame-header">Payload Variables</div>
+    <div class="frame-body">
+      <table class="list-table">
+        <thead>
+          <tr>
+            <th>Variable</th>
+            <th>Description</th>
+            <th>Example</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td><code>{{ row.name }}</code></td>
+              <td>{{ row.description }}</td>
+              <td><code>{{ row.example }}</code></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="frame compact">
+    <div class="frame-header">Safe Usage Examples</div>
+    <div class="frame-body">
+      <pre><code>{% raw %}{{ payload.customer_name or "-" }}{% endraw %}
+
+{% raw %}{% if payload.notes %}
+  {{ payload.notes }}
+{% endif %}{% endraw %}
+
+{% raw %}{% for line in company_lines %}
+  {{ line }}&lt;br&gt;
+{% endfor %}{% endraw %}</code></pre>
+    </div>
+  </div>
+{% endblock %}

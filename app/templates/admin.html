@@ -11,7 +11,7 @@
   </div>
 
   <div class="tabs">
-    <a class="btn btn--ghost{% if request.url.path.startswith('/admin/printing') %} is-active{% endif %}" href="/admin/printing/profiles">Printing</a>
+    <a class="btn btn--ghost{% if request.url.path.startswith('/admin/printing') %} is-active{% endif %}" href="/admin/printing/destinations">Printing</a>
     <a class="btn btn--ghost{% if request.url.path.startswith('/admin/company') %} is-active{% endif %}" href="/admin/company">Company</a>
     {% if DEV_MODE %}
       <a class="btn btn--ghost{% if request.url.path.startswith('/admin/health') %} is-active{% endif %}" href="/admin/health">Health Check</a>
@@ -20,7 +20,7 @@
 
   <section class="frame">
     <div class="frame-body">
-      <p>Use <a href="/admin/printing/profiles">Admin -> Printing</a> to manage printers, templates, and print jobs.</p>
+      <p>Use <a href="/admin/printing/destinations">Admin -> Printing</a> to manage destinations, templates, and jobs.</p>
       <p>Use <a href="/admin/company">Admin -> Company</a> to manage invoice branding and logo settings.</p>
       {% if DEV_MODE %}
         <p>Use <a href="/admin/health">Admin -> Health Check</a> for diagnostics (renderer, templates, uploads, DB).</p>

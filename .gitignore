@@ -4,7 +4,9 @@ __pycache__/
 *.pyo
 *.pyd
 .env
+.DS_Store
 app.db
+app.db.backup_*
 *.db
 .pytest_cache/
 .mypy_cache/

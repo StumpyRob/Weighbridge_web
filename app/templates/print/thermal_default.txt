@@ -1,42 +1,42 @@
+{% set p = payload or {} %}
 ========================================
 WEIGHBRIDGE TICKET
 ========================================
-Ticket: {{ payload.ticket_no }}
-Date/Time: {{ payload.datetime_display or "-" }}
-Status: {{ payload.status or "-" }}
-Direction: {{ payload.direction or "-" }}
-Transaction: {{ payload.transaction_type or "-" }}
+{% if p.logo_data_uri %}
+Logo: [configured]
+{% endif %}
+Company: {{ company_name or (company.name if company else "") or "-" }}
+{% for line in company_lines or (company.lines if company else []) or [] %}
+{{ line }}
+{% endfor %}
 ----------------------------------------
-VEHICLE
-Registration: {{ payload.vehicle.registration or "-" }}
+Ticket: {{ p.ticket_no or "-" }}
+Date/Time: {{ p.datetime or "-" }}
+Status: {{ p.status or "-" }}
+Direction: {{ p.direction or "-" }}
+Transaction: {{ p.transaction_type or "-" }}
 ----------------------------------------
 CUSTOMER
-Account: {{ payload.customer.account_code or "-" }}
-Name: {{ payload.customer.name or "-" }}
-Walk-in sale: {{ "YES" if payload.walk_in_sale else "NO" }}
+Account: {{ p.customer_account_code or "-" }}
+Name: {{ p.customer_name or "-" }}
+----------------------------------------
+VEHICLE / LOGISTICS
+Vehicle: {{ p.vehicle_reg or "-" }}
+Haulier: {{ p.haulier_name or "-" }}
+Driver: {{ p.driver_name or "-" }}
+Destination: {{ p.destination_name or "-" }}
 ----------------------------------------
 MATERIAL
-Code: {{ payload.product.code or "-" }}
-Description: {{ payload.product.description or "-" }}
-Unit: {{ payload.product.unit_name or "-" }}{% if payload.product.unit_type %} ({{ payload.product.unit_type }}){% endif %}
+Code: {{ p.product_code or "-" }}
+Description: {{ p.product_description or "-" }}
 ----------------------------------------
 WEIGHTS / PRICING
-Gross: {{ payload.weights.gross_kg_display or "-" }}
-Tare: {{ payload.weights.tare_kg_display or "-" }}
-Net: {{ payload.weights.net_kg_display or "-" }}
-Qty: {{ payload.weights.qty_display or "-" }}
-Unit price: {{ payload.weights.unit_price_display or "-" }}
-Total: {{ payload.weights.total_display or "-" }}
-PO: {{ payload.po_number or "-" }}
+Gross kg: {{ p.gross_kg or "-" }}
+Tare kg: {{ p.tare_kg or "-" }}
+Net kg: {{ p.net_kg or "-" }}
+Qty: {{ p.qty or "-" }}
+Unit price: {{ p.unit_price or "-" }}
+Total: {{ p.total or "-" }}
 ----------------------------------------
-LOGISTICS
-Haulier: {{ payload.logistics.haulier or "-" }}
-Driver: {{ payload.logistics.driver or "-" }}
-Container: {{ payload.logistics.container or "-" }}
-Destination: {{ payload.logistics.destination or "-" }}
-Carrier licence: {{ payload.logistics.carrier_licence_number or "-" }}
-----------------------------------------
-COMPLIANCE
-EWC: {{ payload.compliance.ewc_code_display or payload.compliance.ewc_code_6 or "-" }}
-Hazardous: {{ "YES" if payload.compliance.ewc_hazardous else "NO" }}
+Notes: {{ p.notes or "-" }}
 ========================================

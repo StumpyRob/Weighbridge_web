@@ -3,7 +3,7 @@ def normalize_unit_name(name: str) -> str:
 
 
 WEIGHT_UNIT_CANONICAL = {"kg", "tonne", "tonnes"}
-WEIGHT_UNIT_DISPLAY = {"kg": "kg", "tonne": "tonnes", "tonnes": "tonnes"}
+WEIGHT_UNIT_DISPLAY = {"kg": "KG", "tonne": "Tonnes", "tonnes": "Tonnes"}
 
 
 def is_allowed_weight_unit(name: str) -> bool:

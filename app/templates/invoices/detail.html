@@ -41,7 +41,7 @@
 
   {% if print_missing_default %}
     <div class="flash-toast flash-toast--error" data-flash-toast>
-      <div class="flash-toast__content">No printer configured. Contact admin.</div>
+      <div class="flash-toast__content">Printing is not configured. Contact admin.</div>
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}
@@ -78,10 +78,13 @@
       </div>
     </div>
   </div>
+  <div class="invoice-back-link">
+    <a class="btn btn--ghost btn--sm" href="/invoices">Back</a>
+  </div>
 
   {% if invoice.status == "VOID" %}
     <div class="alert alert--warning">
-      <strong>Warning:</strong> This invoice is VOID. Send to Printer and Preview remain available for audit/reference only.
+      <strong>Warning:</strong> This invoice is VOID. Send Invoice and Preview Invoice remain available for audit/reference only.
     </div>
   {% endif %}
 

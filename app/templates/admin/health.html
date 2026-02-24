@@ -38,16 +38,16 @@
         <table class="health-table">
           <thead>
             <tr>
-              <th class="health-col-purpose">Purpose</th>
+              <th class="health-col-doc-type">Document type</th>
               <th class="health-col-status">Status</th>
               <th class="health-col-default">Default</th>
               <th class="health-col-warnings">Warnings</th>
             </tr>
           </thead>
           <tbody>
-            {% for purpose, detail in report.templates.details.purposes.items() %}
+            {% for document_type, detail in report.templates.details.document_types.items() %}
               <tr>
-                <td class="health-col-purpose">{{ purpose }}</td>
+                <td class="health-col-doc-type">{{ document_type }}</td>
                 <td class="health-col-status">
                   <span class="health-badge health-badge--{{ detail.status }}">
                     {{ detail.status | upper }}

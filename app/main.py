@@ -4,17 +4,47 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from sqlalchemy import inspect
 
 from .config import settings
 from .db import SessionLocal
 from .routes import api_router
 from .routers.lookups import router as lookups_router
-from .services.pdf import check_invoice_pdf_renderer, ensure_seed_invoice_pdf_template
-from .services.printing import ensure_default_invoice_pdf_profile
+from .seed import force_refresh_system_print_templates
+from .services.pdf import check_invoice_pdf_renderer
 from .templating import templates
 
 logger = logging.getLogger(__name__)
+
+
+def _printing_schema_ready_for_bootstrap() -> bool:
+    try:
+        with SessionLocal() as db:
+            bind = db.get_bind()
+            inspector = inspect(bind)
+            table_names = set(inspector.get_table_names())
+            if "print_templates" not in table_names:
+                return False
+            template_columns = {
+                str(column["name"])
+                for column in inspector.get_columns("print_templates")
+            }
+            required_columns = {
+                "code",
+                "description",
+                "document_type",
+                "format",
+                "content",
+                "is_system",
+                "is_active",
+            }
+            return required_columns.issubset(template_columns)
+    except Exception:
+        logger.warning(
+            "Skipping system template bootstrap; printing schema inspection failed.",
+            exc_info=True,
+        )
+        return False
 
 
 def create_app(dev_mode: bool | None = None) -> FastAPI:
@@ -33,16 +63,18 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
     @app.on_event("startup")
-    def startup_invoice_pdf_renderer_check() -> None:
+    def startup_printing_bootstrap() -> None:
         check_invoice_pdf_renderer()
+        if not _printing_schema_ready_for_bootstrap():
+            logger.info(
+                "Skipping system template bootstrap until printing migrations are applied."
+            )
+            return
         with SessionLocal() as db:
             try:
-                _, changed = ensure_seed_invoice_pdf_template(db)
-                if changed:
-                    db.commit()
-                ensure_default_invoice_pdf_profile(db)
+                force_refresh_system_print_templates(db)
             except Exception:
-                logger.exception("Invoice PDF default template bootstrap failed on startup.")
+                logger.exception("System template bootstrap failed on startup.")
 
     @app.get("/health", tags=["health"])
     def health_check() -> dict:

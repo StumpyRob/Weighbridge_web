@@ -2,12 +2,7 @@
 {% from "_help.html" import help %}
 
 {% block title %}
-  {% if invoice_mode %}
-    {% if mode == "edit" %}Edit Invoice PDF Template{% else %}New Invoice PDF Template{% endif %}
-  {% else %}
-    {% if mode == "edit" %}Edit Printing Template{% else %}New Printing Template{% endif %}
-  {% endif %}
-  | Weighbridge Web
+  {% if mode == "edit" %}Edit Document Template{% else %}New Document Template{% endif %} | Weighbridge Web
 {% endblock %}
 
 {% block toast_messages %}
@@ -22,13 +17,8 @@
 {% block content %}
   <div class="page-header">
     <div>
-      {% if invoice_mode %}
-        <h1>{% if mode == "edit" %}Edit Invoice PDF Template{% else %}New Invoice PDF Template{% endif %}{{ help(help_text.printing_template_concept, "printing-template-form-title-help") }}</h1>
-        <p class="muted">Template save validates syntax. Provide a sample invoice ID to validate render context.</p>
-      {% else %}
-        <h1>{% if mode == "edit" %}Edit Printing Template{% else %}New Printing Template{% endif %}{{ help(help_text.printing_template_concept, "printing-template-form-title-help") }}</h1>
-        <p class="muted">Template save validates syntax. Provide a sample ticket ID to validate render context.</p>
-      {% endif %}
+      <h1>{% if mode == "edit" %}Edit Document Template{% else %}New Document Template{% endif %}{{ help(help_text.printing_template_concept, "printing-template-form-title-help") }}</h1>
+      <p class="muted">Templates are content/layout only. Default selection is controlled by Destinations.</p>
     </div>
   </div>
 
@@ -37,245 +27,119 @@
   {% if error %}
     <div class="alert">{{ error }}</div>
   {% endif %}
-  {% if duplicated %}
-    <div class="notice">Template duplicated. Update code and description, then save.</div>
-  {% endif %}
-  {% if default_template_set %}
-    <div class="notice">Default template updated.</div>
+
+  {% set is_system_template = mode == "edit" and template and template.is_system %}
+  {% if is_system_template %}
+    <div class="notice">
+      This is a system template. Duplicate it to customise.
+    </div>
   {% endif %}
 
   <form class="ticket-form" method="post">
     <div class="field">
-      <label for="code">Code</label>
-      <input type="text" id="code" name="code" maxlength="{{ limits.CODE_MAX }}" value="{{ form_data.code }}" required />
+      <label for="code">Code (optional)</label>
+      <input type="text" id="code" name="code" maxlength="{{ limits.CODE_MAX }}" value="{{ form_data.code }}" {% if is_system_template %}readonly aria-readonly="true"{% endif %} />
     </div>
 
     <div class="field">
-      <label for="description">Description</label>
-      <input type="text" id="description" name="description" maxlength="{{ limits.DESC_MAX }}" value="{{ form_data.description }}" />
+      <label for="description">Name / Description</label>
+      <input type="text" id="description" name="description" maxlength="{{ limits.DESC_MAX }}" value="{{ form_data.description }}" {% if is_system_template %}readonly aria-readonly="true"{% endif %} />
     </div>
 
     <div class="field">
-      <label for="purpose">Purpose</label>
-      <select id="purpose" name="purpose" required>
-        {% for value, label in purpose_options %}
-          <option value="{{ value }}" {% if form_data.purpose == value %}selected{% endif %}>{{ label }}</option>
+      <label for="document_type">Document type</label>
+      <select id="document_type" name="document_type" required {% if is_system_template %}disabled{% endif %}>
+        {% for value, label in document_type_options %}
+          <option value="{{ value }}" {% if form_data.document_type == value %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
     </div>
 
     <div class="field">
-      <label for="content_type">Content type{{ help(help_text.printing_content_type, "printing-template-content-type-help") }}</label>
-      <select id="content_type" name="content_type" required>
-        {% for value, label in content_type_options %}
-          <option value="{{ value }}" {% if form_data.content_type == value %}selected{% endif %}>{{ label }}</option>
+      <label for="format">Format{{ help(help_text.printing_content_type, "printing-template-format-help") }}</label>
+      <select id="format" name="format" required {% if is_system_template %}disabled{% endif %}>
+        {% for value, label in format_options %}
+          <option value="{{ value }}" {% if form_data.format == value %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
-      {% if not invoice_mode %}
-        <p class="hint">TEXT = best for 80mm thermal. HTML = best for A4 / styled layouts.</p>
-      {% endif %}
     </div>
 
     <div class="field">
       <label for="content">Template content{{ help(help_text.printing_template_content_editor, "printing-template-content-editor-help") }}</label>
-      <label for="insert_field_token">Insert field token{{ help(help_text.printing_insert_field_picker, "printing-template-insert-token-help") }}</label>
-      <select
-        id="insert_field_token"
-        title="Select a token to insert at the current cursor position in template content."
-      >
-        <option value="">Insert field...</option>
-        {% for group_label, group_items in insert_token_groups %}
-          <optgroup label="{{ group_label }}">
-            {% for item_label, item_token in group_items %}
-              <option value="{{ item_token }}">{{ item_label }}</option>
-            {% endfor %}
-          </optgroup>
-        {% endfor %}
-      </select>
-      {% if mode == "new" %}
-        <div class="actions btn-group" style="margin-top: 0.5rem;">
-          <button
-            type="button"
-            class="btn btn--ghost btn--sm"
-            id="insert_default_ticket_layout"
-            title="Insert a starter layout that you can edit safely."
-          >
-            {% if invoice_mode %}Insert Default Invoice PDF Layout{% else %}Insert Default Ticket Layout{% endif %}
-          </button>
-        </div>
-        <p class="hint">Adds a sensible starter layout for the selected purpose/content type.</p>
-      {% endif %}
-      <textarea id="content" name="content" rows="20" style="font-family: Consolas, monospace;">{{ form_data.content }}</textarea>
+      <textarea id="content" name="content" rows="20" style="font-family: Consolas, monospace;" {% if is_system_template %}disabled readonly aria-readonly="true"{% endif %}>{{ form_data.content }}</textarea>
     </div>
 
-    <div class="field">
-      {% if invoice_mode %}
-        <label for="sample_invoice_id">Sample Invoice ID for Save Validation (optional)</label>
-        <input
-          type="text"
-          id="sample_invoice_id"
-          name="sample_invoice_id"
-          value="{{ sample_invoice_id_value }}"
-        />
-      {% else %}
-        <label for="sample_ticket_id">Sample Ticket ID for Save Validation (optional)</label>
-        <input
-          type="text"
-          id="sample_ticket_id"
-          name="sample_ticket_id"
-          value="{{ sample_ticket_id_value }}"
-        />
-      {% endif %}
-      {% if validation_hint %}
-        <p class="hint">{{ validation_hint }}</p>
-      {% endif %}
-    </div>
+    <details class="frame compact template-vars-disclosure">
+      <summary class="frame-header">Template variables</summary>
+      <div class="frame-body template-vars-body">
+        <section class="template-vars-section">
+          <h2>Available in all templates</h2>
+          <ul class="template-vars-list">
+            <li><code>company_name</code> - your company name</li>
+            <li><code>company_lines</code> - company address lines (list)</li>
+            <li><code>company.logo_url</code> - company logo URL (if set)</li>
+            <li><code>payload</code> - document data fields</li>
+          </ul>
+        </section>
+
+        <section class="template-vars-section">
+          <h2>Accessing document fields</h2>
+          <p>Document fields live under <code>payload</code>.</p>
+          <p>Examples:</p>
+          <ul class="template-vars-list">
+            <li><code>{% raw %}{{ payload.reference_no }}{% endraw %}</code></li>
+            <li><code>{% raw %}{{ payload.customer_name }}{% endraw %}</code></li>
+            <li><code>{% raw %}{{ payload.net_kg }}{% endraw %}</code></li>
+          </ul>
+        </section>
+
+        <section class="template-vars-section">
+          <h2>Recommended safe patterns</h2>
+          <pre class="template-vars-code"><code>{% raw %}{{ payload.customer_name or "-" }}{% endraw %}
+
+{% raw %}{% if payload.notes %}
+  {{ payload.notes }}
+{% endif %}{% endraw %}
+
+{% raw %}{% for line in company_lines %}
+  {{ line }}<br>
+{% endfor %}{% endraw %}</code></pre>
+        </section>
+
+        <section class="template-vars-section">
+          <h2>Note</h2>
+          <p>Preview uses sample data unless opened from a real document.</p>
+          <p><a href="/admin/printing/template-variables">View full variable list</a>.</p>
+        </section>
+      </div>
+    </details>
 
     <div class="field checkbox">
-      <input type="checkbox" id="is_active" name="is_active" value="1" {% if form_data.is_active %}checked{% endif %} />
+      <input type="checkbox" id="is_active" name="is_active" value="1" {% if form_data.is_active %}checked{% endif %} {% if is_system_template %}disabled{% endif %} />
       <label for="is_active">Active</label>
     </div>
 
     <div class="actions btn-group">
-      <button type="submit" class="btn btn--primary">Save</button>
-      {% if mode == "edit" and template %}
-        <a
-          class="btn btn--secondary"
-          href="/admin/printing/templates/{{ template.id }}/preview"
-          target="_blank"
-          rel="noopener"
-        >
-          Preview
-        </a>
-      {% else %}
-        <button type="button" class="btn btn--secondary" disabled title="Save template first to preview.">Preview</button>
+      {% if not is_system_template %}
+        <button type="submit" class="btn btn--primary">
+          {% if mode == "edit" %}Save changes{% else %}Save{% endif %}
+        </button>
       {% endif %}
       {% if mode == "edit" and template %}
-        <button
-          type="submit"
-          class="btn btn--secondary"
-          formaction="/admin/printing/templates/{{ template.id }}/reset-default"
-          formmethod="post"
-          onclick="return window.confirm('Reset this template content back to the seeded default?');"
-        >
-          Restore Default Template
-        </button>
-        {% if form_data.purpose in ["TICKET_THERMAL", "TICKET_A4", "INVOICE_PDF"] %}
+        {% if is_system_template %}
           <button
             type="submit"
-            class="btn btn--secondary"
-            formaction="/admin/printing/templates/{{ template.id }}/set-default"
+            class="btn btn--primary"
+            formaction="/admin/printing/templates/{{ template.id }}/duplicate"
             formmethod="post"
-            {% if is_default_template %}disabled title="This is already the default template."{% endif %}
+            formnovalidate
           >
-            {% if is_default_template %}Default Template{% else %}Set as Default Template{% endif %}
+            Duplicate Template
           </button>
         {% endif %}
+        <a class="btn btn--secondary" href="/admin/printing/templates/{{ template.id }}/preview" target="_blank" rel="noopener">Preview</a>
       {% endif %}
       <a class="btn btn--secondary" href="/admin/printing/templates">Back</a>
     </div>
   </form>
-
-  {% if mode == "edit" and template %}
-    <section class="frame" style="margin-top: 1rem;">
-      <div class="frame-header">
-        <h2>Preview</h2>
-      </div>
-      <div class="frame-body">
-        <form class="filters filters-inline" method="get" action="/admin/printing/templates/{{ template.id }}/preview" target="_blank">
-          <div class="field template-preview-ticket-field">
-            <label for="preview_record_id">
-              Preview {{ preview_entity_label }} (optional)
-              {% if not invoice_mode %}{{ help(help_text.printing_preview_ticket_id, "printing-template-preview-ticket-id-help") }}{% endif %}
-            </label>
-            <div class="template-preview-ticket-row">
-              <input type="text" id="preview_record_id" name="{{ preview_param_name }}" value="{{ preview_id_value }}" />
-              <button type="submit" class="btn btn--secondary">Open Preview</button>
-            </div>
-            <p class="hint">{{ preview_hint }}</p>
-            {% if validation_hint %}
-              <p class="hint">{{ validation_hint }}</p>
-            {% endif %}
-          </div>
-        </form>
-      </div>
-    </section>
-  {% endif %}
-
-  {% if mode == "new" %}
-    <script id="default_ticket_layouts_json" type="application/json">{{ default_layouts_json | safe }}</script>
-  {% endif %}
-
-  <script>
-    (function () {
-      const picker = document.getElementById("insert_field_token");
-      const textarea = document.getElementById("content");
-      const purpose = document.getElementById("purpose");
-      const contentType = document.getElementById("content_type");
-      const insertDefaultButton = document.getElementById("insert_default_ticket_layout");
-      if (!(picker instanceof HTMLSelectElement) || !(textarea instanceof HTMLTextAreaElement)) {
-        return;
-      }
-
-      function insertAtCursor(token) {
-        const start = Number.isInteger(textarea.selectionStart) ? textarea.selectionStart : textarea.value.length;
-        const end = Number.isInteger(textarea.selectionEnd) ? textarea.selectionEnd : textarea.value.length;
-        const before = textarea.value.slice(0, start);
-        const after = textarea.value.slice(end);
-        textarea.value = before + token + after;
-        const next = start + token.length;
-        textarea.focus();
-        textarea.setSelectionRange(next, next);
-        textarea.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-
-      picker.addEventListener("change", function () {
-        const token = picker.value;
-        if (!token) {
-          return;
-        }
-        insertAtCursor(token);
-        picker.value = "";
-      });
-
-      if (!(insertDefaultButton instanceof HTMLButtonElement)) {
-        return;
-      }
-
-      const layoutsScript = document.getElementById("default_ticket_layouts_json");
-      let starterLayouts = {};
-      if (layoutsScript) {
-        try {
-          starterLayouts = JSON.parse(layoutsScript.textContent || "{}");
-        } catch (_error) {
-          starterLayouts = {};
-        }
-      }
-
-      function selectStarterLayout() {
-        const selectedPurpose = purpose instanceof HTMLSelectElement ? purpose.value : "";
-        const selectedType = contentType instanceof HTMLSelectElement ? contentType.value : "";
-        const exact = starterLayouts[`${selectedPurpose}|${selectedType}`];
-        if (typeof exact === "string" && exact.length > 0) {
-          return exact;
-        }
-        const fallbackByType = starterLayouts[`*|${selectedType}`];
-        if (typeof fallbackByType === "string" && fallbackByType.length > 0) {
-          return fallbackByType;
-        }
-        return "";
-      }
-
-      insertDefaultButton.addEventListener("click", function () {
-        const starter = selectStarterLayout();
-        if (!starter) {
-          return;
-        }
-        textarea.value = starter;
-        textarea.focus();
-        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-        textarea.dispatchEvent(new Event("input", { bubbles: true }));
-      });
-    })();
-  </script>
 {% endblock %}

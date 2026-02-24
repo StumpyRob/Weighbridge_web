@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% from "_help.html" import help %}
+
+{% block title %}Destinations | Weighbridge Web{% endblock %}
+
+{% block toast_messages %}
+  {% if saved %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Saved.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Destinations{{ help(help_text.printing_destination_concept, "printing-destinations-title-help") }}</h1>
+      <p class="muted">Where output goes and how it is delivered.</p>
+    </div>
+    <div class="actions btn-group">
+      <a class="btn btn--primary" href="/admin/printing/destinations/new">Add Destination</a>
+    </div>
+  </div>
+
+  {% include "admin/printing_nav.html" %}
+
+  {% if error %}
+    <div class="alert">{{ error }}</div>
+  {% endif %}
+
+  <form class="filters filters-inline" method="get" action="/admin/printing/destinations">
+    <div class="field">
+      <label for="document_type">Document type</label>
+      <select id="document_type" name="document_type">
+        <option value="">All</option>
+        {% for value, label in document_type_options %}
+          <option value="{{ value }}" {% if document_type == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="q">Search</label>
+      <input type="text" id="q" name="q" value="{{ q }}" />
+    </div>
+    <div class="field checkbox">
+      <input type="hidden" name="hide_inactive" value="0" />
+      <input type="checkbox" id="hide_inactive" name="hide_inactive" value="1" {% if hide_inactive %}checked{% endif %} />
+      <label for="hide_inactive">Hide inactive</label>
+    </div>
+    <div class="actions btn-group">
+      <button type="submit" class="btn btn--secondary">Search</button>
+      <a class="btn btn--ghost" href="/admin/printing/destinations">Reset</a>
+    </div>
+  </form>
+
+  <div class="table-wrap list-table-wrap printing-destinations-table-wrap">
+    <table class="data-table list-table printing-destinations-table">
+      <thead>
+        <tr>
+          <th class="destinations-col-name">Name</th>
+          <th class="destinations-col-document-type">Document type</th>
+          <th class="destinations-col-template">Template</th>
+          <th class="destinations-col-delivery">Delivery type</th>
+          <th class="destinations-col-default">Default</th>
+          <th class="status-col destinations-col-status">Status</th>
+          <th class="actions-col destinations-col-actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+          {% set template_row = templates_by_id.get(item.template_id) if item.template_id else None %}
+          <tr data-row-link="/admin/printing/destinations/{{ item.id }}/edit">
+            <td class="destinations-col-name">
+              <span class="printing-destination-name table-cell-truncate" title="{{ item.description if item.description else item.name }}">
+                {{ item.name }}
+              </span>
+            </td>
+            <td class="destinations-col-document-type">
+              <span class="printing-destination-document-type table-cell-truncate" title="{{ item.document_type }}">{{ item.document_type }}</span>
+            </td>
+            <td class="destinations-col-template">
+              <span class="table-cell-truncate" title="{{ template_row.code if template_row else '-' }}">{{ template_row.code if template_row else "-" }}</span>
+            </td>
+            <td class="destinations-col-delivery">
+              <span class="printing-destination-delivery-type table-cell-truncate" title="{{ item.delivery_type }}">{{ item.delivery_type }}</span>
+            </td>
+            <td class="destinations-col-default">{% if item.is_default %}<span class="status-pill status-info">Default</span>{% else %}-{% endif %}</td>
+            <td class="status-col destinations-col-status">
+              {% if item.is_active %}
+                <span class="status-pill status-open">Active</span>
+              {% else %}
+                <span class="status-pill status-void">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="actions-col destinations-col-actions" data-row-link-ignore>
+              <div class="printing-destination-actions-inline" data-row-link-ignore>
+                {% set delete_error = destination_delete_errors.get(item.id, "") %}
+                <a class="btn btn--ghost btn--sm" href="/admin/printing/destinations/{{ item.id }}/edit">Edit</a>
+                {% if item.is_active %}
+                  <form method="post" action="/admin/printing/destinations/{{ item.id }}/deactivate">
+                    <button type="submit" class="btn btn--danger btn--sm">Deactivate</button>
+                  </form>
+                {% elif not hide_inactive %}
+                  <form method="post" action="/admin/printing/destinations/{{ item.id }}/reactivate">
+                    <button type="submit" class="btn btn--secondary btn--sm">Reactivate</button>
+                  </form>
+                {% endif %}
+                {% if not delete_error %}
+                  <form method="post" action="/admin/printing/destinations/{{ item.id }}/delete">
+                    <button
+                      type="submit"
+                      class="btn btn--danger btn--sm"
+                      onclick="return window.confirm('Delete destination {{ item.name }}?');"
+                    >
+                      Delete
+                    </button>
+                  </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="7" class="empty">No destinations found.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

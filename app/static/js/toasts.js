@@ -20,7 +20,7 @@
   const SUCCESS_QUERY_EXTRA_PARAMS = {
     print_sent: [
       "print_job_id",
-      "print_profile",
+      "print_destination",
       "print_sent_at",
       "print_status",
       "print_error",

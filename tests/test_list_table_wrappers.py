@@ -31,7 +31,7 @@ def test_list_pages_render_table_wrapper(client, path):
         "/lookups/drivers",
         "/lookups/containers",
         "/lookups/destinations",
-        "/admin/printing/profiles",
+        "/admin/printing/destinations",
     ],
 )
 def test_lookup_tabs_render_table_wrapper_and_actions_column(client, path):
@@ -41,7 +41,7 @@ def test_lookup_tabs_render_table_wrapper_and_actions_column(client, path):
     assert 'class="table-wrap' in response.text
     assert (
         '<th class="actions-col">Actions</th>' in response.text
-        or 'class="actions-col profiles-col-actions">Actions</th>' in response.text
+        or 'class="actions-col destinations-col-actions">Actions</th>' in response.text
     )
 
 

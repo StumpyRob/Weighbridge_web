@@ -161,7 +161,7 @@
         <section class="section">
           <div class="row">
             <span class="label">Date/time</span>
-            <span class="value">{{ payload.datetime_display or "-" }}</span>
+            <span class="value">{{ payload.datetime or "-" }}</span>
           </div>
           <div class="row">
             <span class="label">Status</span>
@@ -180,49 +180,45 @@
         <section class="section">
           <div class="row">
             <span class="label">Customer</span>
-            <span class="value">{{ payload.customer.name or "-" }}</span>
+            <span class="value">{{ payload.customer_name or "-" }}</span>
           </div>
           <div class="row">
             <span class="label">Account</span>
-            <span class="value">{{ payload.customer.account_code or "-" }}</span>
+            <span class="value">{{ payload.customer_account_code or "-" }}</span>
           </div>
           <div class="row">
             <span class="label">Vehicle</span>
-            <span class="value">{{ payload.vehicle.registration or "-" }}</span>
+            <span class="value">{{ payload.vehicle_reg or "-" }}</span>
           </div>
         </section>
 
         <section class="section">
           <div class="row">
             <span class="label">Product</span>
-            <span class="value">{{ payload.product.code or "-" }}</span>
+            <span class="value">{{ payload.product_code or "-" }}</span>
           </div>
           <div class="row">
             <span class="label">Description</span>
-            <span class="value">{{ payload.product.description or "-" }}</span>
-          </div>
-          <div class="row">
-            <span class="label">Unit</span>
-            <span class="value">{{ payload.product.unit_name or "-" }}</span>
+            <span class="value">{{ payload.product_description or "-" }}</span>
           </div>
         </section>
 
         <section class="section">
           <div class="row">
             <span class="label">Gross</span>
-            <span class="value">{{ payload.weights.gross_kg_display }}</span>
+            <span class="value">{{ payload.gross_kg_display or "-" }}</span>
           </div>
           <div class="row">
             <span class="label">Tare</span>
-            <span class="value">{{ payload.weights.tare_kg_display }}</span>
+            <span class="value">{{ payload.tare_kg_display or "-" }}</span>
           </div>
           <div class="row">
             <span class="label">Net</span>
-            <span class="value">{{ payload.weights.net_kg_display }}</span>
+            <span class="value">{{ payload.net_kg_display or "-" }}</span>
           </div>
           <div class="row">
             <span class="label">Qty</span>
-            <span class="value">{{ payload.weights.qty_display }}</span>
+            <span class="value">{{ payload.qty_display or "-" }}</span>
           </div>
         </section>
 
@@ -230,8 +226,8 @@
           <div class="row">
             <span class="label">Unit price</span>
             <span class="value">
-              {% if payload.weights.unit_price is not none %}
-                {{ "{:,.2f}".format(payload.weights.unit_price) }}
+              {% if payload.unit_price is not none %}
+                {{ "{:,.2f}".format(payload.unit_price) }}
               {% else %}
                 -
               {% endif %}
@@ -240,8 +236,8 @@
           <div class="row strong">
             <span class="label">Total</span>
             <span class="value">
-              {% if payload.weights.total is not none %}
-                {{ "{:,.2f}".format(payload.weights.total) }}
+              {% if payload.total is not none %}
+                {{ "{:,.2f}".format(payload.total) }}
               {% else %}
                 -
               {% endif %}

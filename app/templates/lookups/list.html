@@ -86,7 +86,8 @@
       <tbody>
         {% for item in items %}
           {% set can_edit = not (entity_singular == "Unit" and item.unit_type == "WEIGHT") %}
-          <tr{% if can_edit %} data-row-link="{{ base_path }}/{{ item.id }}/edit"{% endif %}>
+          {% set is_weight_default = entity_singular == "Unit" and item.unit_type == "WEIGHT" and (item.name|string|lower in ["kg", "tonnes", "tonne"]) %}
+          <tr{% if can_edit %} data-row-link="{{ base_path }}/{{ item.id }}/edit"{% endif %}{% if is_weight_default %} class="lookup-row--system-default"{% endif %}>
             <td class="truncate-col">
               <span class="truncate truncate--md" title="{{ item.name }}">{{ item.name }}</span>
             </td>
@@ -119,6 +120,17 @@
                   {% elif not hide_inactive %}
                     <form method="post" action="{{ base_path }}/{{ item.id }}/reactivate">
                       <button type="submit" class="btn btn--secondary btn--sm">Reactivate</button>
+                    </form>
+                  {% endif %}
+                  {% if entity_singular == "Unit" %}
+                    <form method="post" action="{{ base_path }}/{{ item.id }}/delete">
+                      <button
+                        type="submit"
+                        class="btn btn--danger btn--sm"
+                        onclick="return window.confirm('Delete unit {{ item.name }}?');"
+                      >
+                        Delete
+                      </button>
                     </form>
                   {% endif %}
                 {% endif %}
