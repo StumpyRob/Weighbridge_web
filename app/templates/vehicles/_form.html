@@ -66,27 +66,12 @@
         {% endfor %}
       </select>
     </div>
-  </div>
-</section>
-
-<section class="card">
-  <h2>Typical Fleet Associations (informational only — does not auto-fill tickets)</h2>
-  <div class="form-grid">
     <div class="field">
-      <label for="haulier_id">Assigned haulier</label>
-      <select id="haulier_id" name="haulier_id">
-        <option value="">Select haulier</option>
-        {% for id, label in options.hauliers %}
-          <option value="{{ id }}" {% if form.haulier_id == id %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field">
-      <label for="driver_id">Assigned driver</label>
-      <select id="driver_id" name="driver_id">
-        <option value="">Select driver</option>
+      <label for="default_driver_id">Default driver{{ help(help_text.vehicle_default_driver, "vehicle-default-driver-help") }}</label>
+      <select id="default_driver_id" name="default_driver_id">
+        <option value="">Select default driver</option>
         {% for id, label in options.drivers %}
-          <option value="{{ id }}" {% if form.driver_id == id %}selected{% endif %}>{{ label }}</option>
+          <option value="{{ id }}" {% if form.default_driver_id == id %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
     </div>

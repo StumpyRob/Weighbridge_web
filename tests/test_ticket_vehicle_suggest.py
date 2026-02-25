@@ -83,7 +83,7 @@ def test_vehicle_suggestion_apply_updates_fields(client, db_session):
         status=TicketStatusEnum.OPEN.value,
         direction=DirectionEnum.INWARD.value,
         transaction_type=TransactionTypeEnum.WASTEIN.value,
-        customer_id=customer_a.id,
+        customer_id=None,
         gross_kg=12000,
         dont_invoice=False,
         paid=False,
@@ -92,11 +92,10 @@ def test_vehicle_suggestion_apply_updates_fields(client, db_session):
     db_session.commit()
     vehicle.default_customer_id = customer_b.id
     vehicle.default_haulier_id = haulier.id
-    vehicle.driver_id = driver.id
+    vehicle.default_driver_id = driver.id
     vehicle.default_tare_kg = 5000
     db_session.add(vehicle)
     db_session.commit()
-    ticket.customer_id = customer_a.id
     db_session.add(ticket)
     db_session.commit()
 
@@ -149,7 +148,7 @@ def test_vehicle_suggestion_does_not_render_panel_when_already_applied(client, d
     db_session.commit()
     vehicle.default_customer_id = customer.id
     vehicle.default_haulier_id = haulier.id
-    vehicle.driver_id = driver.id
+    vehicle.default_driver_id = driver.id
     vehicle.default_tare_kg = 5000
     db_session.add(vehicle)
     db_session.commit()
@@ -203,7 +202,7 @@ def test_vehicle_suggestion_apply_allows_on_stop_customer_with_warning(client, d
         status=TicketStatusEnum.OPEN.value,
         direction=DirectionEnum.INWARD.value,
         transaction_type=TransactionTypeEnum.WASTEIN.value,
-        customer_id=customer_a.id,
+        customer_id=None,
         dont_invoice=False,
         paid=False,
     )
@@ -212,7 +211,6 @@ def test_vehicle_suggestion_apply_allows_on_stop_customer_with_warning(client, d
     vehicle.default_customer_id = customer_b.id
     db_session.add(vehicle)
     db_session.commit()
-    ticket.customer_id = customer_a.id
     db_session.add(ticket)
     db_session.commit()
 
@@ -368,7 +366,7 @@ def test_on_stop_customer_can_be_applied_via_all_paths_but_cannot_complete(clien
         status = ticket.status.value if hasattr(ticket.status, "value") else str(ticket.status)
         assert status == TicketStatusEnum.OPEN.value
 
-    ticket_unified = create_ticket("T-STOP-PATH-1", customer_open.id)
+    ticket_unified = create_ticket("T-STOP-PATH-1", None)
     response = client.post(
         "/tickets/vehicle-suggestion/apply",
         data={"ticket_id": str(ticket_unified.id), "reg": vehicle.registration},
@@ -425,3 +423,81 @@ def test_on_stop_customer_can_be_applied_via_all_paths_but_cannot_complete(clien
     assert view_response.status_code == 200
     assert "allowed to record ticket; cannot complete/invoice." in view_response.text
     assert_complete_blocked(ticket_save)
+
+
+def test_ticket_save_autofills_default_driver_when_empty(client, db_session):
+    driver = Driver(name="Vehicle Default Driver")
+    vehicle = Vehicle(registration="DR11DEF")
+    ticket = Ticket(
+        ticket_no="T-DRIVER-DEFAULT-1",
+        datetime=datetime(2026, 1, 6, 9, 0, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([driver, vehicle, ticket])
+    db_session.commit()
+    vehicle.default_driver_id = driver.id
+    db_session.add(vehicle)
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "save",
+            "datetime": "2026-01-06T09:00",
+            "direction": "INWARD",
+            "transaction_type": "WASTEIN",
+            "vehicle_id": str(vehicle.id),
+            "reg": vehicle.registration,
+            "driver_id": "",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    db_session.refresh(ticket)
+    assert ticket.driver_id == driver.id
+
+
+def test_ticket_save_does_not_overwrite_existing_driver_with_vehicle_default(client, db_session):
+    existing_driver = Driver(name="Already Set Driver")
+    default_driver = Driver(name="Vehicle Default Driver 2")
+    vehicle = Vehicle(registration="DR22DEF", default_driver_id=default_driver.id)
+    ticket = Ticket(
+        ticket_no="T-DRIVER-DEFAULT-2",
+        datetime=datetime(2026, 1, 6, 10, 0, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        driver_id=existing_driver.id,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([existing_driver, default_driver])
+    db_session.commit()
+    vehicle.default_driver_id = default_driver.id
+    db_session.add(vehicle)
+    db_session.commit()
+    db_session.add(ticket)
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "save",
+            "datetime": "2026-01-06T10:00",
+            "direction": "INWARD",
+            "transaction_type": "WASTEIN",
+            "vehicle_id": str(vehicle.id),
+            "reg": vehicle.registration,
+            "driver_id": str(existing_driver.id),
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    db_session.refresh(ticket)
+    assert ticket.driver_id == existing_driver.id

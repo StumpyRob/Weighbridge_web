@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..constants import REG_MAX
@@ -89,12 +90,25 @@ async def vehicles_create(
         vehicle_type_id=payload["vehicle_type_id"],
         default_tare_kg=payload["default_tare_kg"],
         overweight_threshold_kg=payload["overweight_threshold_kg"],
-        haulier_id=payload["haulier_id"],
         default_haulier_id=payload["default_haulier_id"],
-        driver_id=payload["driver_id"],
+        default_driver_id=payload["default_driver_id"],
     )
     db.add(vehicle)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        payload["errors"].append("Registration already exists.")
+        return templates.TemplateResponse(request, 
+            "vehicles/new.html",
+            {
+                "request": request,
+                "errors": payload["errors"],
+                "form": payload["form"],
+                "options": _load_options(db),
+            },
+            status_code=400,
+        )
     return RedirectResponse(url="/vehicles?saved=1", status_code=303)
 
 
@@ -167,11 +181,32 @@ async def vehicles_update(
     vehicle.vehicle_type_id = payload["vehicle_type_id"]
     vehicle.default_tare_kg = payload["default_tare_kg"]
     vehicle.overweight_threshold_kg = payload["overweight_threshold_kg"]
-    vehicle.haulier_id = payload["haulier_id"]
     vehicle.default_haulier_id = payload["default_haulier_id"]
-    vehicle.driver_id = payload["driver_id"]
+    vehicle.default_driver_id = payload["default_driver_id"]
     vehicle.updated_at = utcnow()
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        payload["errors"].append("Registration already exists.")
+        tares = db.execute(
+            select(VehicleTare, Container)
+            .join(Container, VehicleTare.container_id == Container.id)
+            .where(VehicleTare.vehicle_id == vehicle.id)
+            .order_by(Container.name)
+        ).all()
+        return templates.TemplateResponse(request, 
+            "vehicles/edit.html",
+            {
+                "request": request,
+                "errors": payload["errors"],
+                "vehicle": vehicle,
+                "form": payload["form"],
+                "options": _load_options(db),
+                "tares": tares,
+            },
+            status_code=400,
+        )
     return RedirectResponse(url="/vehicles?saved=1", status_code=303)
 
 
@@ -293,9 +328,8 @@ def _parse_vehicle_form(form) -> dict:
             "vehicle_type_id": value("vehicle_type_id"),
             "default_tare_kg": value("default_tare_kg"),
             "overweight_threshold_kg": value("overweight_threshold_kg"),
-            "haulier_id": value("haulier_id"),
             "default_haulier_id": value("default_haulier_id"),
-            "driver_id": value("driver_id"),
+            "default_driver_id": value("default_driver_id"),
         },
         "registration": registration,
         "owner_customer_id": _parse_int(value("owner_customer_id")),
@@ -303,9 +337,8 @@ def _parse_vehicle_form(form) -> dict:
         "vehicle_type_id": vehicle_type_id,
         "default_tare_kg": _parse_float(value("default_tare_kg")),
         "overweight_threshold_kg": _parse_float(value("overweight_threshold_kg")),
-        "haulier_id": _parse_int(value("haulier_id")),
         "default_haulier_id": _parse_int(value("default_haulier_id")),
-        "driver_id": _parse_int(value("driver_id")),
+        "default_driver_id": _parse_int(value("default_driver_id")),
     }
 
 
@@ -317,9 +350,8 @@ def _empty_form() -> dict:
         "vehicle_type_id": "",
         "default_tare_kg": "",
         "overweight_threshold_kg": "",
-        "haulier_id": "",
         "default_haulier_id": "",
-        "driver_id": "",
+        "default_driver_id": "",
     }
 
 
@@ -339,9 +371,8 @@ def _vehicle_to_form(vehicle: Vehicle) -> dict:
             if vehicle.overweight_threshold_kg is not None
             else ""
         ),
-        "haulier_id": str(vehicle.haulier_id or ""),
         "default_haulier_id": str(vehicle.default_haulier_id or ""),
-        "driver_id": str(vehicle.driver_id or ""),
+        "default_driver_id": str(vehicle.default_driver_id or ""),
     }
 
 

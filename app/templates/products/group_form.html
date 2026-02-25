@@ -62,4 +62,32 @@
     <a class="btn btn--secondary" href="/products/groups">Back</a>
   </div>
 </form>
+
+{% if mode == "edit" %}
+  <section class="card">
+    <h2>Products In This Group ({{ (products_in_group or []) | length }})</h2>
+    {% if products_in_group %}
+      <div class="table-wrap list-table-wrap">
+        <table class="data-table list-table">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for product in products_in_group %}
+              <tr data-row-link="/products/{{ product.id }}">
+                <td><span class="truncate truncate--sm" title="{{ product.code }}">{{ product.code }}</span></td>
+                <td><span class="truncate truncate--md" title="{{ product.description }}">{{ product.description }}</span></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">No products currently assigned to this group.</p>
+    {% endif %}
+  </section>
+{% endif %}
 {% endblock %}

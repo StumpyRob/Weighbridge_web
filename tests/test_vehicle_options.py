@@ -1,6 +1,6 @@
 from sqlalchemy import delete, func, select
 
-from app.models import Customer, Driver, VehicleType
+from app.models import Customer, Driver, Vehicle, VehicleType
 from app.seed import seed_vehicle_types
 
 
@@ -40,3 +40,38 @@ def test_vehicle_form_auto_seeds_vehicle_types_when_empty(client, db_session):
 
     assert response.status_code == 200
     assert db_session.execute(select(func.count(VehicleType.id))).scalar_one() == 10
+
+
+def test_vehicle_create_and_edit_persists_default_driver(client, db_session):
+    driver_one = Driver(name="Default Driver One")
+    driver_two = Driver(name="Default Driver Two")
+    db_session.add_all([driver_one, driver_two])
+    db_session.commit()
+
+    create_response = client.post(
+        "/vehicles/new",
+        data={
+            "registration": "DFT123",
+            "default_driver_id": str(driver_one.id),
+        },
+        follow_redirects=False,
+    )
+    assert create_response.status_code == 303
+
+    vehicle = db_session.execute(
+        select(Vehicle).where(Vehicle.registration == "DFT123")
+    ).scalar_one()
+    assert vehicle.default_driver_id == driver_one.id
+
+    edit_response = client.post(
+        f"/vehicles/{vehicle.id}",
+        data={
+            "registration": "DFT123",
+            "default_driver_id": str(driver_two.id),
+        },
+        follow_redirects=False,
+    )
+    assert edit_response.status_code == 303
+
+    db_session.refresh(vehicle)
+    assert vehicle.default_driver_id == driver_two.id

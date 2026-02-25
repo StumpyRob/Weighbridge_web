@@ -3,8 +3,7 @@ from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -12,11 +11,13 @@ from ..constants import CODE_MAX, DESC_MAX, NAME_MAX, NOMINAL_CODE_MAX
 from ..db import get_db
 from ..models.base import utcnow
 from ..models import (
+    CustomerProductPrice,
     Destination,
     NominalCode,
     Product,
     ProductGroup,
     TaxRate,
+    Ticket,
     Unit,
     EwcCode,
 )
@@ -77,6 +78,10 @@ def products_list(
             )
         )
     products = db.execute(query).scalars().all()
+    error = None
+    error_code = request.query_params.get("error")
+    if error_code == "in_use":
+        error = "Cannot delete: in use by tickets."
     return templates.TemplateResponse(request, 
         "products/list.html",
         {
@@ -84,6 +89,7 @@ def products_list(
             "products": products,
             "q": search_query,
             "saved": request.query_params.get("saved") == "1",
+            "error": error,
         },
     )
 
@@ -188,6 +194,13 @@ def product_groups_list(
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     resolved_hide = _resolve_hide_inactive(request, hide_inactive)
+    error = None
+    error_code = request.query_params.get("error")
+    if error_code == "in_use":
+        error = "Cannot delete: in use by products."
+    elif error_code:
+        error = request.query_params.get("error") or ""
+
     query = select(ProductGroup)
     if resolved_hide:
         query = query.where(ProductGroup.is_active.is_(True))
@@ -204,16 +217,30 @@ def product_groups_list(
             )
         )
     groups = db.execute(query.order_by(ProductGroup.name.asc())).scalars().all()
+    group_ids = [int(group.id) for group in groups]
+    product_counts_by_group: dict[int, int] = {}
+    if group_ids:
+        count_rows = db.execute(
+            select(Product.group_id, func.count(Product.id))
+            .where(Product.group_id.in_(group_ids))
+            .group_by(Product.group_id)
+        ).all()
+        product_counts_by_group = {
+            int(group_id): int(count)
+            for group_id, count in count_rows
+            if group_id is not None
+        }
     return templates.TemplateResponse(
         request,
         "products/groups_list.html",
         {
             "request": request,
             "groups": groups,
+            "product_counts_by_group": product_counts_by_group,
             "q": q or "",
             "hide_inactive": bool(resolved_hide),
             "saved": request.query_params.get("saved") == "1",
-            "error": request.query_params.get("error") or "",
+            "error": error or "",
         },
     )
 
@@ -301,6 +328,13 @@ def product_groups_edit(
             {"request": request, "product_id": group_id},
             status_code=404,
         )
+    products_in_group = list(
+        db.execute(
+            select(Product)
+            .where(Product.group_id == group.id)
+            .order_by(Product.code.asc(), Product.description.asc())
+        ).scalars()
+    )
     return templates.TemplateResponse(
         request,
         "products/group_form.html",
@@ -310,6 +344,7 @@ def product_groups_edit(
             "mode": "edit",
             "group": group,
             "form": _product_group_to_form(group),
+            "products_in_group": products_in_group,
         },
     )
 
@@ -420,6 +455,32 @@ def product_groups_reactivate(
         )
     group.is_active = True
     group.updated_at = utcnow()
+    db.commit()
+    return RedirectResponse(url="/products/groups?saved=1", status_code=303)
+
+
+@router.post("/products/groups/{group_id:int}/delete", response_class=HTMLResponse)
+def product_groups_delete(
+    group_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    group = db.get(ProductGroup, group_id)
+    if not group:
+        return templates.TemplateResponse(
+            request,
+            "products/not_found.html",
+            {"request": request, "product_id": group_id},
+            status_code=404,
+        )
+
+    in_use = db.execute(
+        select(func.count(Product.id)).where(Product.group_id == group.id)
+    ).scalar_one()
+    if in_use:
+        return RedirectResponse(url="/products/groups?error=in_use", status_code=303)
+
+    db.delete(group)
     db.commit()
     return RedirectResponse(url="/products/groups?saved=1", status_code=303)
 
@@ -824,6 +885,41 @@ async def products_update(
             },
             status_code=400,
         )
+    return RedirectResponse(url="/products?saved=1", status_code=303)
+
+
+@router.post("/products/{product_id:int}/delete", response_class=HTMLResponse)
+def products_delete(
+    product_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    product = db.get(Product, product_id)
+    if not product:
+        return templates.TemplateResponse(
+            request,
+            "products/not_found.html",
+            {"request": request, "product_id": product_id},
+            status_code=404,
+        )
+
+    in_use = db.execute(
+        select(func.count(Ticket.id)).where(Ticket.product_id == product.id)
+    ).scalar_one()
+    if in_use:
+        return RedirectResponse(url="/products?error=in_use", status_code=303)
+
+    db.execute(
+        delete(CustomerProductPrice).where(
+            CustomerProductPrice.product_id == product.id
+        )
+    )
+    try:
+        db.delete(product)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return RedirectResponse(url="/products?error=in_use", status_code=303)
     return RedirectResponse(url="/products?saved=1", status_code=303)
 
 

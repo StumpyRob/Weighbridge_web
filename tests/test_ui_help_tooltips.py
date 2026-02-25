@@ -103,6 +103,8 @@ def test_vehicle_pages_show_tooltips_for_defaults_and_tares(client, db_session):
     assert 'id="vehicle-ticket-defaults-help"' in new_response.text
     assert 'id="vehicle-default-customer-help"' in new_response.text
     assert 'id="vehicle-default-haulier-help"' in new_response.text
+    assert 'id="vehicle-default-driver-help"' in new_response.text
+    assert "Typical Fleet Associations" not in new_response.text
 
     edit_response = client.get(f"/vehicles/{vehicle.id}")
     assert edit_response.status_code == 200

@@ -17,6 +17,7 @@ HELP_TEXT = {
     "vehicle_ticket_defaults": "Auto-fills these values on new tickets when this vehicle is identified.",
     "vehicle_default_customer": "Pre-selects customer on new tickets for this vehicle.",
     "vehicle_default_haulier": "Pre-selects haulier on new tickets for this vehicle.",
+    "vehicle_default_driver": "Auto-fills driver on new tickets for this vehicle. You can change it on the ticket.",
     "vehicle_per_container_tares": "Optional tare overrides by container for this vehicle.",
     "ticket_direction": "Sets vehicle movement direction for this ticket.",
     "ticket_transaction_type": "Controls ticket rules by flow type (waste vs sale).",

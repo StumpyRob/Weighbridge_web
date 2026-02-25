@@ -24,6 +24,12 @@
 
 {% include "products/_subnav.html" %}
 
+{% if error %}
+  <div class="alert">
+    {{ error }}
+  </div>
+{% endif %}
+
 <form class="filters" method="get" action="/products">
   <div class="field">
     <label for="q">Search code, description, or EWC</label>
@@ -43,6 +49,7 @@
       <col class="products-col-unit" />
       <col class="products-col-unit-price" />
       <col class="products-col-tax-rate" />
+      <col class="products-col-actions" />
     </colgroup>
     <thead>
       <tr>
@@ -51,6 +58,7 @@
         <th class="unit-col">Unit</th>
         <th class="unit-price-col numeric-col num">Unit price</th>
         <th class="tax-rate-col numeric-col num">Tax rate</th>
+        <th class="actions-col">Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -87,10 +95,24 @@
               &mdash;
             {% endif %}
           </td>
+          <td class="actions-col" data-row-link-ignore>
+            <div class="actions btn-group lookup-actions" data-row-link-ignore>
+              <a class="btn btn--ghost btn--sm" href="/products/{{ product.id }}">Edit</a>
+              <form method="post" action="/products/{{ product.id }}/delete">
+                <button
+                  type="submit"
+                  class="btn btn--danger btn--sm"
+                  onclick="return window.confirm('Delete product {{ product.code }}?');"
+                >
+                  Delete
+                </button>
+              </form>
+            </div>
+          </td>
         </tr>
       {% else %}
         <tr>
-          <td colspan="5" class="empty">No products found.</td>
+          <td colspan="6" class="empty">No products found.</td>
         </tr>
       {% endfor %}
     </tbody>

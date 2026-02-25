@@ -792,6 +792,10 @@ a.btn[aria-disabled="true"] {
   width: 110px;
 }
 
+.products-table .products-col-actions {
+  width: 210px;
+}
+
 .products-table td.description-col,
 .products-table td.unit-col {
   max-width: 0;
@@ -819,12 +823,16 @@ a.btn[aria-disabled="true"] {
   width: 140px;
 }
 
+.products-groups-table .products-groups-col-count {
+  width: 110px;
+}
+
 .products-groups-table .products-groups-col-status {
   width: 130px;
 }
 
 .products-groups-table .products-groups-col-actions {
-  width: 220px;
+  width: 300px;
 }
 
 .products-groups-table th.status-col,
@@ -835,8 +843,8 @@ a.btn[aria-disabled="true"] {
 
 .products-groups-table th.actions-col,
 .products-groups-table td.actions-col {
-  width: 220px;
-  min-width: 220px;
+  width: 300px;
+  min-width: 300px;
 }
 
 .data-row-link {

@@ -22,6 +22,7 @@ class Vehicle(Base):
     haulier_id: Mapped[int | None] = mapped_column(ForeignKey("hauliers.id"))
     default_haulier_id: Mapped[int | None] = mapped_column(ForeignKey("hauliers.id"))
     driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"))
+    default_driver_id: Mapped[int | None] = mapped_column(ForeignKey("drivers.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow

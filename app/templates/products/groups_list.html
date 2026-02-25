@@ -51,6 +51,7 @@
     <colgroup>
       <col class="products-groups-col-name" />
       <col class="products-groups-col-nominal" />
+      <col class="products-groups-col-count" />
       <col class="products-groups-col-status" />
       <col class="products-groups-col-actions" />
     </colgroup>
@@ -58,6 +59,7 @@
       <tr>
         <th class="truncate-col">Name</th>
         <th>Nominal</th>
+        <th>Products</th>
         <th class="status-col">Status</th>
         <th class="actions-col">Actions</th>
       </tr>
@@ -73,6 +75,7 @@
               <span class="truncate truncate--sm" title="">&mdash;</span>
             {% endif %}
           </td>
+          <td>{{ product_counts_by_group.get(group.id, 0) }}</td>
           <td class="status-col">
             {% if group.is_active %}
               <span class="status-pill status-open">Active</span>
@@ -92,12 +95,21 @@
                   <button type="submit" class="btn btn--secondary btn--sm">Reactivate</button>
                 </form>
               {% endif %}
+              <form method="post" action="/products/groups/{{ group.id }}/delete">
+                <button
+                  type="submit"
+                  class="btn btn--danger btn--sm"
+                  onclick="return window.confirm('Delete product group {{ group.name }}?');"
+                >
+                  Delete
+                </button>
+              </form>
             </div>
           </td>
         </tr>
       {% else %}
         <tr>
-          <td colspan="4" class="empty">No product groups found.</td>
+          <td colspan="5" class="empty">No product groups found.</td>
         </tr>
       {% endfor %}
     </tbody>

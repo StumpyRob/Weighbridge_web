@@ -623,7 +623,11 @@ def tickets_vehicle_suggest(
         if vehicle.default_haulier_id
         else None
     )
-    default_driver = db.get(Driver, vehicle.driver_id) if vehicle.driver_id else None
+    default_driver = (
+        db.get(Driver, vehicle.default_driver_id)
+        if vehicle.default_driver_id
+        else None
+    )
     selected_customer_id = _parse_int(str(customer_id or "").strip())
     selected_haulier_id = _parse_int(str(haulier_id or "").strip())
     selected_driver_id = _parse_int(str(driver_id or "").strip())
@@ -2739,7 +2743,11 @@ async def tickets_apply_vehicle_suggestion(
         if vehicle.default_haulier_id
         else None
     )
-    default_driver = db.get(Driver, vehicle.driver_id) if vehicle.driver_id else None
+    default_driver = (
+        db.get(Driver, vehicle.default_driver_id)
+        if vehicle.default_driver_id
+        else None
+    )
     suggested_tare_kg = None
     if vehicle.default_tare_kg is not None:
         candidate_tare = Decimal(str(vehicle.default_tare_kg))
@@ -2758,7 +2766,7 @@ async def tickets_apply_vehicle_suggestion(
         ticket.vehicle_reg_text = vehicle.registration
         applied = True
 
-    if default_customer:
+    if default_customer and ticket.customer_id is None:
         if ticket.customer_id != default_customer.id:
             ticket.customer_id = default_customer.id
             applied = True
@@ -2767,7 +2775,7 @@ async def tickets_apply_vehicle_suggestion(
                 "Customer is ON STOP - allowed to record ticket; cannot complete/invoice."
             )
 
-    if default_haulier:
+    if default_haulier and ticket.haulier_id is None:
         if not default_haulier.is_active:
             errors.append("Suggested haulier is inactive.")
         else:
@@ -2779,7 +2787,7 @@ async def tickets_apply_vehicle_suggestion(
                     "Haulier is ON STOP - allowed to record ticket; cannot complete/invoice."
                 )
 
-    if default_driver:
+    if default_driver and ticket.driver_id is None:
         if not default_driver.is_active:
             errors.append("Suggested driver is inactive.")
         elif ticket.driver_id != default_driver.id:
@@ -4010,6 +4018,17 @@ def _apply_ticket_defaults(db: Session, payload: dict) -> None:
         if default_haulier and default_haulier.is_active:
             payload["haulier_id"] = default_haulier.id
             payload["form"]["haulier_id"] = str(default_haulier.id)
+
+    if (
+        payload.get("driver_id") is None
+        and not payload.get("walk_in_sale")
+        and vehicle
+        and vehicle.default_driver_id
+    ):
+        default_driver = db.get(Driver, vehicle.default_driver_id)
+        if default_driver and default_driver.is_active:
+            payload["driver_id"] = default_driver.id
+            payload["form"]["driver_id"] = str(default_driver.id)
 
     if (
         vehicle
