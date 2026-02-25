@@ -674,25 +674,48 @@ def tickets_vehicle_suggest(
 def _generate_ticket_no(db: Session, now: datetime | None = None) -> str:
     current_time = now or utcnow()
     year = current_time.year
-    db.execute(
-        text(
-            "INSERT OR IGNORE INTO ticket_sequences (year, last_number, updated_at) "
-            "VALUES (:year, 0, :updated_at)"
-        ),
-        {"year": year, "updated_at": current_time},
-    )
-    db.execute(
-        text(
-            "UPDATE ticket_sequences "
-            "SET last_number = last_number + 1, updated_at = :updated_at "
-            "WHERE year = :year"
-        ),
-        {"year": year, "updated_at": current_time},
-    )
-    next_number = db.execute(
-        text("SELECT last_number FROM ticket_sequences WHERE year = :year"),
-        {"year": year},
-    ).scalar_one()
+    bind = db.get_bind()
+    dialect_name = (bind.dialect.name if bind is not None else "").lower()
+
+    if dialect_name == "postgresql":
+        db.execute(
+            text(
+                "INSERT INTO ticket_sequences (year, last_number, updated_at) "
+                "VALUES (:year, 0, :updated_at) "
+                "ON CONFLICT (year) DO NOTHING"
+            ),
+            {"year": year, "updated_at": current_time},
+        )
+        # Use RETURNING for atomic increment/read to avoid duplicate numbers under concurrency.
+        next_number = db.execute(
+            text(
+                "UPDATE ticket_sequences "
+                "SET last_number = last_number + 1, updated_at = :updated_at "
+                "WHERE year = :year "
+                "RETURNING last_number"
+            ),
+            {"year": year, "updated_at": current_time},
+        ).scalar_one()
+    else:
+        db.execute(
+            text(
+                "INSERT OR IGNORE INTO ticket_sequences (year, last_number, updated_at) "
+                "VALUES (:year, 0, :updated_at)"
+            ),
+            {"year": year, "updated_at": current_time},
+        )
+        db.execute(
+            text(
+                "UPDATE ticket_sequences "
+                "SET last_number = last_number + 1, updated_at = :updated_at "
+                "WHERE year = :year"
+            ),
+            {"year": year, "updated_at": current_time},
+        )
+        next_number = db.execute(
+            text("SELECT last_number FROM ticket_sequences WHERE year = :year"),
+            {"year": year},
+        ).scalar_one()
 
     return f"{str(year)[2:]}-{next_number:05d}"
 
