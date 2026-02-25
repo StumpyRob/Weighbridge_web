@@ -9,14 +9,24 @@
       <h1>Template Variables{{ help(help_text.printing_template_concept, "printing-template-variables-title-help") }}</h1>
       <p class="muted">Use these variables in Ticket, Invoice, and WTN templates.</p>
     </div>
+    <div class="actions btn-group">
+      <a class="btn btn--secondary" href="/admin">Back to Admin</a>
+    </div>
   </div>
 
-  {% include "admin/printing_nav.html" %}
+  {% include "admin/help_nav.html" %}
 
+  <div class="stacked-frames help-template-frames">
   <div class="frame">
     <div class="frame-header">Available In All Templates</div>
     <div class="frame-body">
-      <table class="list-table">
+      <div class="table-wrap list-table-wrap">
+      <table class="list-table template-vars-table">
+        <colgroup>
+          <col class="template-vars-col-variable" />
+          <col class="template-vars-col-description" />
+          <col class="template-vars-col-example" />
+        </colgroup>
         <thead>
           <tr>
             <th>Variable</th>
@@ -33,7 +43,7 @@
           <tr>
             <td><code>company_lines</code></td>
             <td>Company address lines.</td>
-            <td>[\"Line 1\", \"Town\"]</td>
+            <td>["Line 1", "Town"]</td>
           </tr>
           <tr>
             <td><code>company.logo_url</code></td>
@@ -47,13 +57,20 @@
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
   </div>
 
   <div class="frame">
     <div class="frame-header">Payload Variables</div>
     <div class="frame-body">
-      <table class="list-table">
+      <div class="table-wrap list-table-wrap">
+      <table class="list-table template-vars-table">
+        <colgroup>
+          <col class="template-vars-col-variable" />
+          <col class="template-vars-col-description" />
+          <col class="template-vars-col-example" />
+        </colgroup>
         <thead>
           <tr>
             <th>Variable</th>
@@ -71,6 +88,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
     </div>
   </div>
 
@@ -88,21 +106,5 @@
 {% endfor %}{% endraw %}</code></pre>
     </div>
   </div>
-
-  <div class="frame compact">
-    <div class="frame-header">Template Capabilities &amp; Rules</div>
-    <div class="frame-body">
-      <ul class="template-vars-list">
-        <li>Templates support standard HTML and CSS for layout and branding.</li>
-        <li>Allowed images: logo data URIs, local app assets, and inline <code>&lt;img&gt;</code> elements.</li>
-        <li>External URLs are blocked by default in PDF rendering.</li>
-        <li>In PDF/Send output, background images and shadows/effects are removed; background colours are preserved.</li>
-        <li>Browser print headers/footers (URL/date/time) are controlled by browser print settings.</li>
-        <li>Thermal (80mm text) templates are unaffected.</li>
-      </ul>
-      <p class="muted">
-        For watermarks, use a faint positioned <code>&lt;img&gt;</code> (not CSS <code>background-image</code>) if needed.
-      </p>
-    </div>
   </div>
 {% endblock %}

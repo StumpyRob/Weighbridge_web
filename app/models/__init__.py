@@ -3,6 +3,7 @@ from .company_setting import CompanySetting
 from .customer import Customer
 from .customer_product_price import CustomerProductPrice
 from .ewc_code import EwcCode
+from .ewc_import_log import EwcImportLog
 from .invoice import Invoice
 from .invoice_line import InvoiceLine
 from .invoice_sequence import InvoiceSequence
@@ -54,6 +55,7 @@ __all__ = [
     "Customer",
     "CustomerProductPrice",
     "EwcCode",
+    "EwcImportLog",
     "Invoice",
     "InvoiceLine",
     "InvoiceSequence",

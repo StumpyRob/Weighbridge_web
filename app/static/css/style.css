@@ -1603,6 +1603,15 @@ a.btn[aria-disabled="true"] {
   overflow: visible;
 }
 
+.stacked-frames {
+  display: grid;
+  gap: 1rem;
+}
+
+.help-template-frames > .frame + .frame {
+  margin-top: 0.15rem;
+}
+
 .frame-header {
   background: #f3f4f6;
   padding: 0.6rem 1rem;
@@ -1637,6 +1646,42 @@ details.frame:not([open]) .frame-header {
 
 .frame-body {
   padding: 1rem;
+}
+
+.template-vars-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 980px;
+}
+
+.template-vars-table th,
+.template-vars-table td {
+  white-space: normal;
+  vertical-align: top;
+}
+
+.template-vars-table th {
+  text-align: left;
+}
+
+.template-vars-table .template-vars-col-variable {
+  width: 28%;
+}
+
+.template-vars-table .template-vars-col-description {
+  width: 38%;
+}
+
+.template-vars-table .template-vars-col-example {
+  width: 34%;
+}
+
+.template-vars-table code {
+  display: inline-block;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .frame.compact .frame-header {

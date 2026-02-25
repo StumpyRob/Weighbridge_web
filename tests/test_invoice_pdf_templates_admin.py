@@ -33,7 +33,6 @@ def test_admin_printing_nav_shows_destinations_templates_jobs(client):
     assert response.status_code == 200
     assert ">Destinations<" in response.text
     assert ">Templates<" in response.text
-    assert ">Template Variables<" in response.text
     assert ">Jobs<" in response.text
     assert ">Printers<" not in response.text
 

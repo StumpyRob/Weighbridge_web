@@ -126,7 +126,7 @@ def test_unified_payload_ticket_invoice_wtn_sources(db_session):
 
 
 def test_template_variables_page_lists_payload_variables(client, db_session):
-    response = client.get("/admin/printing/template-variables")
+    response = client.get("/admin/help/template-variables")
     assert response.status_code == 200
     assert "Template Variables" in response.text
     assert "payload.document_type" in response.text

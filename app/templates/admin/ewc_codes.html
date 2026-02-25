@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}EWC Codes | Weighbridge Web{% endblock %}
+
+{% block toast_messages %}
+  {% if saved and last_log %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">
+        Import complete. Inserted {{ last_log.inserted_count }}, updated {{ last_log.updated_count }}, unchanged {{ last_log.unchanged_count }}, skipped {{ last_log.skipped_count }}, deactivated {{ last_log.deactivated_count }}.
+      </div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>EWC Codes</h1>
+      <p class="muted">Upload a regulatory CSV file to import or refresh EWC codes.</p>
+    </div>
+    <div class="actions btn-group">
+      <a class="btn btn--secondary" href="/admin">Back to Admin</a>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="alert">{{ error }}</div>
+  {% endif %}
+
+  <div class="stacked-frames">
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Current Status</h2>
+      </div>
+      <div class="frame-body">
+        <p><strong>Total codes:</strong> {{ total_codes }}</p>
+        <p><strong>Active codes:</strong> {{ active_codes }}</p>
+        <p><strong>Inactive codes:</strong> {{ inactive_codes }}</p>
+        {% if last_log %}
+          <p><strong>Last import:</strong> {{ last_log.imported_at }}{% if last_log.imported_by %} by {{ last_log.imported_by }}{% endif %}</p>
+          <p><strong>Source file:</strong> {{ last_log.source_file }}</p>
+          <p><strong>Replace mode:</strong> {{ "Yes" if last_log.replace_mode else "No" }}</p>
+        {% else %}
+          <p class="muted">No imports recorded yet.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Import CSV</h2>
+      </div>
+      <div class="frame-body">
+        <form class="ticket-form" method="post" action="/admin/ewc-codes" enctype="multipart/form-data">
+          <div class="field">
+            <label for="csv_file">CSV file</label>
+            <input type="file" id="csv_file" name="csv_file" accept=".csv,text/csv" required />
+            <p class="hint">UTF-8 CSV up to 10MB.</p>
+          </div>
+          <div class="field checkbox">
+            <input type="checkbox" id="replace_existing" name="replace_existing" value="1" />
+            <label for="replace_existing">Replace existing (deactivate codes not present in upload)</label>
+          </div>
+          <div class="actions btn-group">
+            <button type="submit" class="btn btn--primary">Import</button>
+            <a class="btn btn--ghost" href="/admin/ewc-codes/sample.csv">Download current CSV</a>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    {% if last_log and last_log.error_count > 0 %}
+      <section class="frame">
+        <div class="frame-header">
+          <h2>Last Import Errors ({{ last_log.error_count }})</h2>
+        </div>
+        <div class="frame-body">
+          <ul>
+            {% for item in last_log_errors %}
+              <li>Row {{ item.row }}: {{ item.reason }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </section>
+    {% endif %}
+  </div>
+{% endblock %}

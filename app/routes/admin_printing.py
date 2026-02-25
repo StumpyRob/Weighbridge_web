@@ -14,7 +14,6 @@ from ..db import get_db
 from ..models import Invoice, PrintDestination, PrintJob, PrintTemplate, Ticket
 from ..services.print_payload import (
     build_print_payload,
-    print_payload_variable_docs,
 )
 from ..services.print_render import render_from_content
 from ..services.printing import (
@@ -71,8 +70,6 @@ JOB_STATUS_FILTER_OPTIONS = (
 
 
 def _active_printing_tab(path: str) -> str:
-    if "/template-variables" in path:
-        return "template_variables"
     if "/templates" in path:
         return "templates"
     if "/jobs" in path:
@@ -1245,19 +1242,9 @@ def admin_print_jobs_list(
     )
 
 
-@router.get("/admin/printing/template-variables", response_class=HTMLResponse)
-def admin_print_template_variables(
-    request: Request,
-) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request,
-        "admin/printing_template_variables.html",
-        {
-            "request": request,
-            "active_tab": _active_printing_tab(str(request.url.path)),
-            "rows": print_payload_variable_docs(),
-        },
-    )
+@router.get("/admin/printing/template-variables")
+def admin_print_template_variables_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/admin/help/template-variables", status_code=303)
 
 
 @router.get("/admin/printing/jobs/{job_id:int}", response_class=HTMLResponse)
