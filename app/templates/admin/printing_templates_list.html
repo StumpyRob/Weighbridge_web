@@ -31,7 +31,7 @@
 
   <form class="filters filters-inline" method="get" action="/admin/printing/templates">
     <div class="field">
-      <label for="document_type">Document type</label>
+      <label for="document_type">Document type{{ help(help_text.printing_document_type, "printing-templates-filter-document-type-help") }}</label>
       <select id="document_type" name="document_type">
         <option value="">All</option>
         {% for value, label in document_type_options %}
@@ -68,7 +68,7 @@
         <tr>
           <th class="truncate-col">Code</th>
           <th class="truncate-col">Description</th>
-          <th>Document type</th>
+          <th>Document type{{ help(help_text.printing_document_type, "printing-templates-col-document-type-help") }}</th>
           <th>Format{{ help(help_text.printing_content_type, "printing-templates-format-help") }}</th>
           <th class="status-col">Status</th>
           <th class="actions-col">Actions</th>

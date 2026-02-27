@@ -17,6 +17,42 @@ from .templating import templates
 logger = logging.getLogger(__name__)
 
 
+def _strip_non_production_routes(app: FastAPI) -> None:
+    filtered_routes = []
+    for route in app.router.routes:
+        path = str(getattr(route, "path", "")).lower()
+        if "debug" in path or "__" in path or "dev" in path:
+            continue
+        filtered_routes.append(route)
+    app.router.routes = filtered_routes
+
+
+def _log_alembic_revision_status() -> None:
+    try:
+        config = Config("alembic.ini")
+        script = ScriptDirectory.from_config(config)
+        heads = list(script.get_heads())
+    except Exception:
+        logger.warning("Could not read Alembic heads from alembic.ini.", exc_info=True)
+        heads = []
+
+    current_revision = None
+    try:
+        with SessionLocal() as db:
+            bind = db.get_bind()
+            with bind.connect() as connection:
+                context = MigrationContext.configure(connection)
+                current_revision = context.get_current_revision()
+    except Exception:
+        logger.warning("Could not read current Alembic revision from database.", exc_info=True)
+
+    logger.info(
+        "Alembic revision status: current=%s, heads=%s",
+        current_revision,
+        heads,
+    )
+
+
 def _printing_schema_ready_for_bootstrap() -> bool:
     try:
         with SessionLocal() as db:
@@ -91,6 +127,9 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
     @app.get("/admin", response_class=HTMLResponse)
     def admin(request: Request) -> HTMLResponse:
         return templates.TemplateResponse(request, "admin.html", {"request": request})
+
+    if dev_mode is False:
+        _strip_non_production_routes(app)
 
     return app
 

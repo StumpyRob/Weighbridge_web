@@ -1,9 +1,11 @@
+{% from "_help.html" import help %}
+
 {% set resolved_unit_type = (resolved_unit_type or "")|upper %}
 {% set qty_locked = resolved_unit_type == "WEIGHT" %}
 {% set qty_input_value = "" if qty_locked else qty_value %}
 
 <div class="field{% if qty_locked %} muted{% endif %}" id="qty-wrap"{% if oob_qty %} hx-swap-oob="outerHTML"{% endif %}>
-  <label for="qty">Billable quantity</label>
+  <label for="qty">Billable quantity{{ help(help_text.ticket_billable_quantity, "ticket-billable-quantity-help") }}</label>
   <input
     type="number"
     step="0.001"

@@ -1,6 +1,7 @@
 from .base import Base
 from .company_setting import CompanySetting
 from .customer import Customer
+from .customer_adjustment import CustomerAdjustment
 from .customer_product_price import CustomerProductPrice
 from .ewc_code import EwcCode
 from .ewc_import_log import EwcImportLog
@@ -53,6 +54,7 @@ __all__ = [
     "Base",
     "CompanySetting",
     "Customer",
+    "CustomerAdjustment",
     "CustomerProductPrice",
     "EwcCode",
     "EwcImportLog",

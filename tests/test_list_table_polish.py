@@ -3,7 +3,9 @@ from decimal import Decimal
 
 from app.models import (
     Customer,
+    CustomerProductPrice,
     DirectionEnum,
+    Haulier,
     Invoice,
     Product,
     TaxRate,
@@ -69,6 +71,7 @@ def test_customers_list_hides_contact_columns_and_shows_operational_badges(
     flagged_customer = Customer(
         account_code="C-LIST-CUST-1",
         name="List Customer",
+        payment_terms_days=60,
         on_stop=True,
         do_not_invoice=True,
         must_have_po=True,
@@ -77,7 +80,29 @@ def test_customers_list_hides_contact_columns_and_shows_operational_badges(
         account_code="C-LIST-CUST-2",
         name="Normal Customer",
     )
-    db_session.add_all([flagged_customer, normal_customer])
+    override_product = Product(
+        code="P-LIST-CUST-OVR-1",
+        description="List Customer Override Product",
+        unit_price=Decimal("10.00"),
+    )
+    db_session.add_all([flagged_customer, normal_customer, override_product])
+    db_session.flush()
+    db_session.add_all(
+        [
+            CustomerProductPrice(
+                customer_id=flagged_customer.id,
+                product_id=override_product.id,
+                unit_price=Decimal("9.50"),
+                is_active=True,
+            ),
+            CustomerProductPrice(
+                customer_id=normal_customer.id,
+                product_id=override_product.id,
+                unit_price=Decimal("8.75"),
+                is_active=False,
+            ),
+        ]
+    )
     db_session.commit()
 
     response = client.get("/customers")
@@ -85,6 +110,11 @@ def test_customers_list_hides_contact_columns_and_shows_operational_badges(
     assert response.status_code == 200
     assert "<th>Email</th>" not in response.text
     assert "<th>Phone</th>" not in response.text
+    assert 'id="customer-terms-indicator-help"' in response.text
+    assert 'id="customer-pricing-indicator-help"' in response.text
+    assert "NET 60" in response.text
+    assert "Has special pricing" in response.text
+    assert response.text.count('class="pricing-indicator"') == 1
     assert "Flags" in response.text
     assert 'id="customer-flags-help"' in response.text
     assert "ON STOP" in response.text
@@ -97,11 +127,13 @@ def test_customers_list_hides_contact_columns_and_shows_operational_badges(
 
 def test_vehicles_list_uses_vehicle_type_header_and_kg_formatting(client, db_session):
     vehicle_type = VehicleType(code="LIST-VTYPE", is_active=True)
-    db_session.add(vehicle_type)
+    default_haulier = Haulier(name="List Default Haulier")
+    db_session.add_all([vehicle_type, default_haulier])
     db_session.flush()
     vehicle = Vehicle(
         registration="LV01XYZ",
         vehicle_type_id=vehicle_type.id,
+        default_haulier_id=default_haulier.id,
         default_tare_kg=12500,
         overweight_threshold_kg=32000,
     )
@@ -112,6 +144,8 @@ def test_vehicles_list_uses_vehicle_type_header_and_kg_formatting(client, db_ses
 
     assert response.status_code == 200
     assert "<th>Vehicle type</th>" in response.text
+    assert '<th class="truncate-col">Default haulier</th>' in response.text
+    assert "List Default Haulier" in response.text
     assert "12,500 kg" in response.text
     assert "32,000 kg" in response.text
 

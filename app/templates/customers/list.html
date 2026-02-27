@@ -40,6 +40,8 @@
       <tr>
         <th class="customer-account-col">Account code</th>
         <th class="truncate-col customer-name-col">Name</th>
+        <th class="terms-col">Terms{{ help(help_text.customer_terms_indicator, "customer-terms-indicator-help") }}</th>
+        <th class="pricing-col">Pricing{{ help(help_text.customer_pricing_indicator, "customer-pricing-indicator-help") }}</th>
         <th class="flags-col">
           Flags
           {{ help("ON STOP blocks completion and invoicing. NO INVOICE excludes from invoice generation. PO REQUIRED requires a PO before invoicing.", "customer-flags-help") }}
@@ -47,10 +49,24 @@
       </tr>
     </thead>
     <tbody>
-      {% for customer in customers %}
+      {% for customer, has_price_overrides in rows %}
         <tr data-row-link="/customers/{{ customer.id }}">
           <td class="customer-account-col"><span class="truncate truncate--sm" title="{{ customer.account_code }}">{{ customer.account_code }}</span></td>
           <td class="truncate-col customer-name-col"><a href="/customers/{{ customer.id }}" class="truncate truncate--md" title="{{ customer.name }}">{{ customer.name }}</a></td>
+          <td class="terms-col">
+            {% if customer.payment_terms_days is not none %}
+              <span class="customer-terms customer-terms--value">NET {{ customer.payment_terms_days }}</span>
+            {% else %}
+              <span class="customer-terms customer-terms--empty">&mdash;</span>
+            {% endif %}
+          </td>
+          <td class="pricing-col">
+            {% if has_price_overrides %}
+              <span class="pricing-indicator" title="Has special pricing" aria-label="Has special pricing">&#10003;</span>
+            {% else %}
+              <span class="customer-terms customer-terms--empty">&mdash;</span>
+            {% endif %}
+          </td>
           <td class="flags-col">
             <div class="status-stack">
               {% if customer.on_stop %}
@@ -70,7 +86,7 @@
         </tr>
       {% else %}
         <tr>
-          <td colspan="3" class="empty">No customers found.</td>
+          <td colspan="5" class="empty">No customers found.</td>
         </tr>
       {% endfor %}
     </tbody>

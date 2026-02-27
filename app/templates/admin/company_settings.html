@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_help.html" import help %}
 
 {% block title %}Company Settings | Weighbridge Web{% endblock %}
 
@@ -69,7 +70,7 @@
       </div>
       <div class="frame-body">
         <div class="field">
-          <label for="company_logo_file">Company logo (PNG/JPG)</label>
+          <label for="company_logo_file">Company logo (PNG/JPG){{ help(help_text.company_logo_upload, "company-logo-upload-help") }}</label>
           <input type="file" id="company_logo_file" name="company_logo_file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" />
           <p class="hint">Max 2MB. Uploading a file replaces the current logo.</p>
         </div>
@@ -83,6 +84,97 @@
         {% else %}
           <p class="muted">No logo configured.</p>
         {% endif %}
+
+        <div class="field">
+          <label for="nav_logo_height_px">Navigation logo size (px){{ help(help_text.company_nav_logo_size, "company-nav-logo-size-help") }}</label>
+          <input
+            type="number"
+            id="nav_logo_height_px"
+            name="nav_logo_height_px"
+            min="20"
+            max="80"
+            step="1"
+            value="{{ setting.nav_logo_height_px if setting.nav_logo_height_px is not none else 34 }}"
+          />
+          <p class="hint">Controls logo height in the top navigation bar (20-80px).</p>
+        </div>
+
+        <div class="field checkbox">
+          <input type="hidden" name="show_nav_logo" value="0" />
+          <input
+            type="checkbox"
+            id="show_nav_logo"
+            name="show_nav_logo"
+            value="1"
+            {% if setting.show_nav_logo is not false %}checked{% endif %}
+          />
+          <label for="show_nav_logo">Show logo in navigation bar{{ help(help_text.company_show_nav_logo, "company-show-nav-logo-help") }}</label>
+        </div>
+
+        <div class="field checkbox">
+          <input type="hidden" name="show_nav_title" value="0" />
+          <input
+            type="checkbox"
+            id="show_nav_title"
+            name="show_nav_title"
+            value="1"
+            {% if setting.show_nav_title is not false %}checked{% endif %}
+          />
+          <label for="show_nav_title">Show title in navigation bar{{ help(help_text.company_show_nav_title, "company-show-nav-title-help") }}</label>
+        </div>
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Theme</h2>
+      </div>
+      <div class="frame-body">
+        <div class="field">
+          <label for="navbar_color_hex">Navigation bar colour (HEX){{ help(help_text.company_navbar_color, "company-navbar-color-help") }}</label>
+          <div class="company-color-row">
+            <input
+              type="color"
+              id="navbar_color_picker"
+              value="{{ setting.navbar_color_hex or '#14213D' }}"
+              data-sync-target="navbar_color_hex"
+            />
+            <input
+              type="text"
+              id="navbar_color_hex"
+              name="navbar_color_hex"
+              value="{{ setting.navbar_color_hex or '#14213D' }}"
+              maxlength="7"
+              pattern="^#?[0-9A-Fa-f]{6}$"
+              spellcheck="false"
+              autocomplete="off"
+            />
+          </div>
+          <p class="hint">Used for the top navigation background.</p>
+        </div>
+
+        <div class="field">
+          <label for="primary_color_hex">Primary colour (HEX){{ help(help_text.company_primary_color, "company-primary-color-help") }}</label>
+          <div class="company-color-row">
+            <input
+              type="color"
+              id="primary_color_picker"
+              value="{{ setting.primary_color_hex or '#FCA311' }}"
+              data-sync-target="primary_color_hex"
+            />
+            <input
+              type="text"
+              id="primary_color_hex"
+              name="primary_color_hex"
+              value="{{ setting.primary_color_hex or '#FCA311' }}"
+              maxlength="7"
+              pattern="^#?[0-9A-Fa-f]{6}$"
+              spellcheck="false"
+              autocomplete="off"
+            />
+          </div>
+          <p class="hint">Used for primary actions and navigation highlights.</p>
+        </div>
       </div>
     </section>
 

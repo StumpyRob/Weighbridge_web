@@ -53,6 +53,11 @@ from ..models import (
 )
 from ..security import validate_no_html, validate_no_html_fields
 from ..services.pricing import resolve_unit_price_for_customer_product
+from ..services.credit import (
+    customer_outstanding_total,
+    money_decimal,
+    outstanding_display_values,
+)
 from ..services.pdf import render_html_pdf_bytes
 from ..services.print_payload import build_ticket_print_payload, build_wtn_payload
 from ..services.print_render import (
@@ -105,6 +110,7 @@ PO_UPDATE_ALLOWED_STATUSES = {
 TICKET_SEARCH_MAX_LEN = 100
 PRINT_REQUIRES_COMPLETE_ERROR = "Ticket must be complete to print."
 WTN_SEND_REQUIRES_COMPLETE_ERROR = "Ticket must be complete before sending WTN."
+CREDIT_LIMIT_WARNING_RATIO = Decimal("0.80")
 
 
 @router.get("/tickets", response_class=HTMLResponse)
@@ -1567,6 +1573,92 @@ def _ticket_wtn_actions_context(
     }
 
 
+def _optional_money_decimal(value: object | None) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        decimal_value = value if isinstance(value, Decimal) else Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return money_decimal(decimal_value)
+
+
+def _pence_to_money(value: int | None) -> Decimal | None:
+    if value is None:
+        return None
+    return money_decimal(Decimal(value) / Decimal("100"))
+
+
+def _ticket_estimated_total(
+    ticket: Ticket,
+    *,
+    form: dict | None = None,
+) -> Decimal | None:
+    ticket_total = _optional_money_decimal(getattr(ticket, "total", None))
+    if ticket_total is not None:
+        return ticket_total
+
+    qty_value: float | None = None
+    unit_price_value: Decimal | None = None
+    if form is not None:
+        qty_value = _parse_float(str(form.get("qty", "")))
+        unit_price_value = _parse_decimal(str(form.get("unit_price", "")))
+    if qty_value is None and getattr(ticket, "qty", None) is not None:
+        qty_value = _parse_float(str(ticket.qty))
+    if unit_price_value is None:
+        unit_price_value = _optional_money_decimal(getattr(ticket, "unit_price", None))
+    if qty_value is None or unit_price_value is None:
+        return None
+    return money_decimal(Decimal(str(qty_value)) * unit_price_value)
+
+
+def _ticket_credit_limit_banner_context(
+    db: Session,
+    *,
+    customer_id: int | None,
+    ticket: Ticket,
+    form: dict | None = None,
+) -> dict[str, object]:
+    hidden_context: dict[str, object] = {"show_credit_limit_banner": False}
+    if not customer_id:
+        return hidden_context
+    customer = db.get(Customer, customer_id)
+    if customer is None:
+        return hidden_context
+    credit_limit = _pence_to_money(customer.credit_limit_pence)
+    if credit_limit is None:
+        return hidden_context
+
+    outstanding_raw = customer_outstanding_total(db, customer_id)
+    outstanding_display, credit_balance = outstanding_display_values(outstanding_raw)
+    ticket_estimated_total = _ticket_estimated_total(ticket, form=form)
+    projected_raw = money_decimal(
+        outstanding_raw + (ticket_estimated_total or Decimal("0.00"))
+    )
+    projected_display, _ = outstanding_display_values(projected_raw)
+    warning_threshold = money_decimal(credit_limit * CREDIT_LIMIT_WARNING_RATIO)
+
+    if projected_raw > credit_limit:
+        level = "over"
+        headline = "Over credit limit"
+    elif projected_raw >= warning_threshold:
+        level = "approaching"
+        headline = "Approaching credit limit"
+    else:
+        return hidden_context
+
+    return {
+        "show_credit_limit_banner": True,
+        "credit_limit_banner_level": level,
+        "credit_limit_banner_headline": headline,
+        "credit_limit_banner_limit": credit_limit,
+        "credit_limit_banner_outstanding": outstanding_display,
+        "credit_limit_banner_credit_balance": credit_balance,
+        "credit_limit_banner_ticket_total": ticket_estimated_total,
+        "credit_limit_banner_projected": projected_display,
+    }
+
+
 @router.get("/tickets/{ticket_id:int}", response_class=HTMLResponse)
 def tickets_edit(
     ticket_id: int, request: Request, db: Session = Depends(get_db)
@@ -1604,6 +1696,12 @@ def tickets_edit(
         db,
         customer_id=selected_customer_id,
         product_id=ticket.product_id,
+    )
+    credit_limit_banner_context = _ticket_credit_limit_banner_context(
+        db,
+        customer_id=selected_customer_id,
+        ticket=ticket,
+        form=form,
     )
     print_actions_context = _ticket_print_actions_context(
         db,
@@ -1677,6 +1775,7 @@ def tickets_edit(
             "product_unit_meta": _load_product_unit_meta(db),
             "enums": _ticket_enums(),
             "receipts_wip_enabled": bool(settings.receipts_wip_enabled),
+            **credit_limit_banner_context,
             **print_actions_context,
             **wtn_actions_context,
             **_active_lookup_options(ticket, db),
@@ -4675,30 +4774,27 @@ def _render_ticket_edit(
     _ensure_ticket_void_reasons(db)
     invoice = db.get(Invoice, ticket.invoice_id) if ticket.invoice_id else None
     ticket_void, ticket_void_reason = _latest_ticket_void_with_reason(db, ticket.id)
+    resolved_form = form or _ticket_to_form(ticket)
     selected_customer_id = None
-    if form and form.get("customer_id"):
-        selected_customer_id = _parse_int(str(form.get("customer_id")))
+    if resolved_form.get("customer_id"):
+        selected_customer_id = _parse_int(str(resolved_form.get("customer_id")))
     if selected_customer_id is None:
         selected_customer_id = ticket.customer_id
-    selected_po_number = (
-        str(form.get("po_number", "")).strip()
-        if form
-        else (ticket.po_number or "")
-    )
+    selected_po_number = str(resolved_form.get("po_number", "")).strip()
     selected_haulier_id = None
-    if form and form.get("haulier_id"):
-        selected_haulier_id = _parse_int(str(form.get("haulier_id")))
+    if resolved_form.get("haulier_id"):
+        selected_haulier_id = _parse_int(str(resolved_form.get("haulier_id")))
     if selected_haulier_id is None:
         selected_haulier_id = ticket.haulier_id
     stop_blockers = _on_stop_blockers(db, selected_customer_id, selected_haulier_id)
     product_id = None
-    if form and form.get("product_id"):
-        product_id = _parse_int(str(form.get("product_id")))
+    if resolved_form.get("product_id"):
+        product_id = _parse_int(str(resolved_form.get("product_id")))
     if product_id is None:
         product_id = ticket.product_id
     selected_transaction_type = None
-    if form and form.get("transaction_type"):
-        selected_transaction_type = str(form.get("transaction_type"))
+    if resolved_form.get("transaction_type"):
+        selected_transaction_type = str(resolved_form.get("transaction_type"))
     if selected_transaction_type is None:
         selected_transaction_type = _enum_value_or_text(ticket.transaction_type)
     default_destination_id = None
@@ -4730,6 +4826,12 @@ def _render_ticket_edit(
         db,
         customer_id=selected_customer_id,
         product_id=product_id,
+    )
+    credit_limit_banner_context = _ticket_credit_limit_banner_context(
+        db,
+        customer_id=selected_customer_id,
+        ticket=ticket,
+        form=resolved_form,
     )
     print_actions_context = _ticket_print_actions_context(
         db,
@@ -4793,7 +4895,7 @@ def _render_ticket_edit(
             )
             if direction_warning is None
             else direction_warning,
-            "form": form or _ticket_to_form(ticket),
+            "form": resolved_form,
             "vehicle_reg": vehicle_reg if vehicle_reg is not None else _ticket_vehicle_reg(db, ticket),
             "can_edit_complete_po": _can_edit_complete_po(ticket, db),
             "po_locked_invoiced": _po_locked_invoiced(ticket, db),
@@ -4808,6 +4910,7 @@ def _render_ticket_edit(
             "product_unit_meta": _load_product_unit_meta(db),
             "enums": _ticket_enums(),
             "receipts_wip_enabled": bool(settings.receipts_wip_enabled),
+            **credit_limit_banner_context,
             **print_actions_context,
             **wtn_actions_context,
             **_active_lookup_options(ticket, db),

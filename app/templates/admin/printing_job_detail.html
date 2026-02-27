@@ -22,6 +22,7 @@
       <a class="btn btn--secondary" href="/admin/printing/jobs">Back</a>
       <form method="post" action="/admin/printing/jobs/{{ job.id }}/retry">
         <button type="submit" class="btn btn--primary">Retry</button>
+        {{ help(help_text.printing_jobs_retry, "printing-job-detail-retry-help") }}
       </form>
     </div>
   </div>
@@ -62,7 +63,7 @@
 
   <section class="frame" style="margin-top: 1rem;">
     <div class="frame-header">
-      <h2>Delivery Config Snapshot{{ help(help_text.printing_jobs_transport_snapshot, "printing-job-detail-transport-help") }}</h2>
+      <h2>Delivery Config Snapshot{{ help(help_text.printing_jobs_delivery_snapshot, "printing-job-detail-transport-help") }}</h2>
     </div>
     <div class="frame-body">
       <pre style="white-space: pre-wrap; font-family: Consolas, monospace;">{{ job.delivery_config_json }}</pre>

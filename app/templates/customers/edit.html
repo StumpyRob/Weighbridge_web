@@ -1,9 +1,15 @@
 {% extends "base.html" %}
+{% from "_help.html" import help %}
 
 {% block title %}Edit Customer {{ customer.account_code }} | Weighbridge Web{% endblock %}
 
 {% block toast_messages %}
-  {% if saved %}
+  {% if adjustment_saved %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Adjustment applied.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% elif saved %}
     <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
       <div class="flash-toast__content">Saved.</div>
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
@@ -29,16 +35,66 @@
   </div>
 {% endif %}
 
+<section class="card customer-credit-summary" id="customer-credit-summary">
+  <h2>Credit Summary{{ help(help_text.customer_credit_summary, "customer-credit-summary-help") }}</h2>
+  <div class="invoice-summary-grid customer-credit-summary__grid">
+    <div class="summary-item">
+      <span class="summary-label">Credit limit{{ help(help_text.customer_credit_summary_limit, "customer-credit-summary-limit-help") }}</span>
+      <span class="summary-value">
+        {% if customer_credit_limit is not none %}
+          &pound;{{ "{:,.2f}".format(customer_credit_limit) }}
+        {% else %}
+          &mdash;
+        {% endif %}
+      </span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Outstanding{{ help(help_text.customer_credit_summary_outstanding, "customer-credit-summary-outstanding-help") }}</span>
+      <span class="summary-value">
+        {% if customer_outstanding_raw < 0 %}
+          -&pound;{{ "{:,.2f}".format(-customer_outstanding_raw) }}
+        {% else %}
+          &pound;{{ "{:,.2f}".format(customer_outstanding_raw) }}
+        {% endif %}
+      </span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Available credit{{ help(help_text.customer_credit_summary_available, "customer-credit-summary-available-help") }}</span>
+      <span class="summary-value {% if customer_is_over_credit_limit %}customer-credit-summary__value--over{% elif customer_is_available_credit_low %}customer-credit-summary__value--low{% endif %}">
+        {% if customer_available_credit is not none %}
+          &pound;{{ "{:,.2f}".format(customer_available_credit) }}
+        {% else %}
+          &mdash;
+        {% endif %}
+      </span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Balance status{{ help(help_text.customer_credit_summary_status, "customer-credit-summary-status-help") }}</span>
+      <span class="summary-value">
+        {% if customer_balance_status == "clear" %}
+          Clear
+        {% else %}
+          {{ customer_balance_label }} &pound;{{ "{:,.2f}".format(customer_balance_amount) }}
+        {% endif %}
+      </span>
+    </div>
+  </div>
+  <p class="customer-credit-summary__links">
+    <a href="/invoices?customer_id={{ customer.id }}&unpaid_only=1">View open invoices</a>
+    <a href="#customer-adjustments-section">View adjustments</a>
+  </p>
+</section>
+
 <div class="ticket-form">
   <form id="customer-edit-form" class="ticket-form" method="post" action="/customers/{{ customer.id }}">
     {% include "customers/_form.html" %}
   </form>
 
   <section class="card">
-    <h2>Price Overrides</h2>
+    <h2>Price Overrides{{ help(help_text.customer_price_overrides, "customer-price-overrides-help") }}</h2>
     <form class="filters filters-inline" method="post" action="/customers/{{ customer.id }}/price-overrides">
       <div class="field">
-        <label for="override_product_id">Product</label>
+        <label for="override_product_id">Product{{ help(help_text.customer_price_override_product, "customer-override-product-help") }}</label>
         <select id="override_product_id" name="product_id" required>
           <option value="">Select product</option>
           {% for product_id, product_label in options.override_products %}
@@ -49,7 +105,7 @@
         </select>
       </div>
       <div class="field">
-        <label for="override_unit_price">Override price</label>
+        <label for="override_unit_price">Override price{{ help(help_text.customer_price_override_price, "customer-override-price-help") }}</label>
         <input
           type="number"
           step="0.01"
@@ -123,6 +179,108 @@
         </tbody>
       </table>
     </div>
+  </section>
+
+  <section class="card account-adjustments-card" id="customer-adjustments-section">
+    <h2>Account Adjustments{{ help(help_text.customer_account_adjustments, "customer-account-adjustments-help") }}</h2>
+    <p class="muted account-adjustments-help">
+      Manual credits or corrections applied to this account. This affects credit warnings.
+    </p>
+
+    <div class="table-wrap account-adjustments-ledger">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Amount</th>
+            <th>Reason</th>
+            <th>Note</th>
+            <th>By</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for adjustment in customer_adjustments %}
+            <tr>
+              <td>{{ adjustment.created_at.strftime("%d/%m/%Y %H:%M") if adjustment.created_at else "-" }}</td>
+              <td class="num">
+                {% if adjustment.amount_decimal is not none %}
+                  &pound;{{ "{:,.2f}".format(adjustment.amount_decimal) }}
+                {% else %}
+                  &mdash;
+                {% endif %}
+              </td>
+              <td>
+                {% if adjustment.reason in adjustment_reason_labels %}
+                  {{ adjustment_reason_labels[adjustment.reason] }}
+                {% else %}
+                  {{ adjustment.reason.replace("_", " ").title() if adjustment.reason else "-" }}
+                {% endif %}
+              </td>
+              <td>{{ adjustment.note }}</td>
+              <td>{{ adjustment.created_by_user_id if adjustment.created_by_user_id is not none else "System" }}</td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="5" class="empty">No adjustments recorded.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <details class="account-adjustments-disclosure" {% if adjustment_form_expanded %}open{% endif %}>
+      <summary class="btn btn--secondary account-adjustments-add-btn">+ Add adjustment</summary>
+      <form
+        class="filters filters-inline account-adjustments-form"
+        method="post"
+        action="/customers/{{ customer.id }}/adjustments"
+        onsubmit="return window.confirm('Apply this adjustment to outstanding balance?');"
+      >
+        <div class="field">
+          <label for="adjustment_amount_decimal">Amount (+ charge / - credit){{ help(help_text.customer_adjustment_amount, "customer-adjustment-amount-help") }}</label>
+          <input
+            type="number"
+            step="0.01"
+            id="adjustment_amount_decimal"
+            name="amount_decimal"
+            value="{{ adjustment_form.amount_decimal }}"
+            placeholder="-50.00"
+            required
+          />
+        </div>
+        <div class="field">
+          <label for="adjustment_reason">Reason{{ help(help_text.customer_adjustment_reason, "customer-adjustment-reason-help") }}</label>
+          <select id="adjustment_reason" name="reason" required>
+            {% for reason_code, reason_label in options.adjustment_reasons %}
+              <option value="{{ reason_code }}" {% if adjustment_form.reason == reason_code %}selected{% endif %}>
+                {{ reason_label }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="adjustment_note">Note{{ help(help_text.customer_adjustment_note, "customer-adjustment-note-help") }} (required)</label>
+          <input
+            type="text"
+            id="adjustment_note"
+            name="note"
+            value="{{ adjustment_form.note }}"
+            maxlength="{{ limits.NOTES_MAX }}"
+            required
+          />
+        </div>
+        <div class="actions btn-group">
+          <button type="submit" class="btn btn--secondary">Add adjustment</button>
+          <button
+            type="button"
+            class="btn btn--ghost"
+            onclick="this.closest('details').removeAttribute('open'); this.closest('details').querySelector('summary').focus();"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </details>
   </section>
 
   <div class="actions btn-group">

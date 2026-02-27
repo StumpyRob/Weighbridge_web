@@ -32,9 +32,10 @@ def vehicles_list(
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     query = (
-        select(Vehicle, Customer, VehicleType)
+        select(Vehicle, Customer, VehicleType, Haulier)
         .outerjoin(Customer, Vehicle.owner_customer_id == Customer.id)
         .outerjoin(VehicleType, Vehicle.vehicle_type_id == VehicleType.id)
+        .outerjoin(Haulier, Vehicle.default_haulier_id == Haulier.id)
         .order_by(Vehicle.registration)
     )
     if q:

@@ -133,6 +133,28 @@
   </div>
 {% endif %}
 
+{% if show_credit_limit_banner %}
+  <div class="alert {% if credit_limit_banner_level == 'over' %}alert--danger{% else %}alert--warning{% endif %} ticket-credit-banner" role="status">
+    <strong>{{ credit_limit_banner_headline }}{{ help(help_text.ticket_credit_limit_banner, "ticket-credit-limit-banner-help") }}</strong>
+    <div class="ticket-credit-banner__values">
+      <span><span class="ticket-credit-banner__label">Limit{{ help(help_text.ticket_credit_limit_limit, "ticket-credit-limit-limit-help") }}:</span> &pound;{{ "{:,.2f}".format(credit_limit_banner_limit) }}</span>
+      <span><span class="ticket-credit-banner__label">Outstanding{{ help(help_text.ticket_credit_limit_outstanding, "ticket-credit-limit-outstanding-help") }}:</span> &pound;{{ "{:,.2f}".format(credit_limit_banner_outstanding) }}</span>
+      {% if credit_limit_banner_credit_balance is not none %}
+        <span><span class="ticket-credit-banner__label">Credit balance{{ help(help_text.ticket_credit_limit_credit_balance, "ticket-credit-limit-credit-balance-help") }}:</span> &pound;{{ "{:,.2f}".format(credit_limit_banner_credit_balance) }}</span>
+      {% endif %}
+      <span>
+        <span class="ticket-credit-banner__label">This ticket{{ help(help_text.ticket_credit_limit_this_ticket, "ticket-credit-limit-this-ticket-help") }}:</span>
+        {% if credit_limit_banner_ticket_total is not none %}
+          &pound;{{ "{:,.2f}".format(credit_limit_banner_ticket_total) }}
+        {% else %}
+          &mdash;
+        {% endif %}
+      </span>
+      <span><span class="ticket-credit-banner__label">Projected{{ help(help_text.ticket_credit_limit_projected, "ticket-credit-limit-projected-help") }}:</span> &pound;{{ "{:,.2f}".format(credit_limit_banner_projected) }}</span>
+    </div>
+  </div>
+{% endif %}
+
 {% if form.status == "VOID" and ticket_void %}
   <div class="notice">
     <strong>Void reason:</strong>
@@ -264,7 +286,7 @@
           </div>
           {% if is_open %}
             <div class="field">
-              <label for="po_number">PO number</label>
+              <label for="po_number">PO number{{ help(help_text.ticket_po_number, "ticket-po-number-help") }}</label>
               <input
                 type="text"
                 id="po_number"
@@ -276,14 +298,14 @@
             </div>
           {% elif form.status == "COMPLETE" %}
             <div class="field po-inline-field" id="po">
-              <label>PO number</label>
+              <label>PO number{{ help(help_text.ticket_po_number, "ticket-po-number-readonly-help") }}</label>
               <div class="po-inline-row">
                 <div class="readonly">{{ form.po_number or "-" }}</div>
                 {% if can_edit_complete_po %}
                   <details class="po-inline-details">
                     <summary class="btn btn--secondary">{{ "Change" if form.po_number else "Add" }}</summary>
                     <div class="po-inline-editor">
-                      <label for="po_number_edit">PO number</label>
+                      <label for="po_number_edit">PO number{{ help(help_text.ticket_po_number, "ticket-po-number-edit-help") }}</label>
                       <input
                         type="text"
                         id="po_number_edit"

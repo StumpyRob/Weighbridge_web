@@ -37,6 +37,10 @@ from ..services.pdf import (
     render_invoice_pdf_html,
 )
 from ..services.wip_snapshots import customer_wip_snapshot, product_wip_snapshot
+from ..services.credit import (
+    INVOICE_OUTSTANDING_EXCLUDED_STATUSES,
+    INVOICE_OUTSTANDING_ISSUED_STATUSES,
+)
 from ..services.printing import (
     DELIVERY_TYPE_EMAIL_PDF,
     DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
@@ -69,6 +73,8 @@ WASTE_TRANSACTION_TYPES = {"WASTEIN", "WASTEOUT"}
 def invoices_list(
     request: Request,
     q: str | None = None,
+    customer_id: int | None = Query(None),
+    unpaid_only: int | None = Query(None),
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     query = (
@@ -76,14 +82,32 @@ def invoices_list(
         .join(Customer, Invoice.customer_id == Customer.id)
         .order_by(Invoice.invoice_date.desc())
     )
+    if customer_id:
+        query = query.where(Invoice.customer_id == customer_id)
+    if unpaid_only:
+        status_upper = func.upper(func.coalesce(Invoice.status, ""))
+        outstanding_status = or_(
+            status_upper.in_(INVOICE_OUTSTANDING_ISSUED_STATUSES),
+            ~status_upper.in_(INVOICE_OUTSTANDING_EXCLUDED_STATUSES),
+        )
+        query = query.where(status_upper != "").where(outstanding_status)
     if q:
         like = f"%{q}%"
         query = query.where(
             or_(Invoice.invoice_no.ilike(like), Customer.name.ilike(like))
         )
     rows = db.execute(query).all()
+    customer_filter = db.get(Customer, customer_id) if customer_id else None
     return templates.TemplateResponse(request, 
-        "invoices/list.html", {"request": request, "rows": rows, "q": q or ""}
+        "invoices/list.html",
+        {
+            "request": request,
+            "rows": rows,
+            "q": q or "",
+            "customer_id": customer_id,
+            "customer_filter": customer_filter,
+            "unpaid_only": bool(unpaid_only),
+        },
     )
 
 

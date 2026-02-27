@@ -31,7 +31,7 @@
 
   <form class="filters filters-inline" method="get" action="/admin/printing/destinations">
     <div class="field">
-      <label for="document_type">Document type</label>
+      <label for="document_type">Document type{{ help(help_text.printing_document_type, "printing-destinations-filter-document-type-help") }}</label>
       <select id="document_type" name="document_type">
         <option value="">All</option>
         {% for value, label in document_type_options %}
@@ -59,10 +59,10 @@
       <thead>
         <tr>
           <th class="destinations-col-name">Name</th>
-          <th class="destinations-col-document-type">Document type</th>
-          <th class="destinations-col-template">Template</th>
-          <th class="destinations-col-delivery">Delivery type</th>
-          <th class="destinations-col-default">Default</th>
+          <th class="destinations-col-document-type">Document type{{ help(help_text.printing_document_type, "printing-destinations-col-document-type-help") }}</th>
+          <th class="destinations-col-template">Template{{ help(help_text.printing_template_field, "printing-destinations-col-template-help") }}</th>
+          <th class="destinations-col-delivery">Delivery type{{ help(help_text.printing_delivery_type, "printing-destinations-col-delivery-help") }}</th>
+          <th class="destinations-col-default">Default{{ help(help_text.printing_default_destination, "printing-destinations-col-default-help") }}</th>
           <th class="status-col destinations-col-status">Status</th>
           <th class="actions-col destinations-col-actions">Actions</th>
         </tr>

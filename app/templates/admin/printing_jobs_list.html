@@ -24,7 +24,7 @@
 
   <form class="filters filters-inline" method="get" action="/admin/printing/jobs">
     <div class="field">
-      <label for="status">Status</label>
+      <label for="status">Status{{ help(help_text.printing_jobs_status, "printing-jobs-filter-status-help") }}</label>
       <select id="status" name="status">
         <option value="">All</option>
         {% for option_value, option_label in status_options %}
@@ -33,7 +33,7 @@
       </select>
     </div>
     <div class="field">
-      <label for="document_type">Document type</label>
+      <label for="document_type">Document type{{ help(help_text.printing_document_type, "printing-jobs-filter-document-type-help") }}</label>
       <select id="document_type" name="document_type">
         <option value="">All</option>
         {% for option_value, option_label in document_type_options %}
@@ -71,7 +71,7 @@
           <th class="jobs-col-id">ID</th>
           <th class="jobs-col-ticket">Document</th>
           <th class="jobs-col-doc-type">Type</th>
-          <th class="jobs-col-status">Status</th>
+          <th class="jobs-col-status">Status{{ help(help_text.printing_jobs_status, "printing-jobs-col-status-help") }}</th>
           <th class="jobs-col-when">When</th>
           <th class="jobs-col-target">Destination</th>
           <th class="jobs-col-template">Template</th>

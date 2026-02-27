@@ -13,6 +13,8 @@ def test_admin_help_pages_render(client):
     assert template_vars.status_code == 200
     assert "Template Variables" in template_vars.text
     assert "payload.document_type" in template_vars.text
+    assert "company_logo_url" in template_vars.text
+    assert "fmt_date(value, format)" in template_vars.text
 
 
 def test_legacy_printing_template_variables_route_redirects(client):

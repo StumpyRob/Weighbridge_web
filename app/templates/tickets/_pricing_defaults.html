@@ -1,7 +1,9 @@
+{% from "_help.html" import help %}
+
 <div class="form-grid">
   <div class="field field-secondary">
     <label for="unit_price">
-      {% if unit_name %}Rate (per {{ unit_name }}){% else %}Rate{% endif %}
+      {% if unit_name %}Rate (per {{ unit_name }}){% else %}Rate{% endif %}{{ help(help_text.ticket_unit_rate, "ticket-unit-rate-help") }}
     </label>
     <div class="input-prefix">
       <span class="input-prefix__symbol" aria-hidden="true">£</span>

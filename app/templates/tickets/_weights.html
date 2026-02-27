@@ -1,3 +1,5 @@
+{% from "_help.html" import help %}
+
 {% if show_weight_errors and errors %}
   <div class="alert">
     <ul>
@@ -51,7 +53,7 @@
     />
   </div>
   <div class="field">
-    <label for="readout_kg">Readout (kg)</label>
+    <label for="readout_kg">Readout (kg){{ help(help_text.ticket_readout_kg, "ticket-readout-kg-help") }}</label>
     <input
       type="number"
       step="1"
@@ -101,7 +103,7 @@
     </div>
   </div>
   <div class="field">
-    <label>Readout (kg)</label>
+    <label>Readout (kg){{ help(help_text.ticket_readout_kg, "ticket-readout-kg-readonly-help") }}</label>
     <div class="readonly">&mdash;</div>
   </div>
 </div>

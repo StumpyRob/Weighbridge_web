@@ -293,6 +293,38 @@ a.btn[aria-disabled="true"] {
   visibility: visible;
 }
 
+body.js-help-tooltips .help-tooltip {
+  display: none;
+}
+
+.help-tooltip-layer {
+  position: fixed;
+  left: 0;
+  top: 0;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 0.4rem 0.55rem;
+  border-radius: 8px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 0.78rem;
+  line-height: 1.3;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: break-word;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.2);
+  z-index: 12000;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(0);
+  transition: opacity 120ms ease;
+}
+
+.help-tooltip-layer.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
 .field input {
   width: 100%;
   padding: 0.6rem 0.7rem;
@@ -719,14 +751,51 @@ a.btn[aria-disabled="true"] {
   width: 240px;
 }
 
+.customers-table th.terms-col,
+.customers-table td.terms-col {
+  width: 96px;
+}
+
+.customers-table th.pricing-col,
+.customers-table td.pricing-col {
+  width: 72px;
+  text-align: center;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
 .customers-table th.flags-col,
 .customers-table td.flags-col {
   width: auto;
-  padding-left: calc(0.65rem + 20px);
+  padding-left: 0.65rem;
 }
 
 .customers-table td.flags-col {
   white-space: normal;
+}
+
+.customers-table .customer-terms {
+  display: inline-block;
+  color: #6b7280;
+  font-size: 0.84rem;
+  font-weight: 500;
+}
+
+.customers-table .customer-terms--empty {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.customers-table .pricing-indicator {
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+  align-items: center;
+  justify-content: center;
+  color: #166534;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .customers-table td.flags-col .status-stack {
@@ -1434,6 +1503,12 @@ a.btn[aria-disabled="true"] {
   color: #3b2f00;
 }
 
+.alert.alert--danger {
+  border-color: #f5c2c7;
+  background: #fde8e8;
+  color: #7f1d1d;
+}
+
 .alert ul {
   margin: 0;
   padding-left: 1.25rem;
@@ -1602,6 +1677,27 @@ a.btn[aria-disabled="true"] {
 .ticket-meta a {
   color: inherit;
   text-decoration: underline;
+}
+
+.ticket-credit-banner {
+  margin-bottom: 1rem;
+}
+
+.ticket-credit-banner__values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin-top: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.ticket-credit-banner__values > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ticket-credit-banner__label {
+  font-weight: 600;
 }
 
 .frame {
@@ -2161,6 +2257,104 @@ details > summary:focus-visible {
 .summary-value {
   color: #111827;
   font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.customer-credit-summary__grid {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.customer-credit-summary {
+  border-color: #cfdbe8;
+  background: linear-gradient(180deg, #f9fcff 0%, #f4f9ff 100%);
+  box-shadow: inset 0 1px 0 #ffffff;
+}
+
+.customer-credit-summary > h2 {
+  background: transparent;
+  border-bottom: 1px dashed #d4deea;
+  color: #1f3b57;
+}
+
+.customer-credit-summary + .ticket-form {
+  margin-top: var(--section-gap);
+}
+
+.customer-credit-summary .summary-label {
+  color: #526277;
+}
+
+.customer-credit-summary .summary-value {
+  font-size: 1.02rem;
+}
+
+.customer-credit-summary__value--low {
+  color: #92400e;
+}
+
+.customer-credit-summary__value--over {
+  color: #7f1d1d;
+}
+
+.customer-credit-summary__links {
+  margin: 0.8rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.account-adjustments-card {
+  padding: 0.85rem;
+  border-top: 2px solid #dbe3ee;
+}
+
+.account-adjustments-card > h2 {
+  margin: -0.85rem -0.85rem 0.65rem -0.85rem;
+  padding: 0.55rem 0.85rem;
+}
+
+.account-adjustments-help {
+  margin: 0 0 0.65rem;
+}
+
+.account-adjustments-ledger .data-table th,
+.account-adjustments-ledger .data-table td {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.account-adjustments-disclosure {
+  margin-top: 0.75rem;
+}
+
+.account-adjustments-disclosure > summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.account-adjustments-disclosure > summary::marker {
+  content: "";
+}
+
+.account-adjustments-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.filters.filters-inline.account-adjustments-form {
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+  align-items: flex-start;
+}
+
+.account-adjustments-form .actions {
+  align-self: flex-start;
+  margin-top: 1.45rem;
+}
+
+.filters.filters-inline.account-adjustments-form .field {
+  min-width: 225px;
 }
 
 .align-right {

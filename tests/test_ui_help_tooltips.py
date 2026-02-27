@@ -4,6 +4,7 @@ from decimal import Decimal
 from app.models import (
     Customer,
     DirectionEnum,
+    PrintTemplate,
     Product,
     Ticket,
     TicketStatusEnum,
@@ -11,6 +12,13 @@ from app.models import (
     Unit,
     Vehicle,
 )
+
+
+def test_base_loads_help_tooltip_layer_script(client):
+    response = client.get("/tickets")
+
+    assert response.status_code == 200
+    assert '<script src="/static/js/help_tooltips.js" defer></script>' in response.text
 
 
 def test_product_edit_uses_tooltips_and_removes_old_nominal_helper(client, db_session):
@@ -51,6 +59,18 @@ def test_customer_edit_shows_tooltips_for_billing_and_flags(client, db_session):
     assert 'id="customer-on-stop-help"' in response.text
     assert 'id="customer-do-not-invoice-help"' in response.text
     assert 'id="customer-must-have-po-help"' in response.text
+    assert 'id="customer-price-overrides-help"' in response.text
+    assert 'id="customer-override-product-help"' in response.text
+    assert 'id="customer-override-price-help"' in response.text
+    assert 'id="customer-credit-summary-help"' in response.text
+    assert 'id="customer-credit-summary-limit-help"' in response.text
+    assert 'id="customer-credit-summary-outstanding-help"' in response.text
+    assert 'id="customer-credit-summary-available-help"' in response.text
+    assert 'id="customer-credit-summary-status-help"' in response.text
+    assert 'id="customer-account-adjustments-help"' in response.text
+    assert 'id="customer-adjustment-amount-help"' in response.text
+    assert 'id="customer-adjustment-reason-help"' in response.text
+    assert 'id="customer-adjustment-note-help"' in response.text
     assert "Used to suggest invoice date ranges when generating invoices." in response.text
     assert "Days from invoice date used to calculate due date." in response.text
 
@@ -74,6 +94,10 @@ def test_ticket_edit_shows_tooltips_and_no_inline_dont_invoice_hint(client, db_s
     assert 'id="ticket-direction-help"' in response.text
     assert 'id="ticket-transaction-type-help"' in response.text
     assert 'id="ticket-walk-in-sale-help"' in response.text
+    assert 'id="ticket-po-number-help"' in response.text
+    assert 'id="ticket-readout-kg-help"' in response.text
+    assert 'id="ticket-billable-quantity-help"' in response.text
+    assert 'id="ticket-unit-rate-help"' in response.text
     assert 'id="ticket-dont-invoice-help"' in response.text
     assert 'id="ticket-yard-help"' in response.text
     assert 'id="ticket-area-help"' in response.text
@@ -83,6 +107,53 @@ def test_ticket_edit_shows_tooltips_and_no_inline_dont_invoice_hint(client, db_s
     assert 'id="ticket-void-reason-help"' in response.text
     assert "Use for cash/card counter sales. No customer invoice generated." in response.text
     assert "Locked on for walk-in sale." not in response.text
+
+
+def test_admin_printing_pages_show_tooltips_for_non_obvious_fields(client, db_session):
+    template = PrintTemplate(
+        code="HELP-TPL-1",
+        description="Help Tooltip Template",
+        document_type="TICKET",
+        format="TEXT",
+        content="{{ payload.ticket_no }}",
+        is_active=True,
+    )
+    db_session.add(template)
+    db_session.commit()
+
+    destinations_list = client.get("/admin/printing/destinations")
+    assert destinations_list.status_code == 200
+    assert 'id="printing-destinations-filter-document-type-help"' in destinations_list.text
+    assert 'id="printing-destinations-col-template-help"' in destinations_list.text
+    assert 'id="printing-destinations-col-default-help"' in destinations_list.text
+
+    destination_form = client.get("/admin/printing/destinations/new")
+    assert destination_form.status_code == 200
+    assert 'id="printing-destination-document-type-help"' in destination_form.text
+    assert 'id="printing-destination-template-help"' in destination_form.text
+    assert 'id="printing-destination-delivery-type-help"' in destination_form.text
+    assert 'id="printing-destination-is-default-help"' in destination_form.text
+    assert 'id="printing-destination-is-active-help"' in destination_form.text
+    assert 'id="printing-destination-advanced-json-help"' in destination_form.text
+
+    templates_list = client.get("/admin/printing/templates")
+    assert templates_list.status_code == 200
+    assert 'id="printing-templates-filter-document-type-help"' in templates_list.text
+    assert 'id="printing-templates-col-document-type-help"' in templates_list.text
+
+    jobs_list = client.get("/admin/printing/jobs")
+    assert jobs_list.status_code == 200
+    assert 'id="printing-jobs-filter-status-help"' in jobs_list.text
+    assert 'id="printing-jobs-col-status-help"' in jobs_list.text
+
+    company_settings = client.get("/admin/company")
+    assert company_settings.status_code == 200
+    assert 'id="company-logo-upload-help"' in company_settings.text
+    assert 'id="company-nav-logo-size-help"' in company_settings.text
+    assert 'id="company-show-nav-logo-help"' in company_settings.text
+    assert 'id="company-show-nav-title-help"' in company_settings.text
+    assert 'id="company-navbar-color-help"' in company_settings.text
+    assert 'id="company-primary-color-help"' in company_settings.text
 
 
 def test_vehicle_pages_show_tooltips_for_defaults_and_tares(client, db_session):

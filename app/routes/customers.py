@@ -12,12 +12,26 @@ from ..constants import (
     CODE_MAX,
     DESC_MAX,
     NAME_MAX,
+    NOTES_MAX,
     POSTCODE_MAX,
 )
 from ..db import get_db
 from ..security import validate_no_html_fields
 from ..models.base import utcnow
-from ..models import Customer, CustomerProductPrice, Product, Unit
+from ..models import (
+    Customer,
+    CustomerAdjustment,
+    CustomerProductPrice,
+    Product,
+    Unit,
+)
+from ..services.credit import (
+    customer_adjustments_total,
+    customer_invoice_outstanding_total,
+    customer_outstanding_total,
+    money_decimal,
+    outstanding_display_values,
+)
 from ..templating import templates
 
 router = APIRouter()
@@ -30,6 +44,15 @@ INVOICE_FREQUENCY_LABELS = {
     "ADHOC": "Adhoc",
 }
 OVERRIDE_PRICE_MAX = Decimal("9999999999.99")
+ADJUSTMENT_AMOUNT_MAX = Decimal("9999999999.99")
+ADJUSTMENT_REASONS: tuple[tuple[str, str], ...] = (
+    ("GOODWILL_CREDIT", "Goodwill credit"),
+    ("PRICING_DISPUTE", "Pricing dispute"),
+    ("WRITE_OFF", "Write-off"),
+    ("MANUAL_CORRECTION", "Manual correction"),
+    ("OTHER", "Other"),
+)
+CREDIT_AVAILABLE_LOW_RATIO = Decimal("0.20")
 
 
 @router.get("/customers", response_class=HTMLResponse)
@@ -38,18 +61,32 @@ def customers_list(
     q: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    query = select(Customer).order_by(Customer.name)
+    has_price_overrides = (
+        select(CustomerProductPrice.id)
+        .where(
+            CustomerProductPrice.customer_id == Customer.id,
+            CustomerProductPrice.is_active.is_(True),
+        )
+        .exists()
+    )
+    query = (
+        select(
+            Customer,
+            has_price_overrides.label("has_price_overrides"),
+        )
+        .order_by(Customer.name)
+    )
     if q:
         like = f"%{q}%"
         query = query.where(
             or_(Customer.name.ilike(like), Customer.account_code.ilike(like))
         )
-    customers = db.execute(query).scalars().all()
+    rows = db.execute(query).all()
     return templates.TemplateResponse(request, 
         "customers/list.html",
         {
             "request": request,
-            "customers": customers,
+            "rows": rows,
             "q": q or "",
             "saved": request.query_params.get("saved") == "1",
         },
@@ -137,19 +174,14 @@ def customers_edit(
             {"request": request, "customer_id": customer_id},
             status_code=404,
         )
-    return templates.TemplateResponse(
+    return _render_customer_edit_with_overrides(
         request,
-        "customers/edit.html",
-        {
-            "request": request,
-            "errors": [],
-            "saved": request.query_params.get("saved") == "1",
-            "customer": customer,
-            "form": _customer_to_form(customer),
-            "options": _load_options(db),
-            "price_overrides": _customer_price_overrides(db, customer.id),
-            "override_form": _empty_override_form(),
-        },
+        db,
+        customer,
+        errors=[],
+        saved=request.query_params.get("saved") == "1",
+        adjustment_saved=request.query_params.get("adjustment_saved") == "1",
+        status_code=200,
     )
 
 
@@ -168,18 +200,12 @@ async def customers_update(
     form = await request.form()
     payload = _parse_customer_form(form)
     if payload["errors"]:
-        return templates.TemplateResponse(
+        return _render_customer_edit_with_overrides(
             request,
-            "customers/edit.html",
-            {
-                "request": request,
-                "errors": payload["errors"],
-                "customer": customer,
-                "form": payload["form"],
-                "options": _load_options(db),
-                "price_overrides": _customer_price_overrides(db, customer.id),
-                "override_form": _empty_override_form(),
-            },
+            db,
+            customer,
+            errors=payload["errors"],
+            form=payload["form"],
             status_code=400,
         )
 
@@ -208,18 +234,12 @@ async def customers_update(
     except IntegrityError:
         db.rollback()
         payload["errors"].append("Account code already exists.")
-        return templates.TemplateResponse(
+        return _render_customer_edit_with_overrides(
             request,
-            "customers/edit.html",
-            {
-                "request": request,
-                "errors": payload["errors"],
-                "customer": customer,
-                "form": payload["form"],
-                "options": _load_options(db),
-                "price_overrides": _customer_price_overrides(db, customer.id),
-                "override_form": _empty_override_form(),
-            },
+            db,
+            customer,
+            errors=payload["errors"],
+            form=payload["form"],
             status_code=400,
         )
     return RedirectResponse(url="/customers?saved=1", status_code=303)
@@ -404,6 +424,49 @@ def customer_price_override_deactivate(
     return RedirectResponse(url=f"/customers/{customer.id}?saved=1", status_code=303)
 
 
+@router.post("/customers/{customer_id}/adjustments", response_class=HTMLResponse)
+async def customer_adjustment_create(
+    customer_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    customer = db.get(Customer, customer_id)
+    if not customer:
+        return templates.TemplateResponse(
+            request,
+            "customers/not_found.html",
+            {"request": request, "customer_id": customer_id},
+            status_code=404,
+        )
+
+    form = await request.form()
+    payload = _parse_adjustment_form(form)
+    if payload["errors"]:
+        return _render_customer_edit_with_overrides(
+            request,
+            db,
+            customer,
+            errors=payload["errors"],
+            adjustment_form=payload["form"],
+            status_code=400,
+        )
+
+    adjustment = CustomerAdjustment(
+        customer_id=customer.id,
+        amount_decimal=payload["amount_decimal"],
+        reason=payload["reason"],
+        note=payload["note"],
+        created_by_user_id=None,
+        created_at=utcnow(),
+    )
+    db.add(adjustment)
+    db.commit()
+    return RedirectResponse(
+        url=f"/customers/{customer.id}?saved=1&adjustment_saved=1",
+        status_code=303,
+    )
+
+
 def _load_options(db: Session) -> dict[str, list[tuple[str, str]]]:
     override_products = (
         db.execute(
@@ -425,6 +488,7 @@ def _load_options(db: Session) -> dict[str, list[tuple[str, str]]]:
             (str(product.id), _product_override_label(product))
             for product in override_products
         ],
+        "adjustment_reasons": list(ADJUSTMENT_REASONS),
     }
 
 
@@ -433,6 +497,14 @@ def _empty_override_form() -> dict[str, str]:
         "product_id": "",
         "unit_price": "",
         "is_active": "on",
+    }
+
+
+def _empty_adjustment_form() -> dict[str, str]:
+    return {
+        "amount_decimal": "",
+        "reason": ADJUSTMENT_REASONS[0][0],
+        "note": "",
     }
 
 
@@ -488,6 +560,60 @@ def _parse_override_form(form) -> dict:
     }
 
 
+def _parse_adjustment_form(form) -> dict:
+    def value(key: str) -> str:
+        return str(form.get(key, "")).strip()
+
+    errors: list[str] = []
+    amount_raw = value("amount_decimal")
+    reason_raw = value("reason").upper()
+    note = value("note")
+
+    validate_no_html_fields(
+        {
+            "Amount": amount_raw,
+            "Reason": reason_raw,
+            "Note": note,
+        },
+        errors,
+    )
+
+    amount_decimal = _parse_decimal(amount_raw)
+    if not amount_raw:
+        errors.append("Adjustment amount is required.")
+    elif amount_decimal is None:
+        errors.append("Adjustment amount must be a number.")
+    elif amount_decimal == 0:
+        errors.append("Adjustment amount cannot be 0.")
+    elif abs(amount_decimal) > ADJUSTMENT_AMOUNT_MAX:
+        errors.append("Adjustment amount is too large.")
+    else:
+        amount_decimal = amount_decimal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    valid_reason_codes = {code for code, _label in ADJUSTMENT_REASONS}
+    if not reason_raw:
+        errors.append("Reason is required.")
+    elif reason_raw not in valid_reason_codes:
+        errors.append("Reason is invalid.")
+
+    if not note:
+        errors.append("Note is required for audit purposes.")
+    elif len(note) > NOTES_MAX:
+        errors.append(f"Note must be {NOTES_MAX} characters or fewer.")
+
+    return {
+        "errors": errors,
+        "form": {
+            "amount_decimal": amount_raw,
+            "reason": reason_raw or ADJUSTMENT_REASONS[0][0],
+            "note": note,
+        },
+        "amount_decimal": amount_decimal,
+        "reason": reason_raw,
+        "note": note,
+    }
+
+
 def _customer_price_overrides(db: Session, customer_id: int) -> list[CustomerProductPrice]:
     return (
         db.execute(
@@ -503,6 +629,84 @@ def _customer_price_overrides(db: Session, customer_id: int) -> list[CustomerPro
         .scalars()
         .all()
     )
+
+
+def _customer_adjustments(
+    db: Session, customer_id: int, *, limit: int = 10
+) -> list[CustomerAdjustment]:
+    return (
+        db.execute(
+            select(CustomerAdjustment)
+            .where(CustomerAdjustment.customer_id == customer_id)
+            .order_by(CustomerAdjustment.created_at.desc(), CustomerAdjustment.id.desc())
+            .limit(limit)
+        )
+        .scalars()
+        .all()
+    )
+
+
+def _adjustment_reason_label(reason_code: str | None) -> str:
+    if not reason_code:
+        return ""
+    for code, label in ADJUSTMENT_REASONS:
+        if code == reason_code:
+            return label
+    return reason_code.replace("_", " ").title()
+
+
+def _pence_to_money(value: int | None) -> Decimal | None:
+    if value is None:
+        return None
+    return money_decimal(Decimal(value) / Decimal("100"))
+
+
+def _customer_outstanding_context(
+    db: Session, customer: Customer
+) -> dict[str, object]:
+    outstanding_raw = customer_outstanding_total(db, customer.id)
+    outstanding_display, credit_balance = outstanding_display_values(outstanding_raw)
+    invoice_total = customer_invoice_outstanding_total(db, customer.id)
+    adjustments_total = customer_adjustments_total(db, customer.id)
+    credit_limit = _pence_to_money(customer.credit_limit_pence)
+
+    available_credit: Decimal | None = None
+    is_available_credit_low = False
+    is_over_credit_limit = False
+    if credit_limit is not None:
+        available_credit = money_decimal(credit_limit - outstanding_raw)
+        is_over_credit_limit = outstanding_raw > credit_limit
+        if not is_over_credit_limit and credit_limit > 0:
+            low_threshold = money_decimal(credit_limit * CREDIT_AVAILABLE_LOW_RATIO)
+            is_available_credit_low = available_credit < low_threshold
+
+    if outstanding_raw > 0:
+        balance_status = "owes"
+        balance_label = "Owes"
+        balance_amount = money_decimal(outstanding_raw)
+    elif outstanding_raw < 0:
+        balance_status = "in_credit"
+        balance_label = "In credit"
+        balance_amount = money_decimal(abs(outstanding_raw))
+    else:
+        balance_status = "clear"
+        balance_label = "Clear"
+        balance_amount = Decimal("0.00")
+
+    return {
+        "customer_credit_limit": credit_limit,
+        "customer_outstanding_raw": outstanding_raw,
+        "customer_outstanding_total": outstanding_display,
+        "customer_credit_balance": credit_balance,
+        "customer_open_invoices_total": invoice_total,
+        "customer_adjustments_total": adjustments_total,
+        "customer_available_credit": available_credit,
+        "customer_is_available_credit_low": is_available_credit_low,
+        "customer_is_over_credit_limit": is_over_credit_limit,
+        "customer_balance_status": balance_status,
+        "customer_balance_label": balance_label,
+        "customer_balance_amount": balance_amount,
+    }
 
 
 def _validate_override_product(
@@ -572,19 +776,33 @@ def _render_customer_edit_with_overrides(
     errors: list[str],
     form: dict | None = None,
     override_form: dict | None = None,
+    adjustment_form: dict | None = None,
+    saved: bool = False,
+    adjustment_saved: bool = False,
     status_code: int = 400,
 ) -> HTMLResponse:
+    outstanding_context = _customer_outstanding_context(db, customer)
+    reason_labels = {
+        code: label for code, label in ADJUSTMENT_REASONS
+    }
     return templates.TemplateResponse(
         request,
         "customers/edit.html",
         {
             "request": request,
             "errors": errors,
+            "saved": saved,
+            "adjustment_saved": adjustment_saved,
             "customer": customer,
             "form": form or _customer_to_form(customer),
             "options": _load_options(db),
             "price_overrides": _customer_price_overrides(db, customer.id),
             "override_form": override_form or _empty_override_form(),
+            "customer_adjustments": _customer_adjustments(db, customer.id, limit=10),
+            "adjustment_form": adjustment_form or _empty_adjustment_form(),
+            "adjustment_form_expanded": adjustment_form is not None,
+            "adjustment_reason_labels": reason_labels,
+            **outstanding_context,
         },
         status_code=status_code,
     )

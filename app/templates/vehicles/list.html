@@ -41,16 +41,18 @@
         <th>Registration</th>
         <th class="truncate-col">Owner</th>
         <th>Vehicle type</th>
+        <th class="truncate-col">Default haulier</th>
         <th class="numeric-col num">Default tare</th>
         <th class="numeric-col num">Overweight threshold</th>
       </tr>
     </thead>
     <tbody>
-      {% for vehicle, owner, vtype in rows %}
+      {% for vehicle, owner, vtype, default_haulier in rows %}
         <tr data-row-link="/vehicles/{{ vehicle.id }}">
           <td><a href="/vehicles/{{ vehicle.id }}" class="truncate truncate--sm" title="{{ vehicle.registration }}">{{ vehicle.registration }}</a></td>
           <td class="truncate-col"><span class="truncate truncate--md" title="{{ owner.name if owner else '' }}">{{ owner.name if owner else "" }}</span></td>
           <td><span class="truncate truncate--sm" title="{{ vtype.code if vtype else '' }}">{{ vtype.code if vtype else "" }}</span></td>
+          <td class="truncate-col"><span class="truncate truncate--md" title="{{ default_haulier.name if default_haulier else '' }}">{{ default_haulier.name if default_haulier else "" }}</span></td>
           <td class="numeric-col num">
             {{ "{:,.0f} kg".format(vehicle.default_tare_kg) if vehicle.default_tare_kg is not none else "&mdash;" | safe }}
           </td>
@@ -60,7 +62,7 @@
         </tr>
       {% else %}
         <tr>
-          <td colspan="5" class="empty">No vehicles found.</td>
+          <td colspan="6" class="empty">No vehicles found.</td>
         </tr>
       {% endfor %}
     </tbody>

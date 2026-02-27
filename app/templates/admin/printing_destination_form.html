@@ -42,7 +42,7 @@
             <input type="text" id="description" name="description" maxlength="{{ limits.DESC_MAX }}" value="{{ form_data.description }}" />
           </div>
           <div class="field">
-            <label for="document_type">Document type</label>
+            <label for="document_type">Document type{{ help(help_text.printing_document_type, "printing-destination-document-type-help") }}</label>
             <select id="document_type" name="document_type" required>
               {% for value, label in document_type_options %}
                 <option value="{{ value }}" {% if form_data.document_type == value %}selected{% endif %}>{{ label }}</option>
@@ -50,7 +50,7 @@
             </select>
           </div>
           <div class="field">
-            <label for="template_id">Template</label>
+            <label for="template_id">Template{{ help(help_text.printing_template_field, "printing-destination-template-help") }}</label>
             <select id="template_id" name="template_id" required>
               <option value="">Select template</option>
               {% for item in template_options %}
@@ -66,10 +66,10 @@
     </section>
 
     <section class="frame compact">
-      <div class="frame-header"><h2>Delivery</h2></div>
+      <div class="frame-header"><h2>Delivery{{ help(help_text.printing_transport_config, "printing-destination-delivery-help") }}</h2></div>
       <div class="frame-body">
         <div class="field">
-          <label for="delivery_type">Delivery type</label>
+          <label for="delivery_type">Delivery type{{ help(help_text.printing_delivery_type, "printing-destination-delivery-type-help") }}</label>
           <select id="delivery_type" name="delivery_type" required>
             {% for value, label in delivery_type_options %}
               <option value="{{ value }}" {% if form_data.delivery_type == value %}selected{% endif %}>{{ label }}</option>
@@ -131,9 +131,9 @@
         </div>
 
         <details class="printing-destination-advanced-json">
-          <summary>Advanced JSON</summary>
+          <summary>Advanced JSON{{ help(help_text.printing_advanced_delivery_json, "printing-destination-advanced-json-help") }}</summary>
           <div class="field">
-            <label for="delivery_config">Delivery config (JSON)</label>
+            <label for="delivery_config">Delivery config (JSON){{ help(help_text.printing_advanced_delivery_json, "printing-destination-delivery-config-help") }}</label>
             <textarea id="delivery_config" name="delivery_config" rows="8">{{ form_data.delivery_config }}</textarea>
           </div>
         </details>
@@ -145,11 +145,11 @@
       <div class="frame-body">
         <div class="field checkbox">
           <input type="checkbox" id="is_default" name="is_default" value="1" {% if form_data.is_default %}checked{% endif %} />
-          <label for="is_default">Default for document type</label>
+          <label for="is_default">Default for document type{{ help(help_text.printing_default_destination, "printing-destination-is-default-help") }}</label>
         </div>
         <div class="field checkbox">
           <input type="checkbox" id="is_active" name="is_active" value="1" {% if form_data.is_active %}checked{% endif %} />
-          <label for="is_active">Active</label>
+          <label for="is_active">Active{{ help(help_text.printing_active_destination, "printing-destination-is-active-help") }}</label>
         </div>
       </div>
     </section>

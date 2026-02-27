@@ -47,8 +47,23 @@
           </tr>
           <tr>
             <td><code>company.logo_url</code></td>
-            <td>Logo URL or data URI.</td>
+            <td>Resolved logo source used by templates (URL or data URI).</td>
             <td>https://example.com/logo.png</td>
+          </tr>
+          <tr>
+            <td><code>company_logo_url</code></td>
+            <td>Top-level alias for the resolved company logo source.</td>
+            <td>data:image/png;base64,...</td>
+          </tr>
+          <tr>
+            <td><code>money(value)</code> / <code>fmt_money(value)</code></td>
+            <td>Formats numbers as money for display.</td>
+            <td>{{ '{{ money(payload.total) }}' }}</td>
+          </tr>
+          <tr>
+            <td><code>fmt_date(value, format)</code></td>
+            <td>Formats date/datetime values safely for print output.</td>
+            <td>{{ '{{ fmt_date(payload.datetime, "%d/%m/%Y") }}' }}</td>
           </tr>
           <tr>
             <td><code>payload</code></td>
@@ -104,6 +119,16 @@
 {% raw %}{% for line in company_lines %}
   {{ line }}&lt;br&gt;
 {% endfor %}{% endraw %}</code></pre>
+
+      <pre><code>{% raw %}{{ money(payload.total) }}{% endraw %}
+
+{% raw %}{{ fmt_date(payload.datetime) }}{% endraw %}
+
+{% raw %}{% if payload.send_ready %}
+  Ready to send
+{% else %}
+  Missing: {{ payload.send_blockers | join(", ") }}
+{% endif %}{% endraw %}</code></pre>
     </div>
   </div>
   </div>

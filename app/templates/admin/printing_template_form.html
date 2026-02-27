@@ -47,7 +47,7 @@
     </div>
 
     <div class="field">
-      <label for="document_type">Document type</label>
+      <label for="document_type">Document type{{ help(help_text.printing_document_type, "printing-template-document-type-help") }}</label>
       <select id="document_type" name="document_type" required {% if is_system_template %}disabled{% endif %}>
         {% for value, label in document_type_options %}
           <option value="{{ value }}" {% if form_data.document_type == value %}selected{% endif %}>{{ label }}</option>
@@ -77,7 +77,10 @@
           <ul class="template-vars-list">
             <li><code>company_name</code> - your company name</li>
             <li><code>company_lines</code> - company address lines (list)</li>
-            <li><code>company.logo_url</code> - company logo URL (if set)</li>
+            <li><code>company.logo_url</code> - resolved company logo source</li>
+            <li><code>company_logo_url</code> - top-level logo source alias</li>
+            <li><code>money(value)</code> / <code>fmt_money(value)</code> - money formatting helper</li>
+            <li><code>fmt_date(value, format)</code> - date formatting helper</li>
             <li><code>payload</code> - document data fields</li>
           </ul>
         </section>

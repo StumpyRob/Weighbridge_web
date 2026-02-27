@@ -7,6 +7,12 @@
   <div>
     <h1>Invoices</h1>
     <p class="muted">Review issued invoices.</p>
+    {% if customer_filter or unpaid_only %}
+      <p class="muted">
+        {% if customer_filter %}Customer: {{ customer_filter.name }}.{% endif %}
+        {% if unpaid_only %} Unpaid/open only.{% endif %}
+      </p>
+    {% endif %}
   </div>
   <div>
     <a class="btn btn--primary" href="/invoices/generate">Generate Invoice</a>
@@ -20,6 +26,12 @@
       <label for="q">Search invoice no or customer</label>
       <input type="text" id="q" name="q" value="{{ q }}" />
     </div>
+    {% if customer_id %}
+      <input type="hidden" name="customer_id" value="{{ customer_id }}" />
+    {% endif %}
+    {% if unpaid_only %}
+      <input type="hidden" name="unpaid_only" value="1" />
+    {% endif %}
     <div class="actions btn-group">
       <button type="submit" class="btn btn--secondary">Search</button>
       <a class="btn btn--ghost" href="/invoices">Reset</a>
