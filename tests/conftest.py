@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 from app.db import get_db
 from app.main import app
 from app.models import Base
+from app.security_hardening import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
 
 
 @pytest.fixture()
@@ -43,5 +44,12 @@ def client(SessionLocal):
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:
+        try:
+            test_client.get("/")
+            csrf_token = test_client.cookies.get(CSRF_COOKIE_NAME)
+            if csrf_token:
+                test_client.headers.update({CSRF_HEADER_NAME: csrf_token})
+        except Exception:
+            pass
         yield test_client
     app.dependency_overrides.clear()

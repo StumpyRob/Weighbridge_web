@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="csrf-token" content="{{ csrf_token or '' }}" />
     <title>{% block title %}Weighbridge Web{% endblock %}</title>
     <link rel="stylesheet" href="/static/css/style.css?v=2" />
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
@@ -100,6 +101,66 @@
     <main class="container">
       {% block content %}{% endblock %}
     </main>
+    <script>
+      (function () {
+        function csrfToken() {
+          const meta = document.querySelector("meta[name='csrf-token']");
+          return meta ? meta.getAttribute("content") || "" : "";
+        }
+
+        function applyCsrfToForm(form) {
+          if (!form) {
+            return;
+          }
+          const method = String(form.getAttribute("method") || "").toLowerCase();
+          if (method !== "post") {
+            return;
+          }
+          const token = csrfToken();
+          if (!token) {
+            return;
+          }
+          let field = form.querySelector("input[name='csrf_token']");
+          if (!field) {
+            field = document.createElement("input");
+            field.type = "hidden";
+            field.name = "csrf_token";
+            form.appendChild(field);
+          }
+          field.value = token;
+        }
+
+        function applyCsrfToAllForms(root) {
+          const scope = root || document;
+          const forms = scope.querySelectorAll("form");
+          forms.forEach(applyCsrfToForm);
+        }
+
+        document.addEventListener("DOMContentLoaded", function () {
+          applyCsrfToAllForms(document);
+        });
+
+        document.addEventListener(
+          "submit",
+          function (event) {
+            applyCsrfToForm(event.target);
+          },
+          true
+        );
+
+        document.body.addEventListener("htmx:configRequest", function (event) {
+          const token = csrfToken();
+          if (!token) {
+            return;
+          }
+          event.detail.headers["X-CSRF-Token"] = token;
+        });
+
+        document.body.addEventListener("htmx:afterSwap", function (event) {
+          applyCsrfToAllForms(event.target);
+        });
+      })();
+    </script>
     <script src="/static/js/help_tooltips.js" defer></script>
     <script src="/static/js/toasts.js" defer></script>
     <script src="/static/js/table_rows.js" defer></script>

@@ -3,7 +3,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     database_url: str
-    secret_key: str
+    secret_key: str = ""
+    app_secret_key: str = ""
     indicator_connected: bool = False
     debug: bool = False
     dev_mode: bool = False
@@ -29,6 +30,13 @@ class Settings(BaseSettings):
     smtp_use_ssl: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="")
+
+    @property
+    def effective_secret_key(self) -> str:
+        candidate = str(self.app_secret_key or "").strip()
+        if candidate:
+            return candidate
+        return str(self.secret_key or "").strip()
 
 
 settings = Settings()
