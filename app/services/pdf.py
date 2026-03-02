@@ -1094,13 +1094,7 @@ def _company_logo_path(company: CompanySetting | None) -> str:
         return ""
     current = str(company.company_logo_path or "").strip()
     if current:
-        return current
-    legacy_url = str(company.logo_url or "").strip()
-    if legacy_url:
-        return legacy_url
-    legacy_file = str(company.logo_file_path or "").strip().lstrip("/")
-    if legacy_file:
-        return f"/media/{legacy_file}"
+        return resolve_company_logo_web_path(current)
     return ""
 
 

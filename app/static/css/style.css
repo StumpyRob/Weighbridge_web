@@ -394,13 +394,6 @@ body.js-help-tooltips .help-tooltip {
   flex-wrap: wrap;
 }
 
-.print-actions__note {
-  flex-basis: 100%;
-  margin: 0;
-  font-size: 0.78rem;
-  line-height: 1.25;
-}
-
 .ticket-header-actions {
   display: flex;
   flex-direction: column;

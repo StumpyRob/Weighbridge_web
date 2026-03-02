@@ -16,6 +16,7 @@
     "printed_to",
     "print_sent",
     "reprint_sent",
+    "invoice_print_sent",
   ];
   const SUCCESS_QUERY_EXTRA_PARAMS = {
     print_sent: [
@@ -28,6 +29,7 @@
       "print_failed",
     ],
     reprint_sent: ["reprint_job_id", "reprint_ticket_no"],
+    invoice_print_sent: ["invoice_print_job_id", "invoice_id"],
   };
 
   function removeToast(toast) {

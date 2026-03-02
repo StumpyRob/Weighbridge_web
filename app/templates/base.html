@@ -39,7 +39,6 @@
       {% set print_error_detail = request.query_params.get("print_error_detail", "") %}
       {% set invoice_print_sent = request.query_params.get("invoice_print_sent") == "1" %}
       {% set invoice_print_job_id = request.query_params.get("invoice_print_job_id", "") %}
-      {% set invoice_id = request.query_params.get("invoice_id", "") %}
       {% set reprint_sent = request.query_params.get("reprint_sent") == "1" %}
       {% set reprint_job_id = request.query_params.get("reprint_job_id", "") %}
       {% set reprint_ticket_no = request.query_params.get("reprint_ticket_no", "") %}

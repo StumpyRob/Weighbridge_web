@@ -8,7 +8,6 @@ from app.models import (
     DirectionEnum,
     Invoice,
     InvoiceLine,
-    PrintTemplate,
     Product,
     Ticket,
     TicketStatusEnum,

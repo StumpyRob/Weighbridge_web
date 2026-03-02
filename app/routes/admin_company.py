@@ -87,6 +87,14 @@ def _get_or_create_company_setting(db: Session) -> CompanySetting:
     return setting
 
 
+def _get_company_setting(db: Session) -> CompanySetting | None:
+    return (
+        db.execute(select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1))
+        .scalars()
+        .first()
+    )
+
+
 def _trim(value: object) -> str:
     return str(value or "").strip()
 
@@ -96,8 +104,7 @@ def admin_company_settings(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    setting = _get_or_create_company_setting(db)
-    db.commit()
+    setting = _get_company_setting(db) or CompanySetting()
     return templates.TemplateResponse(
         request,
         "admin/company_settings.html",
@@ -191,8 +198,6 @@ async def admin_company_settings_save(
             country=country or None,
             company_logo_path=form_logo_value,
             company_logo_updated_at=setting.company_logo_updated_at,
-            logo_url=setting.logo_url,
-            logo_file_path=setting.logo_file_path,
         )
         return templates.TemplateResponse(
             request,
@@ -219,13 +224,9 @@ async def admin_company_settings_save(
     if remove_logo:
         setting.company_logo_path = None
         setting.company_logo_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        setting.logo_url = None
-        setting.logo_file_path = None
     elif uploaded_web_path:
         setting.company_logo_path = uploaded_web_path
         setting.company_logo_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        setting.logo_url = None
-        setting.logo_file_path = None
 
     db.commit()
 

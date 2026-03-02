@@ -21,9 +21,11 @@ class CompanySetting(Base):
     country: Mapped[str | None] = mapped_column(String(ADDRESS_LINE_MAX), nullable=True)
     company_logo_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     company_logo_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # Legacy logo fields retained for backward compatibility with existing DB rows.
-    logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    logo_file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    nav_logo_height_px: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    navbar_color_hex: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    primary_color_hex: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    show_nav_logo: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    show_nav_title: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,

@@ -50,7 +50,7 @@ def test_invoice_system_template_preview_renders_logo_when_company_logo_is_set(
     db_session.add(
         CompanySetting(
             name="System Template Logo Test",
-            logo_url="https://example.com/logo.png",
+            company_logo_path="https://example.com/logo.png",
         )
     )
     db_session.commit()

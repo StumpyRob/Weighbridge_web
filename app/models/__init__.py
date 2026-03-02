@@ -9,7 +9,6 @@ from .invoice import Invoice
 from .invoice_line import InvoiceLine
 from .invoice_sequence import InvoiceSequence
 from .invoice_void import InvoiceVoid
-from .item import Item
 from .lookups import Container, Destination, Driver, Haulier
 from .lookups_misc import (
     Area,
@@ -62,7 +61,6 @@ __all__ = [
     "InvoiceLine",
     "InvoiceSequence",
     "InvoiceVoid",
-    "Item",
     "Area",
     "Container",
     "Contractor",

@@ -93,3 +93,5 @@ def test_toasts_script_clears_success_query_flags():
     assert '"voided"' in script
     assert '"print_sent"' in script
     assert '"reprint_sent"' in script
+    assert '"invoice_print_sent"' in script
+    assert '"invoice_print_job_id"' in script

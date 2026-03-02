@@ -1090,8 +1090,6 @@ def admin_print_templates_preview(
     document_type = _normalize_document_type(str(template.document_type or ""))
     rendered = ""
     error = ""
-    preview_subject = "sample"
-    preview_label = "-"
     try:
         if document_type == DOCUMENT_TYPE_INVOICE:
             preview_invoice = db.get(Invoice, invoice_id) if invoice_id else None
@@ -1113,8 +1111,6 @@ def admin_print_templates_preview(
             else:
                 payload = build_print_payload(db, DOCUMENT_TYPE_INVOICE)
             rendered = render_from_content(payload, template.content, db=db)
-            preview_subject = "invoice"
-            preview_label = str(preview_invoice.invoice_no) if preview_invoice else "Sample"
         else:
             preview_ticket = db.get(Ticket, ticket_id) if ticket_id else None
             if preview_ticket is None:
@@ -1134,8 +1130,6 @@ def admin_print_templates_preview(
             else:
                 payload = build_print_payload(db, document_type)
             rendered = render_from_content(payload, template.content, db=db)
-            preview_subject = "ticket"
-            preview_label = str(preview_ticket.ticket_no) if preview_ticket else "Sample"
     except Exception as exc:
         error = str(exc) or "Template render failed."
 

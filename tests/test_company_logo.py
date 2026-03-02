@@ -150,7 +150,180 @@ def test_company_logo_upload_persists_file_and_path(client, db_session, monkeypa
     assert not uploaded_file.exists()
 
 
-def test_invoice_pdf_html_contains_company_logo_url_when_set(db_session):
+def test_company_logo_upload_accepts_png_with_generic_content_type(
+    client,
+    db_session,
+    monkeypatch,
+    tmp_path,
+):
+    uploads_root = tmp_path / "uploads"
+    monkeypatch.setattr(settings, "uploads_dir", str(uploads_root))
+
+    response = client.post(
+        "/admin/company",
+        data={
+            "name": "Acme Transparent",
+            "logo_action": "upload",
+            "show_nav_logo": "1",
+            "show_nav_title": "1",
+        },
+        files={
+            "company_logo_file": (
+                "transparent-logo.png",
+                BytesIO(b"\x89PNG\r\n\x1a\nalpha-png"),
+                "application/octet-stream",
+            )
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    setting = db_session.execute(
+        select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1)
+    ).scalar_one()
+    assert setting.company_logo_path is not None
+    assert setting.company_logo_path.endswith(".png")
+
+
+def test_company_settings_get_does_not_create_row(client, db_session):
+    before_count = db_session.execute(select(CompanySetting)).scalars().all()
+    assert len(before_count) == 0
+
+    response = client.get("/admin/company")
+
+    assert response.status_code == 200
+    after_count = db_session.execute(select(CompanySetting)).scalars().all()
+    assert len(after_count) == 0
+
+
+def test_company_settings_rejects_invalid_hex_colors(client):
+    response = client.post(
+        "/admin/company",
+        data={
+            "name": "Acme Recycling Ltd",
+            "navbar_color_hex": "not-a-color",
+            "primary_color_hex": "#12",
+            "nav_logo_height_px": "34",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "Navbar colour must be a valid HEX colour" in response.text
+    assert "Primary colour must be a valid HEX colour" in response.text
+
+
+def test_base_template_uses_company_branding_for_logo_favicon_and_theme(
+    client,
+    db_session,
+    monkeypatch,
+    tmp_path,
+):
+    uploads_root = tmp_path / "uploads"
+    company_dir = uploads_root / "company"
+    company_dir.mkdir(parents=True, exist_ok=True)
+    (company_dir / "logo-nav.png").write_bytes(b"\x89PNG\r\n\x1a\nlogo-nav-bytes")
+    monkeypatch.setattr(settings, "uploads_dir", str(uploads_root))
+
+    db_session.add(
+        CompanySetting(
+            name="Acme Branding",
+            company_logo_path="/static/uploads/company/logo-nav.png",
+            navbar_color_hex="#112233",
+            primary_color_hex="#EE7700",
+            nav_logo_height_px=48,
+            show_nav_logo=True,
+            show_nav_title=True,
+        )
+    )
+    db_session.commit()
+
+    response = client.get("/tickets")
+
+    assert response.status_code == 200
+    assert "--theme-navbar-bg: #112233" in response.text
+    assert "--theme-primary: #EE7700" in response.text
+    assert "--theme-nav-logo-height: 48px" in response.text
+    assert 'rel="icon"' in response.text
+    assert "/static/uploads/company/logo-nav.png" in response.text
+    assert 'class="brand__logo"' in response.text
+    assert "Acme Branding" in response.text
+
+
+def test_base_template_respects_nav_brand_visibility_toggles(
+    client,
+    db_session,
+    monkeypatch,
+    tmp_path,
+):
+    uploads_root = tmp_path / "uploads"
+    company_dir = uploads_root / "company"
+    company_dir.mkdir(parents=True, exist_ok=True)
+    (company_dir / "logo-toggle.png").write_bytes(b"\x89PNG\r\n\x1a\nlogo-toggle-bytes")
+    monkeypatch.setattr(settings, "uploads_dir", str(uploads_root))
+
+    db_session.add(
+        CompanySetting(
+            name="Toggle Branding",
+            company_logo_path="/static/uploads/company/logo-toggle.png",
+            show_nav_logo=True,
+            show_nav_title=False,
+        )
+    )
+    db_session.commit()
+
+    response_logo_only = client.get("/tickets")
+    assert response_logo_only.status_code == 200
+    assert 'class="brand__logo"' in response_logo_only.text
+    assert 'class="brand__text"' not in response_logo_only.text
+    assert "/static/uploads/company/logo-toggle.png" in response_logo_only.text
+
+    update = client.post(
+        "/admin/company",
+        data={
+            "name": "Toggle Branding",
+            "show_nav_logo": "0",
+            "show_nav_title": "1",
+        },
+        follow_redirects=False,
+    )
+    assert update.status_code == 303
+
+    response_title_only = client.get("/tickets")
+    assert response_title_only.status_code == 200
+    assert 'class="brand__logo"' not in response_title_only.text
+    assert 'class="brand__text">Toggle Branding<' in response_title_only.text
+
+
+def test_base_template_falls_back_to_default_logo_when_upload_missing(client, db_session):
+    db_session.add(
+        CompanySetting(
+            name="Missing Logo Co",
+            company_logo_path="/static/uploads/company/missing-logo.png",
+            show_nav_logo=True,
+            show_nav_title=True,
+        )
+    )
+    db_session.commit()
+
+    response = client.get("/tickets")
+
+    assert response.status_code == 200
+    assert "/static/uploads/company/missing-logo.png" not in response.text
+    assert "/static/img/default-company-logo.svg" in response.text
+
+
+def test_invoice_pdf_html_contains_company_logo_url_when_set(
+    db_session,
+    monkeypatch,
+    tmp_path,
+):
+    uploads_root = tmp_path / "uploads"
+    company_dir = uploads_root / "company"
+    company_dir.mkdir(parents=True, exist_ok=True)
+    (company_dir / "logo-test.png").write_bytes(b"\x89PNG\r\n\x1a\nlogo-test-bytes")
+    monkeypatch.setattr(settings, "uploads_dir", str(uploads_root))
+
     _ensure_default_invoice_destination(db_session)
     db_session.add(
         CompanySetting(
