@@ -69,6 +69,14 @@ INVOICE_EXCLUSION_UNKNOWN_UNIT_TYPE = "Unknown unit type"
 WASTE_TRANSACTION_TYPES = {"WASTEIN", "WASTEOUT"}
 
 
+def _voided_by_actor(request: Request) -> str:
+    user = getattr(getattr(request, "state", None), "current_user", None)
+    email = str(getattr(user, "email", "") or "").strip()
+    if email:
+        return email
+    return "system"
+
+
 @router.get("/invoices", response_class=HTMLResponse)
 def invoices_list(
     request: Request,
@@ -915,7 +923,7 @@ async def invoices_void(
             reason_id=reason_id,
             note=note or "No note provided.",
             voided_at=utcnow(),
-            voided_by="admin",
+            voided_by=_voided_by_actor(request),
         )
     )
     db.commit()

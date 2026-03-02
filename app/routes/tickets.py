@@ -113,6 +113,14 @@ WTN_SEND_REQUIRES_COMPLETE_ERROR = "Ticket must be complete before sending WTN."
 CREDIT_LIMIT_WARNING_RATIO = Decimal("0.80")
 
 
+def _voided_by_actor(request: Request) -> str:
+    user = getattr(getattr(request, "state", None), "current_user", None)
+    email = str(getattr(user, "email", "") or "").strip()
+    if email:
+        return email
+    return "system"
+
+
 @router.get("/tickets", response_class=HTMLResponse)
 def tickets_list(
     request: Request,
@@ -2714,7 +2722,7 @@ async def tickets_update(
                 reason_id=reason_id,
                 note=note or "No note provided.",
                 voided_at=utcnow(),
-                voided_by="admin",
+                voided_by=_voided_by_actor(request),
             )
         )
         db.commit()
