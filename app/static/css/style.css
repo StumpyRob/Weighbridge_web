@@ -1502,6 +1502,12 @@ body.js-help-tooltips .help-tooltip {
   color: #7f1d1d;
 }
 
+.alert.alert--success {
+  border-color: #86efac;
+  background: #dcfce7;
+  color: #14532d;
+}
+
 .alert ul {
   margin: 0;
   padding-left: 1.25rem;

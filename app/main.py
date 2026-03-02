@@ -28,6 +28,20 @@ from .templating import templates
 
 logger = logging.getLogger(__name__)
 
+_AUTH_PUBLIC_PATHS = {"/health", "/login", "/bootstrap"}
+_AUTH_PUBLIC_PREFIXES = ("/static/", "/media/")
+_AUTH_PROTECTED_PREFIXES = (
+    "/tickets",
+    "/customers",
+    "/vehicles",
+    "/products",
+    "/invoices",
+    "/lookups",
+    "/reports",
+    "/admin",
+    "/debug",
+)
+
 
 def _strip_non_production_routes(app: FastAPI) -> None:
     filtered_routes = []

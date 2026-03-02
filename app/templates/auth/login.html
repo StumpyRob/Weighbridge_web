@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Weighbridge Web{% endblock %}
+
+{% block content %}
+  <section class="auth-page">
+    <div class="page-header">
+      <div>
+        <h1>Login</h1>
+        <p class="muted">Sign in to access weighbridge operations.</p>
+      </div>
+    </div>
+
+    {% if no_users_configured %}
+      <div class="alert alert--warning">
+        No user accounts exist yet. Create the first superadmin at <a href="/bootstrap">/bootstrap</a>
+        or run <code>python -m app.cli create-superadmin</code>.
+      </div>
+    {% endif %}
+
+    {% if bootstrapped %}
+      <div class="alert alert--success">
+        Superadmin created. You can now sign in.
+      </div>
+    {% endif %}
+
+    {% if logged_out %}
+      <div class="alert alert--warning">
+        You have been logged out.
+      </div>
+    {% endif %}
+
+    {% if errors %}
+      <div class="alert alert--danger">
+        <ul>
+          {% for error in errors %}
+            <li>{{ error }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    <form method="post" action="/login" class="auth-form">
+      <input type="hidden" name="next" value="{{ next or '/tickets' }}" />
+      <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" value="{{ email or '' }}" required autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required autocomplete="current-password" />
+      </div>
+      <div class="actions">
+        <button type="submit" class="btn btn--primary">Login</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}
