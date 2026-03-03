@@ -35,18 +35,14 @@
         <label for="company_logo_file">Company logo (optional)</label>
         <input id="company_logo_file" name="company_logo_file" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" />
       </div>
-      <div class="field checkbox">
-        <label>
-          <input name="seed_printing" type="checkbox" value="1" {% if seed_printing %}checked{% endif %} />
-          Create default print templates and print destinations
-        </label>
-      </div>
-      <div class="field checkbox">
-        <label>
-          <input name="seed_demo" type="checkbox" value="1" {% if seed_demo %}checked{% endif %} />
-          Seed demo lookups (units, tax rates, payment/void methods, vehicle types)
-        </label>
-      </div>
+      {% if show_demo_seed %}
+        <div class="field checkbox">
+          <label>
+            <input name="seed_demo" type="checkbox" value="1" {% if seed_demo %}checked{% endif %} />
+            Seed demo lookups (units, tax rates, payment/void methods, vehicle types)
+          </label>
+        </div>
+      {% endif %}
       <div class="actions">
         <button type="submit" class="btn btn--primary">Complete setup</button>
       </div>

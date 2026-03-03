@@ -53,16 +53,16 @@ def _setup_context(
     *,
     company_name: str = "",
     default_yard_name: str = DEFAULT_YARD_NAME,
-    seed_printing: bool = True,
     seed_demo: bool = False,
+    show_demo_seed: bool = False,
     errors: list[str] | None = None,
 ) -> dict[str, object]:
     return {
         "request": request,
         "company_name": company_name,
         "default_yard_name": default_yard_name,
-        "seed_printing": seed_printing,
         "seed_demo": seed_demo,
+        "show_demo_seed": show_demo_seed,
         "errors": errors or [],
     }
 
@@ -92,6 +92,11 @@ def _run_demo_seed() -> None:
     seed_vehicle_types()
 
 
+def _seed_printing_defaults(db: Session) -> None:
+    seed_print_templates(db)
+    seed_print_destinations(db)
+
+
 @router.get("/setup", response_class=HTMLResponse)
 def setup_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     company = get_company_setting(db)
@@ -113,7 +118,7 @@ def setup_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
             request,
             company_name=str(company.name or "").strip(),
             default_yard_name=_initial_yard_name(db),
-            seed_printing=True,
+            show_demo_seed=bool(settings.dev_mode),
         ),
     )
 
@@ -135,8 +140,7 @@ async def setup_submit(request: Request, db: Session = Depends(get_db)) -> HTMLR
     form = await request.form()
     company_name = str(form.get("company_name", "")).strip()
     yard_name = str(form.get("default_yard_name", "")).strip() or DEFAULT_YARD_NAME
-    seed_printing = _truthy(form.get("seed_printing"))
-    seed_demo = _truthy(form.get("seed_demo"))
+    seed_demo = bool(settings.dev_mode) and _truthy(form.get("seed_demo"))
     logo_file = form.get("company_logo_file")
 
     errors: list[str] = []
@@ -173,8 +177,8 @@ async def setup_submit(request: Request, db: Session = Depends(get_db)) -> HTMLR
                 request,
                 company_name=company_name,
                 default_yard_name=yard_name,
-                seed_printing=seed_printing,
                 seed_demo=seed_demo,
+                show_demo_seed=bool(settings.dev_mode),
                 errors=errors,
             ),
             status_code=400,
@@ -185,9 +189,7 @@ async def setup_submit(request: Request, db: Session = Depends(get_db)) -> HTMLR
         company.company_logo_path = uploaded_web_path
         company.company_logo_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     upsert_default_yard(db, yard_name=yard_name)
-    if seed_printing:
-        seed_print_templates(db)
-        seed_print_destinations(db)
+    _seed_printing_defaults(db)
     company.is_initialized = True
     db.commit()
 

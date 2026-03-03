@@ -11,7 +11,7 @@ from app.auth import hash_password
 from app.config import settings
 from app.db import get_db
 from app.main import create_app
-from app.models import Base, CompanySetting, User, Yard
+from app.models import Base, CompanySetting, PrintDestination, PrintTemplate, User, Yard
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD
 
 
@@ -76,6 +76,8 @@ def test_setup_runs_once_for_superadmin_and_then_disables(tmp_path, monkeypatch)
         setup_get = client.get("/setup")
         assert setup_get.status_code == 200
         assert "Company Setup" in setup_get.text
+        assert "Create default print templates and print destinations" not in setup_get.text
+        assert "Seed demo lookups" not in setup_get.text
 
         setup_post = client.post(
             "/setup",
@@ -99,6 +101,12 @@ def test_setup_runs_once_for_superadmin_and_then_disables(tmp_path, monkeypatch)
             assert company.name == "Setup Co Ltd"
             assert yard is not None
             assert str(yard.description or "").strip() == "Primary Yard"
+            default_template = db.execute(select(PrintTemplate.id).limit(1)).scalar_one_or_none()
+            default_destination = db.execute(
+                select(PrintDestination.id).limit(1)
+            ).scalar_one_or_none()
+            assert default_template is not None
+            assert default_destination is not None
 
         disabled = client.get("/setup")
         assert disabled.status_code == 404

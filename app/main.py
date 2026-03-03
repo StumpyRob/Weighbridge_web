@@ -11,7 +11,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .auth import SESSION_USER_ID_KEY, is_superadmin_user
 from .config import settings
-from .db import SessionLocal, get_db
+from .db import get_db
 from .models import User
 from .routes import api_router
 from .routers.lookups import router as lookups_router
@@ -32,19 +32,6 @@ from .templating import templates
 
 logger = logging.getLogger(__name__)
 
-_AUTH_PUBLIC_PATHS = {"/health", "/login", "/bootstrap"}
-_AUTH_PUBLIC_PREFIXES = ("/static/", "/media/")
-_AUTH_PROTECTED_PREFIXES = (
-    "/tickets",
-    "/customers",
-    "/vehicles",
-    "/products",
-    "/invoices",
-    "/lookups",
-    "/reports",
-    "/admin",
-    "/debug",
-)
 _SYSTEM_GUARD_PREFIXES = (
     "/tickets",
     "/customers",
@@ -63,32 +50,6 @@ def _strip_non_production_routes(app: FastAPI) -> None:
             continue
         filtered_routes.append(route)
     app.router.routes = filtered_routes
-
-
-def _log_alembic_revision_status() -> None:
-    try:
-        config = Config("alembic.ini")
-        script = ScriptDirectory.from_config(config)
-        heads = list(script.get_heads())
-    except Exception:
-        logger.warning("Could not read Alembic heads from alembic.ini.", exc_info=True)
-        heads = []
-
-    current_revision = None
-    try:
-        with SessionLocal() as db:
-            bind = db.get_bind()
-            with bind.connect() as connection:
-                context = MigrationContext.configure(connection)
-                current_revision = context.get_current_revision()
-    except Exception:
-        logger.warning("Could not read current Alembic revision from database.", exc_info=True)
-
-    logger.info(
-        "Alembic revision status: current=%s, heads=%s",
-        current_revision,
-        heads,
-    )
 
 
 def create_app(dev_mode: bool | None = None) -> FastAPI:
