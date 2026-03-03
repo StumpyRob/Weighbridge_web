@@ -22,83 +22,86 @@
     {% endif %}
   </div>
 
-  <section class="frame">
-    <form method="get" class="ticket-form compact-form">
-      <div class="grid grid-5">
-        <div class="field">
-          <label for="entity_type">Entity type</label>
-          <select id="entity_type" name="entity_type">
-            <option value="">All</option>
-            {% for item in entity_type_options %}
-              <option value="{{ item }}" {% if selected_entity_type == item %}selected{% endif %}>{{ item }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="field">
-          <label for="action">Action</label>
-          <select id="action" name="action">
-            <option value="">All</option>
-            {% for item in action_options %}
-              <option value="{{ item }}" {% if selected_action == item %}selected{% endif %}>{{ item }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="field">
-          <label for="user_id">User</label>
-          <select id="user_id" name="user_id">
-            <option value="">All</option>
-            {% for user in user_options %}
-              {% set user_label = user.email or user.username or ("User " ~ user.id) %}
-              <option value="{{ user.id }}" {% if selected_user_id == user.id %}selected{% endif %}>{{ user_label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="field">
-          <label for="range">Date range</label>
-          <select id="range" name="range">
-            <option value="today" {% if selected_range == "today" %}selected{% endif %}>Today</option>
-            <option value="7d" {% if selected_range == "7d" %}selected{% endif %}>Last 7 days</option>
-            <option value="30d" {% if selected_range == "30d" %}selected{% endif %}>Last 30 days</option>
-            <option value="all" {% if selected_range == "all" %}selected{% endif %}>All</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="entity_id">Entity id</label>
-          <input id="entity_id" name="entity_id" value="{{ selected_entity_id }}" placeholder="Exact id (e.g. 123)" />
-        </div>
-      </div>
-      <div class="btn-group">
-        <button type="submit" class="btn btn--primary">Apply filters</button>
-        <a href="/admin/audit" class="btn btn--ghost">Reset</a>
-      </div>
-    </form>
-  </section>
+  <form class="filters filters-inline audit-log-filters" method="get" action="/admin/audit">
+    <div class="field">
+      <label for="entity_type">Entity type</label>
+      <select id="entity_type" name="entity_type">
+        <option value="">All</option>
+        {% for item in entity_type_options %}
+          <option value="{{ item }}" {% if selected_entity_type == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="action">Action</label>
+      <select id="action" name="action">
+        <option value="">All</option>
+        {% for item in action_options %}
+          <option value="{{ item }}" {% if selected_action == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="user_id">User</label>
+      <select id="user_id" name="user_id">
+        <option value="">All</option>
+        {% for user in user_options %}
+          {% set user_label = user.email or user.username or ("User " ~ user.id) %}
+          <option value="{{ user.id }}" {% if selected_user_id == user.id %}selected{% endif %}>{{ user_label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="range">Date range</label>
+      <select id="range" name="range">
+        <option value="today" {% if selected_range == "today" %}selected{% endif %}>Today</option>
+        <option value="7d" {% if selected_range == "7d" %}selected{% endif %}>Last 7 days</option>
+        <option value="30d" {% if selected_range == "30d" %}selected{% endif %}>Last 30 days</option>
+        <option value="all" {% if selected_range == "all" %}selected{% endif %}>All</option>
+      </select>
+    </div>
+    <div class="field audit-field-entity-id">
+      <label for="entity_id">Entity id</label>
+      <input id="entity_id" name="entity_id" value="{{ selected_entity_id }}" placeholder="Exact id (e.g. 123)" />
+    </div>
+    <div class="actions btn-group">
+      <button type="submit" class="btn btn--secondary">Filter</button>
+      <a href="/admin/audit" class="btn btn--ghost">Reset</a>
+    </div>
+  </form>
 
-  <section class="frame">
-    <div class="table-wrap">
-      <table class="table">
+  <div class="table-wrap list-table-wrap">
+    <table class="data-table list-table audit-log-table">
+      <colgroup>
+        <col class="audit-col-time" />
+        <col class="audit-col-user" />
+        <col class="audit-col-action" />
+        <col class="audit-col-entity" />
+        <col class="audit-col-summary" />
+        <col class="audit-col-view" />
+      </colgroup>
         <thead>
           <tr>
-            <th>Time ({{ time_zone_label }})</th>
-            <th>User</th>
-            <th>Action</th>
-            <th>Entity</th>
-            <th>Summary</th>
-            <th>View</th>
+            <th class="audit-col-time">Time ({{ time_zone_label }})</th>
+            <th class="audit-col-user">User</th>
+            <th class="audit-col-action">Action</th>
+            <th class="audit-col-entity">Entity</th>
+            <th class="audit-col-summary">Summary</th>
+            <th class="audit-col-view">View</th>
           </tr>
         </thead>
         <tbody>
           {% if rows %}
             {% for row in rows %}
               <tr>
-                <td>{{ row.occurred_at_local.strftime("%Y-%m-%d %H:%M:%S") if row.occurred_at_local else "-" }}</td>
-                <td>{{ row.user_label }}</td>
-                <td>{{ row.action }}</td>
-                <td>
+                <td class="audit-col-time">{{ row.occurred_at_local.strftime("%Y-%m-%d %H:%M:%S") if row.occurred_at_local else "-" }}</td>
+                <td class="audit-col-user">{{ row.user_label }}</td>
+                <td class="audit-col-action">{{ row.action }}</td>
+                <td class="audit-col-entity">
                   {{ row.entity_type }} #{{ row.entity_id or "-" }}
                 </td>
-                <td>{{ row.summary or "-" }}</td>
-                <td>
+                <td class="audit-col-summary">{{ row.summary or "-" }}</td>
+                <td class="audit-col-view">
                   {% if row.entity_href %}
                     <a href="{{ row.entity_href }}">View</a>
                   {% else %}
@@ -109,11 +112,10 @@
             {% endfor %}
           {% else %}
             <tr>
-              <td colspan="6">No audit events found.</td>
+              <td colspan="6" class="empty">No audit events found.</td>
             </tr>
           {% endif %}
         </tbody>
-      </table>
-    </div>
-  </section>
+    </table>
+  </div>
 {% endblock %}

@@ -2471,6 +2471,53 @@ details > summary:focus-visible {
   min-width: 225px;
 }
 
+.audit-log-filters .field {
+  min-width: 170px;
+}
+
+.audit-log-filters .field.audit-field-entity-id {
+  min-width: 220px;
+  flex: 1 1 260px;
+}
+
+.audit-log-table {
+  table-layout: fixed;
+  min-width: 980px;
+}
+
+.audit-log-table .audit-col-time {
+  width: 190px;
+}
+
+.audit-log-table .audit-col-user {
+  width: 250px;
+}
+
+.audit-log-table .audit-col-action {
+  width: 130px;
+}
+
+.audit-log-table .audit-col-entity {
+  width: 190px;
+}
+
+.audit-log-table .audit-col-view {
+  width: 72px;
+}
+
+.audit-log-table th.audit-col-summary,
+.audit-log-table td.audit-col-summary {
+  white-space: normal;
+}
+
+.audit-log-table td.audit-col-summary {
+  overflow-wrap: anywhere;
+}
+
+.audit-log-table td {
+  vertical-align: top;
+}
+
 .align-right {
   text-align: right;
 }
