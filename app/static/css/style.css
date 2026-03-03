@@ -2481,28 +2481,39 @@ details > summary:focus-visible {
 }
 
 .audit-log-table {
-  table-layout: fixed;
-  min-width: 980px;
+  table-layout: auto;
+  min-width: 920px;
+  font-size: 0.88rem;
+}
+
+.audit-log-table th,
+.audit-log-table td {
+  padding: 0.52rem 0.6rem;
+  line-height: 1.3;
 }
 
 .audit-log-table .audit-col-time {
-  width: 190px;
+  width: 165px;
 }
 
 .audit-log-table .audit-col-user {
-  width: 250px;
+  width: 210px;
 }
 
 .audit-log-table .audit-col-action {
-  width: 130px;
+  width: 120px;
 }
 
 .audit-log-table .audit-col-entity {
-  width: 190px;
+  width: 250px;
+}
+
+.audit-log-table .audit-col-summary {
+  width: 220px;
 }
 
 .audit-log-table .audit-col-view {
-  width: 72px;
+  width: 56px;
 }
 
 .audit-log-table th.audit-col-summary,
@@ -2510,7 +2521,16 @@ details > summary:focus-visible {
   white-space: normal;
 }
 
+.audit-log-table th.audit-col-entity,
+.audit-log-table td.audit-col-entity {
+  white-space: normal;
+}
+
 .audit-log-table td.audit-col-summary {
+  overflow-wrap: anywhere;
+}
+
+.audit-log-table td.audit-col-entity {
   overflow-wrap: anywhere;
 }
 

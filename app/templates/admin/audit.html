@@ -94,7 +94,7 @@
           {% if rows %}
             {% for row in rows %}
               <tr>
-                <td class="audit-col-time">{{ row.occurred_at_local.strftime("%Y-%m-%d %H:%M:%S") if row.occurred_at_local else "-" }}</td>
+                <td class="audit-col-time">{{ row.occurred_at_local.strftime("%d/%m/%Y %H:%M:%S") if row.occurred_at_local else "-" }}</td>
                 <td class="audit-col-user">{{ row.user_label }}</td>
                 <td class="audit-col-action">{{ row.action }}</td>
                 <td class="audit-col-entity">
