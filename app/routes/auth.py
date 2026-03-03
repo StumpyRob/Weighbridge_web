@@ -14,6 +14,7 @@ from ..auth import (
     SESSION_USER_ID_KEY,
     hash_password,
     normalize_email,
+    user_identity_kwargs,
     user_by_email,
     validate_email,
     verify_password,
@@ -191,9 +192,8 @@ async def bootstrap_submit(request: Request, db: Session = Depends(get_db)) -> H
         )
 
     user = User(
-        email=email,
+        **user_identity_kwargs(email=email, role=ROLE_SUPERADMIN),
         password_hash=hash_password(password),
-        role=ROLE_SUPERADMIN,
         is_active=True,
     )
     db.add(user)

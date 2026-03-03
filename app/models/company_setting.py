@@ -26,6 +26,7 @@ class CompanySetting(Base):
     primary_color_hex: Mapped[str | None] = mapped_column(String(7), nullable=True)
     show_nav_logo: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     show_nav_title: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    is_initialized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,

@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from app.config import settings
 from app.db import get_db
 from app.main import create_app
-from app.models import Base
+from app.models import Base, CompanySetting
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER_NAME
 
 
@@ -21,12 +21,17 @@ def _client_for_app(
     db_path: Path,
     base_url: str = "http://testserver",
     raise_server_exceptions: bool = True,
+    system_initialized: bool = False,
 ) -> TestClient:
     engine = create_engine(
         f"sqlite+pysqlite:///{db_path}", connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    if system_initialized:
+        with SessionLocal() as db:
+            db.add(CompanySetting(name="Security Test Co", is_initialized=True))
+            db.commit()
 
     def override_get_db():
         db = SessionLocal()
@@ -56,7 +61,11 @@ def test_csrf_is_required_for_post_requests_in_non_dev(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "secret_key", "")
     app = create_app(dev_mode=False)
 
-    with _client_for_app(app=app, db_path=tmp_path / "csrf.db") as client:
+    with _client_for_app(
+        app=app,
+        db_path=tmp_path / "csrf.db",
+        system_initialized=True,
+    ) as client:
         blocked = client.post(
             "/customers/new",
             data={"account_code": "C-CSRF-01", "name": "CSRF Customer"},

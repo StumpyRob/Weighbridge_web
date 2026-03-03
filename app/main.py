@@ -1,14 +1,18 @@
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 import secrets
+from typing import Iterator
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import inspect
+from starlette.middleware.sessions import SessionMiddleware
 
+from .auth import SESSION_USER_ID_KEY, is_superadmin_user
 from .config import settings
-from .db import SessionLocal
+from .db import SessionLocal, get_db
+from .models import User
 from .routes import api_router
 from .routers.lookups import router as lookups_router
 from .security_hardening import (
@@ -22,7 +26,7 @@ from .security_hardening import (
     set_csrf_cookie,
     validate_production_secret,
 )
-from .seed import force_refresh_system_print_templates
+from .services.system_setup import get_company_setting
 from .services.pdf import check_invoice_pdf_renderer
 from .templating import templates
 
@@ -40,6 +44,14 @@ _AUTH_PROTECTED_PREFIXES = (
     "/reports",
     "/admin",
     "/debug",
+)
+_SYSTEM_GUARD_PREFIXES = (
+    "/tickets",
+    "/customers",
+    "/vehicles",
+    "/products",
+    "/invoices",
+    "/lookups",
 )
 
 
@@ -79,36 +91,6 @@ def _log_alembic_revision_status() -> None:
     )
 
 
-def _printing_schema_ready_for_bootstrap() -> bool:
-    try:
-        with SessionLocal() as db:
-            bind = db.get_bind()
-            inspector = inspect(bind)
-            table_names = set(inspector.get_table_names())
-            if "print_templates" not in table_names:
-                return False
-            template_columns = {
-                str(column["name"])
-                for column in inspector.get_columns("print_templates")
-            }
-            required_columns = {
-                "code",
-                "description",
-                "document_type",
-                "format",
-                "content",
-                "is_system",
-                "is_active",
-            }
-            return required_columns.issubset(template_columns)
-    except Exception:
-        logger.warning(
-            "Skipping system template bootstrap; printing schema inspection failed.",
-            exc_info=True,
-        )
-        return False
-
-
 def create_app(dev_mode: bool | None = None) -> FastAPI:
     effective_dev_mode = settings.dev_mode if dev_mode is None else dev_mode
     validate_production_secret(
@@ -130,6 +112,54 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
     app.mount("/media", StaticFiles(directory=str(media_dir)), name="media")
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
+    def _path_needs_system_guard(path: str) -> bool:
+        target = str(path or "")
+        return any(target.startswith(prefix) for prefix in _SYSTEM_GUARD_PREFIXES)
+
+    @contextmanager
+    def _request_db(request: Request) -> Iterator:
+        dep = request.app.dependency_overrides.get(get_db, get_db)
+        db_gen = dep()
+        db = next(db_gen)
+        try:
+            yield db
+        finally:
+            try:
+                next(db_gen)
+            except StopIteration:
+                pass
+
+    def _load_session_user(request: Request, db) -> User | None:
+        user_id = request.session.get(SESSION_USER_ID_KEY)
+        if user_id is None:
+            return None
+        try:
+            parsed_user_id = int(user_id)
+        except (TypeError, ValueError):
+            request.session.pop(SESSION_USER_ID_KEY, None)
+            return None
+
+        user = db.get(User, parsed_user_id)
+        if user is None or not bool(user.is_active):
+            request.session.pop(SESSION_USER_ID_KEY, None)
+            return None
+        return user
+
+    def _uninitialized_response(request: Request, *, superadmin: bool) -> HTMLResponse:
+        message = "System not initialized. Please contact your administrator."
+        if superadmin:
+            message = "System not initialized. Visit /setup (superadmin)."
+        return templates.TemplateResponse(
+            request,
+            "system/uninitialized.html",
+            {
+                "request": request,
+                "is_superadmin": superadmin,
+                "message": message,
+            },
+            status_code=503,
+        )
+
     @app.middleware("http")
     async def security_middleware(request: Request, call_next):
         csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
@@ -138,6 +168,11 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
             csrf_cookie = generate_csrf_token()
             should_set_csrf_cookie = True
         request.state.csrf_token = csrf_cookie
+        request.state.current_user = None
+
+        request_path = str(request.url.path or "")
+        with _request_db(request) as db:
+            request.state.current_user = _load_session_user(request, db)
 
         if is_state_changing_method(request.method):
             submitted_token = str(request.headers.get(CSRF_HEADER_NAME, "")).strip()
@@ -146,13 +181,36 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 if content_type.startswith(
                     "application/x-www-form-urlencoded"
                 ) or content_type.startswith("multipart/form-data"):
+                    body = await request.body()
+
+                    def _receive_with_body(payload: bytes):
+                        sent = False
+
+                        async def _inner():
+                            nonlocal sent
+                            if sent:
+                                return {
+                                    "type": "http.request",
+                                    "body": b"",
+                                    "more_body": False,
+                                }
+                            sent = True
+                            return {
+                                "type": "http.request",
+                                "body": payload,
+                                "more_body": False,
+                            }
+
+                        return _inner
+
+                    form = None
                     try:
-                        form = await request.form()
+                        form_request = Request(request.scope, _receive_with_body(body))
+                        form = await form_request.form()
                     except Exception:
                         form = None
-                    submitted_token = (
-                        str(form.get(CSRF_FORM_FIELD, "")).strip() if form else ""
-                    )
+                    submitted_token = str(form.get(CSRF_FORM_FIELD, "")).strip() if form else ""
+                    request._receive = _receive_with_body(body)
             if not submitted_token or not csrf_cookie or not secrets.compare_digest(
                 submitted_token, csrf_cookie
             ):
@@ -161,25 +219,38 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 apply_security_headers(response)
                 return response
 
+        if _path_needs_system_guard(request_path):
+            with _request_db(request) as db:
+                company = get_company_setting(db)
+                if not bool(company and getattr(company, "is_initialized", False)):
+                    response = _uninitialized_response(
+                        request,
+                        superadmin=is_superadmin_user(
+                            db, getattr(request.state, "current_user", None)
+                        ),
+                    )
+                    if should_set_csrf_cookie:
+                        set_csrf_cookie(response, request, csrf_cookie)
+                    apply_security_headers(response)
+                    return response
+
         response = await call_next(request)
         if should_set_csrf_cookie:
             set_csrf_cookie(response, request, csrf_cookie)
         apply_security_headers(response)
         return response
 
+    session_secret = str(settings.effective_secret_key or "").strip() or "dev-session-secret"
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=session_secret,
+        same_site="lax",
+        https_only=not bool(effective_dev_mode),
+    )
+
     @app.on_event("startup")
     def startup_printing_bootstrap() -> None:
         check_invoice_pdf_renderer()
-        if not _printing_schema_ready_for_bootstrap():
-            logger.info(
-                "Skipping system template bootstrap until printing migrations are applied."
-            )
-            return
-        with SessionLocal() as db:
-            try:
-                force_refresh_system_print_templates(db)
-            except Exception:
-                logger.exception("System template bootstrap failed on startup.")
 
     @app.get("/health", tags=["health"])
     def health_check() -> dict:

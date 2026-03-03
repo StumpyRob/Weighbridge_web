@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}System Setup - Weighbridge Web{% endblock %}
+
+{% block content %}
+  <section class="auth-page">
+    <div class="page-header">
+      <div>
+        <h1>System Setup</h1>
+        <p class="muted">Complete one-time initialization for this environment.</p>
+      </div>
+    </div>
+
+    {% if errors %}
+      <div class="alert alert--danger">
+        <ul>
+          {% for error in errors %}
+            <li>{{ error }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    <form method="post" action="/setup" class="auth-form" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+      <div class="field">
+        <label for="company_name">Company name</label>
+        <input id="company_name" name="company_name" type="text" value="{{ company_name or '' }}" required />
+      </div>
+      <div class="field">
+        <label for="default_yard_name">Default yard name</label>
+        <input id="default_yard_name" name="default_yard_name" type="text" value="{{ default_yard_name or '' }}" required />
+      </div>
+      <div class="field">
+        <label for="company_logo_file">Company logo (optional)</label>
+        <input id="company_logo_file" name="company_logo_file" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" />
+      </div>
+      <div class="field checkbox">
+        <label>
+          <input name="seed_printing" type="checkbox" value="1" {% if seed_printing %}checked{% endif %} />
+          Create default print templates and print destinations
+        </label>
+      </div>
+      <div class="field checkbox">
+        <label>
+          <input name="seed_demo" type="checkbox" value="1" {% if seed_demo %}checked{% endif %} />
+          Seed demo lookups (units, tax rates, payment/void methods, vehicle types)
+        </label>
+      </div>
+      <div class="actions">
+        <button type="submit" class="btn btn--primary">Complete setup</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}System Setup Required - Weighbridge Web{% endblock %}
+
+{% block content %}
+  <section class="auth-page">
+    <div class="page-header">
+      <div>
+        <h1>System Setup Required</h1>
+      </div>
+    </div>
+
+    <div class="alert alert--warning">
+      {{ message }}
+      {% if is_superadmin %}
+        <a href="/setup">Open setup</a>.
+      {% endif %}
+    </div>
+  </section>
+{% endblock %}
