@@ -47,14 +47,23 @@ body {
   text-decoration: none;
 }
 
+.brand__logo-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  line-height: 0;
+}
+
 .brand__logo {
-  display: inline-block;
+  display: block;
   height: var(--theme-nav-logo-height);
   width: auto;
   max-height: 80px;
-  border-radius: 6px;
-  background: #ffffff;
-  padding: 2px;
+  object-fit: contain;
 }
 
 .brand__text {
@@ -3140,6 +3149,65 @@ details > summary:focus-visible {
   display: inline-block;
   font-size: 0.74rem;
   letter-spacing: 0.01em;
+}
+
+.company-logo-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.company-logo-preview-card {
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  padding: 0.7rem 0.8rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.company-logo-preview-card--light {
+  background: #f9fafb;
+}
+
+.company-logo-preview-card--dark {
+  background: #14213d;
+  border-color: #1f3a63;
+  color: #f8fafc;
+}
+
+.company-logo-preview-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.company-logo-preview-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 6px 8px;
+  border-radius: 10px;
+  line-height: 0;
+}
+
+.company-logo-preview-card--light .company-logo-preview-badge {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+}
+
+.company-logo-preview-card--dark .company-logo-preview-badge {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.company-logo-preview-image {
+  display: block;
+  height: 54px;
+  max-height: 80px;
+  width: auto;
+  max-width: 220px;
+  object-fit: contain;
 }
 
 /* Theme cascade guard: keep tenant branding authoritative. */

@@ -8,6 +8,18 @@ All notable changes are tracked here by release chapter.
 - Add build stamp in UI footer: `Build v<version> (commit <shortsha>)`.
 - Add release discipline docs (`VERSION`, changelog workflow, contribution guide).
 
+## v0.13.9 - 2026-03-03
+
+### FIX
+- Force navbar theme ownership by keeping the final `.site-header` rule bound to `background-color: var(--nav-bg)`.
+- Improve navbar logo readability with a dedicated logo badge style and remove forced white logo background styling.
+- Add dual logo preview surfaces (light + dark navbar simulation) on Company Settings to catch contrast issues before saving.
+- Bump stylesheet cache key so updated branding UI styles are picked up immediately.
+
+### TEST
+- Extend branding CSS regression coverage to ensure later `.site-header` rules do not reintroduce hardcoded hex backgrounds after the `var(--nav-bg)` declaration.
+- Add coverage for Company Settings dual logo preview blocks.
+
 ## v0.13.8 - 2026-03-03
 
 ### FIX

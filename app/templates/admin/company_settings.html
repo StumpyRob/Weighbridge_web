@@ -77,8 +77,19 @@
         {% if logo_preview_url %}
           <div class="field">
             <label>Current logo preview</label>
-            <div>
-              <img src="{{ logo_preview_url }}" alt="Company logo preview" style="max-height: 80px; max-width: 220px;" />
+            <div class="company-logo-preview-grid">
+              <div class="company-logo-preview-card company-logo-preview-card--light">
+                <span class="company-logo-preview-label">Light background</span>
+                <span class="company-logo-preview-badge">
+                  <img src="{{ logo_preview_url }}" alt="Company logo preview on light background" class="company-logo-preview-image" />
+                </span>
+              </div>
+              <div class="company-logo-preview-card company-logo-preview-card--dark">
+                <span class="company-logo-preview-label">Dark navbar background</span>
+                <span class="company-logo-preview-badge">
+                  <img src="{{ logo_preview_url }}" alt="Company logo preview on dark background" class="company-logo-preview-image" />
+                </span>
+              </div>
             </div>
           </div>
         {% else %}

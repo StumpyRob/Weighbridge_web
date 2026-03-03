@@ -299,6 +299,7 @@ def test_base_template_uses_company_branding_for_logo_favicon_and_theme(
     assert "--theme-nav-logo-height: 48px" in response.text
     assert 'rel="icon"' in response.text
     assert "/static/uploads/company/logo-nav.png?v=" in response.text
+    assert 'class="brand__logo-badge"' in response.text
     assert 'class="brand__logo"' in response.text
     assert "Acme Branding" in response.text
 
@@ -366,16 +367,33 @@ def test_navbar_and_primary_styles_use_root_branding_variables(client_anonymous)
     assert ".btn--primary{" in compact_css
     assert "background-color:var(--primary);" in compact_css
     assert "border-color:var(--primary);" in compact_css
+    assert ".brand__logo-badge{" in compact_css
 
     var_rule_position = compact_css.find("background-color:var(--nav-bg);")
     assert var_rule_position >= 0
+    site_header_blocks = re.findall(r"\.site-header\{[^}]*\}", compact_css, flags=re.IGNORECASE)
+    assert site_header_blocks
+    assert "background-color:var(--nav-bg);" in site_header_blocks[-1]
     trailing_css = compact_css[var_rule_position + len("background-color:var(--nav-bg);") :]
     hardcoded_header_bg_after_var = re.search(
-        r"\.site-header\{[^}]*background-color:#[0-9a-f]{3,8};",
+        r"\.site-header\{[^}]*background(?:-color)?:#[0-9a-f]{3,8};",
         trailing_css,
         flags=re.IGNORECASE,
     )
     assert hardcoded_header_bg_after_var is None
+
+
+def test_company_settings_logo_preview_shows_light_and_dark_backgrounds(client, db_session):
+    setting = _get_or_create_company_setting(db_session)
+    setting.company_logo_path = "/static/uploads/company/logo-preview.png"
+    db_session.commit()
+
+    response = client.get("/admin/company")
+    assert response.status_code == 200
+    assert "Light background" in response.text
+    assert "Dark navbar background" in response.text
+    assert "company-logo-preview-card--light" in response.text
+    assert "company-logo-preview-card--dark" in response.text
 
 
 def test_base_template_respects_nav_brand_visibility_toggles(

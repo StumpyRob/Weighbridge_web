@@ -17,19 +17,21 @@
         --primary: {{ company_settings.primary_color }};
       }
     </style>
-    <link rel="stylesheet" href="/static/css/style.css?v=6" />
+    <link rel="stylesheet" href="/static/css/style.css?v=7" />
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
   </head>
   <body>
     <header class="site-header">
       <a class="brand" href="/">
         {% if ui_branding.show_nav_logo %}
-          <img
-            src="{{ ui_branding.nav_logo_url }}"
-            alt="Company logo"
-            class="brand__logo"
-            loading="lazy"
-          />
+          <span class="brand__logo-badge">
+            <img
+              src="{{ ui_branding.nav_logo_url }}"
+              alt="Company logo"
+              class="brand__logo"
+              loading="lazy"
+            />
+          </span>
         {% endif %}
         {% if ui_branding.show_nav_title or not ui_branding.show_nav_logo %}
           <span class="brand__text">{{ ui_branding.brand_name }}</span>
