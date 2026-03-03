@@ -29,6 +29,7 @@ from ..services.system_setup import (
     DEFAULT_YARD_NAME,
     ensure_company_settings_row_exists,
     get_company_setting,
+    seed_required_reference_data,
     upsert_default_yard,
 )
 from ..templating import templates
@@ -68,10 +69,7 @@ def _setup_context(
 
 
 def _logo_upload_dir() -> Path:
-    target = str(settings.company_logo_upload_dir or "").strip()
-    if not target:
-        target = "app/static/uploads/company"
-    upload_dir = Path(target).resolve()
+    upload_dir = Path(str(settings.effective_company_logo_upload_dir or "").strip()).resolve()
     upload_dir.mkdir(parents=True, exist_ok=True)
     return upload_dir
 
@@ -189,6 +187,7 @@ async def setup_submit(request: Request, db: Session = Depends(get_db)) -> HTMLR
         company.company_logo_path = uploaded_web_path
         company.company_logo_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     upsert_default_yard(db, yard_name=yard_name)
+    seed_required_reference_data(db)
     _seed_printing_defaults(db)
     company.is_initialized = True
     db.commit()

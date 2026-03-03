@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -18,11 +17,9 @@ from ..models import (
     VehicleTare,
     VehicleType,
 )
-from ..seed import seed_vehicle_types
 from ..templating import templates
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 
 
 @router.get("/vehicles", response_class=HTMLResponse)
@@ -55,14 +52,21 @@ def vehicles_list(
 
 @router.get("/vehicles/new", response_class=HTMLResponse)
 def vehicles_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    options = _load_options(db)
+    errors: list[str] = []
+    if not options.get("vehicle_types"):
+        errors.append(
+            "System not initialized: missing required lookups (vehicle types)."
+        )
     return templates.TemplateResponse(request, 
         "vehicles/new.html",
         {
             "request": request,
-            "errors": [],
+            "errors": errors,
             "form": _empty_form(),
-            "options": _load_options(db),
+            "options": options,
         },
+        status_code=503 if errors else 200,
     )
 
 
@@ -283,7 +287,6 @@ def _load_options(db: Session) -> dict[str, list[tuple[str, str]]]:
         .where(Customer.on_stop.is_(False))
         .order_by(Customer.name)
     ).scalars()
-    seed_vehicle_types(db)
     vehicle_types = db.execute(select(VehicleType).order_by(VehicleType.code)).scalars()
     hauliers = db.execute(
         select(Haulier).where(Haulier.is_active.is_(True)).order_by(Haulier.name)

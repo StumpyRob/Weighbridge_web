@@ -5,12 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="csrf-token" content="{{ csrf_token or '' }}" />
     <title>{% block title %}Weighbridge Web{% endblock %}</title>
+    <link rel="icon" href="{{ ui_branding.favicon_url or '/static/img/default-company-logo.svg' }}" />
+    <style>
+      :root {
+        --theme-navbar-bg: {{ company_settings.nav_color }};
+        --theme-primary: {{ company_settings.primary_color }};
+        --theme-primary-contrast: {{ ui_branding.primary_contrast_hex }};
+        --theme-primary-soft: {{ ui_branding.primary_soft_rgba }};
+        --theme-nav-logo-height: {{ ui_branding.nav_logo_height_px }}px;
+        --nav-bg: {{ company_settings.nav_color }};
+        --primary: {{ company_settings.primary_color }};
+      }
+    </style>
     <link rel="stylesheet" href="/static/css/style.css?v=3" />
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
   </head>
   <body>
     <header class="site-header">
-      <div class="brand">Weighbridge Web</div>
+      <a class="brand" href="/">
+        {% if ui_branding.show_nav_logo %}
+          <img
+            src="{{ ui_branding.nav_logo_url }}"
+            alt="Company logo"
+            class="brand__logo"
+            loading="lazy"
+          />
+        {% endif %}
+        {% if ui_branding.show_nav_title or not ui_branding.show_nav_logo %}
+          <span class="brand__text">{{ ui_branding.brand_name }}</span>
+        {% endif %}
+      </a>
       <div class="site-header__right">
         <nav class="site-nav">
           <a href="/tickets" class="{% if request.url.path.startswith('/tickets') %}is-active{% endif %}" {% if request.url.path.startswith('/tickets') %}aria-current="page"{% endif %}>Tickets</a>
@@ -22,6 +46,18 @@
           <a href="/reports" class="{% if request.url.path.startswith('/reports') %}is-active{% endif %}" {% if request.url.path.startswith('/reports') %}aria-current="page"{% endif %}>Reports</a>
           <a href="/admin" class="{% if request.url.path.startswith('/admin') %}is-active{% endif %}" {% if request.url.path.startswith('/admin') %}aria-current="page"{% endif %}>Admin</a>
         </nav>
+        <div class="site-auth">
+          {% if current_user %}
+            {% set signed_in_as = (current_user.email or current_user.username or 'User') %}
+            <span class="site-auth__badge">Signed in as {{ signed_in_as }}</span>
+            <form method="post" action="/logout" class="site-auth__logout">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+              <button type="submit" class="site-auth__link">Logout</button>
+            </form>
+          {% else %}
+            <a href="/login" class="site-auth__link">Sign in</a>
+          {% endif %}
+        </div>
         {% if DEV_MODE %}
           <span class="dev-mode-pill">DEV MODE</span>
         {% endif %}

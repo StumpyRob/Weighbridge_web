@@ -75,6 +75,7 @@ from ..services.printing import (
     replay_print_job,
     render_destination_content,
 )
+from ..services.system_setup import missing_required_lookup_messages
 from ..services.wip_snapshots import ticket_wip_snapshot
 from ..seed import seed_void_reasons
 from ..templating import templates
@@ -299,6 +300,22 @@ def tickets_print_last_again(db: Session = Depends(get_db)) -> RedirectResponse:
         if ticket and ticket.ticket_no:
             params["reprint_ticket_no"] = ticket.ticket_no
     return RedirectResponse(url=f"/tickets?{urlencode(params)}", status_code=303)
+
+
+@router.get("/tickets/new", response_class=HTMLResponse)
+def tickets_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    missing = missing_required_lookup_messages(db)
+    if missing:
+        return templates.TemplateResponse(
+            request,
+            "tickets/new_unavailable.html",
+            {
+                "request": request,
+                "errors": missing,
+            },
+            status_code=503,
+        )
+    return tickets_quick_create(request, db)
 
 
 @router.post("/tickets/new/quick", response_class=HTMLResponse)

@@ -197,7 +197,9 @@ def check_logo(db: Session) -> HealthCheckResult:
 
 
 def check_uploads() -> HealthCheckResult:
-    upload_dir = Path(str(settings.company_logo_upload_dir or "").strip() or "app/static/uploads/company").resolve()
+    upload_dir = Path(
+        str(settings.effective_company_logo_upload_dir or "").strip()
+    ).resolve()
     exists = upload_dir.is_dir()
     writable = _is_dir_writable(upload_dir) if exists else False
     file_count, total_size_bytes = _scan_directory_file_stats(upload_dir) if exists else (0, 0)
@@ -370,7 +372,7 @@ def _resolve_logo_file_path(logo_path: str) -> Path | None:
 
 
 def _logo_upload_candidates() -> tuple[Path, ...]:
-    configured = Path(str(settings.company_logo_upload_dir or "").strip() or "app/static/uploads/company")
+    configured = Path(str(settings.effective_company_logo_upload_dir or "").strip())
     service_default = Path("app/static/uploads/company")
     package_default = Path(__file__).resolve().parents[1] / "static" / "uploads" / "company"
     docker_alt = Path("/app/static/uploads/company")

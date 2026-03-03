@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Company logo">
+  <rect width="120" height="120" rx="14" fill="#14213D"/>
+  <path d="M22 70h18l8-22 10 32 10-26 6 16h24" fill="none" stroke="#FCA311" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="36" r="7" fill="#FCA311"/>
+  <circle cx="88" cy="32" r="5" fill="#FCA311"/>
+</svg>

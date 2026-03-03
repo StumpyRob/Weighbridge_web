@@ -11,7 +11,19 @@ from app.auth import hash_password
 from app.config import settings
 from app.db import get_db
 from app.main import create_app
-from app.models import Base, CompanySetting, PrintDestination, PrintTemplate, User, Yard
+from app.models import (
+    Base,
+    CompanySetting,
+    PaymentMethod,
+    PrintDestination,
+    PrintTemplate,
+    TaxRate,
+    Unit,
+    User,
+    VehicleType,
+    VoidReason,
+    Yard,
+)
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD
 
 
@@ -249,8 +261,132 @@ def test_key_pages_do_not_500_after_setup(tmp_path, monkeypatch):
         )
         assert setup_post.status_code == 303
 
-        for path in ("/tickets", "/customers", "/invoices"):
-            response = client.get(path, follow_redirects=False)
-            assert response.status_code < 500, path
+        with SessionLocal() as db:
+            assert db.execute(select(Unit.id).limit(1)).scalar_one_or_none() is not None
+            assert db.execute(select(TaxRate.id).limit(1)).scalar_one_or_none() is not None
+            assert (
+                db.execute(select(VehicleType.id).limit(1)).scalar_one_or_none()
+                is not None
+            )
+            assert (
+                db.execute(select(PaymentMethod.id).limit(1)).scalar_one_or_none()
+                is not None
+            )
+            assert (
+                db.execute(
+                    select(VoidReason.id).where(VoidReason.reason_type == "TICKET")
+                ).first()
+                is not None
+            )
+            assert (
+                db.execute(
+                    select(VoidReason.id).where(VoidReason.reason_type == "INVOICE")
+                ).first()
+                is not None
+            )
+
+        expected_status = {
+            "/products": 200,
+            "/products/new": 200,
+            "/vehicles/new": 200,
+            "/tickets/new": 200,
+        }
+        for path, status_code in expected_status.items():
+            response = client.get(path, follow_redirects=True)
+            assert response.status_code == status_code, path
+    finally:
+        client.close()
+
+
+def test_system_status_superadmin_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "app_secret_key", "setup-wizard-system-status-secret")
+    monkeypatch.setattr(settings, "secret_key", "")
+    app = create_app(dev_mode=False)
+    client, SessionLocal = _client_for_app(app=app, db_path=tmp_path / "setup-status.db")
+    try:
+        with SessionLocal() as db:
+            db.add(
+                User(
+                    username="owner@example.com",
+                    password_hash=hash_password("SetupPass123!"),
+                    is_active=True,
+                )
+            )
+            db.add(
+                User(
+                    username="ops@example.com",
+                    password_hash=hash_password("SetupPass123!"),
+                    is_active=True,
+                )
+            )
+            db.commit()
+
+        csrf = _login_superadmin(
+            client, email="owner@example.com", password="SetupPass123!"
+        )
+        setup_post = client.post(
+            "/setup",
+            data={
+                "company_name": "Status Co Ltd",
+                "default_yard_name": "Primary Yard",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert setup_post.status_code == 303
+
+        status_page = client.get("/admin/system-status")
+        assert status_page.status_code == 200
+        assert "System Status" in status_page.text
+        assert "Initialized:</strong> Yes" in status_page.text
+
+        logout = client.post(
+            "/logout",
+            data={CSRF_FORM_FIELD: csrf},
+            follow_redirects=False,
+        )
+        assert logout.status_code == 303
+
+        _login_superadmin(client, email="ops@example.com", password="SetupPass123!")
+        forbidden = client.get("/admin/system-status")
+        assert forbidden.status_code == 403
+    finally:
+        client.close()
+
+
+def test_navbar_shows_signed_in_indicator_and_sign_in_link(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "app_secret_key", "setup-wizard-navbar-secret")
+    monkeypatch.setattr(settings, "secret_key", "")
+    app = create_app(dev_mode=False)
+    client, SessionLocal = _client_for_app(app=app, db_path=tmp_path / "setup-navbar.db")
+    try:
+        with SessionLocal() as db:
+            db.add(
+                User(
+                    username="owner@example.com",
+                    password_hash=hash_password("SetupPass123!"),
+                    is_active=True,
+                )
+            )
+            db.commit()
+
+        csrf = _login_superadmin(
+            client, email="owner@example.com", password="SetupPass123!"
+        )
+        signed_in_page = client.get("/admin")
+        assert signed_in_page.status_code == 200
+        assert "Signed in as owner@example.com" in signed_in_page.text
+
+        logout = client.post(
+            "/logout",
+            data={CSRF_FORM_FIELD: csrf},
+            follow_redirects=False,
+        )
+        assert logout.status_code == 303
+
+        signed_out_page = client.get("/admin")
+        assert signed_out_page.status_code == 200
+        assert "Signed in as" not in signed_out_page.text
+        assert "Sign in" in signed_out_page.text
     finally:
         client.close()

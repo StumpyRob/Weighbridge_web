@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}New Ticket Unavailable - Weighbridge Web{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>New Ticket Unavailable</h1>
+      <p class="muted">System not initialized: missing required lookups.</p>
+    </div>
+  </div>
+
+  <div class="alert alert--warning">
+    <ul>
+      {% for error in errors %}
+        <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endblock %}

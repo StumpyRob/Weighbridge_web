@@ -95,17 +95,22 @@ def products_list(
 
 @router.get("/products/new", response_class=HTMLResponse)
 def products_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
-    _ensure_system_units(db)
-    _ensure_system_tax_rates(db)
+    options = _load_options(db)
+    errors: list[str] = []
+    if not options.get("units"):
+        errors.append("System not initialized: missing required lookups (units).")
+    if not options.get("tax_rates"):
+        errors.append("System not initialized: missing required lookups (tax rates).")
     return templates.TemplateResponse(
         request,
         "products/new.html",
         {
             "request": request,
-            "errors": [],
+            "errors": errors,
             "form": _empty_form(),
-            "options": _load_options(db),
+            "options": options,
         },
+        status_code=503 if errors else 200,
     )
 
 
@@ -1500,6 +1505,22 @@ def _backfill_product_units(db: Session) -> None:
             product.unit_id = weight_unit_id
             product.updated_at = utcnow()
             updated = True
+
+    if updated:
+        db.commit()
+
+
+def _backfill_product_tax_rates(db: Session) -> None:
+    system_tax_rates = _ensure_system_tax_rates(db)
+    default_tax_rate_id = system_tax_rates["standard"].id
+    updated = False
+    missing_tax_rates = db.execute(
+        select(Product).where(Product.tax_rate_id.is_(None))
+    ).scalars().all()
+    for product in missing_tax_rates:
+        product.tax_rate_id = default_tax_rate_id
+        product.updated_at = utcnow()
+        updated = True
 
     if updated:
         db.commit()

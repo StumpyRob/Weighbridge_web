@@ -1,13 +1,39 @@
 from __future__ import annotations
 
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+
 from sqlalchemy import select
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..models import CompanySetting, Yard
+from ..config import settings
+from ..models import (
+    CompanySetting,
+    PaymentMethod,
+    PrintDestination,
+    PrintTemplate,
+    TaxRate,
+    Unit,
+    VehicleType,
+    VoidReason,
+    Yard,
+)
 from ..models.base import utcnow
+from ..seed import (
+    seed_invoice_void_reasons,
+    seed_payment_methods,
+    seed_tax_rates,
+    seed_units,
+    seed_vehicle_types,
+    seed_void_reasons,
+)
 
 DEFAULT_YARD_NAME = "Main Yard"
 DEFAULT_YARD_CODE_PREFIX = "Y"
+VOID_REASON_TYPE_TICKET = "TICKET"
+VOID_REASON_TYPE_INVOICE = "INVOICE"
+PRINT_DOCUMENT_TYPES = ("TICKET", "INVOICE", "WTN")
 
 
 def get_company_setting(db: Session) -> CompanySetting | None:
@@ -67,3 +93,117 @@ def ensure_company_settings_row_exists(db: Session) -> CompanySetting:
     db.commit()
     db.refresh(company)
     return company
+
+
+def seed_required_reference_data(db: Session) -> dict[str, int]:
+    return {
+        "units": int(seed_units(db) or 0),
+        "tax_rates": int(seed_tax_rates(db) or 0),
+        "vehicle_types": int(seed_vehicle_types(db) or 0),
+        "payment_methods": int(seed_payment_methods(db) or 0),
+        "ticket_void_reasons": int(seed_void_reasons(db) or 0),
+        "invoice_void_reasons": int(seed_invoice_void_reasons(db) or 0),
+    }
+
+
+def required_lookup_counts(db: Session) -> dict[str, int]:
+    return {
+        "units": int(db.execute(select(func.count(Unit.id))).scalar_one_or_none() or 0),
+        "tax_rates": int(
+            db.execute(select(func.count(TaxRate.id))).scalar_one_or_none() or 0
+        ),
+        "vehicle_types": int(
+            db.execute(select(func.count(VehicleType.id))).scalar_one_or_none() or 0
+        ),
+        "payment_methods": int(
+            db.execute(select(func.count(PaymentMethod.id))).scalar_one_or_none() or 0
+        ),
+        "ticket_void_reasons": int(
+            db.execute(
+                select(func.count(VoidReason.id)).where(
+                    func.upper(VoidReason.reason_type) == VOID_REASON_TYPE_TICKET
+                )
+            ).scalar_one_or_none()
+            or 0
+        ),
+        "invoice_void_reasons": int(
+            db.execute(
+                select(func.count(VoidReason.id)).where(
+                    func.upper(VoidReason.reason_type) == VOID_REASON_TYPE_INVOICE
+                )
+            ).scalar_one_or_none()
+            or 0
+        ),
+    }
+
+
+def missing_required_lookup_messages(db: Session) -> list[str]:
+    counts = required_lookup_counts(db)
+    messages: list[str] = []
+    if counts["units"] <= 0:
+        messages.append("System not initialized: missing required lookups (units).")
+    if counts["tax_rates"] <= 0:
+        messages.append("System not initialized: missing required lookups (tax rates).")
+    if counts["vehicle_types"] <= 0:
+        messages.append(
+            "System not initialized: missing required lookups (vehicle types)."
+        )
+    if counts["payment_methods"] <= 0:
+        messages.append(
+            "System not initialized: missing required lookups (payment methods)."
+        )
+    if counts["ticket_void_reasons"] <= 0:
+        messages.append(
+            "System not initialized: missing required lookups (ticket void reasons)."
+        )
+    if counts["invoice_void_reasons"] <= 0:
+        messages.append(
+            "System not initialized: missing required lookups (invoice void reasons)."
+        )
+    return messages
+
+
+def print_defaults_exist(db: Session) -> bool:
+    for document_type in PRINT_DOCUMENT_TYPES:
+        destination = (
+            db.execute(
+                select(PrintDestination).where(
+                    PrintDestination.document_type == document_type,
+                    PrintDestination.is_default.is_(True),
+                    PrintDestination.is_active.is_(True),
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if destination is None:
+            return False
+        template = db.get(PrintTemplate, destination.template_id)
+        if template is None or not bool(template.is_active):
+            return False
+    return True
+
+
+def uploads_path_status() -> dict[str, object]:
+    upload_dir = Path(
+        str(settings.effective_company_logo_upload_dir or "").strip()
+    ).resolve()
+    exists = upload_dir.is_dir()
+    writable = _is_dir_writable(upload_dir)
+    return {
+        "path": str(upload_dir),
+        "exists": exists,
+        "writable": writable,
+    }
+
+
+def _is_dir_writable(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return False
+    try:
+        with NamedTemporaryFile(dir=path, delete=True):
+            return True
+    except OSError:
+        return False

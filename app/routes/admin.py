@@ -2,12 +2,20 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..auth import is_superadmin_user
 from ..config import settings
 from ..db import get_db
+from ..models import CompanySetting, Yard
 from ..services.health import collect_system_health
 from ..services.print_payload import print_payload_variable_docs
+from ..services.system_setup import (
+    print_defaults_exist,
+    required_lookup_counts,
+    uploads_path_status,
+)
 from ..templating import templates
 
 router = APIRouter()
@@ -80,5 +88,38 @@ def admin_help_template_variables(request: Request) -> HTMLResponse:
             "request": request,
             "active_help_tab": "template_variables",
             "rows": print_payload_variable_docs(),
+        },
+    )
+
+
+@router.get("/admin/system-status", response_class=HTMLResponse)
+def admin_system_status(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    current_user = getattr(request.state, "current_user", None)
+    if not is_superadmin_user(db, current_user):
+        return HTMLResponse("Forbidden", status_code=403)
+
+    company = (
+        db.execute(select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1))
+        .scalars()
+        .first()
+    )
+    has_default_yard = db.execute(select(Yard.id).limit(1)).scalar_one_or_none() is not None
+    lookup_counts = required_lookup_counts(db)
+    uploads = uploads_path_status()
+
+    return templates.TemplateResponse(
+        request,
+        "admin/system_status.html",
+        {
+            "request": request,
+            "initialized": bool(company and company.is_initialized),
+            "has_company_setting": company is not None,
+            "has_default_yard": has_default_yard,
+            "lookup_counts": lookup_counts,
+            "print_defaults_ready": print_defaults_exist(db),
+            "uploads": uploads,
         },
     )

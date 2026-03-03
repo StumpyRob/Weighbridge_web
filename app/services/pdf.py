@@ -1165,7 +1165,7 @@ def _logo_file_from_logo_path(logo_path: str) -> Path | None:
 
 def _logo_upload_root_candidates() -> tuple[Path, ...]:
     configured = Path(
-        str(settings.company_logo_upload_dir or "").strip() or "app/static/uploads/company"
+        str(settings.effective_company_logo_upload_dir or "").strip()
     )
     service_default = Path("app/static/uploads/company")
     package_default = Path(__file__).resolve().parents[1] / "static" / "uploads" / "company"

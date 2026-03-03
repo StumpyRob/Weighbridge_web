@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 import re
 
+from ..config import settings
 from ..models import CompanySetting
 from .uploads import resolve_company_logo_web_path
 
@@ -11,18 +13,41 @@ DEFAULT_PRIMARY_COLOR_HEX = "#FCA311"
 DEFAULT_NAV_LOGO_HEIGHT_PX = 34
 MIN_NAV_LOGO_HEIGHT_PX = 20
 MAX_NAV_LOGO_HEIGHT_PX = 80
+DEFAULT_COMPANY_LOGO_WEB_PATH = "/static/img/default-company-logo.svg"
+_UPLOAD_LOGO_PREFIX = "/static/uploads/company/"
 
 _HEX_COLOR_RE = re.compile(r"^#?[0-9A-Fa-f]{6}$")
 
 
 def company_logo_url(company: CompanySetting | None) -> str:
     if company is None:
-        return ""
+        return DEFAULT_COMPANY_LOGO_WEB_PATH
 
     current = str(company.company_logo_path or "").strip()
     if current:
-        return resolve_company_logo_web_path(current)
-    return ""
+        resolved = resolve_company_logo_web_path(current)
+        if _logo_web_path_exists(resolved):
+            return resolved
+    return DEFAULT_COMPANY_LOGO_WEB_PATH
+
+
+def _logo_web_path_exists(path: str) -> bool:
+    normalized = str(path or "").strip()
+    if not normalized:
+        return False
+    if not normalized.startswith(_UPLOAD_LOGO_PREFIX):
+        return True
+    filename = Path(normalized).name
+    if not filename:
+        return False
+    upload_root = Path(
+        str(settings.effective_company_logo_upload_dir or "").strip()
+    ).resolve()
+    try:
+        candidate = (upload_root / filename).resolve()
+    except OSError:
+        return False
+    return candidate.is_file()
 
 
 def normalize_hex_color(value: object, *, default: str) -> str:
@@ -89,7 +114,9 @@ def build_ui_branding(company: CompanySetting | None) -> dict[str, object]:
         default=DEFAULT_NAV_LOGO_HEIGHT_PX,
     )
     logo_updated_at = getattr(company, "company_logo_updated_at", None)
-    logo_versioned = logo_url_with_version(nav_logo_url, logo_updated_at)
+    logo_versioned = nav_logo_url
+    if nav_logo_url != DEFAULT_COMPANY_LOGO_WEB_PATH:
+        logo_versioned = logo_url_with_version(nav_logo_url, logo_updated_at)
     brand_name = str(getattr(company, "name", "") or "").strip() or "Weighbridge Web"
     show_nav_logo = getattr(company, "show_nav_logo", None)
     show_nav_title = getattr(company, "show_nav_title", None)

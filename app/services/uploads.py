@@ -8,10 +8,7 @@ LOGO_WEB_PATH_PREFIX = "/static/uploads/company/"
 
 
 def _logo_upload_root_candidates() -> tuple[Path, ...]:
-    configured = Path(
-        str(settings.company_logo_upload_dir or "").strip()
-        or "app/static/uploads/company"
-    )
+    configured = Path(str(settings.effective_company_logo_upload_dir or "").strip())
     service_default = Path("app/static/uploads/company")
     package_default = (
         Path(__file__).resolve().parents[1] / "static" / "uploads" / "company"

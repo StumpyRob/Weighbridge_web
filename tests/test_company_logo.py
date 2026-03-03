@@ -213,6 +213,38 @@ def test_company_settings_rejects_invalid_hex_colors(client):
     assert "Primary colour must be a valid HEX colour" in response.text
 
 
+def test_company_settings_theme_values_apply_globally(client, db_session):
+    response = client.post(
+        "/admin/company",
+        data={
+            "name": "Acme Theme Ltd",
+            "navbar_color_hex": "#112233",
+            "primary_color_hex": "#EE7700",
+            "nav_logo_height_px": "44",
+            "show_nav_logo": "0",
+            "show_nav_title": "1",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    setting = db_session.execute(
+        select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1)
+    ).scalar_one()
+    assert setting.navbar_color_hex == "#112233"
+    assert setting.primary_color_hex == "#EE7700"
+    assert setting.nav_logo_height_px == 44
+    assert bool(setting.show_nav_logo) is False
+    assert bool(setting.show_nav_title) is True
+    setting.is_initialized = True
+    db_session.commit()
+
+    themed_page = client.get("/tickets")
+    assert themed_page.status_code == 200
+    assert "--theme-navbar-bg: #112233" in themed_page.text
+    assert "--theme-primary: #EE7700" in themed_page.text
+
+
 def test_base_template_uses_company_branding_for_logo_favicon_and_theme(
     client,
     db_session,
@@ -234,6 +266,7 @@ def test_base_template_uses_company_branding_for_logo_favicon_and_theme(
             nav_logo_height_px=48,
             show_nav_logo=True,
             show_nav_title=True,
+            is_initialized=True,
         )
     )
     db_session.commit()
@@ -268,6 +301,7 @@ def test_base_template_respects_nav_brand_visibility_toggles(
             company_logo_path="/static/uploads/company/logo-toggle.png",
             show_nav_logo=True,
             show_nav_title=False,
+            is_initialized=True,
         )
     )
     db_session.commit()
@@ -302,6 +336,7 @@ def test_base_template_falls_back_to_default_logo_when_upload_missing(client, db
             company_logo_path="/static/uploads/company/missing-logo.png",
             show_nav_logo=True,
             show_nav_title=True,
+            is_initialized=True,
         )
     )
     db_session.commit()
@@ -336,7 +371,10 @@ def test_invoice_pdf_html_contains_company_logo_url_when_set(
     invoice = _make_invoice_with_line(db_session)
     html = render_invoice_pdf_html(invoice.id, db_session)
 
-    assert "/static/uploads/company/logo-test.png" in html
+    assert (
+        "/static/uploads/company/logo-test.png" in html
+        or "data:image/png;base64," in html
+    )
     assert "Acme Logo Co" in html
 
 

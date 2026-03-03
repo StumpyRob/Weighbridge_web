@@ -26,6 +26,7 @@
     <a class="btn btn--ghost{% if request.url.path.startswith('/admin/ewc-codes') %} is-active{% endif %}" href="/admin/ewc-codes">EWC Codes</a>
     <a class="btn btn--ghost{% if request.url.path.startswith('/admin/help') %} is-active{% endif %}" href="/admin/help/getting-started">Help</a>
     <a class="btn btn--ghost{% if request.url.path.startswith('/admin/company') %} is-active{% endif %}" href="/admin/company">Company</a>
+    <a class="btn btn--ghost{% if request.url.path.startswith('/admin/system-status') %} is-active{% endif %}" href="/admin/system-status">System Status</a>
     {% if DEV_MODE %}
       <a class="btn btn--ghost{% if request.url.path.startswith('/admin/health') %} is-active{% endif %}" href="/admin/health">Health Check</a>
     {% endif %}
@@ -53,6 +54,7 @@
         <p>Use <a href="/admin/ewc-codes">Admin -> EWC Codes</a> to upload and refresh the EWC code list from CSV.</p>
         <p>Use <a href="/admin/help/getting-started">Admin -> Help</a> for the software guide and template variable reference.</p>
         <p>Use <a href="/admin/company">Admin -> Company</a> to manage invoice branding and logo settings.</p>
+        <p>Use <a href="/admin/system-status">Admin -> System Status</a> for setup/readiness checks (superadmin only).</p>
         {% if DEV_MODE %}
           <p>Use <a href="/admin/health">Admin -> Health Check</a> for diagnostics (renderer, templates, uploads, DB).</p>
         {% endif %}

@@ -192,132 +192,157 @@ SEED_PRINT_DESTINATIONS = [
 ]
 
 
-def seed_units() -> int:
-    now = utcnow()
+def _seed_units_in_session(session: Session, now: datetime) -> tuple[int, bool]:
     created = 0
-    with SessionLocal() as session:
-        for entry in SEED_UNITS:
-            entry_name = entry["name"]
-            if entry.get("unit_type") == "WEIGHT":
-                if not is_allowed_weight_unit(entry_name):
-                    raise ValueError(
-                        f"Invalid seeded WEIGHT unit: {entry_name}. Only KG/Tonnes are allowed."
-                    )
-                canonical = canonical_weight_unit(entry_name)
-                if canonical:
-                    entry_name = canonical
-            normalized = normalize_unit_name(entry_name)
-            exists = session.execute(
-                select(Unit).where(func.lower(Unit.name) == normalized)
-            ).scalar_one_or_none()
-            if exists:
-                updated = False
-                if entry.get("unit_type") and exists.unit_type != entry["unit_type"]:
-                    exists.unit_type = entry["unit_type"]
-                    updated = True
-                if entry.get("unit_type") == "WEIGHT" and exists.name != entry_name:
-                    exists.name = entry_name
-                    updated = True
-                if updated:
-                    exists.updated_at = now
-                continue
-            session.add(
-                Unit(
-                    name=entry_name,
-                    unit_type=entry.get("unit_type", "COUNT"),
-                    is_active=True,
-                    created_at=now,
-                    updated_at=now,
+    dirty = False
+    for entry in SEED_UNITS:
+        entry_name = entry["name"]
+        if entry.get("unit_type") == "WEIGHT":
+            if not is_allowed_weight_unit(entry_name):
+                raise ValueError(
+                    f"Invalid seeded WEIGHT unit: {entry_name}. Only KG/Tonnes are allowed."
                 )
+            canonical = canonical_weight_unit(entry_name)
+            if canonical:
+                entry_name = canonical
+        normalized = normalize_unit_name(entry_name)
+        exists = session.execute(
+            select(Unit).where(func.lower(Unit.name) == normalized)
+        ).scalar_one_or_none()
+        if exists:
+            updated = False
+            if entry.get("unit_type") and exists.unit_type != entry["unit_type"]:
+                exists.unit_type = entry["unit_type"]
+                updated = True
+            if entry.get("unit_type") == "WEIGHT" and exists.name != entry_name:
+                exists.name = entry_name
+                updated = True
+            if not bool(exists.is_active):
+                exists.is_active = True
+                updated = True
+            if updated:
+                exists.updated_at = now
+                dirty = True
+            continue
+        session.add(
+            Unit(
+                name=entry_name,
+                unit_type=entry.get("unit_type", "COUNT"),
+                is_active=True,
+                created_at=now,
+                updated_at=now,
             )
-            created += 1
-        if created:
-            session.commit()
+        )
+        created += 1
+        dirty = True
+    return created, dirty
+
+
+def seed_units(session: Session | None = None) -> int:
+    now = utcnow()
+    if session is None:
+        with SessionLocal() as local_session:
+            created, dirty = _seed_units_in_session(local_session, now)
+            if dirty:
+                local_session.commit()
+            return created
+
+    created, dirty = _seed_units_in_session(session, now)
+    if dirty:
+        session.commit()
     return created
 
 
-def seed_tax_rates() -> int:
-    now = utcnow()
+def _seed_tax_rates_in_session(session: Session, now: datetime) -> tuple[int, bool]:
     created = 0
     dirty = False
-
-    with SessionLocal() as session:
-        for entry in SEED_TAX_RATES:
-            canonical_code = entry["code"]
-            legacy_codes = list(entry.get("legacy_codes") or [])
-            match_codes = [canonical_code] + legacy_codes
-            matches = list(
-                session.execute(
-                    select(TaxRate).where(
-                        func.lower(TaxRate.code).in_([code.lower() for code in match_codes])
-                    )
-                ).scalars()
-            )
-            exists = next(
-                (
-                    row
-                    for row in matches
-                    if row.code.strip().lower() == canonical_code.strip().lower()
-                ),
-                None,
-            ) or (matches[0] if matches else None)
-
-            if exists:
-                for other in matches:
-                    if other.id == exists.id:
-                        continue
-                    impacted_products = list(
-                        session.execute(
-                            select(Product).where(Product.tax_rate_id == other.id)
-                        ).scalars()
-                    )
-                    for product in impacted_products:
-                        product.tax_rate_id = exists.id
-                        product.updated_at = now
-                    if impacted_products:
-                        dirty = True
-                    session.delete(other)
-                    dirty = True
-
-                updated = False
-                existing_rate = (
-                    Decimal(str(exists.rate_percent))
-                    if exists.rate_percent is not None
-                    else None
+    for entry in SEED_TAX_RATES:
+        canonical_code = entry["code"]
+        legacy_codes = list(entry.get("legacy_codes") or [])
+        match_codes = [canonical_code] + legacy_codes
+        matches = list(
+            session.execute(
+                select(TaxRate).where(
+                    func.lower(TaxRate.code).in_([code.lower() for code in match_codes])
                 )
-                if exists.code != canonical_code:
-                    exists.code = canonical_code
-                    updated = True
-                if existing_rate != entry["rate_percent"]:
-                    exists.rate_percent = entry["rate_percent"]
-                    updated = True
-                if exists.description != entry.get("description"):
-                    exists.description = entry.get("description")
-                    updated = True
-                if not exists.is_active:
-                    exists.is_active = True
-                    updated = True
-                if updated:
-                    exists.updated_at = now
-                    dirty = True
-                continue
+            ).scalars()
+        )
+        exists = next(
+            (
+                row
+                for row in matches
+                if row.code.strip().lower() == canonical_code.strip().lower()
+            ),
+            None,
+        ) or (matches[0] if matches else None)
 
-            session.add(
-                TaxRate(
-                    code=canonical_code,
-                    description=entry.get("description"),
-                    rate_percent=entry["rate_percent"],
-                    is_active=True,
-                    created_at=now,
-                    updated_at=now,
+        if exists:
+            for other in matches:
+                if other.id == exists.id:
+                    continue
+                impacted_products = list(
+                    session.execute(
+                        select(Product).where(Product.tax_rate_id == other.id)
+                    ).scalars()
                 )
+                for product in impacted_products:
+                    product.tax_rate_id = exists.id
+                    product.updated_at = now
+                if impacted_products:
+                    dirty = True
+                session.delete(other)
+                dirty = True
+
+            updated = False
+            existing_rate = (
+                Decimal(str(exists.rate_percent))
+                if exists.rate_percent is not None
+                else None
             )
-            created += 1
-            dirty = True
+            if exists.code != canonical_code:
+                exists.code = canonical_code
+                updated = True
+            if existing_rate != entry["rate_percent"]:
+                exists.rate_percent = entry["rate_percent"]
+                updated = True
+            if exists.description != entry.get("description"):
+                exists.description = entry.get("description")
+                updated = True
+            if not exists.is_active:
+                exists.is_active = True
+                updated = True
+            if updated:
+                exists.updated_at = now
+                dirty = True
+            continue
 
-        if dirty:
-            session.commit()
+        session.add(
+            TaxRate(
+                code=canonical_code,
+                description=entry.get("description"),
+                rate_percent=entry["rate_percent"],
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        created += 1
+        dirty = True
+    return created, dirty
 
+
+def seed_tax_rates(session: Session | None = None) -> int:
+    now = utcnow()
+    if session is None:
+        with SessionLocal() as local_session:
+            created, dirty = _seed_tax_rates_in_session(local_session, now)
+            if dirty:
+                local_session.commit()
+            return created
+
+    created, dirty = _seed_tax_rates_in_session(session, now)
+    if dirty:
+        session.commit()
     return created
 
 

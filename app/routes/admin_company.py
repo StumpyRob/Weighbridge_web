@@ -14,6 +14,14 @@ from ..config import settings
 from ..constants import ADDRESS_LINE_MAX, NAME_MAX, POSTCODE_MAX
 from ..db import get_db
 from ..models import CompanySetting
+from ..services.ui_branding import (
+    DEFAULT_NAVBAR_COLOR_HEX,
+    DEFAULT_NAV_LOGO_HEIGHT_PX,
+    DEFAULT_PRIMARY_COLOR_HEX,
+    is_valid_hex_color,
+    normalize_hex_color,
+    parse_logo_height_px,
+)
 from ..templating import templates
 
 router = APIRouter()
@@ -27,10 +35,9 @@ ALLOWED_LOGO_TYPES = {
 
 
 def _logo_upload_dir() -> Path:
-    target = str(settings.company_logo_upload_dir or "").strip()
-    if not target:
-        target = "app/static/uploads/company"
-    upload_dir = Path(target).resolve()
+    upload_dir = Path(
+        str(settings.effective_company_logo_upload_dir or "").strip()
+    ).resolve()
     upload_dir.mkdir(parents=True, exist_ok=True)
     return upload_dir
 
@@ -39,15 +46,15 @@ def _company_logo_url(company: CompanySetting | None) -> str:
     if company is None:
         return ""
 
-    current = str(company.company_logo_path or "").strip()
+    current = str(getattr(company, "company_logo_path", "") or "").strip()
     if current:
         return current
 
     # Backward compatibility for existing rows created before company_logo_path.
-    legacy_remote = str(company.logo_url or "").strip()
+    legacy_remote = str(getattr(company, "logo_url", "") or "").strip()
     if legacy_remote:
         return legacy_remote
-    legacy_file = str(company.logo_file_path or "").strip().lstrip("/")
+    legacy_file = str(getattr(company, "logo_file_path", "") or "").strip().lstrip("/")
     if legacy_file:
         return f"/media/{legacy_file}"
     return ""
@@ -99,6 +106,30 @@ def _trim(value: object) -> str:
     return str(value or "").strip()
 
 
+def _truthy(value: object) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _form_checkbox(form, key: str) -> bool:
+    values = list(form.getlist(key)) if hasattr(form, "getlist") else [form.get(key)]
+    return any(_truthy(value) for value in values)
+
+
+def _resolve_logo_extension(upload: UploadFile) -> str | None:
+    content_type = str(upload.content_type or "").strip().lower()
+    if content_type in ALLOWED_LOGO_TYPES:
+        if content_type == "image/jpeg":
+            source_extension = Path(str(upload.filename or "")).suffix.lower()
+            if source_extension == ".jpeg":
+                return ".jpeg"
+        return ALLOWED_LOGO_TYPES[content_type]
+
+    source_extension = Path(str(upload.filename or "")).suffix.lower()
+    if source_extension in {".png", ".jpg", ".jpeg"}:
+        return source_extension
+    return None
+
+
 @router.get("/admin/company", response_class=HTMLResponse)
 def admin_company_settings(
     request: Request,
@@ -135,6 +166,11 @@ async def admin_company_settings_save(
     city = _trim(form.get("city"))
     postcode = _trim(form.get("postcode"))
     country = _trim(form.get("country"))
+    navbar_color_hex = _trim(form.get("navbar_color_hex"))
+    primary_color_hex = _trim(form.get("primary_color_hex"))
+    nav_logo_height_raw = _trim(form.get("nav_logo_height_px"))
+    show_nav_logo = _form_checkbox(form, "show_nav_logo")
+    show_nav_title = _form_checkbox(form, "show_nav_title")
     logo_file = form.get("company_logo_file")
 
     errors: list[str] = []
@@ -150,6 +186,10 @@ async def admin_company_settings_save(
         errors.append(f"Postcode must be {POSTCODE_MAX} characters or fewer.")
     if len(country) > ADDRESS_LINE_MAX:
         errors.append(f"Country must be {ADDRESS_LINE_MAX} characters or fewer.")
+    if navbar_color_hex and not is_valid_hex_color(navbar_color_hex):
+        errors.append("Navbar colour must be a valid HEX colour.")
+    if primary_color_hex and not is_valid_hex_color(primary_color_hex):
+        errors.append("Primary colour must be a valid HEX colour.")
 
     has_upload = isinstance(logo_file, UploadFile) and bool(_trim(logo_file.filename))
     if require_upload and not has_upload:
@@ -159,8 +199,7 @@ async def admin_company_settings_save(
     uploaded_disk_path: Path | None = None
     if has_upload and not remove_logo:
         assert isinstance(logo_file, UploadFile)
-        content_type = str(logo_file.content_type or "").strip().lower()
-        extension = ALLOWED_LOGO_TYPES.get(content_type)
+        extension = _resolve_logo_extension(logo_file)
         if extension is None:
             errors.append("Company logo must be a PNG or JPG file.")
         else:
@@ -171,10 +210,6 @@ async def admin_company_settings_save(
                 errors.append("Company logo must be 2MB or smaller.")
             else:
                 upload_dir = _logo_upload_dir()
-                if extension == ".jpg":
-                    source_extension = Path(str(logo_file.filename or "")).suffix.lower()
-                    if source_extension == ".jpeg":
-                        extension = ".jpeg"
                 filename = f"logo-{uuid4().hex}{extension}"
                 uploaded_disk_path = (upload_dir / filename).resolve()
                 uploaded_disk_path.write_bytes(payload)
@@ -198,6 +233,18 @@ async def admin_company_settings_save(
             country=country or None,
             company_logo_path=form_logo_value,
             company_logo_updated_at=setting.company_logo_updated_at,
+            navbar_color_hex=navbar_color_hex or setting.navbar_color_hex,
+            primary_color_hex=primary_color_hex or setting.primary_color_hex,
+            nav_logo_height_px=parse_logo_height_px(
+                nav_logo_height_raw,
+                default=(
+                    setting.nav_logo_height_px
+                    if setting.nav_logo_height_px is not None
+                    else DEFAULT_NAV_LOGO_HEIGHT_PX
+                ),
+            ),
+            show_nav_logo=show_nav_logo,
+            show_nav_title=show_nav_title,
         )
         return templates.TemplateResponse(
             request,
@@ -220,6 +267,28 @@ async def admin_company_settings_save(
     setting.city = city or None
     setting.postcode = postcode or None
     setting.country = country or None
+    setting.navbar_color_hex = normalize_hex_color(
+        navbar_color_hex,
+        default=(
+            str(setting.navbar_color_hex or "").strip() or DEFAULT_NAVBAR_COLOR_HEX
+        ),
+    )
+    setting.primary_color_hex = normalize_hex_color(
+        primary_color_hex,
+        default=(
+            str(setting.primary_color_hex or "").strip() or DEFAULT_PRIMARY_COLOR_HEX
+        ),
+    )
+    setting.nav_logo_height_px = parse_logo_height_px(
+        nav_logo_height_raw,
+        default=(
+            setting.nav_logo_height_px
+            if setting.nav_logo_height_px is not None
+            else DEFAULT_NAV_LOGO_HEIGHT_PX
+        ),
+    )
+    setting.show_nav_logo = show_nav_logo
+    setting.show_nav_title = show_nav_title
 
     if remove_logo:
         setting.company_logo_path = None
