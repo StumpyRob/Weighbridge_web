@@ -75,7 +75,7 @@ def test_setup_runs_once_for_superadmin_and_then_disables(tmp_path, monkeypatch)
 
         setup_get = client.get("/setup")
         assert setup_get.status_code == 200
-        assert "System Setup" in setup_get.text
+        assert "Company Setup" in setup_get.text
 
         setup_post = client.post(
             "/setup",
@@ -158,6 +158,19 @@ def test_empty_db_bootstrap_then_setup_works_once(tmp_path, monkeypatch):
 
         disabled = client.get("/setup")
         assert disabled.status_code == 404
+    finally:
+        client.close()
+
+
+def test_setup_redirects_unauthenticated_user_to_login(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "app_secret_key", "setup-wizard-login-redirect-secret")
+    monkeypatch.setattr(settings, "secret_key", "")
+    app = create_app(dev_mode=False)
+    client, _SessionLocal = _client_for_app(app=app, db_path=tmp_path / "setup-login.db")
+    try:
+        response = client.get("/setup", follow_redirects=False)
+        assert response.status_code == 302
+        assert response.headers.get("location") == "/login?next=/setup"
     finally:
         client.close()
 

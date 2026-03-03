@@ -99,6 +99,8 @@ def setup_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
         return HTMLResponse("Not Found", status_code=404)
 
     current_user = getattr(request.state, "current_user", None)
+    if current_user is None:
+        return RedirectResponse(url="/login?next=/setup", status_code=302)
     if not is_superadmin_user(db, current_user):
         return HTMLResponse("Forbidden", status_code=403)
     if company is None:
@@ -123,6 +125,8 @@ async def setup_submit(request: Request, db: Session = Depends(get_db)) -> HTMLR
         return HTMLResponse("Not Found", status_code=404)
 
     current_user = getattr(request.state, "current_user", None)
+    if current_user is None:
+        return RedirectResponse(url="/login?next=/setup", status_code=302)
     if not is_superadmin_user(db, current_user):
         return HTMLResponse("Forbidden", status_code=403)
     if company is None:
