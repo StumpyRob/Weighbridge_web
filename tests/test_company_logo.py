@@ -351,6 +351,22 @@ def test_cache_control_for_html_and_upload_static_paths(client_anonymous):
     assert upload_static.headers.get("cache-control") == "public, max-age=86400"
 
 
+def test_navbar_and_primary_styles_use_root_branding_variables(client_anonymous):
+    rendered = client_anonymous.get("/login")
+    assert rendered.status_code == 200
+    assert "--nav-bg:" in rendered.text
+    assert 'class="site-header"' in rendered.text
+
+    stylesheet = client_anonymous.get("/static/css/style.css")
+    assert stylesheet.status_code == 200
+    compact_css = stylesheet.text.replace(" ", "").replace("\n", "")
+    assert ".site-header{" in compact_css
+    assert "background-color:var(--nav-bg);" in compact_css
+    assert ".btn--primary{" in compact_css
+    assert "background-color:var(--primary);" in compact_css
+    assert "border-color:var(--primary);" in compact_css
+
+
 def test_base_template_respects_nav_brand_visibility_toggles(
     client,
     db_session,

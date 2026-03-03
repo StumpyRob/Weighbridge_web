@@ -24,7 +24,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 1rem 2rem;
-  background: var(--nav-bg);
+  background-color: var(--nav-bg);
   color: #ffffff;
 }
 
@@ -251,7 +251,7 @@ body {
 }
 
 .btn--primary {
-  background: var(--primary);
+  background-color: var(--primary);
   color: var(--theme-primary-contrast);
   border-color: var(--primary);
   font-weight: 600;
