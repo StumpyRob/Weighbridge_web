@@ -2887,3 +2887,17 @@ details > summary:focus-visible {
   color: #166534;
   text-decoration: none;
 }
+
+.site-footer {
+  margin: 0 auto 1rem;
+  max-width: 1400px;
+  padding: 0 18px;
+  text-align: right;
+}
+
+.site-footer__build {
+  color: #6b7280;
+  display: inline-block;
+  font-size: 0.74rem;
+  letter-spacing: 0.01em;
+}

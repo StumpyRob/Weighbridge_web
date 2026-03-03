@@ -1,6 +1,7 @@
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 
+from .build_info import get_build_info
 from .config import settings
 from .constants import field_limits
 from .constants.help_text import HELP_TEXT
@@ -42,6 +43,10 @@ templates = Jinja2Templates(
     directory="app/templates",
     context_processors=[_ui_branding_context, _csrf_context],
 )
+_build_info = get_build_info()
 templates.env.globals["DEV_MODE"] = bool(settings.dev_mode)
 templates.env.globals["limits"] = field_limits
 templates.env.globals["help_text"] = HELP_TEXT
+templates.env.globals["app_version"] = _build_info["version"]
+templates.env.globals["app_commit_short"] = _build_info["commit_short"]
+templates.env.globals["app_build_label"] = _build_info["label"]
