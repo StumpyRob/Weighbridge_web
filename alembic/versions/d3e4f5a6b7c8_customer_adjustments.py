@@ -1,7 +1,7 @@
 """add customer adjustments table for auditable credit overrides
 
 Revision ID: d3e4f5a6b7c8
-Revises: c2d3e4f5a6b7
+Revises: veh_def_driver_fix
 Create Date: 2026-02-26 23:15:00.000000
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 revision = "d3e4f5a6b7c8"
-down_revision = "c2d3e4f5a6b7"
+down_revision = "veh_def_driver_fix"
 branch_labels = None
 depends_on = None
 
