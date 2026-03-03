@@ -5,7 +5,7 @@ import secrets
 from typing import Iterator
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from fastapi.staticfiles import StaticFiles
@@ -55,6 +55,7 @@ _LOGIN_REQUIRED_PREFIXES = (
     "/lookups",
     "/admin",
 )
+_UPLOADS_STATIC_PREFIX = "/static/uploads/"
 
 
 def _strip_non_production_routes(app: FastAPI) -> None:
@@ -95,6 +96,53 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
     def _path_requires_login(path: str) -> bool:
         target = str(path or "")
         return any(target.startswith(prefix) for prefix in _LOGIN_REQUIRED_PREFIXES)
+
+    def _apply_cache_control_headers(path: str, response: Response) -> None:
+        request_path = str(path or "")
+        if request_path.startswith(_UPLOADS_STATIC_PREFIX):
+            response.headers["Cache-Control"] = "public, max-age=86400"
+            return
+
+        content_type = str(response.headers.get("content-type", "")).lower()
+        if "text/html" in content_type:
+            response.headers["Cache-Control"] = "no-store"
+
+    def _maybe_brand_plain_error_response(request: Request, response: Response) -> Response:
+        if request.method not in {"GET", "HEAD"}:
+            return response
+
+        status_code = int(response.status_code or 0)
+        template_name = {
+            403: "errors/403.html",
+            404: "errors/404.html",
+            500: "errors/500.html",
+        }.get(status_code)
+        if template_name is None:
+            return response
+
+        content_type = str(response.headers.get("content-type", "")).lower()
+        if "text/plain" not in content_type and "text/html" not in content_type:
+            return response
+
+        body = getattr(response, "body", b"")
+        if not isinstance(body, (bytes, bytearray)):
+            return response
+        normalized = str(body.decode("utf-8", errors="ignore") or "").strip().lower()
+        plain_error_payloads = {
+            "forbidden",
+            "not found",
+            "internal server error",
+            "<h1>internal server error</h1>",
+        }
+        if normalized not in plain_error_payloads:
+            return response
+
+        return templates.TemplateResponse(
+            request,
+            template_name,
+            {"request": request},
+            status_code=status_code,
+        )
 
     @contextmanager
     def _request_db(request: Request) -> Iterator:
@@ -158,6 +206,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
             authenticated = require_user(request)
             if not isinstance(authenticated, User):
                 response = authenticated
+                _apply_cache_control_headers(request_path, response)
                 if should_set_csrf_cookie:
                     set_csrf_cookie(response, request, csrf_cookie)
                 apply_security_headers(response)
@@ -204,6 +253,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 submitted_token, csrf_cookie
             ):
                 response = csrf_forbidden_response(request)
+                _apply_cache_control_headers(request_path, response)
                 set_csrf_cookie(response, request, csrf_cookie)
                 apply_security_headers(response)
                 return response
@@ -218,12 +268,15 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                             db, getattr(request.state, "current_user", None)
                         ),
                     )
+                    _apply_cache_control_headers(request_path, response)
                     if should_set_csrf_cookie:
                         set_csrf_cookie(response, request, csrf_cookie)
                     apply_security_headers(response)
                     return response
 
         response = await call_next(request)
+        response = _maybe_brand_plain_error_response(request, response)
+        _apply_cache_control_headers(request_path, response)
         if should_set_csrf_cookie:
             set_csrf_cookie(response, request, csrf_cookie)
         apply_security_headers(response)

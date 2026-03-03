@@ -22,6 +22,7 @@ from ..services.system_setup import (
     required_lookup_table_status,
     uploads_path_status,
 )
+from ..services.ui_branding import get_branding
 from ..templating import templates
 
 router = APIRouter()
@@ -143,6 +144,7 @@ def admin_system_status(
     lookup_counts = required_lookup_counts(db)
     lookup_schema = required_lookup_table_status(db)
     uploads = uploads_path_status()
+    branding = get_branding(db)
 
     return templates.TemplateResponse(
         request,
@@ -156,6 +158,12 @@ def admin_system_status(
             "lookup_schema": lookup_schema,
             "print_defaults_ready": print_defaults_exist(db),
             "uploads": uploads,
+            "branding_status": {
+                "logo_url": str(branding.get("logo_url", "") or ""),
+                "logo_exists": bool(branding.get("logo_exists", False)),
+                "nav_color": str(branding.get("nav_color", "") or ""),
+                "primary_color": str(branding.get("primary_color", "") or ""),
+            },
         },
     )
 

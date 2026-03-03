@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Forbidden | Weighbridge Web{% endblock %}
+
+{% block content %}
+  <section class="auth-page">
+    <div class="page-header">
+      <div>
+        <h1>Forbidden</h1>
+        <p class="muted">You do not have permission to view this page.</p>
+      </div>
+    </div>
+    <div class="actions btn-group">
+      <a class="btn btn--secondary" href="/">Go Home</a>
+      <a class="btn btn--ghost" href="/login">Sign in</a>
+    </div>
+  </section>
+{% endblock %}

@@ -1,11 +1,11 @@
 :root {
-  --theme-navbar-bg: #14213D;
-  --theme-primary: #FCA311;
+  --nav-bg: #14213D;
+  --primary: #FCA311;
+  --theme-navbar-bg: var(--nav-bg);
+  --theme-primary: var(--primary);
   --theme-primary-contrast: #14213D;
   --theme-primary-soft: rgba(252, 163, 17, 0.16);
   --theme-nav-logo-height: 34px;
-  --nav-bg: var(--theme-navbar-bg);
-  --primary: var(--theme-primary);
   --section-gap: 1rem;
   --flash-toast-top: 72px;
 }
@@ -24,7 +24,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 1rem 2rem;
-  background: var(--theme-navbar-bg);
+  background: var(--nav-bg);
   color: #ffffff;
 }
 
@@ -77,7 +77,7 @@ body {
 }
 
 .site-nav a {
-  color: var(--theme-primary);
+  color: var(--primary);
   text-decoration: none;
   font-weight: 500;
   padding: 0.2rem 0.5rem;
@@ -91,8 +91,8 @@ body {
 
 .site-nav a.is-active {
   background: var(--theme-primary-soft);
-  border: 1px solid var(--theme-primary);
-  color: var(--theme-primary);
+  border: 1px solid var(--primary);
+  color: var(--primary);
   text-decoration: none;
 }
 
@@ -131,7 +131,7 @@ body {
 
 .site-auth__link:hover,
 .site-auth__link:focus-visible {
-  color: var(--theme-primary);
+  color: var(--primary);
 }
 
 .dev-mode-pill {
@@ -139,9 +139,9 @@ body {
   align-items: center;
   padding: 0.14rem 0.46rem;
   border-radius: 999px;
-  border: 1px solid var(--theme-primary);
+  border: 1px solid var(--primary);
   background: var(--theme-primary-soft);
-  color: var(--theme-primary);
+  color: var(--primary);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -251,9 +251,9 @@ body {
 }
 
 .btn--primary {
-  background: var(--theme-primary);
+  background: var(--primary);
   color: var(--theme-primary-contrast);
-  border-color: var(--theme-primary);
+  border-color: var(--primary);
   font-weight: 600;
 }
 

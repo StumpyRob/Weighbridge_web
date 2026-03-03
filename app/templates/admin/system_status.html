@@ -27,6 +27,20 @@
     </div>
   </section>
 
+  <section class="frame">
+    <div class="frame-header">
+      <h2>Branding</h2>
+    </div>
+    <div class="frame-body">
+      <div class="audit">
+        <div><strong>Resolved logo URL:</strong> <code>{{ branding_status.logo_url }}</code></div>
+        <div><strong>Logo file exists on disk:</strong> {{ "Yes" if branding_status.logo_exists else "No" }}</div>
+        <div><strong>Navbar colour:</strong> <code>{{ branding_status.nav_color }}</code></div>
+        <div><strong>Primary colour:</strong> <code>{{ branding_status.primary_color }}</code></div>
+      </div>
+    </div>
+  </section>
+
   {% if not lookup_schema.migrations_complete %}
     <div class="alert alert--danger">
       Migrations incomplete: one or more required lookup tables are missing/unreadable.

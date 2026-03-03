@@ -8,6 +8,20 @@ All notable changes are tracked here by release chapter.
 - Add build stamp in UI footer: `Build v<version> (commit <shortsha>)`.
 - Add release discipline docs (`VERSION`, changelog workflow, contribution guide).
 
+## v0.13.7 - 2026-03-03
+
+### FIX
+- Fix global branding injection so nav/primary/logo values resolve through a single `get_branding(...)` path for all template renders.
+- Add robust logo fallback behavior and versioned logo URLs (`?v=<timestamp>`) when rendering navbar/favicon assets.
+- Apply theme variables (`--nav-bg`, `--primary`) consistently in shared layout/CSS so navbar and primary controls match branding across pages.
+- Add cache policy split: HTML responses `no-store`, `/static/uploads/*` cacheable (`public, max-age=86400`).
+- Add branded 403/404/500 fallback templates for plain text error responses and expose branding diagnostics on `/admin/system-status`.
+
+### TEST
+- Add coverage for global branding vars on `/login`, `/products`, and `/admin/system-status`.
+- Add cache-control assertions for HTML and `/static/uploads/*` responses.
+- Add assertion that uploaded logo URLs are rendered with cache-busting version query strings.
+
 ## v0.13.6 - 2026-03-03
 
 ### AUDIT

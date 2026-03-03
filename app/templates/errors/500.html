@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Internal Server Error | Weighbridge Web{% endblock %}
+
+{% block content %}
+  <section class="auth-page">
+    <div class="page-header">
+      <div>
+        <h1>Internal Server Error</h1>
+        <p class="muted">An unexpected error occurred. Please try again.</p>
+      </div>
+    </div>
+    <div class="actions btn-group">
+      <a class="btn btn--secondary" href="/">Go Home</a>
+      <a class="btn btn--ghost" href="/reports">Open Reports</a>
+    </div>
+  </section>
+{% endblock %}

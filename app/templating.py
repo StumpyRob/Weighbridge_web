@@ -1,19 +1,17 @@
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
 
 from .build_info import get_build_info
 from .config import settings
 from .constants import field_limits
 from .constants.help_text import HELP_TEXT
 from .db import get_db
-from .models import CompanySetting
-from .services.ui_branding import build_ui_branding
+from .services.ui_branding import get_branding
 
 _MISSING = object()
 
 
-def _load_company_setting_for_request(request) -> CompanySetting | None:
-    cached = getattr(request.state, "_company_setting_cache", _MISSING)
+def _load_branding_for_request(request) -> dict[str, object]:
+    cached = getattr(request.state, "_ui_branding_cache", _MISSING)
     if cached is not _MISSING:
         return cached
 
@@ -21,16 +19,28 @@ def _load_company_setting_for_request(request) -> CompanySetting | None:
     db_gen = dep()
     db = next(db_gen)
     try:
-        setting = (
-            db.execute(select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1))
-            .scalars()
-            .first()
-        )
-        request.state._company_setting_cache = setting
-        return setting
+        branding = get_branding(db)
+        request.state._ui_branding_cache = branding
+        return branding
     except Exception:
-        request.state._company_setting_cache = None
-        return None
+        branding = {
+            "company_name": "Weighbridge Web",
+            "brand_name": "Weighbridge Web",
+            "nav_color": "#14213D",
+            "primary_color": "#FCA311",
+            "navbar_color_hex": "#14213D",
+            "primary_color_hex": "#FCA311",
+            "nav_logo_height_px": 34,
+            "show_nav_logo": True,
+            "show_nav_title": True,
+            "nav_logo_url": "/static/img/default-company-logo.svg",
+            "logo_url": "/static/img/default-company-logo.svg",
+            "favicon_url": "/static/img/default-company-logo.svg",
+            "primary_contrast_hex": "#111827",
+            "primary_soft_rgba": "rgba(252, 163, 17, 0.16)",
+        }
+        request.state._ui_branding_cache = branding
+        return branding
     finally:
         try:
             next(db_gen)
@@ -39,14 +49,13 @@ def _load_company_setting_for_request(request) -> CompanySetting | None:
 
 
 def _ui_branding_context(request) -> dict[str, object]:
-    setting = _load_company_setting_for_request(request)
-    branding = build_ui_branding(setting)
+    branding = _load_branding_for_request(request)
     return {
         "ui_branding": branding,
         "company_settings": {
-            "name": branding["brand_name"],
-            "nav_color": branding["navbar_color_hex"],
-            "primary_color": branding["primary_color_hex"],
+            "name": branding["company_name"],
+            "nav_color": branding["nav_color"],
+            "primary_color": branding["primary_color"],
             "nav_logo_height_px": branding["nav_logo_height_px"],
             "show_nav_logo": branding["show_nav_logo"],
             "show_nav_title": branding["show_nav_title"],

@@ -3,6 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 import re
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..models import CompanySetting
@@ -14,9 +18,78 @@ DEFAULT_NAV_LOGO_HEIGHT_PX = 34
 MIN_NAV_LOGO_HEIGHT_PX = 20
 MAX_NAV_LOGO_HEIGHT_PX = 80
 DEFAULT_COMPANY_LOGO_WEB_PATH = "/static/img/default-company-logo.svg"
+DEFAULT_COMPANY_NAME = "Weighbridge Web"
 _UPLOAD_LOGO_PREFIX = "/static/uploads/company/"
+_STATIC_PREFIX = "/static/"
+_MEDIA_PREFIX = "/media/"
 
 _HEX_COLOR_RE = re.compile(r"^#?[0-9A-Fa-f]{6}$")
+
+
+def _upload_logo_file_from_web_path(path: str | None) -> Path | None:
+    normalized = str(path or "").strip()
+    if not normalized.startswith(_UPLOAD_LOGO_PREFIX):
+        return None
+    filename = Path(normalized).name
+    if not filename:
+        return None
+    upload_root = Path(
+        str(settings.effective_company_logo_upload_dir or "").strip()
+    ).resolve()
+    try:
+        candidate = (upload_root / filename).resolve()
+    except OSError:
+        return None
+    return candidate
+
+
+def _strip_query(url: str | None) -> str:
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+    return str(urlsplit(raw).path or "").strip()
+
+
+def logo_file_exists_on_disk(path: str | None) -> bool:
+    normalized = str(path or "").strip()
+    if not normalized:
+        return False
+    clean_path = _strip_query(normalized)
+    if not clean_path:
+        return False
+    if clean_path.startswith(_UPLOAD_LOGO_PREFIX):
+        candidate = _upload_logo_file_from_web_path(clean_path)
+        return bool(candidate and candidate.is_file())
+    if clean_path.startswith(_STATIC_PREFIX):
+        static_root = (Path(__file__).resolve().parents[1] / "static").resolve()
+        relative = clean_path.removeprefix(_STATIC_PREFIX).lstrip("/\\")
+        if not relative:
+            return False
+        try:
+            candidate = (static_root / relative).resolve()
+        except OSError:
+            return False
+        if not str(candidate).startswith(str(static_root)):
+            return False
+        return candidate.is_file()
+    if clean_path.startswith(_MEDIA_PREFIX):
+        media_root = Path(str(settings.media_root or "").strip() or "app/media").resolve()
+        relative = clean_path.removeprefix(_MEDIA_PREFIX).lstrip("/\\")
+        if not relative:
+            return False
+        try:
+            candidate = (media_root / relative).resolve()
+        except OSError:
+            return False
+        if not str(candidate).startswith(str(media_root)):
+            return False
+        return candidate.is_file()
+    if clean_path.startswith(("http://", "https://", "data:")):
+        return False
+    candidate = Path(clean_path)
+    if not candidate.is_absolute():
+        return False
+    return candidate.is_file()
 
 
 def company_logo_url(company: CompanySetting | None) -> str:
@@ -24,30 +97,15 @@ def company_logo_url(company: CompanySetting | None) -> str:
         return DEFAULT_COMPANY_LOGO_WEB_PATH
 
     current = str(company.company_logo_path or "").strip()
-    if current:
-        resolved = resolve_company_logo_web_path(current)
-        if _logo_web_path_exists(resolved):
-            return resolved
-    return DEFAULT_COMPANY_LOGO_WEB_PATH
+    if not current:
+        return DEFAULT_COMPANY_LOGO_WEB_PATH
 
-
-def _logo_web_path_exists(path: str) -> bool:
-    normalized = str(path or "").strip()
-    if not normalized:
-        return False
-    if not normalized.startswith(_UPLOAD_LOGO_PREFIX):
-        return True
-    filename = Path(normalized).name
-    if not filename:
-        return False
-    upload_root = Path(
-        str(settings.effective_company_logo_upload_dir or "").strip()
-    ).resolve()
-    try:
-        candidate = (upload_root / filename).resolve()
-    except OSError:
-        return False
-    return candidate.is_file()
+    resolved = resolve_company_logo_web_path(current)
+    if resolved.startswith(("http://", "https://", "data:")):
+        return resolved
+    if not logo_file_exists_on_disk(resolved):
+        return DEFAULT_COMPANY_LOGO_WEB_PATH
+    return resolved
 
 
 def normalize_hex_color(value: object, *, default: str) -> str:
@@ -88,47 +146,112 @@ def primary_soft_rgba(hex_color: str, *, alpha: float = 0.16) -> str:
     return f"rgba({red}, {green}, {blue}, {clamped_alpha:.2f})"
 
 
-def logo_url_with_version(url: str, updated_at: datetime | None) -> str:
+def logo_url_with_version(url: str, logo_version: int | None) -> str:
     clean_url = str(url or "").strip()
     if not clean_url:
         return ""
-    if not updated_at:
+    version = int(logo_version or 0)
+    if version <= 0:
         return clean_url
-    stamp = int(updated_at.timestamp())
-    joiner = "&" if "?" in clean_url else "?"
-    return f"{clean_url}{joiner}v={stamp}"
+    parts = urlsplit(clean_url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["v"] = str(version)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
 
-def build_ui_branding(company: CompanySetting | None) -> dict[str, object]:
-    nav_logo_url = company_logo_url(company)
-    navbar_color = normalize_hex_color(
-        getattr(company, "navbar_color_hex", None),
-        default=DEFAULT_NAVBAR_COLOR_HEX,
-    )
-    primary_color = normalize_hex_color(
-        getattr(company, "primary_color_hex", None),
-        default=DEFAULT_PRIMARY_COLOR_HEX,
-    )
-    logo_height = parse_logo_height_px(
-        getattr(company, "nav_logo_height_px", None),
-        default=DEFAULT_NAV_LOGO_HEIGHT_PX,
-    )
-    logo_updated_at = getattr(company, "company_logo_updated_at", None)
-    logo_versioned = nav_logo_url
-    if nav_logo_url != DEFAULT_COMPANY_LOGO_WEB_PATH:
-        logo_versioned = logo_url_with_version(nav_logo_url, logo_updated_at)
-    brand_name = str(getattr(company, "name", "") or "").strip() or "Weighbridge Web"
-    show_nav_logo = getattr(company, "show_nav_logo", None)
-    show_nav_title = getattr(company, "show_nav_title", None)
+def _logo_version(company: CompanySetting | None, logo_url: str) -> int:
+    if company is not None:
+        updated_at = getattr(company, "company_logo_updated_at", None)
+        if isinstance(updated_at, datetime):
+            try:
+                return int(updated_at.timestamp())
+            except (OSError, OverflowError, ValueError):
+                pass
+    candidate = _upload_logo_file_from_web_path(_strip_query(logo_url))
+    if candidate is None or not candidate.is_file():
+        return 0
+    try:
+        return int(candidate.stat().st_mtime)
+    except OSError:
+        return 0
+
+
+def _default_branding() -> dict[str, object]:
+    primary_color = DEFAULT_PRIMARY_COLOR_HEX
     return {
-        "brand_name": brand_name,
-        "nav_logo_url": logo_versioned,
-        "favicon_url": logo_versioned,
-        "nav_logo_height_px": logo_height,
-        "show_nav_logo": True if show_nav_logo is None else bool(show_nav_logo),
-        "show_nav_title": True if show_nav_title is None else bool(show_nav_title),
-        "navbar_color_hex": navbar_color,
+        "company_name": DEFAULT_COMPANY_NAME,
+        "brand_name": DEFAULT_COMPANY_NAME,
+        "logo_url": DEFAULT_COMPANY_LOGO_WEB_PATH,
+        "logo_version": 0,
+        "logo_exists": logo_file_exists_on_disk(DEFAULT_COMPANY_LOGO_WEB_PATH),
+        "nav_logo_url": DEFAULT_COMPANY_LOGO_WEB_PATH,
+        "favicon_url": DEFAULT_COMPANY_LOGO_WEB_PATH,
+        "nav_logo_height_px": DEFAULT_NAV_LOGO_HEIGHT_PX,
+        "show_nav_logo": True,
+        "show_nav_title": True,
+        "nav_color": DEFAULT_NAVBAR_COLOR_HEX,
+        "primary_color": primary_color,
+        "navbar_color_hex": DEFAULT_NAVBAR_COLOR_HEX,
         "primary_color_hex": primary_color,
         "primary_contrast_hex": primary_contrast_color(primary_color),
         "primary_soft_rgba": primary_soft_rgba(primary_color),
     }
+
+
+def build_ui_branding(company: CompanySetting | None) -> dict[str, object]:
+    try:
+        nav_logo_resolved = company_logo_url(company)
+        logo_version = _logo_version(company, nav_logo_resolved)
+        logo_url = logo_url_with_version(nav_logo_resolved, logo_version)
+        navbar_color = normalize_hex_color(
+            getattr(company, "navbar_color_hex", None),
+            default=DEFAULT_NAVBAR_COLOR_HEX,
+        )
+        primary_color = normalize_hex_color(
+            getattr(company, "primary_color_hex", None),
+            default=DEFAULT_PRIMARY_COLOR_HEX,
+        )
+        logo_height = parse_logo_height_px(
+            getattr(company, "nav_logo_height_px", None),
+            default=DEFAULT_NAV_LOGO_HEIGHT_PX,
+        )
+        brand_name = str(getattr(company, "name", "") or "").strip() or DEFAULT_COMPANY_NAME
+        show_nav_logo = getattr(company, "show_nav_logo", None)
+        show_nav_title = getattr(company, "show_nav_title", None)
+        return {
+            "company_name": brand_name,
+            "brand_name": brand_name,
+            "logo_url": logo_url,
+            "logo_version": logo_version,
+            "logo_exists": logo_file_exists_on_disk(nav_logo_resolved),
+            "nav_logo_url": logo_url,
+            "favicon_url": logo_url,
+            "nav_logo_height_px": logo_height,
+            "show_nav_logo": True if show_nav_logo is None else bool(show_nav_logo),
+            "show_nav_title": True if show_nav_title is None else bool(show_nav_title),
+            "nav_color": navbar_color,
+            "primary_color": primary_color,
+            "navbar_color_hex": navbar_color,
+            "primary_color_hex": primary_color,
+            "primary_contrast_hex": primary_contrast_color(primary_color),
+            "primary_soft_rgba": primary_soft_rgba(primary_color),
+        }
+    except Exception:
+        return _default_branding()
+
+
+def get_branding(db: Session, tenant_id: str | None = None) -> dict[str, object]:
+    # Tenant support can be added here later without changing callers.
+    _ = tenant_id
+    try:
+        company = (
+            db.execute(select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1))
+            .scalars()
+            .first()
+        )
+    except Exception:
+        company = None
+    try:
+        return build_ui_branding(company)
+    except Exception:
+        return _default_branding()

@@ -23,6 +23,17 @@ def client(client_logged_in_no_setup):
     return client_logged_in_no_setup
 
 
+def _get_or_create_company_setting(db_session) -> CompanySetting:
+    setting = db_session.execute(
+        select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1)
+    ).scalars().first()
+    if setting is None:
+        setting = CompanySetting()
+        db_session.add(setting)
+        db_session.flush()
+    return setting
+
+
 def _make_invoice_with_line(db_session) -> Invoice:
     customer = Customer(
         account_code="C-COMPANY-1",
@@ -247,6 +258,8 @@ def test_company_settings_theme_values_apply_globally(client, db_session):
 
     themed_page = client.get("/tickets")
     assert themed_page.status_code == 200
+    assert "--nav-bg: #112233" in themed_page.text
+    assert "--primary: #EE7700" in themed_page.text
     assert "--theme-navbar-bg: #112233" in themed_page.text
     assert "--theme-primary: #EE7700" in themed_page.text
 
@@ -284,9 +297,58 @@ def test_base_template_uses_company_branding_for_logo_favicon_and_theme(
     assert "--theme-primary: #EE7700" in response.text
     assert "--theme-nav-logo-height: 48px" in response.text
     assert 'rel="icon"' in response.text
-    assert "/static/uploads/company/logo-nav.png" in response.text
+    assert "/static/uploads/company/logo-nav.png?v=" in response.text
     assert 'class="brand__logo"' in response.text
     assert "Acme Branding" in response.text
+
+
+def test_login_page_includes_global_branding_css_vars(client_anonymous, db_session):
+    setting = _get_or_create_company_setting(db_session)
+    setting.name = "Global Login Brand"
+    setting.navbar_color_hex = "#0A2240"
+    setting.primary_color_hex = "#D97706"
+    db_session.commit()
+
+    response = client_anonymous.get("/login")
+    assert response.status_code == 200
+    assert "--nav-bg: #0A2240" in response.text
+    assert "--primary: #D97706" in response.text
+
+
+def test_products_and_system_status_include_global_branding_css_vars(
+    client_logged_in_superadmin,
+    db_session,
+):
+    setting = _get_or_create_company_setting(db_session)
+    setting.name = "Global App Brand"
+    setting.navbar_color_hex = "#123456"
+    setting.primary_color_hex = "#E67E22"
+    setting.is_initialized = True
+    db_session.commit()
+
+    products = client_logged_in_superadmin.get("/products")
+    assert products.status_code == 200
+    assert "--nav-bg: #123456" in products.text
+    assert "--primary: #E67E22" in products.text
+
+    status = client_logged_in_superadmin.get("/admin/system-status")
+    assert status.status_code == 200
+    assert "--nav-bg: #123456" in status.text
+    assert "--primary: #E67E22" in status.text
+    assert "Resolved logo URL:" in status.text
+    assert "Logo file exists on disk:" in status.text
+
+
+def test_cache_control_for_html_and_upload_static_paths(client_anonymous):
+    login = client_anonymous.get("/login")
+    assert login.status_code == 200
+    assert login.headers.get("cache-control") == "no-store"
+
+    upload_static = client_anonymous.get(
+        "/static/uploads/company/branding-missing-test-file.png"
+    )
+    assert upload_static.status_code == 404
+    assert upload_static.headers.get("cache-control") == "public, max-age=86400"
 
 
 def test_base_template_respects_nav_brand_visibility_toggles(
