@@ -12,6 +12,7 @@ app.db.backup_*
 .mypy_cache/
 .ruff_cache/
 .coverage
+htmlcov/
 audit_field_usage_report.md
 audit_field_usage_report.csv
 app/static/uploads/company/*

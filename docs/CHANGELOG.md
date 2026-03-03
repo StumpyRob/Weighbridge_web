@@ -8,6 +8,14 @@ All notable changes are tracked here by release chapter.
 - Add build stamp in UI footer: `Build v<version> (commit <shortsha>)`.
 - Add release discipline docs (`VERSION`, changelog workflow, contribution guide).
 
+## v0.13.4 - 2026-03-03
+
+### FIX
+- Repo hygiene: ignore `htmlcov/` and remove tracked `__pycache__/` / `*.pyc` artifacts from git index.
+- Housekeeping: switch `app/routes/debug.py` to use shared `app.templating.templates` (remove local `Jinja2Templates(...)` instance).
+- Add GitHub Actions pytest gate at `.github/workflows/tests.yml` (push + PR, Python 3.11, `pytest -q`).
+- Keep intentional navbar polish changes in `app/static/css/style.css` and bump stylesheet cache version in `app/templates/base.html`.
+
 ## v0.13.2 - 2026-03-03
 
 ### SETUP
