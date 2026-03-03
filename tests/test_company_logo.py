@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
+import re
 
 import pytest
 from sqlalchemy import select
@@ -365,6 +366,16 @@ def test_navbar_and_primary_styles_use_root_branding_variables(client_anonymous)
     assert ".btn--primary{" in compact_css
     assert "background-color:var(--primary);" in compact_css
     assert "border-color:var(--primary);" in compact_css
+
+    var_rule_position = compact_css.find("background-color:var(--nav-bg);")
+    assert var_rule_position >= 0
+    trailing_css = compact_css[var_rule_position + len("background-color:var(--nav-bg);") :]
+    hardcoded_header_bg_after_var = re.search(
+        r"\.site-header\{[^}]*background-color:#[0-9a-f]{3,8};",
+        trailing_css,
+        flags=re.IGNORECASE,
+    )
+    assert hardcoded_header_bg_after_var is None
 
 
 def test_base_template_respects_nav_brand_visibility_toggles(

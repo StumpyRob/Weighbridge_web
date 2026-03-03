@@ -3141,3 +3141,13 @@ details > summary:focus-visible {
   font-size: 0.74rem;
   letter-spacing: 0.01em;
 }
+
+/* Theme cascade guard: keep tenant branding authoritative. */
+.site-header {
+  background-color: var(--nav-bg);
+}
+
+.btn--primary {
+  background-color: var(--primary);
+  border-color: var(--primary);
+}

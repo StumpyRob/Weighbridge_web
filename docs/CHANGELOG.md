@@ -8,6 +8,15 @@ All notable changes are tracked here by release chapter.
 - Add build stamp in UI footer: `Build v<version> (commit <shortsha>)`.
 - Add release discipline docs (`VERSION`, changelog workflow, contribution guide).
 
+## v0.13.8 - 2026-03-03
+
+### FIX
+- Harden theme cascade for branding by keeping final `.site-header` and `.btn--primary` rules bound to `var(--nav-bg)` and `var(--primary)`.
+- Bump stylesheet cache key to ensure browsers pull the updated cascade rules immediately.
+
+### TEST
+- Add regression coverage to block reintroduction of hardcoded `.site-header` hex backgrounds after the `var(--nav-bg)` rule.
+
 ## v0.13.7 - 2026-03-03
 
 ### FIX
