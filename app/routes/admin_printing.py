@@ -1088,6 +1088,8 @@ def admin_print_templates_preview(
         return HTMLResponse("Template not found.", status_code=404)
 
     document_type = _normalize_document_type(str(template.document_type or ""))
+    preview_subject = "sample payload"
+    preview_label = "Built-in sample data"
     rendered = ""
     error = ""
     try:
@@ -1108,8 +1110,12 @@ def admin_print_templates_preview(
                     )
                 except (LookupError, ValueError):
                     payload = build_print_payload(db, DOCUMENT_TYPE_INVOICE)
+                preview_subject = "invoice"
+                preview_label = str(preview_invoice.invoice_no or f"#{preview_invoice.id}")
             else:
                 payload = build_print_payload(db, DOCUMENT_TYPE_INVOICE)
+                preview_subject = "sample invoice payload"
+                preview_label = "No invoice found"
             rendered = render_from_content(payload, template.content, db=db)
         else:
             preview_ticket = db.get(Ticket, ticket_id) if ticket_id else None
@@ -1127,8 +1133,15 @@ def admin_print_templates_preview(
                     )
                 except (LookupError, ValueError):
                     payload = build_print_payload(db, document_type)
+                preview_subject = "ticket"
+                preview_label = str(preview_ticket.ticket_no or f"#{preview_ticket.id}")
             else:
                 payload = build_print_payload(db, document_type)
+                if document_type == DOCUMENT_TYPE_WTN:
+                    preview_subject = "sample WTN payload"
+                else:
+                    preview_subject = "sample ticket payload"
+                preview_label = "No ticket found"
             rendered = render_from_content(payload, template.content, db=db)
     except Exception as exc:
         error = str(exc) or "Template render failed."

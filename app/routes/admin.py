@@ -14,6 +14,7 @@ from ..services.print_payload import print_payload_variable_docs
 from ..services.system_setup import (
     print_defaults_exist,
     required_lookup_counts,
+    required_lookup_table_status,
     uploads_path_status,
 )
 from ..templating import templates
@@ -108,6 +109,7 @@ def admin_system_status(
     )
     has_default_yard = db.execute(select(Yard.id).limit(1)).scalar_one_or_none() is not None
     lookup_counts = required_lookup_counts(db)
+    lookup_schema = required_lookup_table_status(db)
     uploads = uploads_path_status()
 
     return templates.TemplateResponse(
@@ -119,6 +121,7 @@ def admin_system_status(
             "has_company_setting": company is not None,
             "has_default_yard": has_default_yard,
             "lookup_counts": lookup_counts,
+            "lookup_schema": lookup_schema,
             "print_defaults_ready": print_defaults_exist(db),
             "uploads": uploads,
         },

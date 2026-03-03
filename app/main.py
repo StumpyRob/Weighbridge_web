@@ -4,12 +4,18 @@ from pathlib import Path
 import secrets
 from typing import Iterator
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from .auth import SESSION_USER_ID_KEY, is_superadmin_user
+from .auth import (
+    SESSION_USER_ID_KEY,
+    is_superadmin_user,
+    require_user,
+)
 from .config import settings
 from .db import get_db
 from .models import User
@@ -26,7 +32,7 @@ from .security_hardening import (
     set_csrf_cookie,
     validate_production_secret,
 )
-from .services.system_setup import get_company_setting
+from .services.system_setup import get_company_setting, missing_required_lookup_messages
 from .services.pdf import check_invoice_pdf_renderer
 from .templating import templates
 
@@ -39,6 +45,15 @@ _SYSTEM_GUARD_PREFIXES = (
     "/products",
     "/invoices",
     "/lookups",
+)
+_LOGIN_REQUIRED_PREFIXES = (
+    "/tickets",
+    "/customers",
+    "/vehicles",
+    "/products",
+    "/invoices",
+    "/lookups",
+    "/admin",
 )
 
 
@@ -76,6 +91,10 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
     def _path_needs_system_guard(path: str) -> bool:
         target = str(path or "")
         return any(target.startswith(prefix) for prefix in _SYSTEM_GUARD_PREFIXES)
+
+    def _path_requires_login(path: str) -> bool:
+        target = str(path or "")
+        return any(target.startswith(prefix) for prefix in _LOGIN_REQUIRED_PREFIXES)
 
     @contextmanager
     def _request_db(request: Request) -> Iterator:
@@ -134,6 +153,15 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         request_path = str(request.url.path or "")
         with _request_db(request) as db:
             request.state.current_user = _load_session_user(request, db)
+
+        if _path_requires_login(request_path):
+            authenticated = require_user(request)
+            if not isinstance(authenticated, User):
+                response = authenticated
+                if should_set_csrf_cookie:
+                    set_csrf_cookie(response, request, csrf_cookie)
+                apply_security_headers(response)
+                return response
 
         if is_state_changing_method(request.method):
             submitted_token = str(request.headers.get(CSRF_HEADER_NAME, "")).strip()
@@ -218,8 +246,24 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         return {"status": "ok"}
 
     @app.get("/", response_class=HTMLResponse)
-    def index(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse(request, "index.html", {"request": request})
+    def index(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+        company = get_company_setting(db)
+        initialized = bool(company and getattr(company, "is_initialized", False))
+        missing_required = missing_required_lookup_messages(db) if initialized else []
+        user_count = int(db.execute(select(func.count(User.id))).scalar_one_or_none() or 0)
+        setup_ready = initialized and len(missing_required) == 0
+        return templates.TemplateResponse(
+            request,
+            "index.html",
+            {
+                "request": request,
+                "show_first_time_setup": not setup_ready,
+                "setup_ready": setup_ready,
+                "setup_initialized": initialized,
+                "missing_required_lookups": missing_required,
+                "needs_first_admin": user_count == 0,
+            },
+        )
 
     @app.get("/reports", response_class=HTMLResponse)
     def reports(request: Request) -> HTMLResponse:

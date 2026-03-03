@@ -2,7 +2,10 @@ from datetime import datetime
 from decimal import Decimal
 
 from app.models import (
+    Customer,
+    Destination,
     DirectionEnum,
+    EwcCode,
     Product,
     Ticket,
     TicketStatusEnum,
@@ -120,6 +123,8 @@ def test_complete_allows_walk_in_without_vehicle_or_reg(client, db_session):
             "datetime": "2026-01-02T09:00",
             "direction": "INWARD",
             "transaction_type": "WASTEIN",
+            "customer_id": str(customer.id),
+            "destination_id": str(destination.id),
             "gross_kg": "2000",
             "tare_kg": "1200",
             "product_id": str(product.id),
@@ -173,6 +178,8 @@ def test_complete_allows_reg_text_without_vehicle(client, db_session):
             "datetime": "2026-01-02T10:00",
             "direction": "OUTWARD",
             "transaction_type": "WASTEOUT",
+            "customer_id": str(customer.id),
+            "destination_id": str(destination.id),
             "gross_kg": "1500",
             "tare_kg": "900",
             "product_id": str(product.id),
@@ -319,6 +326,7 @@ def test_complete_defaults_tare_from_vehicle_default(client, db_session):
             "customer_id": str(customer.id),
             "product_id": str(product.id),
             "destination_id": str(destination.id),
+            "vehicle_id": str(vehicle.id),
             "reg": "ABC123",
         },
         follow_redirects=False,

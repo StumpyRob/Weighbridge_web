@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from app.models import EwcCode, Product
+from app.seed import seed_tax_rates, seed_units
 
 
 def _make_ewc(code_6: str, description: str) -> EwcCode:
@@ -69,6 +70,8 @@ def test_products_search_escapes_like_wildcards(client, db_session):
 
 
 def test_products_new_ewc_datalist_allows_description_prefix_search(client, db_session):
+    seed_units(db_session)
+    seed_tax_rates(db_session)
     ewc = _make_ewc("010105", "Acids and alkalis")
     db_session.add(ewc)
     db_session.commit()

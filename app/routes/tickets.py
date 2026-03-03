@@ -2752,6 +2752,7 @@ async def tickets_update(
     weight_warning = _net_negative_values(payload["gross_kg"], payload["tare_kg"])
     lookup_errors = _validate_lookup_fields(ticket, payload, db)
     payload["errors"].extend(lookup_errors)
+    _apply_ticket_defaults(db, payload)
     product = _validate_product_ewc(payload, db)
     ewc_snapshot = _resolve_ticket_ewc_snapshot(payload, db, product)
     _coerce_mode_fields(payload, product)

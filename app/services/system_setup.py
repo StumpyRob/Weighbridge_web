@@ -5,6 +5,9 @@ from tempfile import NamedTemporaryFile
 
 from sqlalchemy import select
 from sqlalchemy import func
+from sqlalchemy import inspect
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -34,6 +37,17 @@ DEFAULT_YARD_CODE_PREFIX = "Y"
 VOID_REASON_TYPE_TICKET = "TICKET"
 VOID_REASON_TYPE_INVOICE = "INVOICE"
 PRINT_DOCUMENT_TYPES = ("TICKET", "INVOICE", "WTN")
+REQUIRED_LOOKUP_TABLES: tuple[tuple[str, str], ...] = (
+    ("Hauliers", "hauliers"),
+    ("Drivers", "drivers"),
+    ("Containers", "containers"),
+    ("Destinations", "destinations"),
+    ("Units", "units"),
+    ("Tax Rates", "tax_rates"),
+    ("Vehicle Types", "vehicle_types"),
+    ("Payment Methods", "payment_methods"),
+    ("Void Reasons", "void_reasons"),
+)
 
 
 def get_company_setting(db: Session) -> CompanySetting | None:
@@ -107,33 +121,64 @@ def seed_required_reference_data(db: Session) -> dict[str, int]:
 
 
 def required_lookup_counts(db: Session) -> dict[str, int]:
+    def _count(stmt) -> int:
+        try:
+            return int(db.execute(stmt).scalar_one_or_none() or 0)
+        except SQLAlchemyError:
+            return 0
+
     return {
-        "units": int(db.execute(select(func.count(Unit.id))).scalar_one_or_none() or 0),
-        "tax_rates": int(
-            db.execute(select(func.count(TaxRate.id))).scalar_one_or_none() or 0
+        "units": _count(select(func.count(Unit.id))),
+        "tax_rates": _count(select(func.count(TaxRate.id))),
+        "vehicle_types": _count(select(func.count(VehicleType.id))),
+        "payment_methods": _count(select(func.count(PaymentMethod.id))),
+        "ticket_void_reasons": _count(
+            select(func.count(VoidReason.id)).where(
+                func.upper(VoidReason.reason_type) == VOID_REASON_TYPE_TICKET
+            )
         ),
-        "vehicle_types": int(
-            db.execute(select(func.count(VehicleType.id))).scalar_one_or_none() or 0
+        "invoice_void_reasons": _count(
+            select(func.count(VoidReason.id)).where(
+                func.upper(VoidReason.reason_type) == VOID_REASON_TYPE_INVOICE
+            )
         ),
-        "payment_methods": int(
-            db.execute(select(func.count(PaymentMethod.id))).scalar_one_or_none() or 0
-        ),
-        "ticket_void_reasons": int(
-            db.execute(
-                select(func.count(VoidReason.id)).where(
-                    func.upper(VoidReason.reason_type) == VOID_REASON_TYPE_TICKET
+    }
+
+
+def required_lookup_table_status(db: Session) -> dict[str, object]:
+    bind = db.get_bind()
+    inspector = inspect(bind)
+    available_tables = set(inspector.get_table_names())
+    rows: list[dict[str, object]] = []
+    migrations_complete = True
+
+    for label, table_name in REQUIRED_LOOKUP_TABLES:
+        exists = table_name in available_tables
+        row_count: int | None = None
+        if exists:
+            try:
+                row_count = int(
+                    db.execute(text(f"SELECT COUNT(*) FROM {table_name}"))
+                    .scalar_one_or_none()
+                    or 0
                 )
-            ).scalar_one_or_none()
-            or 0
-        ),
-        "invoice_void_reasons": int(
-            db.execute(
-                select(func.count(VoidReason.id)).where(
-                    func.upper(VoidReason.reason_type) == VOID_REASON_TYPE_INVOICE
-                )
-            ).scalar_one_or_none()
-            or 0
-        ),
+            except Exception:
+                migrations_complete = False
+        else:
+            migrations_complete = False
+
+        rows.append(
+            {
+                "label": label,
+                "table_name": table_name,
+                "exists": exists,
+                "row_count": row_count,
+            }
+        )
+
+    return {
+        "migrations_complete": migrations_complete,
+        "rows": rows,
     }
 
 

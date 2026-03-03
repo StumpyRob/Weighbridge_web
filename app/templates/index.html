@@ -13,6 +13,42 @@
     </div>
   </div>
 
+  {% if show_first_time_setup %}
+    <div class="frame">
+      <div class="frame-header">First-time Setup</div>
+      <div class="frame-body">
+        <p class="muted">Complete these steps before using operational pages.</p>
+        <ol>
+          <li>
+            Step 1: Create first admin user
+            {% if needs_first_admin %}
+              -> <a href="/bootstrap">/bootstrap</a>
+            {% else %}
+              -> Done
+            {% endif %}
+          </li>
+          <li>
+            Step 2: Complete Company Setup
+            {% if not setup_initialized %}
+              -> <a href="/setup">/setup</a>
+            {% else %}
+              -> Done
+            {% endif %}
+          </li>
+          <li>Step 3: Confirm System Status -> <a href="/admin/system-status">/admin/system-status</a></li>
+          <li>Step 4: Configure Printing -> <a href="/admin/printing">/admin/printing</a></li>
+        </ol>
+        {% if missing_required_lookups %}
+          <div class="alert alert--warning">
+            Required reference data is incomplete. Visit System Status to see missing items.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  {% else %}
+    <div class="notice">Setup complete. System initialization checks are green.</div>
+  {% endif %}
+
   <div class="stacked-frames">
     <div class="frame">
       <div class="frame-header">What This Application Does</div>

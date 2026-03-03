@@ -195,6 +195,45 @@ def test_setup_redirects_unauthenticated_user_to_login(tmp_path, monkeypatch):
         client.close()
 
 
+def test_protected_pages_redirect_to_login_when_unauthenticated(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "app_secret_key", "setup-wizard-auth-redirects-secret")
+    monkeypatch.setattr(settings, "secret_key", "")
+    app = create_app(dev_mode=False)
+    client, SessionLocal = _client_for_app(
+        app=app, db_path=tmp_path / "setup-auth-redirects.db"
+    )
+    try:
+        tickets = client.get("/tickets", follow_redirects=False)
+        assert tickets.status_code == 302
+        assert tickets.headers.get("location") == "/login?next=/tickets"
+
+        admin = client.get("/admin", follow_redirects=False)
+        assert admin.status_code == 302
+        assert admin.headers.get("location") == "/login?next=/admin"
+
+        home = client.get("/")
+        assert home.status_code == 200
+
+        with SessionLocal() as db:
+            db.add(
+                User(
+                    username="owner@example.com",
+                    password_hash=hash_password("SetupPass123!"),
+                    is_active=True,
+                )
+            )
+            db.add(CompanySetting(name="Setup Co Ltd", is_initialized=True))
+            db.commit()
+
+        _login_superadmin(client, email="owner@example.com", password="SetupPass123!")
+        tickets_after_login = client.get("/tickets")
+        assert tickets_after_login.status_code == 200
+        admin_after_login = client.get("/admin")
+        assert admin_after_login.status_code == 200
+    finally:
+        client.close()
+
+
 def test_uninitialized_guard_returns_503_without_auto_creation(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "app_secret_key", "setup-wizard-guard-secret")
     monkeypatch.setattr(settings, "secret_key", "")
@@ -290,6 +329,8 @@ def test_key_pages_do_not_500_after_setup(tmp_path, monkeypatch):
             "/products/new": 200,
             "/vehicles/new": 200,
             "/tickets/new": 200,
+            "/lookups": 200,
+            "/lookups/hauliers": 200,
         }
         for path, status_code in expected_status.items():
             response = client.get(path, follow_redirects=True)
@@ -384,9 +425,95 @@ def test_navbar_shows_signed_in_indicator_and_sign_in_link(tmp_path, monkeypatch
         )
         assert logout.status_code == 303
 
-        signed_out_page = client.get("/admin")
-        assert signed_out_page.status_code == 200
-        assert "Signed in as" not in signed_out_page.text
-        assert "Sign in" in signed_out_page.text
+        signed_out_page = client.get("/admin", follow_redirects=False)
+        assert signed_out_page.status_code == 302
+        assert signed_out_page.headers.get("location") == "/login?next=/admin"
+    finally:
+        client.close()
+
+
+def test_lookups_page_shows_readiness_warning_instead_of_crashing(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "app_secret_key", "setup-wizard-lookups-ready-secret")
+    monkeypatch.setattr(settings, "secret_key", "")
+    app = create_app(dev_mode=False)
+    client, SessionLocal = _client_for_app(app=app, db_path=tmp_path / "setup-lookups.db")
+    try:
+        with SessionLocal() as db:
+            db.add(
+                User(
+                    username="owner@example.com",
+                    password_hash=hash_password("SetupPass123!"),
+                    is_active=True,
+                )
+            )
+            db.add(CompanySetting(name="Setup Co Ltd", is_initialized=True))
+            db.commit()
+
+        _login_superadmin(client, email="owner@example.com", password="SetupPass123!")
+        response = client.get("/lookups/hauliers")
+        assert response.status_code == 200
+        assert "System not fully configured." in response.text
+    finally:
+        client.close()
+
+
+def test_home_first_time_setup_panel_visibility(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "app_secret_key", "setup-wizard-home-panel-secret")
+    monkeypatch.setattr(settings, "secret_key", "")
+    app = create_app(dev_mode=False)
+    client, SessionLocal = _client_for_app(app=app, db_path=tmp_path / "setup-home.db")
+    try:
+        initial = client.get("/")
+        assert initial.status_code == 200
+        assert "First-time Setup" in initial.text
+
+        with SessionLocal() as db:
+            db.add(
+                User(
+                    username="owner@example.com",
+                    password_hash=hash_password("SetupPass123!"),
+                    is_active=True,
+                )
+            )
+            db.commit()
+
+        csrf = _login_superadmin(
+            client, email="owner@example.com", password="SetupPass123!"
+        )
+        setup_post = client.post(
+            "/setup",
+            data={
+                "company_name": "Setup Co Ltd",
+                "default_yard_name": "Primary Yard",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert setup_post.status_code == 303
+
+        ready = client.get("/")
+        assert ready.status_code == 200
+        assert "First-time Setup" not in ready.text
+        assert "Setup complete. System initialization checks are green." in ready.text
+    finally:
+        client.close()
+
+
+def test_home_shows_setup_panel_when_initialized_but_required_lookups_missing(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "app_secret_key", "setup-wizard-home-missing-lookups")
+    monkeypatch.setattr(settings, "secret_key", "")
+    app = create_app(dev_mode=False)
+    client, SessionLocal = _client_for_app(app=app, db_path=tmp_path / "setup-home-missing.db")
+    try:
+        with SessionLocal() as db:
+            db.add(CompanySetting(name="Setup Co Ltd", is_initialized=True))
+            db.commit()
+
+        response = client.get("/")
+        assert response.status_code == 200
+        assert "First-time Setup" in response.text
+        assert "Required reference data is incomplete." in response.text
     finally:
         client.close()

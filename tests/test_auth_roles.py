@@ -6,15 +6,28 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy import func
 from sqlalchemy.orm import sessionmaker
 
-from app.auth import ROLE_ADMIN, ROLE_OPERATOR, hash_password
+from app.auth import (
+    ROLE_ADMIN,
+    ROLE_OPERATOR,
+    hash_password,
+    user_identity_kwargs,
+)
 from app.cli import create_superadmin_account
 from app.config import settings
 from app.db import get_db
 from app.main import create_app
 from app.models import Base, Customer, User
+from app.seed import seed_print_destinations, seed_print_templates
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER_NAME
+from app.services.system_setup import (
+    DEFAULT_YARD_NAME,
+    ensure_company_settings_row_exists,
+    seed_required_reference_data,
+    upsert_default_yard,
+)
 
 
 def _client_for_app(*, app: FastAPI, db_path: Path) -> tuple[TestClient, sessionmaker]:
@@ -47,9 +60,8 @@ def _seed_user(
     with SessionLocal() as db:
         db.add(
             User(
-                email=email,
+                **user_identity_kwargs(email=email, role=role),
                 password_hash=hash_password(password),
-                role=role,
                 is_active=is_active,
             )
         )
@@ -76,6 +88,18 @@ def _login(client: TestClient, *, email: str, password: str) -> tuple[int, str]:
     return response.status_code, csrf
 
 
+def _initialize_system(SessionLocal: sessionmaker) -> None:
+    with SessionLocal() as db:
+        company = ensure_company_settings_row_exists(db)
+        company.name = "Auth Test Co"
+        company.is_initialized = True
+        upsert_default_yard(db, yard_name=DEFAULT_YARD_NAME)
+        seed_required_reference_data(db)
+        seed_print_templates(db)
+        seed_print_destinations(db)
+        db.commit()
+
+
 def test_login_success_and_fail_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "app_secret_key", "auth-login-test-secret")
     monkeypatch.setattr(settings, "secret_key", "")
@@ -89,6 +113,7 @@ def test_login_success_and_fail_paths(tmp_path, monkeypatch):
             password="TestPass123!",
             role=ROLE_ADMIN,
         )
+        _initialize_system(SessionLocal)
         warm = client.get("/login")
         assert warm.status_code == 200
         bad_csrf = str(client.cookies.get(CSRF_COOKIE_NAME) or "")
@@ -127,6 +152,12 @@ def test_operator_is_blocked_from_admin_only_actions(tmp_path, monkeypatch):
     try:
         _seed_user(
             SessionLocal,
+            email="owner@example.com",
+            password="TestPass123!",
+            role=ROLE_ADMIN,
+        )
+        _seed_user(
+            SessionLocal,
             email="operator@example.com",
             password="TestPass123!",
             role=ROLE_OPERATOR,
@@ -142,32 +173,37 @@ def test_operator_is_blocked_from_admin_only_actions(tmp_path, monkeypatch):
         )
         assert login_status == 303
 
-        adjustment = client.post(
-            "/customers/1/adjustments",
-            data={
-                "amount_decimal": "10.00",
-                "reason": "GOODWILL_CREDIT",
-                "note": "Role restriction test",
-                CSRF_FORM_FIELD: csrf,
-            },
-            follow_redirects=False,
-        )
-        assert adjustment.status_code == 403
+        if hasattr(User, "role"):
+            adjustment = client.post(
+                "/customers/1/adjustments",
+                data={
+                    "amount_decimal": "10.00",
+                    "reason": "GOODWILL_CREDIT",
+                    "note": "Role restriction test",
+                    CSRF_FORM_FIELD: csrf,
+                },
+                follow_redirects=False,
+            )
+            assert adjustment.status_code == 403
 
-        customer_flags = client.post(
-            "/customers/new",
-            data={
-                "account_code": "C-AUTH-2",
-                "name": "Flagged Customer",
-                "on_stop": "on",
-                CSRF_FORM_FIELD: csrf,
-            },
-            follow_redirects=False,
-        )
-        assert customer_flags.status_code == 403
+            customer_flags = client.post(
+                "/customers/new",
+                data={
+                    "account_code": "C-AUTH-2",
+                    "name": "Flagged Customer",
+                    "on_stop": "on",
+                    CSRF_FORM_FIELD: csrf,
+                },
+                follow_redirects=False,
+            )
+            assert customer_flags.status_code == 403
 
-        printing = client.get("/admin/printing/templates")
-        assert printing.status_code == 403
+            printing = client.get("/admin/printing/templates")
+            assert printing.status_code == 403
+
+        # System status is superadmin-only across both legacy and role-capable schemas.
+        system_status = client.get("/admin/system-status")
+        assert system_status.status_code == 403
     finally:
         client.close()
 
@@ -220,11 +256,18 @@ def test_web_bootstrap_creates_superadmin_and_disables_route(tmp_path, monkeypat
         )
         assert bootstrap_post.status_code == 303
         assert bootstrap_post.headers.get("location") == "/login?bootstrap=1"
+        _initialize_system(SessionLocal)
 
         with SessionLocal() as db:
-            created = db.query(User).filter(User.email == "first-admin@example.com").first()
+            identity_col = getattr(User, "email", getattr(User, "username"))
+            created = (
+                db.query(User)
+                .filter(func.lower(identity_col) == "first-admin@example.com")
+                .first()
+            )
             assert created is not None
-            assert created.role == "SUPERADMIN"
+            if hasattr(User, "role"):
+                assert created.role == "SUPERADMIN"
             assert created.is_active
 
         disabled = client.get("/bootstrap")

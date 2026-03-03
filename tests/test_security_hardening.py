@@ -8,10 +8,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.auth import hash_password, user_identity_kwargs
 from app.config import settings
 from app.db import get_db
 from app.main import create_app
-from app.models import Base, CompanySetting
+from app.models import Base, CompanySetting, User
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER_NAME
 
 
@@ -19,9 +20,10 @@ def _client_for_app(
     *,
     app: FastAPI,
     db_path: Path,
-    base_url: str = "http://testserver",
+    base_url: str = "https://testserver",
     raise_server_exceptions: bool = True,
     system_initialized: bool = False,
+    authenticated: bool = False,
 ) -> TestClient:
     engine = create_engine(
         f"sqlite+pysqlite:///{db_path}", connect_args={"check_same_thread": False}
@@ -31,6 +33,14 @@ def _client_for_app(
     if system_initialized:
         with SessionLocal() as db:
             db.add(CompanySetting(name="Security Test Co", is_initialized=True))
+            if authenticated:
+                db.add(
+                    User(
+                        **user_identity_kwargs(email="security@example.com"),
+                        password_hash=hash_password("TestPass123!"),
+                        is_active=True,
+                    )
+                )
             db.commit()
 
     def override_get_db():
@@ -41,11 +51,28 @@ def _client_for_app(
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    return TestClient(
+    client = TestClient(
         app,
         base_url=base_url,
         raise_server_exceptions=raise_server_exceptions,
     )
+    if authenticated:
+        warm = client.get("/login")
+        assert warm.status_code == 200
+        csrf = str(client.cookies.get(CSRF_COOKIE_NAME) or "")
+        assert csrf
+        login = client.post(
+            "/login",
+            data={
+                "email": "security@example.com",
+                "password": "TestPass123!",
+                "next": "/customers",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert login.status_code in (302, 303)
+    return client
 
 
 def test_create_app_fails_without_secret_when_non_dev(monkeypatch):
@@ -65,6 +92,7 @@ def test_csrf_is_required_for_post_requests_in_non_dev(tmp_path, monkeypatch):
         app=app,
         db_path=tmp_path / "csrf.db",
         system_initialized=True,
+        authenticated=True,
     ) as client:
         blocked = client.post(
             "/customers/new",

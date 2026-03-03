@@ -41,6 +41,12 @@
     </div>
   {% endif %}
 
+  {% if readiness_warning %}
+    <div class="alert alert--warning">
+      {{ readiness_warning }}
+    </div>
+  {% endif %}
+
   <form class="filters filters-inline" method="get" action="{{ base_path }}">
     <div class="field">
       <label for="q">Search</label>

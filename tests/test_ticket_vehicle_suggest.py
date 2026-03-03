@@ -114,7 +114,8 @@ def test_vehicle_suggestion_apply_updates_fields(client, db_session):
     assert 'id="driver_id" name="driver_id" hx-swap-oob="true"' in response.text
     assert f'value="{driver.id}" selected' in response.text
     assert 'id="weights-block" hx-swap-oob="innerHTML"' in response.text
-    assert "Tare applied from vehicle default." in response.text
+    assert 'name="tare_kg"' in response.text
+    assert 'value="5000"' in response.text
 
     db_session.refresh(ticket)
     assert ticket.vehicle_id == vehicle.id

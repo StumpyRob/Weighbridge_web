@@ -12,6 +12,7 @@ from app.models import (
     Unit,
     Vehicle,
 )
+from app.seed import seed_vehicle_types
 
 
 def test_base_loads_help_tooltip_layer_script(client):
@@ -157,6 +158,7 @@ def test_admin_printing_pages_show_tooltips_for_non_obvious_fields(client, db_se
 
 
 def test_vehicle_pages_show_tooltips_for_defaults_and_tares(client, db_session):
+    seed_vehicle_types(db_session)
     vehicle = Vehicle(registration="VH-HELP-1")
     db_session.add(vehicle)
     db_session.commit()

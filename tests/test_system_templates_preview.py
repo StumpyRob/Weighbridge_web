@@ -5,6 +5,11 @@ from app.models import CompanySetting, PrintTemplate
 from app.seed import force_refresh_system_print_templates
 
 
+@pytest.fixture()
+def client(client_logged_in_no_setup):
+    return client_logged_in_no_setup
+
+
 def _system_template(db_session, code: str) -> PrintTemplate:
     template = (
         db_session.execute(

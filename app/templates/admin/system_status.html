@@ -27,6 +27,13 @@
     </div>
   </section>
 
+  {% if not lookup_schema.migrations_complete %}
+    <div class="alert alert--danger">
+      Migrations incomplete: one or more required lookup tables are missing/unreadable.
+      Check deployment logs and run migrations.
+    </div>
+  {% endif %}
+
   <section class="frame">
     <div class="frame-header">
       <h2>Required Lookups</h2>
@@ -47,6 +54,40 @@
             <tr><td>Payment methods</td><td class="numeric-col">{{ lookup_counts.payment_methods }}</td></tr>
             <tr><td>Ticket void reasons</td><td class="numeric-col">{{ lookup_counts.ticket_void_reasons }}</td></tr>
             <tr><td>Invoice void reasons</td><td class="numeric-col">{{ lookup_counts.invoice_void_reasons }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="frame-header">
+      <h2>Lookup Table Schema</h2>
+    </div>
+    <div class="frame-body">
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Table</th>
+              <th>Status</th>
+              <th class="numeric-col">Rows</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in lookup_schema.rows %}
+              <tr>
+                <td>{{ row.label }} (<code>{{ row.table_name }}</code>)</td>
+                <td>
+                  {% if row.exists %}
+                    <span class="status-pill status-open">Present</span>
+                  {% else %}
+                    <span class="status-pill status-void">Missing</span>
+                  {% endif %}
+                </td>
+                <td class="numeric-col">{{ row.row_count if row.row_count is not none else "-" }}</td>
+              </tr>
+            {% endfor %}
           </tbody>
         </table>
       </div>

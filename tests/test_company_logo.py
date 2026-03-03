@@ -3,6 +3,7 @@ from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 
 from app.config import settings
@@ -15,6 +16,11 @@ from app.models import (
     PrintTemplate,
 )
 from app.services.pdf import render_invoice_pdf_html
+
+
+@pytest.fixture()
+def client(client_logged_in_no_setup):
+    return client_logged_in_no_setup
 
 
 def _make_invoice_with_line(db_session) -> Invoice:

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import quote
 
 import bcrypt
+from fastapi import Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -87,3 +90,27 @@ def is_superadmin_user(db: Session, user: User | None) -> bool:
 
     first_user_id = db.execute(select(func.min(User.id))).scalar_one_or_none()
     return first_user_id is not None and int(first_user_id) == int(user.id)
+
+
+def login_next_path(request: Request) -> str:
+    path = str(request.url.path or "").strip() or "/"
+    query = str(request.url.query or "").strip()
+    if query:
+        return f"{path}?{query}"
+    return path
+
+
+def login_redirect_response(request: Request, *, status_code: int = 302) -> RedirectResponse:
+    next_path = login_next_path(request)
+    encoded_next = quote(next_path, safe="/?=&")
+    return RedirectResponse(
+        url=f"/login?next={encoded_next}",
+        status_code=status_code,
+    )
+
+
+def require_user(request: Request) -> User | RedirectResponse:
+    current = getattr(getattr(request, "state", None), "current_user", None)
+    if isinstance(current, User) and bool(current.is_active):
+        return current
+    return login_redirect_response(request)

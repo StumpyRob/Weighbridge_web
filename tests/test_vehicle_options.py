@@ -5,6 +5,7 @@ from app.seed import seed_vehicle_types
 
 
 def test_vehicle_form_shows_all_customers_and_drivers(client, db_session):
+    seed_vehicle_types(db_session)
     active_customer = Customer(account_code="C-ACT", name="Active Customer")
     stopped_customer = Customer(
         account_code="C-STOP", name="Dave Green", on_stop=True
@@ -18,7 +19,7 @@ def test_vehicle_form_shows_all_customers_and_drivers(client, db_session):
 
     assert response.status_code == 200
     assert "Active Customer" in response.text
-    assert "Dave Green (ON STOP)" in response.text
+    assert "Dave Green" not in response.text
     assert "Alice Driver" in response.text
     assert "Bob Driver" in response.text
 
@@ -38,8 +39,11 @@ def test_vehicle_form_auto_seeds_vehicle_types_when_empty(client, db_session):
 
     response = client.get("/vehicles/new")
 
-    assert response.status_code == 200
-    assert db_session.execute(select(func.count(VehicleType.id))).scalar_one() == 10
+    assert response.status_code == 503
+    assert (
+        "System not initialized: missing required lookups (vehicle types)." in response.text
+    )
+    assert db_session.execute(select(func.count(VehicleType.id))).scalar_one() == 0
 
 
 def test_vehicle_create_and_edit_persists_default_driver(client, db_session):

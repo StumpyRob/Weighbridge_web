@@ -3,18 +3,18 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, true
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..constants import CODE_MAX, NAME_MAX
 from ..db import get_db
 from ..models import Container, Destination, Driver, Haulier, Ticket
 from ..security import validate_no_html_fields
+from ..services.system_setup import missing_required_lookup_messages
 from ..templating import templates
 
 router = APIRouter(prefix="/lookups")
-templates = Jinja2Templates(directory="app/templates")
 
 def _lookup_redirect_url(request: Request, base_path: str) -> str:
     params: dict[str, str] = {"saved": "1"}
@@ -63,12 +63,32 @@ def _render_lookup_list(
     hide_inactive: int,
     error: str | None = None,
 ) -> HTMLResponse:
-    query = select(model)
-    if hide_inactive:
-        query = query.where(model.is_active == true())
-    if q:
-        query = query.where(func.lower(model.name).contains(func.lower(q)))
-    items = db.execute(query.order_by(model.name.asc())).scalars().all()
+    readiness_warning = None
+    try:
+        if missing_required_lookup_messages(db):
+            readiness_warning = (
+                "System not fully configured. Go to Admin -> System Status."
+            )
+    except SQLAlchemyError:
+        readiness_warning = (
+            "Migrations incomplete. Check deployment logs and Admin -> System Status."
+        )
+
+    items = []
+    lookup_error = error
+    try:
+        query = select(model)
+        if hide_inactive:
+            query = query.where(model.is_active == true())
+        if q:
+            query = query.where(func.lower(model.name).contains(func.lower(q)))
+        items = db.execute(query.order_by(model.name.asc())).scalars().all()
+    except SQLAlchemyError:
+        lookup_error = (
+            "Migrations incomplete: lookup tables unavailable. "
+            "Check deployment logs and Admin -> System Status."
+        )
+
     return templates.TemplateResponse(request, 
         "lookups/list.html",
         {
@@ -80,9 +100,16 @@ def _render_lookup_list(
             "q": q or "",
             "hide_inactive": bool(hide_inactive),
             "saved": request.query_params.get("saved") == "1",
-            "error": error,
+            "error": lookup_error,
+            "readiness_warning": readiness_warning,
         },
     )
+
+
+@router.get("", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse)
+def lookups_root() -> RedirectResponse:
+    return RedirectResponse(url="/lookups/hauliers", status_code=303)
 
 
 @router.get("/hauliers", response_class=HTMLResponse)
