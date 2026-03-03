@@ -14,6 +14,7 @@ from fastapi.responses import (
 from sqlalchemy import case, func, or_, select, text
 from sqlalchemy.orm import Session, joinedload
 
+from ..audit import log as audit_log
 from ..config import settings
 from ..constants import (
     ADDRESS_LINE_MAX,
@@ -366,6 +367,21 @@ def tickets_quick_create(request: Request, db: Session = Depends(get_db)) -> HTM
         paid=False,
     )
     db.add(ticket)
+    db.flush()
+    audit_log(
+        db,
+        request,
+        action="CREATE",
+        entity_type="ticket",
+        entity_id=ticket.id,
+        summary=f"Created ticket {ticket.ticket_no}",
+        details={
+            "ticket_no": ticket.ticket_no,
+            "status": str(ticket.status),
+            "direction": str(ticket.direction),
+            "transaction_type": str(ticket.transaction_type),
+        },
+    )
     db.commit()
     return RedirectResponse(url=f"/tickets/{ticket.id}", status_code=303)
 
@@ -2484,6 +2500,7 @@ async def tickets_update(
 
     form = await request.form()
     action = str(form.get("action", "save"))
+    original_snapshot = _ticket_audit_snapshot(ticket) if action == "save" else None
     if action == "void":
         _ensure_ticket_void_reasons(db)
 
@@ -2693,6 +2710,21 @@ async def tickets_update(
             product=product,
         )
         ticket.status = TicketStatusEnum.COMPLETE.value
+        audit_log(
+            db,
+            request,
+            action="COMPLETE",
+            entity_type="ticket",
+            entity_id=ticket.id,
+            summary=f"Completed ticket {ticket.ticket_no}",
+            details={
+                "ticket_no": ticket.ticket_no,
+                "status": str(ticket.status),
+                "customer_id": ticket.customer_id,
+                "product_id": ticket.product_id,
+                "total": str(ticket.total) if ticket.total is not None else None,
+            },
+        )
         db.commit()
         return RedirectResponse(url=f"/tickets/{ticket_id}?completed=1", status_code=303)
 
@@ -2740,6 +2772,19 @@ async def tickets_update(
                 voided_at=utcnow(),
                 voided_by=_voided_by_actor(request),
             )
+        )
+        audit_log(
+            db,
+            request,
+            action="VOID",
+            entity_type="ticket",
+            entity_id=ticket.id,
+            summary=f"Voided ticket {ticket.ticket_no}",
+            details={
+                "ticket_no": ticket.ticket_no,
+                "reason_id": reason_id,
+                "note": note or "No note provided.",
+            },
         )
         db.commit()
         return RedirectResponse(url=f"/tickets/{ticket_id}?voided=1", status_code=303)
@@ -2800,6 +2845,21 @@ async def tickets_update(
     _apply_ticket_ewc_snapshot(ticket, ewc_snapshot)
     _apply_carrier_licence_snapshot(ticket, haulier)
     _apply_waste_producer_snapshot(ticket, payload)
+    if original_snapshot is not None:
+        updated_snapshot = _ticket_audit_snapshot(ticket)
+        if updated_snapshot != original_snapshot:
+            audit_log(
+                db,
+                request,
+                action="UPDATE",
+                entity_type="ticket",
+                entity_id=ticket.id,
+                summary=f"Updated ticket {ticket.ticket_no}",
+                details={
+                    "ticket_no": ticket.ticket_no,
+                    "status": str(ticket.status),
+                },
+            )
     db.commit()
     return RedirectResponse(url=f"/tickets/{ticket_id}?saved=1", status_code=303)
 
@@ -3658,6 +3718,33 @@ async def tickets_swap_weights_preview(
             "show_weight_errors": True,
             "weight_warning": _net_negative_values(tare_value, gross_value),
         },
+    )
+
+
+def _ticket_audit_snapshot(ticket: Ticket) -> tuple:
+    return (
+        str(ticket.status),
+        str(ticket.direction),
+        str(ticket.transaction_type),
+        ticket.datetime,
+        ticket.customer_id,
+        ticket.vehicle_id,
+        ticket.vehicle_reg_text,
+        ticket.product_id,
+        ticket.haulier_id,
+        ticket.driver_id,
+        ticket.container_id,
+        ticket.destination_id,
+        ticket.yard_id,
+        ticket.area_id,
+        ticket.gross_kg,
+        ticket.tare_kg,
+        ticket.net_kg,
+        ticket.qty,
+        ticket.unit_price,
+        ticket.total,
+        ticket.po_number,
+        bool(ticket.dont_invoice),
     )
 
 

@@ -7,6 +7,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from ..audit import log as audit_log
 from ..constants import CODE_MAX, DESC_MAX, NAME_MAX, NOMINAL_CODE_MAX
 from ..db import get_db
 from ..models.base import utcnow
@@ -171,6 +172,19 @@ async def products_create(
     )
     db.add(product)
     try:
+        db.flush()
+        audit_log(
+            db,
+            request,
+            action="CREATE",
+            entity_type="product",
+            entity_id=product.id,
+            summary=f"Created product {product.code}",
+            details={
+                "code": product.code,
+                "description": product.description,
+            },
+        )
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -842,27 +856,78 @@ async def products_update(
             status_code=400,
         )
 
+    changed_fields: list[str] = []
+    if product.code != payload["code"]:
+        changed_fields.append("code")
     product.code = payload["code"]
+    if product.description != payload["description"]:
+        changed_fields.append("description")
     product.description = payload["description"]
+    if product.sales_only != payload["sales_only"]:
+        changed_fields.append("sales_only")
     product.sales_only = payload["sales_only"]
+    if product.group_id != payload["group_id"]:
+        changed_fields.append("group_id")
     product.group_id = payload["group_id"]
+    if product.unit_id != payload["unit_id"]:
+        changed_fields.append("unit_id")
     product.unit_id = payload["unit_id"]
+    if product.tax_rate_id != payload["tax_rate_id"]:
+        changed_fields.append("tax_rate_id")
     product.tax_rate_id = payload["tax_rate_id"]
+    if product.nominal_code != payload["nominal_code"]:
+        changed_fields.append("nominal_code")
     product.nominal_code = payload["nominal_code"]
+    if product.unit_price != payload["unit_price"]:
+        changed_fields.append("unit_price")
     product.unit_price = payload["unit_price"]
+    if product.account_price != payload["account_price"]:
+        changed_fields.append("account_price")
     product.account_price = payload["account_price"]
+    if product.cash_price != payload["cash_price"]:
+        changed_fields.append("cash_price")
     product.cash_price = payload["cash_price"]
+    if product.min_price != payload["min_price"]:
+        changed_fields.append("min_price")
     product.min_price = payload["min_price"]
+    if product.max_price != payload["max_price"]:
+        changed_fields.append("max_price")
     product.max_price = payload["max_price"]
+    if product.max_qty != payload["max_qty"]:
+        changed_fields.append("max_qty")
     product.max_qty = payload["max_qty"]
+    if product.excess_trigger != payload["excess_trigger"]:
+        changed_fields.append("excess_trigger")
     product.excess_trigger = payload["excess_trigger"]
+    if product.excess_price != payload["excess_price"]:
+        changed_fields.append("excess_price")
     product.excess_price = payload["excess_price"]
+    if product.is_hazardous != payload["is_hazardous"]:
+        changed_fields.append("is_hazardous")
     product.is_hazardous = payload["is_hazardous"]
+    if product.final_disposal_wip != payload["final_disposal_wip"]:
+        changed_fields.append("final_disposal_wip")
     product.final_disposal_wip = payload["final_disposal_wip"]
+    if product.used_on_site_wip != payload["used_on_site_wip"]:
+        changed_fields.append("used_on_site_wip")
     product.used_on_site_wip = payload["used_on_site_wip"]
+    if product.ewc_code_id != payload["ewc_code_id"]:
+        changed_fields.append("ewc_code_id")
     product.ewc_code_id = payload["ewc_code_id"]
+    if product.default_destination_id != payload["default_destination_id"]:
+        changed_fields.append("default_destination_id")
     product.default_destination_id = payload["default_destination_id"]
     product.updated_at = utcnow()
+    if changed_fields:
+        audit_log(
+            db,
+            request,
+            action="UPDATE",
+            entity_type="product",
+            entity_id=product.id,
+            summary=f"Updated product {product.code}",
+            details={"changed_fields": sorted(set(changed_fields))},
+        )
     try:
         db.commit()
     except IntegrityError:

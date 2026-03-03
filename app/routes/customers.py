@@ -7,6 +7,8 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
+from ..audit import log as audit_log
+from ..auth import user_display_name
 from ..constants import (
     ADDRESS_LINE_MAX,
     CODE_MAX,
@@ -146,6 +148,19 @@ async def customers_create(
     )
     db.add(customer)
     try:
+        db.flush()
+        audit_log(
+            db,
+            request,
+            action="CREATE",
+            entity_type="customer",
+            entity_id=customer.id,
+            summary=f"Created customer {customer.account_code}",
+            details={
+                "account_code": customer.account_code,
+                "name": customer.name,
+            },
+        )
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -209,26 +224,119 @@ async def customers_update(
             status_code=400,
         )
 
+    old_flags = {
+        "on_stop": bool(customer.on_stop),
+        "do_not_invoice": bool(customer.do_not_invoice),
+        "must_have_po": bool(customer.must_have_po),
+    }
+    old_credit_limit_pence = customer.credit_limit_pence
+    changed_fields: list[str] = []
+
+    if customer.account_code != payload["account_code"]:
+        changed_fields.append("account_code")
     customer.account_code = payload["account_code"]
+    if customer.name != payload["name"]:
+        changed_fields.append("name")
     customer.name = payload["name"]
+    if customer.invoice_email != payload["invoice_email"]:
+        changed_fields.append("invoice_email")
     customer.invoice_email = payload["invoice_email"]
+    if customer.phone != payload["phone"]:
+        changed_fields.append("phone")
     customer.phone = payload["phone"]
+    if customer.address_line1 != payload["address_line1"]:
+        changed_fields.append("address_line1")
     customer.address_line1 = payload["address_line1"]
+    if customer.address_line2 != payload["address_line2"]:
+        changed_fields.append("address_line2")
     customer.address_line2 = payload["address_line2"]
+    if customer.city != payload["city"]:
+        changed_fields.append("city")
     customer.city = payload["city"]
+    if customer.postcode != payload["postcode"]:
+        changed_fields.append("postcode")
     customer.postcode = payload["postcode"]
+    if customer.country != payload["country"]:
+        changed_fields.append("country")
     customer.country = payload["country"]
+    if customer.vat_number != payload["vat_number"]:
+        changed_fields.append("vat_number")
     customer.vat_number = payload["vat_number"]
+    if customer.credit_limit_pence != payload["credit_limit_pence"]:
+        changed_fields.append("credit_limit_pence")
     customer.credit_limit_pence = payload["credit_limit_pence"]
+    if customer.is_cash_account != payload["is_cash_account"]:
+        changed_fields.append("is_cash_account")
     customer.is_cash_account = payload["is_cash_account"]
     if payload["payment_terms_provided"]:
+        if customer.payment_terms != payload["payment_terms"]:
+            changed_fields.append("payment_terms")
         customer.payment_terms = payload["payment_terms"]
+    if customer.invoice_frequency != payload["invoice_frequency"]:
+        changed_fields.append("invoice_frequency")
     customer.invoice_frequency = payload["invoice_frequency"]
+    if customer.payment_terms_days != payload["payment_terms_days"]:
+        changed_fields.append("payment_terms_days")
     customer.payment_terms_days = payload["payment_terms_days"]
+    if customer.on_stop != payload["on_stop"]:
+        changed_fields.append("on_stop")
     customer.on_stop = payload["on_stop"]
+    if customer.do_not_invoice != payload["do_not_invoice"]:
+        changed_fields.append("do_not_invoice")
     customer.do_not_invoice = payload["do_not_invoice"]
+    if customer.must_have_po != payload["must_have_po"]:
+        changed_fields.append("must_have_po")
     customer.must_have_po = payload["must_have_po"]
     customer.updated_at = utcnow()
+
+    flags_changed = old_flags != {
+        "on_stop": bool(customer.on_stop),
+        "do_not_invoice": bool(customer.do_not_invoice),
+        "must_have_po": bool(customer.must_have_po),
+    }
+    credit_limit_changed = old_credit_limit_pence != customer.credit_limit_pence
+
+    if changed_fields:
+        audit_log(
+            db,
+            request,
+            action="UPDATE",
+            entity_type="customer",
+            entity_id=customer.id,
+            summary=f"Updated customer {customer.account_code}",
+            details={"changed_fields": sorted(set(changed_fields))},
+        )
+    if flags_changed:
+        audit_log(
+            db,
+            request,
+            action="UPDATE",
+            entity_type="customer",
+            entity_id=customer.id,
+            summary=f"Updated customer flags for {customer.account_code}",
+            details={
+                "before": old_flags,
+                "after": {
+                    "on_stop": bool(customer.on_stop),
+                    "do_not_invoice": bool(customer.do_not_invoice),
+                    "must_have_po": bool(customer.must_have_po),
+                },
+            },
+        )
+    if credit_limit_changed:
+        audit_log(
+            db,
+            request,
+            action="UPDATE",
+            entity_type="customer",
+            entity_id=customer.id,
+            summary=f"Changed credit limit for {customer.account_code}",
+            details={
+                "from_pence": old_credit_limit_pence,
+                "to_pence": customer.credit_limit_pence,
+            },
+        )
+
     try:
         db.commit()
     except IntegrityError:
@@ -460,6 +568,23 @@ async def customer_adjustment_create(
         created_at=utcnow(),
     )
     db.add(adjustment)
+    db.flush()
+    actor = user_display_name(getattr(request.state, "current_user", None))
+    audit_log(
+        db,
+        request,
+        action="CREATE",
+        entity_type="credit_adjustment",
+        entity_id=adjustment.id,
+        summary=f"Added credit adjustment for customer {customer.account_code}",
+        details={
+            "customer_id": customer.id,
+            "customer_account_code": customer.account_code,
+            "amount_decimal": str(payload["amount_decimal"]),
+            "reason": payload["reason"],
+            "created_by": actor,
+        },
+    )
     db.commit()
     return RedirectResponse(
         url=f"/customers/{customer.id}?saved=1&adjustment_saved=1",

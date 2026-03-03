@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.orm import Session, joinedload
 
+from ..audit import log as audit_log
 from ..config import settings
 from ..constants import NOTES_MAX
 from ..db import get_db
@@ -446,6 +447,21 @@ async def invoices_generate_confirm(
         invoice.vat_total = vat_total
         invoice.gross_total = _money(net_total + vat_total)
 
+        audit_log(
+            db,
+            request,
+            action="CREATE",
+            entity_type="invoice",
+            entity_id=invoice.id,
+            summary=f"Created invoice {invoice.invoice_no}",
+            details={
+                "invoice_no": invoice.invoice_no,
+                "customer_id": invoice.customer_id,
+                "line_count": len(invoiceable_rows),
+                "status": invoice.status,
+                "gross_total": str(invoice.gross_total),
+            },
+        )
         db.commit()
     except Exception:
         db.rollback()
@@ -826,6 +842,19 @@ async def invoices_mark_paid(
     invoice.status = "PAID"
     invoice.payment_method_id = payment_method.id
     invoice.paid_at = paid_at
+    audit_log(
+        db,
+        request,
+        action="PAID",
+        entity_type="invoice",
+        entity_id=invoice.id,
+        summary=f"Marked invoice {invoice.invoice_no} as paid",
+        details={
+            "invoice_no": invoice.invoice_no,
+            "payment_method_id": payment_method.id,
+            "paid_at": paid_at.isoformat(),
+        },
+    )
     db.commit()
     return RedirectResponse(url=f"/invoices/{invoice.id}?paid=1", status_code=303)
 
@@ -924,6 +953,19 @@ async def invoices_void(
             voided_at=utcnow(),
             voided_by=_voided_by_actor(request),
         )
+    )
+    audit_log(
+        db,
+        request,
+        action="VOID",
+        entity_type="invoice",
+        entity_id=invoice.id,
+        summary=f"Voided invoice {invoice.invoice_no}",
+        details={
+            "invoice_no": invoice.invoice_no,
+            "reason_id": reason_id,
+            "note": note or "No note provided.",
+        },
     )
     db.commit()
     return RedirectResponse(url=f"/invoices/{invoice.id}?voided=1", status_code=303)

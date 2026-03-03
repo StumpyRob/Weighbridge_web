@@ -1,4 +1,5 @@
 from .base import Base
+from .audit_event import AuditEvent
 from .company_setting import CompanySetting
 from .customer import Customer
 from .customer_adjustment import CustomerAdjustment
@@ -51,6 +52,7 @@ from .vehicle_tare import VehicleTare
 
 __all__ = [
     "Base",
+    "AuditEvent",
     "CompanySetting",
     "Customer",
     "CustomerAdjustment",

@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+from datetime import timedelta
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth import is_superadmin_user
+from ..auth import is_admin_user, is_superadmin_user, user_display_name
 from ..config import settings
 from ..db import get_db
-from ..models import CompanySetting, Yard
+from ..models import AuditEvent, CompanySetting, User, Yard
+from ..models.base import utcnow
 from ..services.health import collect_system_health
 from ..services.print_payload import print_payload_variable_docs
 from ..services.system_setup import (
@@ -20,6 +24,23 @@ from ..services.system_setup import (
 from ..templating import templates
 
 router = APIRouter()
+
+
+def _audit_entity_link(entity_type: str, entity_id: str | None) -> str | None:
+    if not entity_id:
+        return None
+    normalized = str(entity_type or "").strip().lower()
+    encoded = quote(str(entity_id), safe="")
+    route_map = {
+        "ticket": "/tickets/{id}",
+        "invoice": "/invoices/{id}",
+        "customer": "/customers/{id}",
+        "product": "/products/{id}",
+    }
+    template = route_map.get(normalized)
+    if not template:
+        return None
+    return template.format(id=encoded)
 
 
 @router.get("/admin/health", response_class=HTMLResponse)
@@ -124,5 +145,107 @@ def admin_system_status(
             "lookup_schema": lookup_schema,
             "print_defaults_ready": print_defaults_exist(db),
             "uploads": uploads,
+        },
+    )
+
+
+@router.get("/admin/audit", response_class=HTMLResponse)
+def admin_audit(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    current_user = getattr(request.state, "current_user", None)
+    if not is_admin_user(db, current_user):
+        return HTMLResponse("Forbidden", status_code=403)
+
+    selected_entity_type = str(request.query_params.get("entity_type", "")).strip().lower()
+    selected_action = str(request.query_params.get("action", "")).strip().upper()
+    selected_entity_id = str(request.query_params.get("entity_id", "")).strip()
+    selected_range = str(request.query_params.get("range", "7d")).strip().lower()
+    selected_user_raw = str(request.query_params.get("user_id", "")).strip()
+    selected_user_id = int(selected_user_raw) if selected_user_raw.isdigit() else None
+
+    query = select(AuditEvent)
+
+    now = utcnow()
+    if selected_range == "today":
+        cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        query = query.where(AuditEvent.occurred_at >= cutoff)
+    elif selected_range == "30d":
+        query = query.where(AuditEvent.occurred_at >= now - timedelta(days=30))
+    elif selected_range == "7d":
+        query = query.where(AuditEvent.occurred_at >= now - timedelta(days=7))
+
+    if selected_entity_type:
+        query = query.where(AuditEvent.entity_type == selected_entity_type)
+    if selected_action:
+        query = query.where(AuditEvent.action == selected_action)
+    if selected_user_id is not None:
+        query = query.where(AuditEvent.user_id == selected_user_id)
+    if selected_entity_id:
+        like = f"%{selected_entity_id}%"
+        query = query.where(AuditEvent.entity_id.ilike(like))
+
+    events = db.execute(
+        query.order_by(AuditEvent.occurred_at.desc(), AuditEvent.id.desc()).limit(200)
+    ).scalars().all()
+
+    referenced_user_ids = sorted(
+        {int(event.user_id) for event in events if event.user_id is not None}
+    )
+    user_lookup: dict[int, User] = {}
+    if referenced_user_ids:
+        users = db.execute(
+            select(User).where(User.id.in_(referenced_user_ids))
+        ).scalars().all()
+        user_lookup = {int(item.id): item for item in users}
+
+    event_rows = []
+    for event in events:
+        event_user = user_lookup.get(int(event.user_id)) if event.user_id is not None else None
+        event_rows.append(
+            {
+                "id": event.id,
+                "occurred_at": event.occurred_at,
+                "user_label": user_display_name(event_user)
+                if event_user is not None
+                else ("System" if event.user_id is None else f"User {event.user_id}"),
+                "action": event.action,
+                "entity_type": event.entity_type,
+                "entity_id": event.entity_id,
+                "summary": event.summary,
+                "entity_href": _audit_entity_link(event.entity_type, event.entity_id),
+            }
+        )
+
+    entity_type_options = db.execute(
+        select(AuditEvent.entity_type)
+        .distinct()
+        .order_by(AuditEvent.entity_type.asc())
+    ).scalars().all()
+    action_options = db.execute(
+        select(AuditEvent.action).distinct().order_by(AuditEvent.action.asc())
+    ).scalars().all()
+    user_options = db.execute(
+        select(User)
+        .join(AuditEvent, AuditEvent.user_id == User.id)
+        .distinct()
+        .order_by(User.username.asc())
+    ).scalars().all()
+
+    return templates.TemplateResponse(
+        request,
+        "admin/audit.html",
+        {
+            "request": request,
+            "rows": event_rows,
+            "entity_type_options": entity_type_options,
+            "action_options": action_options,
+            "user_options": user_options,
+            "selected_entity_type": selected_entity_type,
+            "selected_action": selected_action,
+            "selected_user_id": selected_user_id,
+            "selected_range": selected_range,
+            "selected_entity_id": selected_entity_id,
         },
     )

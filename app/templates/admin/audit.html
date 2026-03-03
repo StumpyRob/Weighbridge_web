@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Log | Weighbridge Web{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Audit Log</h1>
+      <p class="muted">Last 200 events for operational activity.</p>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a class="btn btn--ghost" href="/admin/printing/destinations">Printing</a>
+    <a class="btn btn--ghost" href="/admin/ewc-codes">EWC Codes</a>
+    <a class="btn btn--ghost" href="/admin/help/getting-started">Help</a>
+    <a class="btn btn--ghost" href="/admin/company">Company</a>
+    <a class="btn btn--ghost" href="/admin/system-status">System Status</a>
+    <a class="btn btn--ghost is-active" href="/admin/audit">Audit Log</a>
+    {% if DEV_MODE %}
+      <a class="btn btn--ghost" href="/admin/health">Health Check</a>
+    {% endif %}
+  </div>
+
+  <section class="frame">
+    <form method="get" class="ticket-form compact-form">
+      <div class="grid grid-5">
+        <div class="field">
+          <label for="entity_type">Entity type</label>
+          <select id="entity_type" name="entity_type">
+            <option value="">All</option>
+            {% for item in entity_type_options %}
+              <option value="{{ item }}" {% if selected_entity_type == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="action">Action</label>
+          <select id="action" name="action">
+            <option value="">All</option>
+            {% for item in action_options %}
+              <option value="{{ item }}" {% if selected_action == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="user_id">User</label>
+          <select id="user_id" name="user_id">
+            <option value="">All</option>
+            {% for user in user_options %}
+              {% set user_label = user.email or user.username or ("User " ~ user.id) %}
+              <option value="{{ user.id }}" {% if selected_user_id == user.id %}selected{% endif %}>{{ user_label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="range">Date range</label>
+          <select id="range" name="range">
+            <option value="today" {% if selected_range == "today" %}selected{% endif %}>Today</option>
+            <option value="7d" {% if selected_range == "7d" %}selected{% endif %}>Last 7 days</option>
+            <option value="30d" {% if selected_range == "30d" %}selected{% endif %}>Last 30 days</option>
+            <option value="all" {% if selected_range == "all" %}selected{% endif %}>All</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="entity_id">Entity id</label>
+          <input id="entity_id" name="entity_id" value="{{ selected_entity_id }}" placeholder="e.g. 123" />
+        </div>
+      </div>
+      <div class="btn-group">
+        <button type="submit" class="btn btn--primary">Apply filters</button>
+        <a href="/admin/audit" class="btn btn--ghost">Reset</a>
+      </div>
+    </form>
+  </section>
+
+  <section class="frame">
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>User</th>
+            <th>Action</th>
+            <th>Entity</th>
+            <th>Summary</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if rows %}
+            {% for row in rows %}
+              <tr>
+                <td>{{ row.occurred_at.strftime("%Y-%m-%d %H:%M:%S") if row.occurred_at else "-" }}</td>
+                <td>{{ row.user_label }}</td>
+                <td>{{ row.action }}</td>
+                <td>
+                  {% if row.entity_href %}
+                    <a href="{{ row.entity_href }}">{{ row.entity_type }} #{{ row.entity_id or "-" }}</a>
+                  {% else %}
+                    {{ row.entity_type }} #{{ row.entity_id or "-" }}
+                  {% endif %}
+                </td>
+                <td>{{ row.summary or "-" }}</td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="5">No audit events found.</td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

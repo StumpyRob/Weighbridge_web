@@ -92,6 +92,27 @@ def is_superadmin_user(db: Session, user: User | None) -> bool:
     return first_user_id is not None and int(first_user_id) == int(user.id)
 
 
+def is_admin_user(db: Session, user: User | None) -> bool:
+    if user is None or not bool(getattr(user, "is_active", False)):
+        return False
+    role = str(getattr(user, "role", "") or "").strip().upper()
+    if role:
+        return role in {ROLE_SUPERADMIN, ROLE_ADMIN}
+    return is_superadmin_user(db, user)
+
+
+def user_display_name(user: User | None) -> str:
+    if user is None:
+        return "System"
+    email = str(getattr(user, "email", "") or "").strip()
+    if email:
+        return email
+    username = str(getattr(user, "username", "") or "").strip()
+    if username:
+        return username
+    return f"User {getattr(user, 'id', '?')}"
+
+
 def login_next_path(request: Request) -> str:
     path = str(request.url.path or "").strip() or "/"
     query = str(request.url.query or "").strip()

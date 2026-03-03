@@ -8,6 +8,16 @@ All notable changes are tracked here by release chapter.
 - Add build stamp in UI footer: `Build v<version> (commit <shortsha>)`.
 - Add release discipline docs (`VERSION`, changelog workflow, contribution guide).
 
+## v0.13.5 - 2026-03-03
+
+### AUDIT
+- Add `audit_events` table (tenant-ready nullable `tenant_id`) with indexed `occurred_at`, entity, action, and user-time lookups.
+- Add shared `audit.log(...)` helper and wire high-value event logging for ticket create/update/complete/void, invoice create/paid/void, customer create/update/flags/credit-limit/credit-adjustment, and product create/update.
+- Add `/admin/audit` viewer (ADMIN/SUPERADMIN) with filters for entity type, action, user, date range, and entity id; includes best-effort links to related entities.
+
+### TEST
+- Add `tests/test_audit_log.py` covering ticket completion, customer create, invoice paid event creation, and admin audit access control rules.
+
 ## v0.13.4 - 2026-03-03
 
 ### FIX
