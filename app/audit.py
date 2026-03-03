@@ -24,11 +24,11 @@ def _trim_text(value: Any, *, max_len: int = _MAX_TEXT_LEN) -> str:
 
 
 def _json_safe(value: Any, *, depth: int = 0) -> Any:
-    if depth >= _MAX_DETAILS_DEPTH:
-        return _trim_text(value)
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
+        return _trim_text(value)
+    if depth >= _MAX_DETAILS_DEPTH:
         return _trim_text(value)
     if isinstance(value, Mapping):
         payload: dict[str, Any] = {}
@@ -63,6 +63,38 @@ def _request_ip_address(request: Request | None) -> str | None:
     if request.client and request.client.host:
         return _trim_text(request.client.host, max_len=64)
     return None
+
+
+def diff(
+    before: Mapping[str, Any] | None,
+    after: Mapping[str, Any] | None,
+    keys: Sequence[str],
+) -> dict[str, dict[str, Any]]:
+    before_map = before or {}
+    after_map = after or {}
+    changed: dict[str, dict[str, Any]] = {}
+    for key in keys:
+        previous = before_map.get(key)
+        current = after_map.get(key)
+        if previous != current:
+            changed[key] = {"from": previous, "to": current}
+    return {"changed": changed}
+
+
+def user_snapshot(user: User | None) -> dict[str, Any]:
+    if user is None:
+        return {}
+    username = str(getattr(user, "username", "") or "").strip() or None
+    email = str(getattr(user, "email", "") or "").strip() or None
+    snapshot: dict[str, Any] = {
+        "username": username,
+        "email": email,
+        "is_active": bool(getattr(user, "is_active", False)),
+    }
+    if hasattr(user, "role"):
+        role = str(getattr(user, "role", "") or "").strip().upper() or None
+        snapshot["role"] = role
+    return snapshot
 
 
 def log(

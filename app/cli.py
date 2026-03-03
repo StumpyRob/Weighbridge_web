@@ -8,6 +8,9 @@ from typing import Callable
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from .audit import diff as audit_diff
+from .audit import log as audit_log
+from .audit import user_snapshot
 from .auth import ROLE_SUPERADMIN, hash_password, normalize_email, user_identity_kwargs, validate_email
 from .db import SessionLocal
 from .models import User
@@ -43,6 +46,21 @@ def create_superadmin_account(
             is_active=True,
         )
         db.add(user)
+        db.flush()
+        snapshot_after = user_snapshot(user)
+        audit_log(
+            db,
+            None,
+            action="USER_CREATE",
+            entity_type="user",
+            entity_id=user.id,
+            summary=f"Created user {snapshot_after.get('email') or snapshot_after.get('username') or user.id}",
+            details=audit_diff(
+                {},
+                snapshot_after,
+                ["username", "email", "role", "is_active"],
+            ),
+        )
         db.commit()
         db.refresh(user)
         return SuperadminCreationResult(

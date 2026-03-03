@@ -8,6 +8,21 @@ All notable changes are tracked here by release chapter.
 - Add build stamp in UI footer: `Build v<version> (commit <shortsha>)`.
 - Add release discipline docs (`VERSION`, changelog workflow, contribution guide).
 
+## v0.13.6 - 2026-03-03
+
+### AUDIT
+- Add auth audit events for `LOGIN_SUCCESS`, `LOGIN_FAILED`, and `LOGOUT` (with actor and request IP capture).
+- Add user account creation audit events (`USER_CREATE`) for web and CLI bootstrap paths.
+- Add shared whitelist-based `audit.diff(before, after, keys)` helper and wire curated update deltas for customer, product, and ticket updates.
+- Improve admin audit viewer with exact `entity_id` filtering, explicit entity `View` links, and `Europe/London` timestamp display.
+
+### TEST
+- Add assertions for auth audit event coverage (login success/failure and logout).
+- Add idempotency assertions that ticket complete and invoice paid actions create exactly one corresponding audit event when retried.
+
+### DOCS
+- Add `docs/AUDIT.md` documenting logged events, excluded sensitive data, and retention intent (2 years).
+
 ## v0.13.5 - 2026-03-03
 
 ### AUDIT

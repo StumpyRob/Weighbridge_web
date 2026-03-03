@@ -14,6 +14,7 @@ from fastapi.responses import (
 from sqlalchemy import case, func, or_, select, text
 from sqlalchemy.orm import Session, joinedload
 
+from ..audit import diff as audit_diff
 from ..audit import log as audit_log
 from ..config import settings
 from ..constants import (
@@ -112,6 +113,15 @@ TICKET_SEARCH_MAX_LEN = 100
 PRINT_REQUIRES_COMPLETE_ERROR = "Ticket must be complete to print."
 WTN_SEND_REQUIRES_COMPLETE_ERROR = "Ticket must be complete before sending WTN."
 CREDIT_LIMIT_WARNING_RATIO = Decimal("0.80")
+_TICKET_AUDIT_DIFF_KEYS = (
+    "status",
+    "product_id",
+    "customer_id",
+    "net_kg",
+    "qty",
+    "unit_price",
+    "total",
+)
 
 
 def _voided_by_actor(request: Request) -> str:
@@ -2501,6 +2511,7 @@ async def tickets_update(
     form = await request.form()
     action = str(form.get("action", "save"))
     original_snapshot = _ticket_audit_snapshot(ticket) if action == "save" else None
+    original_audit_values = _ticket_audit_values(ticket) if action == "save" else None
     if action == "void":
         _ensure_ticket_void_reasons(db)
 
@@ -2547,6 +2558,7 @@ async def tickets_update(
         payload["form"]["vehicle_id"] = str(ticket.vehicle_id)
 
     if action == "complete":
+        before_complete_values = _ticket_audit_values(ticket)
         ticket.direction = payload["direction"]
         ticket.transaction_type = payload["transaction_type"]
         weight_warning = _net_negative_values(payload["gross_kg"], payload["tare_kg"])
@@ -2710,6 +2722,11 @@ async def tickets_update(
             product=product,
         )
         ticket.status = TicketStatusEnum.COMPLETE.value
+        complete_change_details = audit_diff(
+            before_complete_values,
+            _ticket_audit_values(ticket),
+            _TICKET_AUDIT_DIFF_KEYS,
+        )
         audit_log(
             db,
             request,
@@ -2717,13 +2734,7 @@ async def tickets_update(
             entity_type="ticket",
             entity_id=ticket.id,
             summary=f"Completed ticket {ticket.ticket_no}",
-            details={
-                "ticket_no": ticket.ticket_no,
-                "status": str(ticket.status),
-                "customer_id": ticket.customer_id,
-                "product_id": ticket.product_id,
-                "total": str(ticket.total) if ticket.total is not None else None,
-            },
+            details=complete_change_details,
         )
         db.commit()
         return RedirectResponse(url=f"/tickets/{ticket_id}?completed=1", status_code=303)
@@ -2848,6 +2859,12 @@ async def tickets_update(
     if original_snapshot is not None:
         updated_snapshot = _ticket_audit_snapshot(ticket)
         if updated_snapshot != original_snapshot:
+            updated_audit_values = _ticket_audit_values(ticket)
+            update_change_details = audit_diff(
+                original_audit_values,
+                updated_audit_values,
+                _TICKET_AUDIT_DIFF_KEYS,
+            )
             audit_log(
                 db,
                 request,
@@ -2855,10 +2872,7 @@ async def tickets_update(
                 entity_type="ticket",
                 entity_id=ticket.id,
                 summary=f"Updated ticket {ticket.ticket_no}",
-                details={
-                    "ticket_no": ticket.ticket_no,
-                    "status": str(ticket.status),
-                },
+                details=update_change_details,
             )
     db.commit()
     return RedirectResponse(url=f"/tickets/{ticket_id}?saved=1", status_code=303)
@@ -3746,6 +3760,18 @@ def _ticket_audit_snapshot(ticket: Ticket) -> tuple:
         ticket.po_number,
         bool(ticket.dont_invoice),
     )
+
+
+def _ticket_audit_values(ticket: Ticket) -> dict[str, object]:
+    return {
+        "status": _status_value(ticket.status),
+        "product_id": ticket.product_id,
+        "customer_id": ticket.customer_id,
+        "net_kg": ticket.net_kg,
+        "qty": ticket.qty,
+        "unit_price": ticket.unit_price,
+        "total": ticket.total,
+    }
 
 
 def _apply_ticket_updates(ticket: Ticket, payload: dict) -> None:

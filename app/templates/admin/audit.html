@@ -6,7 +6,7 @@
   <div class="page-header">
     <div>
       <h1>Audit Log</h1>
-      <p class="muted">Last 200 events for operational activity.</p>
+      <p class="muted">Last 200 events for operational activity. Times shown in {{ time_zone_label }}.</p>
     </div>
   </div>
 
@@ -64,7 +64,7 @@
         </div>
         <div class="field">
           <label for="entity_id">Entity id</label>
-          <input id="entity_id" name="entity_id" value="{{ selected_entity_id }}" placeholder="e.g. 123" />
+          <input id="entity_id" name="entity_id" value="{{ selected_entity_id }}" placeholder="Exact id (e.g. 123)" />
         </div>
       </div>
       <div class="btn-group">
@@ -79,33 +79,37 @@
       <table class="table">
         <thead>
           <tr>
-            <th>Time</th>
+            <th>Time ({{ time_zone_label }})</th>
             <th>User</th>
             <th>Action</th>
             <th>Entity</th>
             <th>Summary</th>
+            <th>View</th>
           </tr>
         </thead>
         <tbody>
           {% if rows %}
             {% for row in rows %}
               <tr>
-                <td>{{ row.occurred_at.strftime("%Y-%m-%d %H:%M:%S") if row.occurred_at else "-" }}</td>
+                <td>{{ row.occurred_at_local.strftime("%Y-%m-%d %H:%M:%S") if row.occurred_at_local else "-" }}</td>
                 <td>{{ row.user_label }}</td>
                 <td>{{ row.action }}</td>
                 <td>
-                  {% if row.entity_href %}
-                    <a href="{{ row.entity_href }}">{{ row.entity_type }} #{{ row.entity_id or "-" }}</a>
-                  {% else %}
-                    {{ row.entity_type }} #{{ row.entity_id or "-" }}
-                  {% endif %}
+                  {{ row.entity_type }} #{{ row.entity_id or "-" }}
                 </td>
                 <td>{{ row.summary or "-" }}</td>
+                <td>
+                  {% if row.entity_href %}
+                    <a href="{{ row.entity_href }}">View</a>
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
               </tr>
             {% endfor %}
           {% else %}
             <tr>
-              <td colspan="5">No audit events found.</td>
+              <td colspan="6">No audit events found.</td>
             </tr>
           {% endif %}
         </tbody>

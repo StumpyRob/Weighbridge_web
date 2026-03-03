@@ -9,6 +9,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..audit import diff as audit_diff
+from ..audit import log as audit_log
+from ..audit import user_snapshot
 from ..auth import (
     ROLE_SUPERADMIN,
     SESSION_USER_ID_KEY,
@@ -126,6 +129,16 @@ async def login_submit(request: Request, db: Session = Depends(get_db)) -> HTMLR
 
     user = user_by_email(db, email)
     if user is None or not user.is_active or not verify_password(password, user.password_hash):
+        audit_log(
+            db,
+            request,
+            action="LOGIN_FAILED",
+            entity_type="auth",
+            entity_id=email or None,
+            summary="Login failed",
+            details={"reason": "invalid_credentials"},
+        )
+        db.commit()
         return templates.TemplateResponse(
             request,
             "auth/login.html",
@@ -138,6 +151,19 @@ async def login_submit(request: Request, db: Session = Depends(get_db)) -> HTMLR
             status_code=401,
         )
 
+    audit_log(
+        db,
+        request,
+        action="LOGIN_SUCCESS",
+        entity_type="user",
+        entity_id=user.id,
+        summary="User logged in",
+        details={
+            "username": str(getattr(user, "username", "") or "").strip() or None,
+        },
+        user=user,
+    )
+    db.commit()
     request.session[SESSION_USER_ID_KEY] = int(user.id)
     return RedirectResponse(url=next_path, status_code=303)
 
@@ -198,6 +224,21 @@ async def bootstrap_submit(request: Request, db: Session = Depends(get_db)) -> H
     )
     db.add(user)
     try:
+        db.flush()
+        snapshot_after = user_snapshot(user)
+        audit_log(
+            db,
+            request,
+            action="USER_CREATE",
+            entity_type="user",
+            entity_id=user.id,
+            summary=f"Created user {snapshot_after.get('email') or snapshot_after.get('username') or user.id}",
+            details=audit_diff(
+                {},
+                snapshot_after,
+                ["username", "email", "role", "is_active"],
+            ),
+        )
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -208,7 +249,22 @@ async def bootstrap_submit(request: Request, db: Session = Depends(get_db)) -> H
 
 
 @router.post("/logout")
-def logout_submit(request: Request) -> RedirectResponse:
+def logout_submit(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
+    current_user = getattr(getattr(request, "state", None), "current_user", None)
+    if isinstance(current_user, User):
+        audit_log(
+            db,
+            request,
+            action="LOGOUT",
+            entity_type="user",
+            entity_id=current_user.id,
+            summary="User logged out",
+            details={
+                "username": str(getattr(current_user, "username", "") or "").strip() or None,
+            },
+            user=current_user,
+        )
+        db.commit()
     request.session.clear()
     return RedirectResponse(
         url=f"/login?{urlencode({'logged_out': '1'})}",

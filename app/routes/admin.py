@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import timedelta, timezone
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -24,6 +25,16 @@ from ..services.system_setup import (
 from ..templating import templates
 
 router = APIRouter()
+_AUDIT_TIMEZONE = ZoneInfo("Europe/London")
+_AUDIT_TIMEZONE_LABEL = "Europe/London"
+
+
+def _audit_display_time(value):
+    if value is None:
+        return None
+    if getattr(value, "tzinfo", None) is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(_AUDIT_TIMEZONE)
 
 
 def _audit_entity_link(entity_type: str, entity_id: str | None) -> str | None:
@@ -183,8 +194,7 @@ def admin_audit(
     if selected_user_id is not None:
         query = query.where(AuditEvent.user_id == selected_user_id)
     if selected_entity_id:
-        like = f"%{selected_entity_id}%"
-        query = query.where(AuditEvent.entity_id.ilike(like))
+        query = query.where(AuditEvent.entity_id == selected_entity_id)
 
     events = db.execute(
         query.order_by(AuditEvent.occurred_at.desc(), AuditEvent.id.desc()).limit(200)
@@ -203,10 +213,12 @@ def admin_audit(
     event_rows = []
     for event in events:
         event_user = user_lookup.get(int(event.user_id)) if event.user_id is not None else None
+        occurred_at_local = _audit_display_time(event.occurred_at)
         event_rows.append(
             {
                 "id": event.id,
                 "occurred_at": event.occurred_at,
+                "occurred_at_local": occurred_at_local,
                 "user_label": user_display_name(event_user)
                 if event_user is not None
                 else ("System" if event.user_id is None else f"User {event.user_id}"),
@@ -247,5 +259,6 @@ def admin_audit(
             "selected_user_id": selected_user_id,
             "selected_range": selected_range,
             "selected_entity_id": selected_entity_id,
+            "time_zone_label": _AUDIT_TIMEZONE_LABEL,
         },
     )
