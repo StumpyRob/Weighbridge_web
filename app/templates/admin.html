@@ -21,24 +21,86 @@
     </div>
   </div>
 
-  <div class="tabs">
-    <a class="btn btn--ghost{% if request.url.path.startswith('/admin/printing') %} is-active{% endif %}" href="/admin/printing/destinations">Printing</a>
-    <a class="btn btn--ghost{% if request.url.path.startswith('/admin/ewc-codes') %} is-active{% endif %}" href="/admin/ewc-codes">EWC Codes</a>
-    <a class="btn btn--ghost{% if request.url.path.startswith('/admin/help') %} is-active{% endif %}" href="/admin/help/getting-started">Help</a>
-    <a class="btn btn--ghost{% if request.url.path.startswith('/admin/company') %} is-active{% endif %}" href="/admin/company">Company</a>
-    <a class="btn btn--ghost{% if request.url.path.startswith('/admin/system-status') %} is-active{% endif %}" href="/admin/system-status">System Status</a>
-    <a class="btn btn--ghost{% if request.url.path.startswith('/admin/audit') %} is-active{% endif %}" href="/admin/audit">Audit Log</a>
-    {% if DEV_MODE %}
-      <a class="btn btn--ghost{% if request.url.path.startswith('/admin/health') %} is-active{% endif %}" href="/admin/health">Health Check</a>
-    {% endif %}
-  </div>
-
   <div class="stacked-frames">
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Setup & Configuration</h2>
+      </div>
+      <div class="frame-body admin-hub-grid">
+        <article class="admin-hub-card">
+          <h3>Company</h3>
+          <p>Manage company name, address, branding, and invoice/logo settings.</p>
+          <div class="actions btn-group">
+            <a class="btn btn--secondary btn--sm" href="/admin/company">Open Company</a>
+          </div>
+        </article>
+
+        <article class="admin-hub-card">
+          <h3>EWC Codes</h3>
+          <p>Upload and refresh EWC regulatory codes from CSV.</p>
+          <div class="actions btn-group">
+            <a class="btn btn--secondary btn--sm" href="/admin/ewc-codes">Open EWC Codes</a>
+          </div>
+        </article>
+
+        <article class="admin-hub-card">
+          <h3>Printing</h3>
+          <p>Configure destinations, templates, and job history.</p>
+          <div class="admin-hub-links">
+            <a href="/admin/printing/destinations">Destinations</a>
+            <a href="/admin/printing/templates">Templates</a>
+            <a href="/admin/printing/jobs">Jobs</a>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Operations & Oversight</h2>
+      </div>
+      <div class="frame-body admin-hub-grid">
+        <article class="admin-hub-card">
+          <h3>Audit Log</h3>
+          <p>Review authentication and data-change events across key entities.</p>
+          <div class="actions btn-group">
+            <a class="btn btn--secondary btn--sm" href="/admin/audit">Open Audit Log</a>
+          </div>
+        </article>
+
+        <article class="admin-hub-card">
+          <h3>System Status</h3>
+          <p>Check setup/readiness and required data status (superadmin only).</p>
+          <div class="actions btn-group">
+            <a class="btn btn--secondary btn--sm" href="/admin/system-status">Open System Status</a>
+          </div>
+        </article>
+
+        <article class="admin-hub-card">
+          <h3>Help</h3>
+          <p>Access getting-started guides and template variable reference.</p>
+          <div class="actions btn-group">
+            <a class="btn btn--secondary btn--sm" href="/admin/help/getting-started">Open Help</a>
+          </div>
+        </article>
+
+        {% if DEV_MODE %}
+          <article class="admin-hub-card">
+            <h3>Health Check</h3>
+            <p>Run diagnostics for renderer, templates, uploads, and database health.</p>
+            <div class="actions btn-group">
+              <a class="btn btn--secondary btn--sm" href="/admin/health">Open Health Check</a>
+            </div>
+          </article>
+        {% endif %}
+      </div>
+    </section>
+
     <section class="frame">
       <div class="frame-header">
         <h2>Environment</h2>
       </div>
-      <div class="frame-body">
+      <div class="frame-body admin-env-panel">
         <p><strong>DEV mode:</strong> {{ "Enabled" if DEV_MODE else "Disabled" }}</p>
         <form method="post" action="/admin/dev-mode" class="actions btn-group">
           <input type="hidden" name="enabled" value="{{ '0' if DEV_MODE else '1' }}" />
@@ -46,20 +108,6 @@
             {{ "Turn DEV Mode Off" if DEV_MODE else "Turn DEV Mode On" }}
           </button>
         </form>
-      </div>
-    </section>
-
-    <section class="frame">
-      <div class="frame-body">
-        <p>Use <a href="/admin/printing/destinations">Admin -> Printing</a> to manage destinations, templates, and jobs.</p>
-        <p>Use <a href="/admin/ewc-codes">Admin -> EWC Codes</a> to upload and refresh the EWC code list from CSV.</p>
-        <p>Use <a href="/admin/help/getting-started">Admin -> Help</a> for the software guide and template variable reference.</p>
-        <p>Use <a href="/admin/company">Admin -> Company</a> to manage invoice branding and logo settings.</p>
-        <p>Use <a href="/admin/system-status">Admin -> System Status</a> for setup/readiness checks (superadmin only).</p>
-        <p>Use <a href="/admin/audit">Admin -> Audit Log</a> to review who changed key records and when.</p>
-        {% if DEV_MODE %}
-          <p>Use <a href="/admin/health">Admin -> Health Check</a> for diagnostics (renderer, templates, uploads, DB).</p>
-        {% endif %}
       </div>
     </section>
   </div>

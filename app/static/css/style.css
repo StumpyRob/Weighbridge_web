@@ -2899,9 +2899,67 @@ details > summary:focus-visible {
     text-align: left;
   }
 
-  .invoice-total-value {
-    text-align: right;
-  }
+.invoice-total-value {
+  text-align: right;
+}
+}
+
+.admin-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.85rem;
+  align-items: stretch;
+}
+
+.admin-hub-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.8rem 0.85rem;
+  background: #ffffff;
+}
+
+.admin-hub-card h3 {
+  margin: 0;
+  font-size: 0.98rem;
+  color: #1f2a44;
+}
+
+.admin-hub-card p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #4b5563;
+  line-height: 1.4;
+}
+
+.admin-hub-card .actions {
+  margin-top: auto;
+}
+
+.admin-hub-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+.admin-hub-links a {
+  color: #1f2a44;
+  text-decoration: underline;
+}
+
+.admin-env-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.admin-env-panel p {
+  margin: 0;
 }
 
 .health-grid {
