@@ -80,7 +80,6 @@ from ..seed import seed_void_reasons
 from ..templating import templates
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
 
 LOCKED_STATUSES = {TicketStatusEnum.COMPLETE.value, TicketStatusEnum.VOID.value}

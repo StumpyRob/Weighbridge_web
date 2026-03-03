@@ -31,7 +31,6 @@ from ..security import has_unsafe_markup, validate_no_html_fields
 from ..templating import templates
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 UNIT_TYPES = ("WEIGHT", "COUNT")
 SALE_TYPES = ("COUNT", "WEIGHT")
 UNIT_NAME_MAX_LEN = NAME_MAX

@@ -1,8 +1,12 @@
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import select
 
 from .config import settings
 from .constants import field_limits
 from .constants.help_text import HELP_TEXT
+from .db import get_db
+from .models import CompanySetting
+from .services.ui_branding import build_ui_branding
 
 
 def _load_company_setting_for_request(request) -> CompanySetting | None:

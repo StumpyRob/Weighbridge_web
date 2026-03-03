@@ -213,7 +213,4 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
 
     return app
 
-templates = Jinja2Templates(directory="app/templates")
-
-
 app = create_app()

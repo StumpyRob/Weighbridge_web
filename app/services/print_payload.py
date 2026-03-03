@@ -30,6 +30,7 @@ from ..models import (
     Yard,
 )
 from .printing import DOCUMENT_TYPE_INVOICE, DOCUMENT_TYPE_TICKET, DOCUMENT_TYPE_WTN
+from .uploads import resolve_company_logo_web_path
 
 
 PRINT_PAYLOAD_KEYS: tuple[str, ...] = (

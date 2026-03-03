@@ -53,7 +53,6 @@ from ..services.printing import (
 from ..templating import templates
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
 
 

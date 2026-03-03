@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..models import CompanySetting
+from .uploads import resolve_company_logo_web_path
 
 
 def _company_setting(db: Session | None) -> CompanySetting | None:

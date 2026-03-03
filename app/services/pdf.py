@@ -29,6 +29,7 @@ from ..models import (
 from .print_context import build_print_base_context
 from .print_payload import build_print_payload
 from .print_render import render_template_content
+from .uploads import resolve_company_logo_web_path
 
 INVOICE_TEMPLATE_DOCUMENT_TYPE = "INVOICE"
 INVOICE_DEFAULT_TEMPLATE_CODE = "INVOICE_SYSTEM"
