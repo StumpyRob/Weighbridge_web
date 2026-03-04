@@ -10,7 +10,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile
 
-from ..auth import is_superadmin_user
 from ..config import settings
 from ..constants import ADDRESS_LINE_MAX, NAME_MAX, POSTCODE_MAX
 from ..db import get_db
@@ -22,7 +21,6 @@ from ..services.ui_branding import (
     build_ui_branding,
     get_branding,
     is_valid_hex_color,
-    nav_foreground_color,
     normalize_hex_color,
     parse_logo_height_px,
 )
@@ -116,24 +114,6 @@ def _resolve_logo_extension(upload: UploadFile) -> str | None:
     return None
 
 
-def _show_branding_debug(request: Request, db: Session) -> bool:
-    if bool(templates.env.globals.get("DEV_MODE")):
-        return True
-    current_user = getattr(getattr(request, "state", None), "current_user", None)
-    return is_superadmin_user(db, current_user)
-
-
-def _branding_debug_values(branding: dict[str, object]) -> dict[str, object]:
-    nav_bg = normalize_hex_color(branding.get("nav_color", ""), default=DEFAULT_NAVBAR_COLOR_HEX)
-    return {
-        "show_logo_nav": bool(branding.get("show_nav_logo", True)),
-        "show_title_nav": bool(branding.get("show_nav_title", True)),
-        "nav_bg": nav_bg,
-        "nav_fg": nav_foreground_color(nav_bg),
-        "branding_css_linked": bool(templates.env.globals.get("BUILD_STAMP")),
-    }
-
-
 @router.get("/admin/company", response_class=HTMLResponse)
 def admin_company_settings(
     request: Request,
@@ -142,7 +122,6 @@ def admin_company_settings(
     setting = _get_company_setting(db) or CompanySetting()
     branding = get_branding(db)
     has_logo_configured = bool(str(getattr(setting, "company_logo_path", "") or "").strip())
-    show_branding_debug = _show_branding_debug(request, db)
     return templates.TemplateResponse(
         request,
         "admin/company_settings.html",
@@ -154,8 +133,6 @@ def admin_company_settings(
                 "logo_exists": bool(branding.get("logo_exists", False)),
             },
             "has_logo_configured": has_logo_configured,
-            "show_branding_debug": show_branding_debug,
-            "branding_debug": _branding_debug_values(branding),
             "saved": request.query_params.get("saved") == "1",
             "errors": [],
         },
@@ -271,8 +248,6 @@ async def admin_company_settings_save(
                     "logo_exists": bool(branding.get("logo_exists", False)),
                 },
                 "has_logo_configured": bool(str(form_logo_value or "").strip()),
-                "show_branding_debug": _show_branding_debug(request, db),
-                "branding_debug": _branding_debug_values(branding),
                 "saved": False,
                 "errors": errors,
             },

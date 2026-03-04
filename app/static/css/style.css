@@ -26,7 +26,9 @@ body {
   justify-content: space-between;
   padding: 1rem 2rem;
   background-color: var(--nav-bg);
-  color: var(--nav-fg);
+  color: var(--primary);
+  border-bottom: 2px solid rgba(15, 23, 42, 0.16);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset;
 }
 
 .brand {
@@ -79,11 +81,6 @@ body {
   white-space: nowrap;
 }
 
-.brand__fallback {
-  font-weight: 600;
-  white-space: nowrap;
-}
-
 .site-header__right {
   display: flex;
   flex-direction: column;
@@ -102,8 +99,9 @@ body {
   color: var(--primary);
   text-decoration: none;
   font-weight: 500;
-  padding: 0.2rem 0.5rem;
-  border-radius: 6px;
+  padding: 0.2rem 0.62rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
   opacity: 0.95;
 }
 
@@ -115,9 +113,8 @@ body {
 
 .site-nav a.is-active {
   background: transparent;
-  border: 0;
-  border-bottom: 2px solid var(--primary);
-  border-radius: 0;
+  border: 1px solid var(--primary);
+  border-radius: 999px;
   color: var(--primary);
   text-decoration: none;
   opacity: 1;
@@ -3235,24 +3232,9 @@ details > summary:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.company-branding-debug {
-  margin-top: 0.9rem;
-  display: grid;
-  gap: 0.2rem;
-  font-size: 0.79rem;
-}
-
 /* Theme cascade guard: keep tenant branding authoritative. */
 .site-header {
   background-color: var(--nav-bg) !important;
-}
-
-.site-header,
-.site-header a,
-.site-header .site-nav a,
-.site-header .site-auth__badge,
-.site-header .site-auth__link {
-  color: var(--primary) !important;
 }
 
 .btn--primary {

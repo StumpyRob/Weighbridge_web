@@ -197,15 +197,6 @@
       {% endif %}
       <a class="btn btn--secondary" href="/admin">Back</a>
     </div>
-    {% if show_branding_debug %}
-      <div class="company-branding-debug muted" aria-live="polite">
-        <div><strong>show_logo_nav:</strong> {{ branding_debug.show_logo_nav }}</div>
-        <div><strong>show_title_nav:</strong> {{ branding_debug.show_title_nav }}</div>
-        <div><strong>nav_bg:</strong> <code>{{ branding_debug.nav_bg }}</code></div>
-        <div><strong>nav_fg:</strong> <code>{{ branding_debug.nav_fg }}</code></div>
-        <div><strong>branding.css linked:</strong> {{ "yes" if branding_debug.branding_css_linked else "no" }}</div>
-      </div>
-    {% endif %}
   </form>
   <script src="/static/js/company_branding.js?v={{ BUILD_STAMP }}" defer></script>
 {% endblock %}

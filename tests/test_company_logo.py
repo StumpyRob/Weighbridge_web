@@ -404,10 +404,14 @@ def test_navbar_and_primary_styles_use_root_branding_variables(
     compact_css = stylesheet.text.replace(" ", "").replace("\n", "")
     assert ".site-header{" in compact_css
     assert "background-color:var(--nav-bg)!important;" in compact_css
-    assert "color:var(--primary)!important;" in compact_css
+    assert "color:var(--primary);" in compact_css
+    assert "border-bottom:2pxsolidrgba(15,23,42,0.16);" in compact_css
     assert ".btn--primary{" in compact_css
     assert "background-color:var(--primary)!important;" in compact_css
     assert "border-color:var(--primary)!important;" in compact_css
+    assert ".site-nava.is-active{" in compact_css
+    assert "border:1pxsolidvar(--primary);" in compact_css
+    assert "border-radius:999px;" in compact_css
     assert ".brand__logo-badge{" in compact_css
     assert "background:transparent!important;" in compact_css
     assert "box-shadow:none!important;" in compact_css
@@ -479,15 +483,13 @@ def test_company_settings_includes_color_controls_and_branding_script(client):
     assert "/static/js/company_branding.js?v=" in response.text
 
 
-def test_company_settings_shows_branding_debug_readout_for_superadmin(client):
+def test_company_settings_does_not_render_temporary_branding_debug_readout(client):
     response = client.get("/admin/company")
 
     assert response.status_code == 200
-    assert "show_logo_nav:" in response.text
-    assert "show_title_nav:" in response.text
-    assert "nav_bg:" in response.text
-    assert "nav_fg:" in response.text
-    assert "branding.css linked:" in response.text
+    assert "show_logo_nav:" not in response.text
+    assert "show_title_nav:" not in response.text
+    assert "branding.css linked:" not in response.text
 
 
 def test_base_template_respects_nav_brand_visibility_toggles(
