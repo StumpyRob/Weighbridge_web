@@ -268,6 +268,7 @@ def test_company_settings_theme_values_apply_globally(client, db_session):
     assert branding_css.status_code == 200
     assert branding_css.headers.get("cache-control") == "no-store"
     assert "--nav-bg: #112233;" in branding_css.text
+    assert "--nav-fg:" in branding_css.text
     assert "--primary: #EE7700;" in branding_css.text
 
 
@@ -388,16 +389,20 @@ def test_navbar_and_primary_styles_use_root_branding_variables(
     branding_css = client_anonymous.get("/branding.css")
     assert branding_css.status_code == 200
     assert "--nav-bg: #123ABC;" in branding_css.text
+    assert "--nav-fg:" in branding_css.text
 
     stylesheet = client_anonymous.get("/static/css/style.css")
     assert stylesheet.status_code == 200
     compact_css = stylesheet.text.replace(" ", "").replace("\n", "")
     assert ".site-header{" in compact_css
     assert "background-color:var(--nav-bg)!important;" in compact_css
+    assert "color:var(--nav-fg)!important;" in compact_css
     assert ".btn--primary{" in compact_css
     assert "background-color:var(--primary)!important;" in compact_css
     assert "border-color:var(--primary)!important;" in compact_css
     assert ".brand__logo-badge{" in compact_css
+    assert "background:transparent!important;" in compact_css
+    assert "box-shadow:none!important;" in compact_css
 
     var_rule_position = compact_css.find("background-color:var(--nav-bg)")
     assert var_rule_position >= 0

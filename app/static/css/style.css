@@ -1,5 +1,6 @@
 :root {
   --nav-bg: #14213D;
+  --nav-fg: #FFFFFF;
   --primary: #FCA311;
   --theme-navbar-bg: var(--nav-bg);
   --theme-primary: var(--primary);
@@ -25,7 +26,7 @@ body {
   justify-content: space-between;
   padding: 1rem 2rem;
   background-color: var(--nav-bg);
-  color: #ffffff;
+  color: var(--nav-fg);
 }
 
 .brand {
@@ -43,7 +44,7 @@ body {
 .brand:hover,
 .brand:focus-visible,
 .brand:active {
-  color: #ffffff;
+  color: var(--nav-fg);
   text-decoration: none;
 }
 
@@ -51,10 +52,12 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 8px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0;
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  outline: none !important;
+  border-radius: 0 !important;
   line-height: 0;
 }
 
@@ -64,6 +67,11 @@ body {
   width: auto;
   max-height: 80px;
   object-fit: contain;
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  outline: none !important;
+  border-radius: 0 !important;
 }
 
 .brand__text {
@@ -91,23 +99,26 @@ body {
 }
 
 .site-nav a {
-  color: var(--primary);
+  color: var(--nav-fg);
   text-decoration: none;
   font-weight: 500;
   padding: 0.2rem 0.5rem;
   border-radius: 6px;
+  opacity: 0.95;
 }
 
 .site-nav a:hover,
 .site-nav a:focus {
   text-decoration: underline;
+  opacity: 0.82;
 }
 
 .site-nav a.is-active {
-  background: var(--theme-primary-soft);
-  border: 1px solid var(--primary);
-  color: var(--primary);
+  background: transparent;
+  border: 1px solid currentColor;
+  color: var(--nav-fg);
   text-decoration: none;
+  opacity: 1;
 }
 
 .site-auth {
@@ -122,9 +133,10 @@ body {
   font-size: 0.8rem;
   padding: 0.15rem 0.45rem;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid currentColor;
+  color: var(--nav-fg);
+  background: transparent;
+  opacity: 0.86;
 }
 
 .site-auth__logout {
@@ -135,17 +147,19 @@ body {
   appearance: none;
   border: none;
   background: transparent;
-  color: #ffffff;
+  color: var(--nav-fg);
   font: inherit;
   font-size: 0.86rem;
   text-decoration: underline;
   cursor: pointer;
   padding: 0;
+  opacity: 0.95;
 }
 
 .site-auth__link:hover,
 .site-auth__link:focus-visible {
-  color: var(--primary);
+  color: var(--nav-fg);
+  opacity: 0.82;
 }
 
 .dev-mode-pill {
@@ -3222,6 +3236,14 @@ details > summary:focus-visible {
 /* Theme cascade guard: keep tenant branding authoritative. */
 .site-header {
   background-color: var(--nav-bg) !important;
+}
+
+.site-header,
+.site-header a,
+.site-header .site-nav a,
+.site-header .site-auth__badge,
+.site-header .site-auth__link {
+  color: var(--nav-fg) !important;
 }
 
 .btn--primary {

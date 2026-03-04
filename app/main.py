@@ -34,7 +34,7 @@ from .security_hardening import (
 )
 from .services.system_setup import get_company_setting, missing_required_lookup_messages
 from .services.pdf import check_invoice_pdf_renderer
-from .services.ui_branding import get_branding
+from .services.ui_branding import get_branding, normalize_hex_color
 from .templating import templates
 
 logger = logging.getLogger(__name__)
@@ -312,8 +312,21 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
 
     @app.get("/branding.css", include_in_schema=False)
     def branding_css(db: Session = Depends(get_db)) -> PlainTextResponse:
+        def _nav_foreground_color(value: str) -> str:
+            normalized = normalize_hex_color(value, default="#14213D")
+            rgb_hex = normalized.lstrip("#")
+            try:
+                red = int(rgb_hex[0:2], 16)
+                green = int(rgb_hex[2:4], 16)
+                blue = int(rgb_hex[4:6], 16)
+            except (TypeError, ValueError):
+                return "#FFFFFF"
+            luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255
+            return "#FFFFFF" if luminance < 0.58 else "#14213D"
+
         branding = get_branding(db)
-        nav_color = str(branding.get("nav_color", "") or "#14213D")
+        nav_color = normalize_hex_color(branding.get("nav_color", ""), default="#14213D")
+        nav_foreground = _nav_foreground_color(nav_color)
         primary_color = str(branding.get("primary_color", "") or "#FCA311")
         primary_contrast = str(branding.get("primary_contrast_hex", "") or "#111827")
         primary_soft = str(branding.get("primary_soft_rgba", "") or "rgba(252, 163, 17, 0.16)")
@@ -331,6 +344,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
             f"  --theme-primary-soft: {primary_soft};\n"
             f"  --theme-nav-logo-height: {nav_logo_height}px;\n"
             f"  --nav-bg: {nav_color};\n"
+            f"  --nav-fg: {nav_foreground};\n"
             f"  --primary: {primary_color};\n"
             "}\n"
         )

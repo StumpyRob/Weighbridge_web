@@ -8,6 +8,17 @@ All notable changes are tracked here by release chapter.
 - Add build stamp in UI footer: `Build v<version> (commit <shortsha>)`.
 - Add release discipline docs (`VERSION`, changelog workflow, contribution guide).
 
+## v0.14.3 - 2026-03-04
+
+### FIX
+- Remove navbar logo frame styling by clearing badge/image border, background, shadow, and radius styles so uploaded logos render cleanly.
+- Keep navbar fallback rendering strict: show `Weighbridge Web` only when both navbar logo and title toggles are disabled.
+- Add automatic navbar foreground colour (`--nav-fg`) derived from `--nav-bg` in `/branding.css`, and bind navbar text/link/badge styles to `var(--nav-fg)` for readability.
+
+### TEST
+- Add assertions that `/branding.css` emits `--nav-fg`.
+- Extend navbar CSS regression coverage to assert `var(--nav-fg)` usage and no framed logo badge styling.
+
 ## v0.14.2 - 2026-03-04
 
 ### FIX
