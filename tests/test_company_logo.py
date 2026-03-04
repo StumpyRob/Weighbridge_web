@@ -393,6 +393,14 @@ def test_navbar_and_primary_styles_use_root_branding_variables(
 
     stylesheet = client_anonymous.get("/static/css/style.css")
     assert stylesheet.status_code == 200
+    normalized_css = re.sub(r"\s+", " ", stylesheet.text)
+    nav_link_rule = re.search(r"\.site-nav\s+a\s*\{([^}]*)\}", normalized_css, flags=re.IGNORECASE)
+    assert nav_link_rule is not None
+    nav_link_body = nav_link_rule.group(1)
+    assert "color: var(--nav-fg);" in nav_link_body
+    assert "color: var(--primary);" not in nav_link_body
+    assert re.search(r"color:\s*#[0-9a-f]{3,8}", nav_link_body, flags=re.IGNORECASE) is None
+
     compact_css = stylesheet.text.replace(" ", "").replace("\n", "")
     assert ".site-header{" in compact_css
     assert "background-color:var(--nav-bg)!important;" in compact_css
@@ -471,6 +479,17 @@ def test_company_settings_includes_color_controls_and_branding_script(client):
     assert "/static/js/company_branding.js?v=" in response.text
 
 
+def test_company_settings_shows_branding_debug_readout_for_superadmin(client):
+    response = client.get("/admin/company")
+
+    assert response.status_code == 200
+    assert "show_logo_nav:" in response.text
+    assert "show_title_nav:" in response.text
+    assert "nav_bg:" in response.text
+    assert "nav_fg:" in response.text
+    assert "branding.css linked:" in response.text
+
+
 def test_base_template_respects_nav_brand_visibility_toggles(
     client,
     db_session,
@@ -516,6 +535,7 @@ def test_base_template_respects_nav_brand_visibility_toggles(
     assert 'class="brand__logo"' in response_logo_only.text
     assert 'class="brand__text">Toggle Branding<' not in response_logo_only.text
     assert 'class="brand__fallback"' not in response_logo_only.text
+    assert 'class="brand__fallback">Weighbridge Web<' not in response_logo_only.text
     assert "/static/uploads/company/logo-toggle.png" in response_logo_only.text
 
     update = client.post(

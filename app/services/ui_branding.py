@@ -140,6 +140,12 @@ def primary_contrast_color(hex_color: str) -> str:
     return "#111827" if luminance > 0.58 else "#FFFFFF"
 
 
+def nav_foreground_color(hex_color: str) -> str:
+    red, green, blue = _hex_to_rgb(hex_color)
+    luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255
+    return "#FFFFFF" if luminance < 0.58 else "#14213D"
+
+
 def primary_soft_rgba(hex_color: str, *, alpha: float = 0.16) -> str:
     red, green, blue = _hex_to_rgb(hex_color)
     clamped_alpha = max(0.0, min(1.0, alpha))

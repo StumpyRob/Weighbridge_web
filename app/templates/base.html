@@ -13,9 +13,9 @@
   <body>
     <header class="site-header">
       <a class="brand" href="/">
-        {% set nav_logo_enabled = ui_branding.show_nav_logo %}
-        {% set nav_title_enabled = ui_branding.show_nav_title %}
-        {% if ui_branding.show_nav_logo %}
+        {% set show_logo_nav = ui_branding.show_nav_logo %}
+        {% set show_title_nav = ui_branding.show_nav_title %}
+        {% if show_logo_nav %}
           <span class="brand__logo-badge">
             <img
               src="{{ ui_branding.nav_logo_url }}"
@@ -25,10 +25,10 @@
             />
           </span>
         {% endif %}
-        {% if nav_title_enabled %}
+        {% if show_title_nav %}
           <span class="brand__text">{{ ui_branding.brand_name }}</span>
         {% endif %}
-        {% if not nav_logo_enabled and not nav_title_enabled %}
+        {% if not show_logo_nav and not show_title_nav %}
           <span class="brand__fallback">Weighbridge Web</span>
         {% endif %}
       </a>

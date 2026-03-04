@@ -8,6 +8,20 @@ All notable changes are tracked here by release chapter.
 - Add build stamp in UI footer: `Build v<version> (commit <shortsha>)`.
 - Add release discipline docs (`VERSION`, changelog workflow, contribution guide).
 
+## v0.14.4 - 2026-03-04
+
+### FIX
+- Purge navbar hardcoded text colours so header text/link/auth elements use `var(--nav-fg)` with hover/focus readability based on opacity/underline, not fixed hues.
+- Keep active navbar item visible via `var(--primary)` decoration (bottom border) while retaining readable `var(--nav-fg)` text.
+- Keep fallback title strict in navbar templating: render `Weighbridge Web` only when both `show_logo_nav` and `show_title_nav` are disabled.
+- Add Company Settings branding debug readout (DEV mode or superadmin) showing `show_logo_nav`, `show_title_nav`, `nav_bg`, `nav_fg`, and branding stylesheet link state.
+- Promote shared `nav_foreground_color(...)` helper so `/branding.css` and admin diagnostics use the same foreground-contrast logic.
+
+### TEST
+- Extend branding assertions for strict fallback behavior (`logo on/title off` has no fallback string; `both off` shows fallback).
+- Add CSS-level assertion that navbar link color is bound to `var(--nav-fg)` and not hardcoded hex/primary text color.
+- Add Company Settings debug-readout visibility test for superadmin flow.
+
 ## v0.14.3 - 2026-03-04
 
 ### FIX

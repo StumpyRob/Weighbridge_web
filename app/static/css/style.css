@@ -115,7 +115,9 @@ body {
 
 .site-nav a.is-active {
   background: transparent;
-  border: 1px solid currentColor;
+  border: 0;
+  border-bottom: 2px solid var(--primary);
+  border-radius: 0;
   color: var(--nav-fg);
   text-decoration: none;
   opacity: 1;
@@ -3231,6 +3233,13 @@ details > summary:focus-visible {
 
 .company-logo-preview-meta code {
   overflow-wrap: anywhere;
+}
+
+.company-branding-debug {
+  margin-top: 0.9rem;
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.79rem;
 }
 
 /* Theme cascade guard: keep tenant branding authoritative. */
