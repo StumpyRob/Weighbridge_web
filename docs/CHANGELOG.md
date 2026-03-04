@@ -8,6 +8,17 @@ All notable changes are tracked here by release chapter.
 - Add build stamp in UI footer: `Build v<version> (commit <shortsha>)`.
 - Add release discipline docs (`VERSION`, changelog workflow, contribution guide).
 
+## v0.14.2 - 2026-03-04
+
+### FIX
+- Add Company Settings branding control sync script (`company_branding.js`) so navbar/primary colour picker and HEX text inputs stay in sync both ways, normalize to uppercase `#RRGGBB`, and show inline invalid-hex hints.
+- Tidy Company Settings branding UI with compact inline colour controls and a centered, fixed-height logo preview block.
+- Fix navbar branding toggle rendering logic so logo and title render independently, with a neutral `Weighbridge Web` fallback label only when both are disabled.
+
+### TEST
+- Add regression coverage that Company Settings renders both colour input types and includes the branding sync JS asset.
+- Expand navbar brand visibility coverage for all four combinations: both on, logo-only, title-only, and both off fallback.
+
 ## v0.14.1 - 2026-03-04
 
 ### FIX

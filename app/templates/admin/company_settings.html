@@ -143,6 +143,7 @@
               id="navbar_color_picker"
               value="{{ setting.navbar_color_hex or '#14213D' }}"
               data-sync-target="navbar_color_hex"
+              class="company-color-picker"
             />
             <input
               type="text"
@@ -153,8 +154,10 @@
               pattern="^#?[0-9A-Fa-f]{6}$"
               spellcheck="false"
               autocomplete="off"
+              class="company-color-hex"
             />
           </div>
+          <p class="hint company-color-error" data-color-error-for="navbar_color_hex" hidden>Invalid hex</p>
           <p class="hint">Used for the top navigation background.</p>
         </div>
 
@@ -166,6 +169,7 @@
               id="primary_color_picker"
               value="{{ setting.primary_color_hex or '#FCA311' }}"
               data-sync-target="primary_color_hex"
+              class="company-color-picker"
             />
             <input
               type="text"
@@ -176,8 +180,10 @@
               pattern="^#?[0-9A-Fa-f]{6}$"
               spellcheck="false"
               autocomplete="off"
+              class="company-color-hex"
             />
           </div>
+          <p class="hint company-color-error" data-color-error-for="primary_color_hex" hidden>Invalid hex</p>
           <p class="hint">Used for primary actions and navigation highlights.</p>
         </div>
       </div>
@@ -192,4 +198,5 @@
       <a class="btn btn--secondary" href="/admin">Back</a>
     </div>
   </form>
+  <script src="/static/js/company_branding.js?v={{ BUILD_STAMP }}" defer></script>
 {% endblock %}

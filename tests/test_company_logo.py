@@ -454,6 +454,18 @@ def test_company_settings_logo_preview_shows_logo_diagnostics(client, db_session
     assert "company-logo-preview-container" in response.text
 
 
+def test_company_settings_includes_color_controls_and_branding_script(client):
+    response = client.get("/admin/company")
+
+    assert response.status_code == 200
+    assert 'type="color"' in response.text
+    assert 'id="navbar_color_picker"' in response.text
+    assert 'id="primary_color_picker"' in response.text
+    assert 'id="navbar_color_hex"' in response.text
+    assert 'id="primary_color_hex"' in response.text
+    assert "/static/js/company_branding.js?v=" in response.text
+
+
 def test_base_template_respects_nav_brand_visibility_toggles(
     client,
     db_session,
@@ -471,16 +483,34 @@ def test_base_template_respects_nav_brand_visibility_toggles(
             name="Toggle Branding",
             company_logo_path="/static/uploads/company/logo-toggle.png",
             show_nav_logo=True,
-            show_nav_title=False,
+            show_nav_title=True,
             is_initialized=True,
         )
     )
     db_session.commit()
 
+    response_both = client.get("/tickets")
+    assert response_both.status_code == 200
+    assert 'class="brand__logo"' in response_both.text
+    assert 'class="brand__text">Toggle Branding<' in response_both.text
+    assert 'class="brand__fallback"' not in response_both.text
+
+    logo_only = client.post(
+        "/admin/company",
+        data={
+            "name": "Toggle Branding",
+            "show_nav_logo": "1",
+            "show_nav_title": "0",
+        },
+        follow_redirects=False,
+    )
+    assert logo_only.status_code == 303
+
     response_logo_only = client.get("/tickets")
     assert response_logo_only.status_code == 200
     assert 'class="brand__logo"' in response_logo_only.text
-    assert 'class="brand__text"' not in response_logo_only.text
+    assert 'class="brand__text">Toggle Branding<' not in response_logo_only.text
+    assert 'class="brand__fallback"' not in response_logo_only.text
     assert "/static/uploads/company/logo-toggle.png" in response_logo_only.text
 
     update = client.post(
@@ -498,6 +528,24 @@ def test_base_template_respects_nav_brand_visibility_toggles(
     assert response_title_only.status_code == 200
     assert 'class="brand__logo"' not in response_title_only.text
     assert 'class="brand__text">Toggle Branding<' in response_title_only.text
+    assert 'class="brand__fallback"' not in response_title_only.text
+
+    update_fallback = client.post(
+        "/admin/company",
+        data={
+            "name": "Toggle Branding",
+            "show_nav_logo": "0",
+            "show_nav_title": "0",
+        },
+        follow_redirects=False,
+    )
+    assert update_fallback.status_code == 303
+
+    response_fallback = client.get("/tickets")
+    assert response_fallback.status_code == 200
+    assert 'class="brand__logo"' not in response_fallback.text
+    assert 'class="brand__text">Toggle Branding<' not in response_fallback.text
+    assert 'class="brand__fallback">Weighbridge Web<' in response_fallback.text
 
 
 def test_base_template_falls_back_to_default_logo_when_upload_missing(client, db_session):
