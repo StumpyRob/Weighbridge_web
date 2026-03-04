@@ -18,6 +18,8 @@ from ..services.ui_branding import (
     DEFAULT_NAVBAR_COLOR_HEX,
     DEFAULT_NAV_LOGO_HEIGHT_PX,
     DEFAULT_PRIMARY_COLOR_HEX,
+    build_ui_branding,
+    get_branding,
     is_valid_hex_color,
     normalize_hex_color,
     parse_logo_height_px,
@@ -40,24 +42,6 @@ def _logo_upload_dir() -> Path:
     ).resolve()
     upload_dir.mkdir(parents=True, exist_ok=True)
     return upload_dir
-
-
-def _company_logo_url(company: CompanySetting | None) -> str:
-    if company is None:
-        return ""
-
-    current = str(getattr(company, "company_logo_path", "") or "").strip()
-    if current:
-        return current
-
-    # Backward compatibility for existing rows created before company_logo_path.
-    legacy_remote = str(getattr(company, "logo_url", "") or "").strip()
-    if legacy_remote:
-        return legacy_remote
-    legacy_file = str(getattr(company, "logo_file_path", "") or "").strip().lstrip("/")
-    if legacy_file:
-        return f"/media/{legacy_file}"
-    return ""
 
 
 def _logo_file_from_web_path(path: str | None) -> Path | None:
@@ -136,13 +120,19 @@ def admin_company_settings(
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     setting = _get_company_setting(db) or CompanySetting()
+    branding = get_branding(db)
+    has_logo_configured = bool(str(getattr(setting, "company_logo_path", "") or "").strip())
     return templates.TemplateResponse(
         request,
         "admin/company_settings.html",
         {
             "request": request,
             "setting": setting,
-            "logo_preview_url": _company_logo_url(setting),
+            "branding": {
+                "logo_url": str(branding.get("logo_url", "") or ""),
+                "logo_exists": bool(branding.get("logo_exists", False)),
+            },
+            "has_logo_configured": has_logo_configured,
             "saved": request.query_params.get("saved") == "1",
             "errors": [],
         },
@@ -246,13 +236,18 @@ async def admin_company_settings_save(
             show_nav_logo=show_nav_logo,
             show_nav_title=show_nav_title,
         )
+        branding = build_ui_branding(form_like)
         return templates.TemplateResponse(
             request,
             "admin/company_settings.html",
             {
                 "request": request,
                 "setting": form_like,
-                "logo_preview_url": _company_logo_url(form_like),
+                "branding": {
+                    "logo_url": str(branding.get("logo_url", "") or ""),
+                    "logo_exists": bool(branding.get("logo_exists", False)),
+                },
+                "has_logo_configured": bool(str(form_logo_value or "").strip()),
                 "saved": False,
                 "errors": errors,
             },

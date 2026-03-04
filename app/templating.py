@@ -80,9 +80,11 @@ templates = Jinja2Templates(
     context_processors=[_ui_branding_context, _csrf_context, _auth_context],
 )
 _build_info = get_build_info()
+_asset_build_stamp = f"{_build_info['version']}-{_build_info['commit_short']}"
 templates.env.globals["DEV_MODE"] = bool(settings.dev_mode)
 templates.env.globals["limits"] = field_limits
 templates.env.globals["help_text"] = HELP_TEXT
 templates.env.globals["app_version"] = _build_info["version"]
 templates.env.globals["app_commit_short"] = _build_info["commit_short"]
 templates.env.globals["app_build_label"] = _build_info["label"]
+templates.env.globals["BUILD_STAMP"] = _asset_build_stamp

@@ -17,7 +17,7 @@
         --primary: {{ company_settings.primary_color }};
       }
     </style>
-    <link rel="stylesheet" href="/static/css/style.css?v=7" />
+    <link rel="stylesheet" href="/static/css/style.css?v={{ BUILD_STAMP }}" />
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
   </head>
   <body>
@@ -201,9 +201,9 @@
         });
       })();
     </script>
-    <script src="/static/js/help_tooltips.js" defer></script>
-    <script src="/static/js/toasts.js" defer></script>
-    <script src="/static/js/table_rows.js" defer></script>
+    <script src="/static/js/help_tooltips.js?v={{ BUILD_STAMP }}" defer></script>
+    <script src="/static/js/toasts.js?v={{ BUILD_STAMP }}" defer></script>
+    <script src="/static/js/table_rows.js?v={{ BUILD_STAMP }}" defer></script>
   </body>
 </html>
 

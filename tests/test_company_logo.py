@@ -17,6 +17,7 @@ from app.models import (
     PrintTemplate,
 )
 from app.services.pdf import render_invoice_pdf_html
+from app.templating import templates
 
 
 @pytest.fixture()
@@ -353,28 +354,40 @@ def test_cache_control_for_html_and_upload_static_paths(client_anonymous):
     assert upload_static.headers.get("cache-control") == "public, max-age=86400"
 
 
-def test_navbar_and_primary_styles_use_root_branding_variables(client_anonymous):
+def test_navbar_and_primary_styles_use_root_branding_variables(
+    client_anonymous,
+    db_session,
+):
+    setting = _get_or_create_company_setting(db_session)
+    setting.navbar_color_hex = "#123ABC"
+    setting.primary_color_hex = "#CC5500"
+    db_session.commit()
+
     rendered = client_anonymous.get("/login")
     assert rendered.status_code == 200
-    assert "--nav-bg:" in rendered.text
+    build_stamp = str(templates.env.globals.get("BUILD_STAMP") or "")
+    assert build_stamp
+    assert f'/static/css/style.css?v={build_stamp}' in rendered.text
+    assert f'/static/js/help_tooltips.js?v={build_stamp}' in rendered.text
+    assert "--nav-bg: #123ABC" in rendered.text
     assert 'class="site-header"' in rendered.text
 
     stylesheet = client_anonymous.get("/static/css/style.css")
     assert stylesheet.status_code == 200
     compact_css = stylesheet.text.replace(" ", "").replace("\n", "")
     assert ".site-header{" in compact_css
-    assert "background-color:var(--nav-bg);" in compact_css
+    assert "background-color:var(--nav-bg)!important;" in compact_css
     assert ".btn--primary{" in compact_css
-    assert "background-color:var(--primary);" in compact_css
-    assert "border-color:var(--primary);" in compact_css
+    assert "background-color:var(--primary)!important;" in compact_css
+    assert "border-color:var(--primary)!important;" in compact_css
     assert ".brand__logo-badge{" in compact_css
 
-    var_rule_position = compact_css.find("background-color:var(--nav-bg);")
+    var_rule_position = compact_css.find("background-color:var(--nav-bg)")
     assert var_rule_position >= 0
     site_header_blocks = re.findall(r"\.site-header\{[^}]*\}", compact_css, flags=re.IGNORECASE)
     assert site_header_blocks
-    assert "background-color:var(--nav-bg);" in site_header_blocks[-1]
-    trailing_css = compact_css[var_rule_position + len("background-color:var(--nav-bg);") :]
+    assert "background-color:var(--nav-bg)!important;" in site_header_blocks[-1]
+    trailing_css = compact_css[var_rule_position + len("background-color:var(--nav-bg)") :]
     hardcoded_header_bg_after_var = re.search(
         r"\.site-header\{[^}]*background(?:-color)?:#[0-9a-f]{3,8};",
         trailing_css,
@@ -383,17 +396,17 @@ def test_navbar_and_primary_styles_use_root_branding_variables(client_anonymous)
     assert hardcoded_header_bg_after_var is None
 
 
-def test_company_settings_logo_preview_shows_light_and_dark_backgrounds(client, db_session):
+def test_company_settings_logo_preview_shows_logo_diagnostics(client, db_session):
     setting = _get_or_create_company_setting(db_session)
     setting.company_logo_path = "/static/uploads/company/logo-preview.png"
     db_session.commit()
 
     response = client.get("/admin/company")
     assert response.status_code == 200
-    assert "Light background" in response.text
-    assert "Dark navbar background" in response.text
-    assert "company-logo-preview-card--light" in response.text
-    assert "company-logo-preview-card--dark" in response.text
+    assert "Open logo" in response.text
+    assert "Logo URL:" in response.text
+    assert "File exists:" in response.text
+    assert "company-logo-preview-container" in response.text
 
 
 def test_base_template_respects_nav_brand_visibility_toggles(

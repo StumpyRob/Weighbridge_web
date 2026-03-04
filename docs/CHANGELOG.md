@@ -8,6 +8,18 @@ All notable changes are tracked here by release chapter.
 - Add build stamp in UI footer: `Build v<version> (commit <shortsha>)`.
 - Add release discipline docs (`VERSION`, changelog workflow, contribution guide).
 
+## v0.14.0 - 2026-03-04
+
+### FIX
+- Add global deploy cache-busting via `BUILD_STAMP` and append it to core static assets in `base.html` (`style.css`, `help_tooltips.js`, `toasts.js`, `table_rows.js`).
+- Enforce theme ownership with explicit final `!important` cascade guards for `.site-header` and `.btn--primary` (`var(--nav-bg)` / `var(--primary)`).
+- Keep navbar logo rendering readable by using the logo badge treatment and removing forced white fill from the logo image itself.
+- Simplify Company Settings logo preview to a fixed plain image container and add explicit diagnostics (`Open logo` link, resolved logo URL, and file-exists status).
+
+### TEST
+- Add regression assertions that rendered pages include `style.css?v=<BUILD_STAMP>`, include DB-driven `--nav-bg`, and keep navbar CSS bound to `var(--nav-bg)`.
+- Add coverage for Company Settings logo diagnostics visibility.
+
 ## v0.13.9 - 2026-03-03
 
 ### FIX

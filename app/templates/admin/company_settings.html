@@ -74,27 +74,21 @@
           <input type="file" id="company_logo_file" name="company_logo_file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" />
           <p class="hint">Max 2MB. Uploading a file replaces the current logo.</p>
         </div>
-        {% if logo_preview_url %}
-          <div class="field">
-            <label>Current logo preview</label>
-            <div class="company-logo-preview-grid">
-              <div class="company-logo-preview-card company-logo-preview-card--light">
-                <span class="company-logo-preview-label">Light background</span>
-                <span class="company-logo-preview-badge">
-                  <img src="{{ logo_preview_url }}" alt="Company logo preview on light background" class="company-logo-preview-image" />
-                </span>
-              </div>
-              <div class="company-logo-preview-card company-logo-preview-card--dark">
-                <span class="company-logo-preview-label">Dark navbar background</span>
-                <span class="company-logo-preview-badge">
-                  <img src="{{ logo_preview_url }}" alt="Company logo preview on dark background" class="company-logo-preview-image" />
-                </span>
-              </div>
-            </div>
+        <div class="field">
+          <label>Current logo preview</label>
+          <div class="company-logo-preview-container">
+            <img
+              src="{{ branding.logo_url }}"
+              alt="Company logo preview"
+              class="company-logo-preview-image"
+            />
           </div>
-        {% else %}
-          <p class="muted">No logo configured.</p>
-        {% endif %}
+          <div class="company-logo-preview-meta">
+            <a href="{{ branding.logo_url }}" target="_blank" rel="noopener">Open logo</a>
+            <div><strong>Logo URL:</strong> <code>{{ branding.logo_url }}</code></div>
+            <div><strong>File exists:</strong> {{ "Yes" if branding.logo_exists else "No" }}</div>
+          </div>
+        </div>
 
         <div class="field">
           <label for="nav_logo_height_px">Navigation logo size (px){{ help(help_text.company_nav_logo_size, "company-nav-logo-size-help") }}</label>
@@ -192,7 +186,7 @@
     <div class="actions btn-group">
       <button type="submit" class="btn btn--primary">Save</button>
       <button type="submit" class="btn btn--secondary" name="logo_action" value="upload">Upload</button>
-      {% if logo_preview_url %}
+      {% if has_logo_configured %}
         <button type="submit" class="btn btn--danger" name="logo_action" value="remove">Remove logo</button>
       {% endif %}
       <a class="btn btn--secondary" href="/admin">Back</a>
