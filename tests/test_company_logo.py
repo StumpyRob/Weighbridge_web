@@ -260,10 +260,15 @@ def test_company_settings_theme_values_apply_globally(client, db_session):
 
     themed_page = client.get("/tickets")
     assert themed_page.status_code == 200
-    assert "--nav-bg: #112233" in themed_page.text
-    assert "--primary: #EE7700" in themed_page.text
-    assert "--theme-navbar-bg: #112233" in themed_page.text
-    assert "--theme-primary: #EE7700" in themed_page.text
+    build_stamp = str(templates.env.globals.get("BUILD_STAMP") or "")
+    assert build_stamp
+    assert f'/branding.css?v={build_stamp}' in themed_page.text
+
+    branding_css = client.get("/branding.css")
+    assert branding_css.status_code == 200
+    assert branding_css.headers.get("cache-control") == "no-store"
+    assert "--nav-bg: #112233;" in branding_css.text
+    assert "--primary: #EE7700;" in branding_css.text
 
 
 def test_base_template_uses_company_branding_for_logo_favicon_and_theme(
@@ -295,9 +300,8 @@ def test_base_template_uses_company_branding_for_logo_favicon_and_theme(
     response = client.get("/tickets")
 
     assert response.status_code == 200
-    assert "--theme-navbar-bg: #112233" in response.text
-    assert "--theme-primary: #EE7700" in response.text
-    assert "--theme-nav-logo-height: 48px" in response.text
+    build_stamp = str(templates.env.globals.get("BUILD_STAMP") or "")
+    assert f'/branding.css?v={build_stamp}' in response.text
     assert 'rel="icon"' in response.text
     assert "/static/uploads/company/logo-nav.png?v=" in response.text
     assert 'class="brand__logo-badge"' in response.text
@@ -305,7 +309,7 @@ def test_base_template_uses_company_branding_for_logo_favicon_and_theme(
     assert "Acme Branding" in response.text
 
 
-def test_login_page_includes_global_branding_css_vars(client_anonymous, db_session):
+def test_login_page_includes_global_branding_stylesheet(client_anonymous, db_session):
     setting = _get_or_create_company_setting(db_session)
     setting.name = "Global Login Brand"
     setting.navbar_color_hex = "#0A2240"
@@ -314,11 +318,16 @@ def test_login_page_includes_global_branding_css_vars(client_anonymous, db_sessi
 
     response = client_anonymous.get("/login")
     assert response.status_code == 200
-    assert "--nav-bg: #0A2240" in response.text
-    assert "--primary: #D97706" in response.text
+    build_stamp = str(templates.env.globals.get("BUILD_STAMP") or "")
+    assert f'/branding.css?v={build_stamp}' in response.text
+
+    branding_css = client_anonymous.get("/branding.css")
+    assert branding_css.status_code == 200
+    assert "--nav-bg: #0A2240;" in branding_css.text
+    assert "--primary: #D97706;" in branding_css.text
 
 
-def test_products_and_system_status_include_global_branding_css_vars(
+def test_products_and_system_status_include_global_branding_stylesheet(
     client_logged_in_superadmin,
     db_session,
 ):
@@ -331,15 +340,19 @@ def test_products_and_system_status_include_global_branding_css_vars(
 
     products = client_logged_in_superadmin.get("/products")
     assert products.status_code == 200
-    assert "--nav-bg: #123456" in products.text
-    assert "--primary: #E67E22" in products.text
+    build_stamp = str(templates.env.globals.get("BUILD_STAMP") or "")
+    assert f'/branding.css?v={build_stamp}' in products.text
 
     status = client_logged_in_superadmin.get("/admin/system-status")
     assert status.status_code == 200
-    assert "--nav-bg: #123456" in status.text
-    assert "--primary: #E67E22" in status.text
+    assert f'/branding.css?v={build_stamp}' in status.text
     assert "Resolved logo URL:" in status.text
     assert "Logo file exists on disk:" in status.text
+
+    branding_css = client_logged_in_superadmin.get("/branding.css")
+    assert branding_css.status_code == 200
+    assert "--nav-bg: #123456;" in branding_css.text
+    assert "--primary: #E67E22;" in branding_css.text
 
 
 def test_cache_control_for_html_and_upload_static_paths(client_anonymous):
@@ -368,9 +381,13 @@ def test_navbar_and_primary_styles_use_root_branding_variables(
     build_stamp = str(templates.env.globals.get("BUILD_STAMP") or "")
     assert build_stamp
     assert f'/static/css/style.css?v={build_stamp}' in rendered.text
+    assert f'/branding.css?v={build_stamp}' in rendered.text
     assert f'/static/js/help_tooltips.js?v={build_stamp}' in rendered.text
-    assert "--nav-bg: #123ABC" in rendered.text
     assert 'class="site-header"' in rendered.text
+
+    branding_css = client_anonymous.get("/branding.css")
+    assert branding_css.status_code == 200
+    assert "--nav-bg: #123ABC;" in branding_css.text
 
     stylesheet = client_anonymous.get("/static/css/style.css")
     assert stylesheet.status_code == 200
@@ -394,6 +411,34 @@ def test_navbar_and_primary_styles_use_root_branding_variables(
         flags=re.IGNORECASE,
     )
     assert hardcoded_header_bg_after_var is None
+
+
+def test_uploaded_logo_url_returns_200(client, db_session):
+    response = client.post(
+        "/admin/company",
+        data={
+            "name": "Logo URL Check",
+            "logo_action": "upload",
+        },
+        files={
+            "company_logo_file": (
+                "logo-url-check.png",
+                BytesIO(b"\x89PNG\r\n\x1a\nlogo-url-check"),
+                "image/png",
+            )
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    setting = db_session.execute(
+        select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1)
+    ).scalar_one()
+    assert setting.company_logo_path is not None
+
+    logo_response = client.get(str(setting.company_logo_path))
+    assert logo_response.status_code == 200
+    assert str(logo_response.headers.get("content-type") or "").startswith("image/png")
 
 
 def test_company_settings_logo_preview_shows_logo_diagnostics(client, db_session):

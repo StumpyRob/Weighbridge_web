@@ -8,6 +8,18 @@ All notable changes are tracked here by release chapter.
 - Add build stamp in UI footer: `Build v<version> (commit <shortsha>)`.
 - Add release discipline docs (`VERSION`, changelog workflow, contribution guide).
 
+## v0.14.1 - 2026-03-04
+
+### FIX
+- Move company uploads to a single `UPLOADS_DIR` root (default `/data/uploads`), ensure `company/` is created at startup, and mount it at `/static/uploads` for reliable logo serving.
+- Add CSP-safe dynamic branding stylesheet at `/branding.css` and load it globally with `?v=<BUILD_STAMP>` instead of inline theme variable injection.
+- Normalize logo file resolution across UI/PDF/print/health services to use the configured uploads directory (with consistent `/static/uploads/company/...` web paths).
+
+### TEST
+- Add regression coverage for `/branding.css` rendering DB theme colours and `Cache-Control: no-store`.
+- Add coverage that uploaded logo URLs are directly retrievable (`200 OK`) from `/static/uploads/company/...`.
+- Update global branding page assertions (`/login`, `/products`, `/admin/system-status`) to validate `branding.css` injection and values.
+
 ## v0.14.0 - 2026-03-04
 
 ### FIX

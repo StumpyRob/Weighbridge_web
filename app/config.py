@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     print_network_enabled: bool = False
     print_template_override_dir: str = "/config/print_templates"
     media_root: str = "app/media"
-    uploads_dir: str = "app/static/uploads"
+    uploads_dir: str = "/data/uploads"
     company_logo_upload_dir: str = ""
     app_public_base_url: str = ""
     receipts_wip_enabled: bool = False
@@ -46,16 +46,17 @@ class Settings(BaseSettings):
         candidate = str(self.uploads_dir or "").strip()
         if candidate:
             return candidate
-        return "app/static/uploads"
+        return "/data/uploads"
 
     @property
     def effective_company_logo_upload_dir(self) -> str:
         explicit = str(self.company_logo_upload_dir or "").strip()
-        default_candidates = {
+        legacy_defaults = {
             "app/static/uploads/company",
             "/app/static/uploads/company",
+            "/app/app/static/uploads/company",
         }
-        if explicit and explicit not in default_candidates:
+        if explicit and explicit not in legacy_defaults:
             return explicit
         return str((Path(self.effective_uploads_dir) / "company"))
 

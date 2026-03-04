@@ -6,18 +6,8 @@
     <meta name="csrf-token" content="{{ csrf_token or '' }}" />
     <title>{% block title %}Weighbridge Web{% endblock %}</title>
     <link rel="icon" href="{{ ui_branding.favicon_url or '/static/img/default-company-logo.svg' }}" />
-    <style>
-      :root {
-        --theme-navbar-bg: {{ company_settings.nav_color }};
-        --theme-primary: {{ company_settings.primary_color }};
-        --theme-primary-contrast: {{ ui_branding.primary_contrast_hex }};
-        --theme-primary-soft: {{ ui_branding.primary_soft_rgba }};
-        --theme-nav-logo-height: {{ ui_branding.nav_logo_height_px }}px;
-        --nav-bg: {{ company_settings.nav_color }};
-        --primary: {{ company_settings.primary_color }};
-      }
-    </style>
     <link rel="stylesheet" href="/static/css/style.css?v={{ BUILD_STAMP }}" />
+    <link rel="stylesheet" href="/branding.css?v={{ BUILD_STAMP }}" />
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
   </head>
   <body>

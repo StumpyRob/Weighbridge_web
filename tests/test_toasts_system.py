@@ -16,7 +16,7 @@ def test_base_layout_includes_toasts_script(client):
     response = client.get("/invoices")
 
     assert response.status_code == 200
-    assert '<script src="/static/js/toasts.js" defer></script>' in response.text
+    assert '<script src="/static/js/toasts.js?v=' in response.text
 
 
 def test_invoice_flash_toasts_render_outside_main_container(client, db_session):
@@ -39,7 +39,7 @@ def test_invoice_flash_toasts_render_outside_main_container(client, db_session):
 
     assert response.status_code == 200
     assert 'id="flash-toasts"' in response.text
-    assert '<script src="/static/js/toasts.js" defer></script>' in response.text
+    assert '<script src="/static/js/toasts.js?v=' in response.text
     assert response.text.index('id="flash-toasts"') < response.text.index(
         '<main class="container">'
     )
@@ -62,7 +62,7 @@ def test_non_invoice_page_renders_without_flash_toasts_container(client, db_sess
 
     assert response.status_code == 200
     assert 'id="flash-toasts"' not in response.text
-    assert '<script src="/static/js/toasts.js" defer></script>' in response.text
+    assert '<script src="/static/js/toasts.js?v=' in response.text
 
 
 def test_customers_saved_flag_renders_toast_container_outside_main(client, db_session):

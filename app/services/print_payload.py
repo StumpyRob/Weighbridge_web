@@ -249,13 +249,11 @@ def _logo_upload_root_candidates() -> tuple[Path, ...]:
     configured = Path(
         str(settings.effective_company_logo_upload_dir or "").strip()
     )
-    service_default = Path("app/static/uploads/company")
+    uploads_default = Path(str(settings.effective_uploads_dir or "").strip()) / "company"
     package_default = Path(__file__).resolve().parents[1] / "static" / "uploads" / "company"
-    docker_alt = Path("/app/static/uploads/company")
-    docker_repo = Path("/app/app/static/uploads/company")
 
     candidates: list[Path] = []
-    for root in (configured, service_default, package_default, docker_alt, docker_repo):
+    for root in (configured, uploads_default, package_default):
         try:
             resolved = root.resolve()
         except OSError:

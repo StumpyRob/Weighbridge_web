@@ -5,7 +5,7 @@ import secrets
 from typing import Iterator
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from fastapi.staticfiles import StaticFiles
@@ -34,6 +34,7 @@ from .security_hardening import (
 )
 from .services.system_setup import get_company_setting, missing_required_lookup_messages
 from .services.pdf import check_invoice_pdf_renderer
+from .services.ui_branding import get_branding
 from .templating import templates
 
 logger = logging.getLogger(__name__)
@@ -84,9 +85,19 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         from .routes.dev import router as dev_router
 
         app.include_router(dev_router)
+
+    def _ensure_upload_dirs() -> tuple[Path, Path]:
+        uploads_root = Path(str(settings.effective_uploads_dir or "").strip()).resolve()
+        uploads_root.mkdir(parents=True, exist_ok=True)
+        company_dir = (uploads_root / "company").resolve()
+        company_dir.mkdir(parents=True, exist_ok=True)
+        return uploads_root, company_dir
+
+    uploads_root, _ = _ensure_upload_dirs()
     media_dir = Path(settings.media_root).resolve()
     media_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/media", StaticFiles(directory=str(media_dir)), name="media")
+    app.mount("/static/uploads", StaticFiles(directory=str(uploads_root)), name="uploads")
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
     def _path_needs_system_guard(path: str) -> bool:
@@ -292,11 +303,40 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
 
     @app.on_event("startup")
     def startup_printing_bootstrap() -> None:
+        _ensure_upload_dirs()
         check_invoice_pdf_renderer()
 
     @app.get("/health", tags=["health"])
     def health_check() -> dict:
         return {"status": "ok"}
+
+    @app.get("/branding.css", include_in_schema=False)
+    def branding_css(db: Session = Depends(get_db)) -> PlainTextResponse:
+        branding = get_branding(db)
+        nav_color = str(branding.get("nav_color", "") or "#14213D")
+        primary_color = str(branding.get("primary_color", "") or "#FCA311")
+        primary_contrast = str(branding.get("primary_contrast_hex", "") or "#111827")
+        primary_soft = str(branding.get("primary_soft_rgba", "") or "rgba(252, 163, 17, 0.16)")
+        try:
+            nav_logo_height = int(branding.get("nav_logo_height_px", 34) or 34)
+        except (TypeError, ValueError):
+            nav_logo_height = 34
+        nav_logo_height = max(20, min(80, nav_logo_height))
+
+        css = (
+            ":root {\n"
+            f"  --theme-navbar-bg: {nav_color};\n"
+            f"  --theme-primary: {primary_color};\n"
+            f"  --theme-primary-contrast: {primary_contrast};\n"
+            f"  --theme-primary-soft: {primary_soft};\n"
+            f"  --theme-nav-logo-height: {nav_logo_height}px;\n"
+            f"  --nav-bg: {nav_color};\n"
+            f"  --primary: {primary_color};\n"
+            "}\n"
+        )
+        response = PlainTextResponse(css, media_type="text/css")
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:

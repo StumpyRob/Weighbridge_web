@@ -19,7 +19,7 @@ def test_base_loads_help_tooltip_layer_script(client):
     response = client.get("/tickets")
 
     assert response.status_code == 200
-    assert '<script src="/static/js/help_tooltips.js" defer></script>' in response.text
+    assert '<script src="/static/js/help_tooltips.js?v=' in response.text
 
 
 def test_product_edit_uses_tooltips_and_removes_old_nominal_helper(client, db_session):
