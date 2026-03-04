@@ -44,7 +44,7 @@ body {
 .brand:hover,
 .brand:focus-visible,
 .brand:active {
-  color: var(--nav-fg);
+  color: var(--primary);
   text-decoration: none;
 }
 
@@ -99,7 +99,7 @@ body {
 }
 
 .site-nav a {
-  color: var(--nav-fg);
+  color: var(--primary);
   text-decoration: none;
   font-weight: 500;
   padding: 0.2rem 0.5rem;
@@ -118,7 +118,7 @@ body {
   border: 0;
   border-bottom: 2px solid var(--primary);
   border-radius: 0;
-  color: var(--nav-fg);
+  color: var(--primary);
   text-decoration: none;
   opacity: 1;
 }
@@ -136,7 +136,7 @@ body {
   padding: 0.15rem 0.45rem;
   border-radius: 999px;
   border: 1px solid currentColor;
-  color: var(--nav-fg);
+  color: var(--primary);
   background: transparent;
   opacity: 0.86;
 }
@@ -149,7 +149,7 @@ body {
   appearance: none;
   border: none;
   background: transparent;
-  color: var(--nav-fg);
+  color: var(--primary);
   font: inherit;
   font-size: 0.86rem;
   text-decoration: underline;
@@ -160,7 +160,7 @@ body {
 
 .site-auth__link:hover,
 .site-auth__link:focus-visible {
-  color: var(--nav-fg);
+  color: var(--primary);
   opacity: 0.82;
 }
 
@@ -3252,7 +3252,7 @@ details > summary:focus-visible {
 .site-header .site-nav a,
 .site-header .site-auth__badge,
 .site-header .site-auth__link {
-  color: var(--nav-fg) !important;
+  color: var(--primary) !important;
 }
 
 .btn--primary {

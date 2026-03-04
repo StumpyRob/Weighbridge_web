@@ -397,14 +397,14 @@ def test_navbar_and_primary_styles_use_root_branding_variables(
     nav_link_rule = re.search(r"\.site-nav\s+a\s*\{([^}]*)\}", normalized_css, flags=re.IGNORECASE)
     assert nav_link_rule is not None
     nav_link_body = nav_link_rule.group(1)
-    assert "color: var(--nav-fg);" in nav_link_body
-    assert "color: var(--primary);" not in nav_link_body
+    assert "color: var(--primary);" in nav_link_body
+    assert "color: var(--nav-fg);" not in nav_link_body
     assert re.search(r"color:\s*#[0-9a-f]{3,8}", nav_link_body, flags=re.IGNORECASE) is None
 
     compact_css = stylesheet.text.replace(" ", "").replace("\n", "")
     assert ".site-header{" in compact_css
     assert "background-color:var(--nav-bg)!important;" in compact_css
-    assert "color:var(--nav-fg)!important;" in compact_css
+    assert "color:var(--primary)!important;" in compact_css
     assert ".btn--primary{" in compact_css
     assert "background-color:var(--primary)!important;" in compact_css
     assert "border-color:var(--primary)!important;" in compact_css
@@ -570,7 +570,8 @@ def test_base_template_respects_nav_brand_visibility_toggles(
     assert response_fallback.status_code == 200
     assert 'class="brand__logo"' not in response_fallback.text
     assert 'class="brand__text">Toggle Branding<' not in response_fallback.text
-    assert 'class="brand__fallback">Weighbridge Web<' in response_fallback.text
+    assert 'class="brand__fallback"' not in response_fallback.text
+    assert 'class="brand__text">Weighbridge Web<' not in response_fallback.text
 
 
 def test_base_template_falls_back_to_default_logo_when_upload_missing(client, db_session):
