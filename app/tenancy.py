@@ -53,11 +53,15 @@ def resolve_subdomain(host: str) -> str:
         return normalize_subdomain(nip_match.group("sub"))
 
     base_domain = settings.effective_base_domain
+    if base_domain and cleaned == base_domain:
+        return settings.effective_default_tenant_subdomain
     if base_domain and cleaned.endswith(f".{base_domain}"):
         candidate = cleaned[: -(len(base_domain) + 1)]
         return normalize_subdomain(candidate.split(".")[0])
 
     parts = cleaned.split(".")
+    if len(parts) <= 2:
+        return settings.effective_default_tenant_subdomain
     if len(parts) >= 3:
         return normalize_subdomain(parts[0])
     return ""

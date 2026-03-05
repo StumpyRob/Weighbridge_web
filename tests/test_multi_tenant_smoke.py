@@ -184,6 +184,74 @@ def test_tenant_resolution_middleware(tmp_path, monkeypatch):
         assert response.headers.get("location", "").startswith("/login")
 
 
+def test_base_domain_routes_to_default_tenant_and_admin_subdomain_stays_platform(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "base_domain", "example.test")
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-base-domain.db", monkeypatch=monkeypatch
+    )
+    default_tenant = _seed_tenant(
+        SessionLocal,
+        name="Default Tenant",
+        subdomain=settings.effective_default_tenant_subdomain,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=default_tenant,
+        company_name="Default Co",
+        primary_color="#224466",
+    )
+    _seed_user(
+        SessionLocal,
+        email="default-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=default_tenant,
+    )
+    _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with _client(app, base_url="https://example.test") as base_client:
+        login_page = base_client.get("/login")
+        assert login_page.status_code == 200
+        tickets_redirect = base_client.get("/tickets", follow_redirects=False)
+        assert tickets_redirect.status_code == 302
+        assert tickets_redirect.headers.get("location") == "/login?next=/tickets"
+        assert _login(base_client, email="default-admin@example.com", password="TestPass123!") == 303
+        branding = base_client.get("/branding.css")
+        assert branding.status_code == 200
+        assert "#224466" in branding.text
+        assert base_client.get("/tickets").status_code == 200
+
+    with _client(app, base_url="https://admin.example.test") as admin_client:
+        admin_tenants = admin_client.get("/admin/tenants", follow_redirects=False)
+        assert admin_tenants.status_code in {302, 303}
+        assert admin_tenants.headers.get("location", "").startswith("/login")
+        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+        assert admin_client.get("/admin/tenants").status_code == 200
+
+    with _client(app, base_url="https://admin.example.test") as tenant_on_admin_client:
+        login_page = tenant_on_admin_client.get("/login")
+        assert login_page.status_code == 200
+        assert _login(
+            tenant_on_admin_client,
+            email="default-admin@example.com",
+            password="TestPass123!",
+        ) == 401
+
+    with _client(app, base_url="https://unknown.example.test") as unknown_client:
+        response = unknown_client.get("/health")
+        assert response.status_code == 404
+        assert "Unknown tenant" in response.text
+
+
 def test_tenant_scoped_auth_rules(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(tmp_path, db_name="tenant-auth.db", monkeypatch=monkeypatch)
     tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a")
