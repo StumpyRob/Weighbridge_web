@@ -12,7 +12,7 @@
   </head>
   <body>
     <header class="site-header">
-      <a class="brand" href="{{ '/admin/tenants' if platform_mode else '/' }}">
+      <a class="brand" href="{{ '/platform/tenants' if platform_mode else '/' }}">
         {% set show_logo_nav = ui_branding.show_nav_logo %}
         {% set show_title_nav = ui_branding.show_nav_title %}
         {% if show_logo_nav %}
@@ -32,8 +32,10 @@
       <div class="site-header__right">
         <nav class="site-nav">
           {% if platform_mode %}
-            <a href="/admin/tenants" class="{% if request.url.path.startswith('/admin/tenants') %}is-active{% endif %}" {% if request.url.path.startswith('/admin/tenants') %}aria-current="page"{% endif %}>Tenant Management</a>
-            <a href="/admin/system-status" class="{% if request.url.path.startswith('/admin/system-status') %}is-active{% endif %}" {% if request.url.path.startswith('/admin/system-status') %}aria-current="page"{% endif %}>System Status</a>
+            {% if current_user_is_superadmin %}
+              <a href="/platform/tenants" class="{% if request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants') %}is-active{% endif %}" {% if request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants') %}aria-current="page"{% endif %}>Tenant Management</a>
+              <a href="/admin/system-status" class="{% if request.url.path.startswith('/admin/system-status') %}is-active{% endif %}" {% if request.url.path.startswith('/admin/system-status') %}aria-current="page"{% endif %}>System Status</a>
+            {% endif %}
           {% else %}
             <a href="/tickets" class="{% if request.url.path.startswith('/tickets') %}is-active{% endif %}" {% if request.url.path.startswith('/tickets') %}aria-current="page"{% endif %}>Tickets</a>
             <a href="/customers" class="{% if request.url.path.startswith('/customers') %}is-active{% endif %}" {% if request.url.path.startswith('/customers') %}aria-current="page"{% endif %}>Customers</a>
@@ -43,6 +45,9 @@
             <a href="/lookups/hauliers" class="{% if request.url.path.startswith('/lookups') %}is-active{% endif %}" {% if request.url.path.startswith('/lookups') %}aria-current="page"{% endif %}>Lookups</a>
             <a href="/reports" class="{% if request.url.path.startswith('/reports') %}is-active{% endif %}" {% if request.url.path.startswith('/reports') %}aria-current="page"{% endif %}>Reports</a>
             <a href="/admin" class="{% if request.url.path.startswith('/admin') %}is-active{% endif %}" {% if request.url.path.startswith('/admin') %}aria-current="page"{% endif %}>Admin</a>
+            {% if current_user_is_superadmin %}
+              <a href="/platform/tenants" class="{% if request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants') %}is-active{% endif %}" {% if request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants') %}aria-current="page"{% endif %}>Tenant Management</a>
+            {% endif %}
           {% endif %}
         </nav>
         <div class="site-auth">

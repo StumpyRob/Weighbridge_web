@@ -75,6 +75,7 @@ _LOGIN_REQUIRED_PREFIXES = (
     "/invoices",
     "/lookups",
     "/admin",
+    "/platform",
 )
 _UPLOADS_STATIC_PREFIX = "/static/uploads/"
 _TENANT_ONLY_PREFIXES = (
@@ -89,6 +90,7 @@ _TENANT_ONLY_PREFIXES = (
     "/admin/printing",
 )
 _PLATFORM_ONLY_PREFIXES = (
+    "/platform",
     "/admin/tenants",
     "/admin/ewc-codes",
     "/bootstrap",
@@ -210,12 +212,12 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 host_value = forwarded_host.split(",", 1)[0].strip()
         return host_value
 
-    def _apex_admin_platform_mode(request: Request, host_name: str) -> bool:
+    def _apex_platform_path_mode(request: Request, host_name: str) -> bool:
         if not _is_exact_base_domain(host_name):
             return False
 
         request_path = str(request.url.path or "")
-        if request_path.startswith("/admin"):
+        if request_path.startswith("/platform"):
             request.session[SESSION_PLATFORM_MODE_KEY] = True
             return True
 
@@ -224,7 +226,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
 
         if request.method == "GET":
             next_hint = str(request.query_params.get("next", "") or "").strip()
-            if next_hint.startswith("/admin"):
+            if next_hint.startswith("/platform"):
                 request.session[SESSION_PLATFORM_MODE_KEY] = True
                 return True
             request.session.pop(SESSION_PLATFORM_MODE_KEY, None)
@@ -432,7 +434,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 subdomain = resolve_subdomain(host_value)
                 request.state.request_subdomain = subdomain
 
-                if _apex_admin_platform_mode(request, host_name):
+                if _apex_platform_path_mode(request, host_name):
                     request.state.platform_mode = True
                     request.state.request_subdomain = settings.effective_platform_subdomain
                     _switch_tenant_context(tenant_id=None, platform_mode=True)
@@ -598,7 +600,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
         if bool(getattr(request.state, "platform_mode", False)):
-            return RedirectResponse(url="/admin/tenants", status_code=303)
+            return RedirectResponse(url="/platform/tenants", status_code=303)
         company = get_company_setting(db)
         initialized = bool(company and getattr(company, "is_initialized", False))
         missing_required = missing_required_lookup_messages(db) if initialized else []
@@ -624,7 +626,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
     @app.get("/admin", response_class=HTMLResponse)
     def admin(request: Request) -> HTMLResponse:
         if bool(getattr(request.state, "platform_mode", False)):
-            return RedirectResponse(url="/admin/tenants", status_code=303)
+            return RedirectResponse(url="/platform/tenants", status_code=303)
         return templates.TemplateResponse(request, "admin.html", {"request": request})
 
     @app.exception_handler(Exception)

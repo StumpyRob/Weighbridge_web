@@ -7,7 +7,7 @@
   <form method="get" class="inline-form">
     <input type="text" name="q" value="{{ q }}" placeholder="Search name or subdomain" />
     <button type="submit">Search</button>
-    <a class="button-link" href="/admin/tenants/new">Create tenant</a>
+    <a class="button-link" href="/platform/tenants/new">Create tenant</a>
   </form>
   {% if error %}
     <p class="error">{{ error }}</p>
@@ -37,14 +37,14 @@
             {% endif %}
           </td>
           <td>
-            <a class="button-link" href="/admin/tenants/{{ tenant.id }}">Details</a>
+            <a class="button-link" href="/platform/tenants/{{ tenant.id }}">Details</a>
             {% if tenant.is_active %}
-              <form method="post" action="/admin/tenants/{{ tenant.id }}/disable">
+              <form method="post" action="/platform/tenants/{{ tenant.id }}/disable">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
                 <button type="submit">Disable</button>
               </form>
             {% else %}
-              <form method="post" action="/admin/tenants/{{ tenant.id }}/enable">
+              <form method="post" action="/platform/tenants/{{ tenant.id }}/enable">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
                 <button type="submit">Enable</button>
               </form>

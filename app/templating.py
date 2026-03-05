@@ -72,7 +72,17 @@ def _csrf_context(request) -> dict[str, object]:
 
 
 def _auth_context(request) -> dict[str, object]:
-    return {"current_user": getattr(request.state, "current_user", None)}
+    current_user = getattr(request.state, "current_user", None)
+    role = str(getattr(current_user, "role", "") or "").strip().lower()
+    is_superadmin = (
+        current_user is not None
+        and role == "superadmin"
+        and getattr(current_user, "tenant_id", None) is None
+    )
+    return {
+        "current_user": current_user,
+        "current_user_is_superadmin": is_superadmin,
+    }
 
 
 def _tenant_context(request) -> dict[str, object]:

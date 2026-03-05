@@ -179,7 +179,7 @@ def test_tenant_resolution_middleware(tmp_path, monkeypatch):
         assert "Tenant disabled" in response.text
 
     with _client(app, base_url="https://admin.localhost") as admin_host:
-        response = admin_host.get("/admin/tenants", follow_redirects=False)
+        response = admin_host.get("/platform/tenants", follow_redirects=False)
         assert response.status_code in {302, 303}
         assert response.headers.get("location", "").startswith("/login")
 
@@ -229,41 +229,50 @@ def test_base_domain_routes_to_default_tenant_and_admin_subdomain_stays_platform
         assert branding.status_code == 200
         assert "#224466" in branding.text
         assert base_client.get("/tickets").status_code == 200
+        admin_company = base_client.get("/admin/company")
+        assert admin_company.status_code == 200
+        assert ">Tenant Management<" not in admin_company.text
 
-    with _client(app, base_url="https://example.test") as apex_admin_client:
-        admin_tenants = apex_admin_client.get("/admin/tenants", follow_redirects=False)
-        assert admin_tenants.status_code in {302, 303}
-        assert admin_tenants.headers.get("location") == "/login?next=/admin/tenants"
+        platform_tenants = base_client.get("/platform/tenants", follow_redirects=False)
+        assert platform_tenants.status_code == 302
+        assert platform_tenants.headers.get("location") == "/login?next=/platform/tenants"
 
-        login_page = apex_admin_client.get(admin_tenants.headers["location"])
+    with _client(app, base_url="https://example.test") as apex_platform_client:
+        platform_tenants = apex_platform_client.get("/platform/tenants", follow_redirects=False)
+        assert platform_tenants.status_code in {302, 303}
+        assert platform_tenants.headers.get("location") == "/login?next=/platform/tenants"
+
+        login_page = apex_platform_client.get(platform_tenants.headers["location"])
         assert login_page.status_code == 200
-        csrf = str(apex_admin_client.cookies.get(CSRF_COOKIE_NAME) or "")
+        csrf = str(apex_platform_client.cookies.get(CSRF_COOKIE_NAME) or "")
         assert csrf
-        login = apex_admin_client.post(
+        login = apex_platform_client.post(
             "/login",
             data={
                 "email": "superadmin@example.com",
                 "password": "TestPass123!",
-                "next": "/admin/tenants",
+                "next": "/platform/tenants",
                 CSRF_FORM_FIELD: csrf,
             },
             follow_redirects=False,
         )
         assert login.status_code == 303
-        assert login.headers.get("location") == "/admin/tenants"
-        assert apex_admin_client.get("/admin/tenants").status_code == 200
-        assert apex_admin_client.get("/admin/system-status").status_code == 200
+        assert login.headers.get("location") == "/platform/tenants"
+        tenants_page = apex_platform_client.get("/platform/tenants")
+        assert tenants_page.status_code == 200
+        assert ">Tenant Management<" in tenants_page.text
+        assert apex_platform_client.get("/admin/system-status").status_code == 200
 
-        blocked_tickets = apex_admin_client.get("/tickets", follow_redirects=False)
+        blocked_tickets = apex_platform_client.get("/tickets", follow_redirects=False)
         assert blocked_tickets.status_code == 302
         assert blocked_tickets.headers.get("location") == "/login?next=/tickets"
 
     with _client(app, base_url="https://admin.example.test") as admin_client:
-        admin_tenants = admin_client.get("/admin/tenants", follow_redirects=False)
-        assert admin_tenants.status_code in {302, 303}
-        assert admin_tenants.headers.get("location", "").startswith("/login")
+        platform_tenants = admin_client.get("/platform/tenants", follow_redirects=False)
+        assert platform_tenants.status_code in {302, 303}
+        assert platform_tenants.headers.get("location", "").startswith("/login")
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
-        assert admin_client.get("/admin/tenants").status_code == 200
+        assert admin_client.get("/platform/tenants").status_code == 200
 
     with _client(app, base_url="https://admin.example.test") as tenant_on_admin_client:
         login_page = tenant_on_admin_client.get("/login")
@@ -470,7 +479,7 @@ def test_missing_csrf_is_rejected_on_tenant_and_admin_hosts(tmp_path, monkeypatc
     with _client(app, base_url="https://admin.localhost") as admin_client:
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
         response = admin_client.post(
-            "/admin/tenants/new",
+            "/platform/tenants/new",
             data={
                 "name": "New Tenant",
                 "subdomain": "newtenant",
@@ -528,7 +537,7 @@ def test_superadmin_enable_disable_actions_block_tenant_access(tmp_path, monkeyp
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
         csrf = _prime_csrf(admin_client)
         disable = admin_client.post(
-            f"/admin/tenants/{tenant_a}/disable",
+            f"/platform/tenants/{tenant_a}/disable",
             data={CSRF_FORM_FIELD: csrf},
             follow_redirects=False,
         )
@@ -554,7 +563,7 @@ def test_superadmin_enable_disable_actions_block_tenant_access(tmp_path, monkeyp
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
         csrf = _prime_csrf(admin_client)
         enable = admin_client.post(
-            f"/admin/tenants/{tenant_a}/enable",
+            f"/platform/tenants/{tenant_a}/enable",
             data={CSRF_FORM_FIELD: csrf},
             follow_redirects=False,
         )
@@ -589,19 +598,19 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
         csrf = _prime_csrf(admin_client)
 
-        tenants_page = admin_client.get("/admin/tenants")
+        tenants_page = admin_client.get("/platform/tenants")
         assert tenants_page.status_code == 200
         assert "tenant-status-badge" in tenants_page.text
-        assert f"/admin/tenants/{tenant_a}" in tenants_page.text
-        assert f"/admin/tenants/{tenant_a}/disable" in tenants_page.text
+        assert f"/platform/tenants/{tenant_a}" in tenants_page.text
+        assert f"/platform/tenants/{tenant_a}/disable" in tenants_page.text
         assert 'name="csrf_token"' in tenants_page.text
 
-        tenant_detail = admin_client.get(f"/admin/tenants/{tenant_a}")
+        tenant_detail = admin_client.get(f"/platform/tenants/{tenant_a}")
         assert tenant_detail.status_code == 200
         assert "Tenant: Tenant A" in tenant_detail.text
 
         disable = admin_client.post(
-            f"/admin/tenants/{tenant_a}/disable",
+            f"/platform/tenants/{tenant_a}/disable",
             data={CSRF_FORM_FIELD: csrf},
             follow_redirects=False,
         )
@@ -609,7 +618,7 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
 
         csrf = _prime_csrf(admin_client)
         enable = admin_client.post(
-            f"/admin/tenants/{tenant_a}/enable",
+            f"/platform/tenants/{tenant_a}/enable",
             data={CSRF_FORM_FIELD: csrf},
             follow_redirects=False,
         )
@@ -643,21 +652,22 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
 
     with _client(app, base_url="https://a.localhost") as tenant_client:
         assert _login(tenant_client, email="tenant-admin@example.com", password="TenantPass123!") == 303
+        assert tenant_client.get("/admin/company").status_code == 200
         csrf = _prime_csrf(tenant_client)
+        tenant_session_cookie = str(tenant_client.cookies.get("session") or "")
+        assert tenant_session_cookie
         forbidden_tenant_host = tenant_client.post(
-            f"/admin/tenants/{tenant_a}/disable",
+            f"/platform/tenants/{tenant_a}/disable",
             data={CSRF_FORM_FIELD: csrf},
             follow_redirects=False,
         )
         assert forbidden_tenant_host.status_code == 404
-        tenant_session_cookie = str(tenant_client.cookies.get("session") or "")
-        assert tenant_session_cookie
 
     with _client(app, base_url="https://admin.localhost") as admin_host_client:
         csrf = _prime_csrf(admin_host_client)
         admin_host_client.cookies.set("session", tenant_session_cookie)
         forbidden_non_superadmin = admin_host_client.post(
-            f"/admin/tenants/{tenant_a}/disable",
+            f"/platform/tenants/{tenant_a}/disable",
             data={CSRF_FORM_FIELD: csrf},
             follow_redirects=False,
         )
@@ -687,9 +697,9 @@ def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypa
 
         home = admin_client.get("/", follow_redirects=False)
         assert home.status_code == 303
-        assert home.headers.get("location") == "/admin/tenants"
+        assert home.headers.get("location") == "/platform/tenants"
 
-        tenants_page = admin_client.get("/admin/tenants")
+        tenants_page = admin_client.get("/platform/tenants")
         assert tenants_page.status_code == 200
         assert ">Tenant Management<" in tenants_page.text
         assert ">System Status<" in tenants_page.text
@@ -724,7 +734,7 @@ def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tm
         csrf = _prime_csrf(admin_client)
 
         reserved = admin_client.post(
-            "/admin/tenants/new",
+            "/platform/tenants/new",
             data={
                 "name": "Reserved Admin",
                 "subdomain": "admin",
@@ -738,7 +748,7 @@ def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tm
         assert "Subdomain is reserved." in reserved.text
 
         configured_reserved = admin_client.post(
-            "/admin/tenants/new",
+            "/platform/tenants/new",
             data={
                 "name": "Reserved Ops",
                 "subdomain": "ops",
@@ -752,7 +762,7 @@ def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tm
         assert "Subdomain is reserved." in configured_reserved.text
 
         invalid = admin_client.post(
-            "/admin/tenants/new",
+            "/platform/tenants/new",
             data={
                 "name": "Invalid Label",
                 "subdomain": "bad_label",
@@ -766,7 +776,7 @@ def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tm
         assert "Subdomain must be DNS-safe lowercase letters, numbers, and hyphens." in invalid.text
 
         created = admin_client.post(
-            "/admin/tenants/new",
+            "/platform/tenants/new",
             data={
                 "name": "Normalized Tenant",
                 "subdomain": "MyTenant",
@@ -926,7 +936,7 @@ def test_new_tenant_creation_flow_seeds_usable_baseline(tmp_path, monkeypatch):
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
         csrf = _prime_csrf(admin_client)
         create_tenant = admin_client.post(
-            "/admin/tenants/new",
+            "/platform/tenants/new",
             data={
                 "name": "Tenant Seeded",
                 "subdomain": "seeded",

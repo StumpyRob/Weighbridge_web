@@ -50,7 +50,7 @@ def _safe_next_path(raw: str | None) -> str:
 
 def _default_next_path(request: Request) -> str:
     if request_platform_mode(request):
-        return "/admin/tenants"
+        return "/platform/tenants"
     return "/tickets"
 
 

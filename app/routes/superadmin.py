@@ -108,6 +108,7 @@ def _seed_tenant_baseline(db: Session, tenant_id: int) -> None:
     _seed_number_sequences(db)
 
 
+@router.get("/platform/tenants", response_class=HTMLResponse)
 @router.get("/admin/tenants", response_class=HTMLResponse)
 def tenants_list(
     request: Request,
@@ -136,6 +137,7 @@ def tenants_list(
     )
 
 
+@router.get("/platform/tenants/{tenant_id:int}", response_class=HTMLResponse)
 @router.get("/admin/tenants/{tenant_id:int}", response_class=HTMLResponse)
 def tenant_detail(
     tenant_id: int,
@@ -164,6 +166,7 @@ def tenant_detail(
     )
 
 
+@router.get("/platform/tenants/new", response_class=HTMLResponse)
 @router.get("/admin/tenants/new", response_class=HTMLResponse)
 def tenants_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     _require_platform_superadmin(request, db)
@@ -184,6 +187,7 @@ def tenants_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse
     )
 
 
+@router.post("/platform/tenants/new", response_class=HTMLResponse)
 @router.post("/admin/tenants/new", response_class=HTMLResponse)
 async def tenants_create(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     current_user = _require_platform_superadmin(request, db)
@@ -279,9 +283,10 @@ async def tenants_create(request: Request, db: Session = Depends(get_db)) -> HTM
             status_code=400,
         )
 
-    return RedirectResponse(url="/admin/tenants?saved=1", status_code=303)
+    return RedirectResponse(url="/platform/tenants?saved=1", status_code=303)
 
 
+@router.post("/platform/tenants/{tenant_id:int}/disable")
 @router.post("/admin/tenants/{tenant_id:int}/disable")
 def tenants_disable(
     tenant_id: int,
@@ -292,7 +297,7 @@ def tenants_disable(
 
     tenant = db.get(Tenant, tenant_id)
     if tenant is None:
-        return RedirectResponse(url="/admin/tenants?error=Tenant+not+found", status_code=303)
+        return RedirectResponse(url="/platform/tenants?error=Tenant+not+found", status_code=303)
     tenant.is_active = False
     audit_log(
         db,
@@ -306,9 +311,10 @@ def tenants_disable(
         tenant_id=tenant.id,
     )
     db.commit()
-    return RedirectResponse(url="/admin/tenants?saved=1", status_code=303)
+    return RedirectResponse(url="/platform/tenants?saved=1", status_code=303)
 
 
+@router.post("/platform/tenants/{tenant_id:int}/enable")
 @router.post("/admin/tenants/{tenant_id:int}/enable")
 def tenants_enable(
     tenant_id: int,
@@ -319,7 +325,7 @@ def tenants_enable(
 
     tenant = db.get(Tenant, tenant_id)
     if tenant is None:
-        return RedirectResponse(url="/admin/tenants?error=Tenant+not+found", status_code=303)
+        return RedirectResponse(url="/platform/tenants?error=Tenant+not+found", status_code=303)
     tenant.is_active = True
     audit_log(
         db,
@@ -333,4 +339,4 @@ def tenants_enable(
         tenant_id=tenant.id,
     )
     db.commit()
-    return RedirectResponse(url="/admin/tenants?saved=1", status_code=303)
+    return RedirectResponse(url="/platform/tenants?saved=1", status_code=303)
