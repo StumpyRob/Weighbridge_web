@@ -230,6 +230,34 @@ def test_base_domain_routes_to_default_tenant_and_admin_subdomain_stays_platform
         assert "#224466" in branding.text
         assert base_client.get("/tickets").status_code == 200
 
+    with _client(app, base_url="https://example.test") as apex_admin_client:
+        admin_tenants = apex_admin_client.get("/admin/tenants", follow_redirects=False)
+        assert admin_tenants.status_code in {302, 303}
+        assert admin_tenants.headers.get("location") == "/login?next=/admin/tenants"
+
+        login_page = apex_admin_client.get(admin_tenants.headers["location"])
+        assert login_page.status_code == 200
+        csrf = str(apex_admin_client.cookies.get(CSRF_COOKIE_NAME) or "")
+        assert csrf
+        login = apex_admin_client.post(
+            "/login",
+            data={
+                "email": "superadmin@example.com",
+                "password": "TestPass123!",
+                "next": "/admin/tenants",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert login.status_code == 303
+        assert login.headers.get("location") == "/admin/tenants"
+        assert apex_admin_client.get("/admin/tenants").status_code == 200
+        assert apex_admin_client.get("/admin/system-status").status_code == 200
+
+        blocked_tickets = apex_admin_client.get("/tickets", follow_redirects=False)
+        assert blocked_tickets.status_code == 302
+        assert blocked_tickets.headers.get("location") == "/login?next=/tickets"
+
     with _client(app, base_url="https://admin.example.test") as admin_client:
         admin_tenants = admin_client.get("/admin/tenants", follow_redirects=False)
         assert admin_tenants.status_code in {302, 303}

@@ -118,6 +118,11 @@ def _strip_non_production_routes(app: FastAPI) -> None:
     app.router.routes = filtered_routes
 
 
+def _is_exact_base_domain(host_name: str) -> bool:
+    base_domain = settings.effective_base_domain
+    return bool(base_domain and host_name == base_domain)
+
+
 def create_app(dev_mode: bool | None = None) -> FastAPI:
     effective_dev_mode = settings.dev_mode if dev_mode is None else dev_mode
     validate_production_secret(
@@ -204,6 +209,31 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
             if forwarded_host:
                 host_value = forwarded_host.split(",", 1)[0].strip()
         return host_value
+
+    def _apex_admin_platform_mode(request: Request, host_name: str) -> bool:
+        if not _is_exact_base_domain(host_name):
+            return False
+
+        request_path = str(request.url.path or "")
+        if request_path.startswith("/admin"):
+            request.session[SESSION_PLATFORM_MODE_KEY] = True
+            return True
+
+        if request_path != "/login":
+            return False
+
+        if request.method == "GET":
+            next_hint = str(request.query_params.get("next", "") or "").strip()
+            if next_hint.startswith("/admin"):
+                request.session[SESSION_PLATFORM_MODE_KEY] = True
+                return True
+            request.session.pop(SESSION_PLATFORM_MODE_KEY, None)
+            return False
+
+        if request.method == "POST":
+            return bool(request.session.get(SESSION_PLATFORM_MODE_KEY))
+
+        return False
 
     def _maybe_brand_plain_error_response(request: Request, response: Response) -> Response:
         if request.method not in {"GET", "HEAD"}:
@@ -402,7 +432,11 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 subdomain = resolve_subdomain(host_value)
                 request.state.request_subdomain = subdomain
 
-                if subdomain == settings.effective_platform_subdomain:
+                if _apex_admin_platform_mode(request, host_name):
+                    request.state.platform_mode = True
+                    request.state.request_subdomain = settings.effective_platform_subdomain
+                    _switch_tenant_context(tenant_id=None, platform_mode=True)
+                elif subdomain == settings.effective_platform_subdomain:
                     request.state.platform_mode = True
                     _switch_tenant_context(tenant_id=None, platform_mode=True)
                 else:
