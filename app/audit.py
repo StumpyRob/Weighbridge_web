@@ -110,6 +110,9 @@ def log(
     user: User | None = None,
 ) -> AuditEvent | None:
     try:
+        resolved_tenant_id = tenant_id
+        if resolved_tenant_id is None and request is not None:
+            resolved_tenant_id = getattr(getattr(request, "state", None), "tenant_id", None)
         current_user = user
         if current_user is None and request is not None:
             maybe_user = getattr(getattr(request, "state", None), "current_user", None)
@@ -117,7 +120,11 @@ def log(
                 current_user = maybe_user
         user_id = int(current_user.id) if current_user is not None else None
         record = AuditEvent(
-            tenant_id=_trim_text(tenant_id, max_len=64) if tenant_id is not None else None,
+            tenant_id=(
+                _trim_text(resolved_tenant_id, max_len=64)
+                if resolved_tenant_id is not None
+                else None
+            ),
             user_id=user_id,
             ip_address=_request_ip_address(request),
             action=_trim_text(action.upper(), max_len=32),

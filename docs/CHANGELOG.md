@@ -8,6 +8,18 @@ All notable changes are tracked here by release chapter.
 - Add build stamp in UI footer: `Build v<version> (commit <shortsha>)`.
 - Add release discipline docs (`VERSION`, changelog workflow, contribution guide).
 
+## v0.15.0 - 2026-03-05
+
+### FIX
+- Add host-based multi-tenant routing with platform/tenant separation, tenant activation enforcement, reserved subdomain validation, and forwarded-host/allowed-host controls.
+- Store branding uploads under `/data/uploads/tenants/<tenant_id>/company`, serve them through tenant-scoped routes only, and block shared static upload fallbacks.
+- Add superadmin tenant management, tenant baseline seeding, deterministic role normalization, and first-platform-user superadmin bootstrap behavior.
+- Close admin-only permission gaps for customer credit controls and printing administration so operator users cannot reach those entrypoints.
+
+### TEST
+- Add multi-tenant smoke coverage for tenant host isolation, disabled-tenant responses, upload collision/traversal blocking, tenant creation seeding, and superadmin tenant actions.
+- Add auth/setup regression coverage for bootstrap superadmin creation, role normalization, admin-host login restrictions, and superadmin-only system status access.
+
 ## v0.14.4 - 2026-03-04
 
 ### FIX

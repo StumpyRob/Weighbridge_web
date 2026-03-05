@@ -16,6 +16,7 @@ from .pdf import (
     check_invoice_pdf_renderer,
     resolve_default_template_for_document_type,
 )
+from .uploads import company_logo_storage_layout, logo_file_from_web_path, uploads_root
 
 HEALTH_TEMPLATE_DOCUMENT_TYPES: tuple[str, ...] = (
     "TICKET",
@@ -197,9 +198,7 @@ def check_logo(db: Session) -> HealthCheckResult:
 
 
 def check_uploads() -> HealthCheckResult:
-    upload_dir = Path(
-        str(settings.effective_company_logo_upload_dir or "").strip()
-    ).resolve()
+    upload_dir = uploads_root()
     exists = upload_dir.is_dir()
     writable = _is_dir_writable(upload_dir) if exists else False
     file_count, total_size_bytes = _scan_directory_file_stats(upload_dir) if exists else (0, 0)
@@ -219,6 +218,7 @@ def check_uploads() -> HealthCheckResult:
         summary=summary,
         details={
             "path": str(upload_dir),
+            "layout": company_logo_storage_layout(upload_dir),
             "exists": exists,
             "writable": writable,
             "file_count": file_count,
@@ -350,14 +350,7 @@ def _resolve_logo_file_path(logo_path: str) -> Path | None:
     if not normalized:
         return None
     if normalized.startswith("/static/uploads/company/"):
-        filename = Path(normalized).name
-        if not filename:
-            return None
-        for root in _logo_upload_candidates():
-            candidate = (root / filename).resolve()
-            if candidate.is_file():
-                return candidate
-        return None
+        return logo_file_from_web_path(normalized)
     if normalized.startswith("/media/"):
         media_root = Path(str(settings.media_root or "").strip() or "app/media").resolve()
         relative = normalized.removeprefix("/media/").strip().lstrip("/\\")
@@ -369,23 +362,6 @@ def _resolve_logo_file_path(logo_path: str) -> Path | None:
     if maybe_path.is_absolute() and maybe_path.is_file():
         return maybe_path.resolve()
     return None
-
-
-def _logo_upload_candidates() -> tuple[Path, ...]:
-    configured = Path(str(settings.effective_company_logo_upload_dir or "").strip())
-    uploads_default = Path(str(settings.effective_uploads_dir or "").strip()) / "company"
-    package_default = Path(__file__).resolve().parents[1] / "static" / "uploads" / "company"
-
-    candidates: list[Path] = []
-    for root in (configured, uploads_default, package_default):
-        try:
-            resolved = root.resolve()
-        except OSError:
-            continue
-        if resolved in candidates:
-            continue
-        candidates.append(resolved)
-    return tuple(candidates)
 
 
 def _is_dir_writable(directory: Path) -> bool:

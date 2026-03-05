@@ -5,22 +5,34 @@ import logging
 import csv
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.datastructures import UploadFile
 
+from ..auth import is_superadmin_user
 from ..db import get_db
-from ..models import EwcCode, EwcImportLog
+from ..models import EwcCode, EwcImportLog, User
 from ..services.ewc_import import import_ewc_codes, parse_import_errors_json
+from ..tenancy import request_platform_mode
 from ..templating import templates
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+
+def _require_platform_superadmin(request: Request, db: Session) -> None:
+    if not request_platform_mode(request):
+        raise HTTPException(status_code=404, detail="Not Found")
+    current_user = getattr(getattr(request, "state", None), "current_user", None)
+    if not isinstance(current_user, User):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not is_superadmin_user(db, current_user):
+        raise HTTPException(status_code=403, detail="Forbidden")
 
 
 def _build_page_context(
@@ -70,6 +82,7 @@ def admin_ewc_codes(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    _require_platform_superadmin(request, db)
     return templates.TemplateResponse(
         request,
         "admin/ewc_codes.html",
@@ -82,6 +95,7 @@ async def admin_ewc_codes_import(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    _require_platform_superadmin(request, db)
     form = await request.form()
     file_obj = form.get("csv_file")
     replace_existing = str(form.get("replace_existing", "")).strip().lower() in {
@@ -175,7 +189,11 @@ async def admin_ewc_codes_import(
 
 
 @router.get("/admin/ewc-codes/sample.csv")
-def admin_ewc_codes_sample_csv(db: Session = Depends(get_db)) -> PlainTextResponse:
+def admin_ewc_codes_sample_csv(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> PlainTextResponse:
+    _require_platform_superadmin(request, db)
     rows = list(
         db.execute(select(EwcCode).order_by(EwcCode.code_6.asc())).scalars()
     )

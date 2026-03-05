@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-from app.auth import hash_password
+from app.auth import ROLE_USER, hash_password, user_identity_kwargs
 from app.config import settings
 from app.db import get_db
 from app.main import create_app
@@ -355,7 +355,7 @@ def test_system_status_superadmin_only(tmp_path, monkeypatch):
             )
             db.add(
                 User(
-                    username="ops@example.com",
+                    **user_identity_kwargs(email="ops@example.com", role=ROLE_USER),
                     password_hash=hash_password("SetupPass123!"),
                     is_active=True,
                 )

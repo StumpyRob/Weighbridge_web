@@ -46,6 +46,7 @@ from .ticket import (
 )
 from .ticket_sequence import TicketSequence
 from .ticket_void import TicketVoid
+from .tenant import Tenant
 from .user import User
 from .vehicle import Vehicle
 from .vehicle_tare import VehicleTare
@@ -98,6 +99,7 @@ __all__ = [
     "WasteProducerSourceEnum",
     "TicketSequence",
     "TicketVoid",
+    "Tenant",
     "User",
     "Vehicle",
     "VehicleTare",

@@ -5,6 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+import sqlalchemy as sa
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -19,9 +20,14 @@ if TYPE_CHECKING:
 
 class Product(Base):
     __tablename__ = "products"
+    __table_args__ = (
+        sa.UniqueConstraint("tenant_id", "code", name="uq_products_tenant_code"),
+        sa.Index("ix_products_tenant_id", "tenant_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    code: Mapped[str] = mapped_column(String(CODE_MAX), unique=True, nullable=False)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False, default=1)
+    code: Mapped[str] = mapped_column(String(CODE_MAX), nullable=False)
     description: Mapped[str] = mapped_column(String(DESC_MAX), nullable=False)
     sales_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("product_groups.id"))

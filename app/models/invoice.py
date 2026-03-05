@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
+import sqlalchemy as sa
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, JSON, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -10,9 +11,14 @@ from .base import Base
 
 class Invoice(Base):
     __tablename__ = "invoices"
+    __table_args__ = (
+        sa.UniqueConstraint("tenant_id", "invoice_no", name="uq_invoices_tenant_invoice_no"),
+        sa.Index("ix_invoices_tenant_id", "tenant_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    invoice_no: Mapped[str] = mapped_column(String(CODE_MAX), unique=True, nullable=False)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False, default=1)
+    invoice_no: Mapped[str] = mapped_column(String(CODE_MAX), nullable=False)
     customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"), nullable=False)
     invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
     due_date: Mapped[date | None] = mapped_column(Date)

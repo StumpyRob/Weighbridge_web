@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..models import CompanySetting
-from .uploads import resolve_company_logo_web_path
+from ..tenancy import current_platform_mode
+from .uploads import logo_file_from_web_path, resolve_company_logo_web_path
 
 DEFAULT_NAVBAR_COLOR_HEX = "#14213D"
 DEFAULT_PRIMARY_COLOR_HEX = "#FCA311"
@@ -30,17 +31,7 @@ def _upload_logo_file_from_web_path(path: str | None) -> Path | None:
     normalized = str(path or "").strip()
     if not normalized.startswith(_UPLOAD_LOGO_PREFIX):
         return None
-    filename = Path(normalized).name
-    if not filename:
-        return None
-    upload_root = Path(
-        str(settings.effective_company_logo_upload_dir or "").strip()
-    ).resolve()
-    try:
-        candidate = (upload_root / filename).resolve()
-    except OSError:
-        return None
-    return candidate
+    return logo_file_from_web_path(normalized)
 
 
 def _strip_query(url: str | None) -> str:
@@ -247,14 +238,13 @@ def build_ui_branding(company: CompanySetting | None) -> dict[str, object]:
 
 
 def get_branding(db: Session, tenant_id: str | None = None) -> dict[str, object]:
-    # Tenant support can be added here later without changing callers.
-    _ = tenant_id
+    if current_platform_mode():
+        return _default_branding()
     try:
-        company = (
-            db.execute(select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1))
-            .scalars()
-            .first()
-        )
+        query = select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1)
+        if tenant_id:
+            query = query.where(CompanySetting.tenant_id == int(tenant_id))
+        company = db.execute(query).scalars().first()
     except Exception:
         company = None
     try:

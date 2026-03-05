@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+import sqlalchemy as sa
 from sqlalchemy import ForeignKey, Integer, JSON, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -9,8 +10,10 @@ from .base import Base
 
 class InvoiceLine(Base):
     __tablename__ = "invoice_lines"
+    __table_args__ = (sa.Index("ix_invoice_lines_tenant_id", "tenant_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False, default=1)
     invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id"), nullable=False)
     ticket_id: Mapped[int | None] = mapped_column(ForeignKey("tickets.id"))
     description: Mapped[str] = mapped_column(String(DESC_MAX), nullable=False)

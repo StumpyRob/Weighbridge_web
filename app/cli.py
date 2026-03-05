@@ -36,9 +36,17 @@ def create_superadmin_account(
         raise RuntimeError("Password must be at least 8 characters.")
 
     with session_factory() as db:
-        user_count = int(db.execute(select(func.count(User.id))).scalar_one_or_none() or 0)
-        if user_count > 0:
-            raise RuntimeError("Superadmin bootstrap is only allowed when no users exist.")
+        superadmin_count = int(
+            db.execute(
+                select(func.count(User.id)).where(
+                    func.lower(func.trim(User.role)) == ROLE_SUPERADMIN,
+                    User.tenant_id.is_(None),
+                )
+            ).scalar_one_or_none()
+            or 0
+        )
+        if superadmin_count > 0:
+            raise RuntimeError("Superadmin bootstrap is only allowed when no superadmin exists.")
 
         user = User(
             **user_identity_kwargs(email=normalized, role=ROLE_SUPERADMIN),

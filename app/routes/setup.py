@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile
 
-from ..auth import is_superadmin_user
+from ..auth import is_admin_user
 from ..config import settings
 from ..constants import NAME_MAX
 from ..db import get_db
@@ -25,6 +25,7 @@ from ..seed import (
     seed_vehicle_types,
     seed_void_reasons,
 )
+from ..services.uploads import company_logo_upload_dir
 from ..services.system_setup import (
     DEFAULT_YARD_NAME,
     ensure_company_settings_row_exists,
@@ -32,6 +33,7 @@ from ..services.system_setup import (
     seed_required_reference_data,
     upsert_default_yard,
 )
+from ..tenancy import request_platform_mode
 from ..templating import templates
 
 router = APIRouter()
@@ -69,9 +71,7 @@ def _setup_context(
 
 
 def _logo_upload_dir() -> Path:
-    upload_dir = Path(str(settings.effective_company_logo_upload_dir or "").strip()).resolve()
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    return upload_dir
+    return company_logo_upload_dir()
 
 
 def _initial_yard_name(db: Session) -> str:
@@ -97,6 +97,9 @@ def _seed_printing_defaults(db: Session) -> None:
 
 @router.get("/setup", response_class=HTMLResponse)
 def setup_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    if request_platform_mode(request):
+        return HTMLResponse("Not Found", status_code=404)
+
     company = get_company_setting(db)
     if bool(company and company.is_initialized):
         return HTMLResponse("Not Found", status_code=404)
@@ -104,7 +107,7 @@ def setup_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     current_user = getattr(request.state, "current_user", None)
     if current_user is None:
         return RedirectResponse(url="/login?next=/setup", status_code=302)
-    if not is_superadmin_user(db, current_user):
+    if not is_admin_user(db, current_user):
         return HTMLResponse("Forbidden", status_code=403)
     if company is None:
         company = ensure_company_settings_row_exists(db)
@@ -123,6 +126,9 @@ def setup_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
 
 @router.post("/setup", response_class=HTMLResponse)
 async def setup_submit(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    if request_platform_mode(request):
+        return HTMLResponse("Not Found", status_code=404)
+
     company = get_company_setting(db)
     if bool(company and company.is_initialized):
         return HTMLResponse("Not Found", status_code=404)
@@ -130,7 +136,7 @@ async def setup_submit(request: Request, db: Session = Depends(get_db)) -> HTMLR
     current_user = getattr(request.state, "current_user", None)
     if current_user is None:
         return RedirectResponse(url="/login?next=/setup", status_code=302)
-    if not is_superadmin_user(db, current_user):
+    if not is_admin_user(db, current_user):
         return HTMLResponse("Forbidden", status_code=403)
     if company is None:
         company = ensure_company_settings_row_exists(db)

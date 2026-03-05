@@ -12,11 +12,13 @@ from .base import Base, utcnow
 class CustomerAdjustment(Base):
     __tablename__ = "customer_adjustments"
     __table_args__ = (
+        sa.Index("ix_customer_adjustments_tenant_id", "tenant_id"),
         sa.Index("ix_customer_adjustments_customer_id", "customer_id"),
         sa.Index("ix_customer_adjustments_created_at", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False, default=1)
     customer_id: Mapped[int] = mapped_column(
         ForeignKey("customers.id", ondelete="CASCADE"),
         nullable=False,

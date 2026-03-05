@@ -4,11 +4,12 @@ import json
 from datetime import date, datetime, time, timedelta
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from ..auth import ROLE_SUPERADMIN, ROLE_TENANT_ADMIN, normalize_role
 from ..constants import CODE_MAX, DESC_MAX
 from ..db import get_db
 from ..models import Invoice, PrintDestination, PrintJob, PrintTemplate, Ticket
@@ -33,7 +34,15 @@ from ..services.printing import (
 )
 from ..templating import templates
 
-router = APIRouter()
+
+def _require_admin_user(request: Request) -> None:
+    current_user = getattr(getattr(request, "state", None), "current_user", None)
+    role = normalize_role(getattr(current_user, "role", None), default=None)
+    if current_user is None or role not in {ROLE_SUPERADMIN, ROLE_TENANT_ADMIN}:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+router = APIRouter(dependencies=[Depends(_require_admin_user)])
 
 DOCUMENT_TYPE_OPTIONS = (
     (DOCUMENT_TYPE_TICKET, "Ticket"),

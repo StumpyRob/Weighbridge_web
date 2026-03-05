@@ -1,10 +1,69 @@
 from datetime import datetime
 from io import BytesIO, StringIO
 
+import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app.auth import ROLE_SUPERADMIN, hash_password, user_identity_kwargs
+from app.db import get_db
+from app.main import app
 from app.models import EwcCode, EwcImportLog
+from app.models import User
+from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD
 from app.services.ewc_import import import_ewc_codes
+
+
+def _admin_url(path: str) -> str:
+    normalized = path if path.startswith("/") else f"/{path}"
+    return f"https://admin.localhost{normalized}"
+
+
+def _login_platform_superadmin(client) -> str:
+    warm = client.get(_admin_url("/login"))
+    assert warm.status_code == 200
+    csrf = str(warm.cookies.get(CSRF_COOKIE_NAME) or client.cookies.get(CSRF_COOKIE_NAME) or "")
+    assert csrf
+    response = client.post(
+        _admin_url("/login"),
+        data={
+            "email": "test-superadmin@example.com",
+            "password": "TestPass123!",
+            "next": "/admin/ewc-codes",
+            CSRF_FORM_FIELD: csrf,
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code in {302, 303}
+    return csrf
+
+
+@pytest.fixture()
+def admin_client(SessionLocal):
+    def override_get_db():
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    with SessionLocal() as db:
+        db.add(
+            User(
+                **user_identity_kwargs(email="test-superadmin@example.com", role=ROLE_SUPERADMIN),
+                password_hash=hash_password("TestPass123!"),
+                is_active=True,
+                tenant_id=None,
+            )
+        )
+        db.commit()
+
+    with TestClient(app, base_url="https://admin.localhost") as client:
+        _login_platform_superadmin(client)
+        yield client
+
+    app.dependency_overrides.clear()
 
 
 def test_import_ewc_codes_is_idempotent_and_updates_existing_rows(db_session):
@@ -89,14 +148,16 @@ def test_import_ewc_codes_replace_mode_deactivates_missing_codes(db_session):
     assert rows["060101"].active is False
 
 
-def test_admin_ewc_import_page_uploads_csv_and_records_log(client, db_session):
-    page = client.get("/admin/ewc-codes")
+def test_admin_ewc_import_page_uploads_csv_and_records_log(admin_client, db_session):
+    csrf = str(admin_client.cookies.get(CSRF_COOKIE_NAME) or "")
+    assert csrf
+    page = admin_client.get(_admin_url("/admin/ewc-codes"))
     assert page.status_code == 200
     assert "EWC Codes" in page.text
 
-    response = client.post(
-        "/admin/ewc-codes",
-        data={"replace_existing": "1"},
+    response = admin_client.post(
+        _admin_url("/admin/ewc-codes"),
+        data={"replace_existing": "1", CSRF_FORM_FIELD: csrf},
         files={
             "csv_file": (
                 "ewc_upload.csv",
@@ -127,9 +188,12 @@ def test_admin_ewc_import_page_uploads_csv_and_records_log(client, db_session):
     assert last_log.inserted_count == 1
 
 
-def test_admin_ewc_import_rejects_non_csv_upload(client):
-    response = client.post(
-        "/admin/ewc-codes",
+def test_admin_ewc_import_rejects_non_csv_upload(admin_client):
+    csrf = str(admin_client.cookies.get(CSRF_COOKIE_NAME) or "")
+    assert csrf
+    response = admin_client.post(
+        _admin_url("/admin/ewc-codes"),
+        data={CSRF_FORM_FIELD: csrf},
         files={
             "csv_file": (
                 "bad.txt",
@@ -142,7 +206,7 @@ def test_admin_ewc_import_rejects_non_csv_upload(client):
     assert "Only .csv files are supported." in response.text
 
 
-def test_admin_ewc_download_current_csv_exports_db_rows(client, db_session):
+def test_admin_ewc_download_current_csv_exports_db_rows(admin_client, db_session):
     db_session.add(
         EwcCode(
             code_6="170904",
@@ -156,7 +220,7 @@ def test_admin_ewc_download_current_csv_exports_db_rows(client, db_session):
     )
     db_session.commit()
 
-    response = client.get("/admin/ewc-codes/sample.csv")
+    response = admin_client.get(_admin_url("/admin/ewc-codes/sample.csv"))
     assert response.status_code == 200
     assert "text/csv" in response.headers.get("content-type", "")
     assert "code,description,hazardous,active" in response.text

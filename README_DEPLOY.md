@@ -57,18 +57,18 @@ WeasyPrint can resolve `/static/...` image paths.
 
 ## Persist Company Logo Uploads
 
-Company logo uploads are written under `app/static/uploads/company`. In Docker, bind mount
-the uploads folder so logos survive container rebuilds:
+Company logo uploads are written under `/data/uploads/tenants/<tenant_id>/company`. In Docker,
+bind mount the upload root so tenant-separated files survive container rebuilds:
 
 ```yaml
 services:
   web:
     volumes:
-      - ./uploads:/app/app/static/uploads
+      - ./uploads:/data/uploads
 ```
 
 Ensure the host folder exists before first run:
 
 ```bash
-mkdir -p uploads/company
+mkdir -p uploads
 ```

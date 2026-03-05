@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Tenants{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Tenants</h1>
+  <p class="text-muted">Platform tenant management.</p>
+  <form method="get" class="inline-form">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search name or subdomain" />
+    <button type="submit">Search</button>
+    <a class="button-link" href="/admin/tenants/new">Create tenant</a>
+  </form>
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+  {% if saved %}
+    <p class="success">Saved.</p>
+  {% endif %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Subdomain</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for tenant in tenants %}
+        <tr>
+          <td>{{ tenant.name }}</td>
+          <td>{{ tenant.subdomain }}</td>
+          <td>
+            {% if tenant.is_active %}
+              <span class="tenant-status-badge tenant-status-badge--active">Active</span>
+            {% else %}
+              <span class="tenant-status-badge tenant-status-badge--disabled">Disabled</span>
+            {% endif %}
+          </td>
+          <td>
+            <a class="button-link" href="/admin/tenants/{{ tenant.id }}">Details</a>
+            {% if tenant.is_active %}
+              <form method="post" action="/admin/tenants/{{ tenant.id }}/disable">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                <button type="submit">Disable</button>
+              </form>
+            {% else %}
+              <form method="post" action="/admin/tenants/{{ tenant.id }}/enable">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                <button type="submit">Enable</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      {% if not tenants %}
+        <tr>
+          <td colspan="4">No tenants found.</td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

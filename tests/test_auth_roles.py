@@ -12,6 +12,8 @@ from sqlalchemy.orm import sessionmaker
 from app.auth import (
     ROLE_ADMIN,
     ROLE_OPERATOR,
+    ROLE_SUPERADMIN,
+    ROLE_USER,
     hash_password,
     user_identity_kwargs,
 )
@@ -162,6 +164,7 @@ def test_operator_is_blocked_from_admin_only_actions(tmp_path, monkeypatch):
             password="TestPass123!",
             role=ROLE_OPERATOR,
         )
+        _initialize_system(SessionLocal)
         with SessionLocal() as db:
             db.add(Customer(account_code="C-AUTH-1", name="Auth Customer"))
             db.commit()
@@ -222,7 +225,7 @@ def test_bootstrap_superadmin_only_once(tmp_path):
         session_factory=SessionLocal,
     )
     assert created.email == "first@example.com"
-    assert created.role == "SUPERADMIN"
+    assert created.role == ROLE_SUPERADMIN
 
     with pytest.raises(RuntimeError):
         create_superadmin_account(
@@ -267,7 +270,7 @@ def test_web_bootstrap_creates_superadmin_and_disables_route(tmp_path, monkeypat
             )
             assert created is not None
             if hasattr(User, "role"):
-                assert created.role == "SUPERADMIN"
+                assert created.role == ROLE_SUPERADMIN
             assert created.is_active
 
         disabled = client.get("/bootstrap")
@@ -321,3 +324,35 @@ def test_web_bootstrap_is_404_when_users_already_exist(tmp_path, monkeypatch):
         assert post_response.status_code == 404
     finally:
         client.close()
+
+
+def test_first_platform_user_defaults_to_superadmin(tmp_path):
+    db_path = tmp_path / "first-platform-user.db"
+    engine = create_engine(
+        f"sqlite+pysqlite:///{db_path}", connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
+    with SessionLocal() as db:
+        first = User(
+            username="first@example.com",
+            password_hash=hash_password("TestPass123!"),
+            is_active=True,
+        )
+        second = User(
+            username="second@example.com",
+            password_hash=hash_password("TestPass123!"),
+            is_active=True,
+        )
+        db.add(first)
+        db.flush()
+        db.add(second)
+        db.commit()
+        db.refresh(first)
+        db.refresh(second)
+
+        assert first.role == ROLE_SUPERADMIN
+        assert first.tenant_id is None
+        assert second.role == ROLE_USER
+        assert second.tenant_id is None

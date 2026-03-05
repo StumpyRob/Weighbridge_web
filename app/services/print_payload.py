@@ -30,7 +30,7 @@ from ..models import (
     Yard,
 )
 from .printing import DOCUMENT_TYPE_INVOICE, DOCUMENT_TYPE_TICKET, DOCUMENT_TYPE_WTN
-from .uploads import resolve_company_logo_web_path
+from .uploads import logo_file_from_web_path, resolve_company_logo_web_path
 
 
 PRINT_PAYLOAD_KEYS: tuple[str, ...] = (
@@ -222,14 +222,7 @@ def _resolve_logo_file_path(logo_path: str) -> Path | None:
         return None
 
     if normalized.startswith("/static/uploads/company/"):
-        filename = Path(normalized).name
-        if not filename:
-            return None
-        for upload_root in _logo_upload_root_candidates():
-            candidate = (upload_root / filename).resolve()
-            if candidate.is_file():
-                return candidate
-        return None
+        return logo_file_from_web_path(normalized)
 
     if normalized.startswith("/media/"):
         media_root = Path(str(settings.media_root or "").strip() or "app/media")
@@ -243,25 +236,6 @@ def _resolve_logo_file_path(logo_path: str) -> Path | None:
     if maybe_absolute.is_absolute() and maybe_absolute.is_file():
         return maybe_absolute.resolve()
     return None
-
-
-def _logo_upload_root_candidates() -> tuple[Path, ...]:
-    configured = Path(
-        str(settings.effective_company_logo_upload_dir or "").strip()
-    )
-    uploads_default = Path(str(settings.effective_uploads_dir or "").strip()) / "company"
-    package_default = Path(__file__).resolve().parents[1] / "static" / "uploads" / "company"
-
-    candidates: list[Path] = []
-    for root in (configured, uploads_default, package_default):
-        try:
-            resolved = root.resolve()
-        except OSError:
-            continue
-        if resolved in candidates:
-            continue
-        candidates.append(resolved)
-    return tuple(candidates)
 
 
 def _lookup_or_none(

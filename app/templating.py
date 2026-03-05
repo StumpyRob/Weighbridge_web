@@ -75,9 +75,21 @@ def _auth_context(request) -> dict[str, object]:
     return {"current_user": getattr(request.state, "current_user", None)}
 
 
+def _tenant_context(request) -> dict[str, object]:
+    tenant = getattr(request.state, "tenant", None)
+    tenant_name = str(getattr(tenant, "name", "") or "").strip()
+    tenant_subdomain = str(getattr(tenant, "subdomain", "") or "").strip()
+    return {
+        "current_tenant": tenant,
+        "current_tenant_name": tenant_name,
+        "current_tenant_subdomain": tenant_subdomain,
+        "platform_mode": bool(getattr(request.state, "platform_mode", False)),
+    }
+
+
 templates = Jinja2Templates(
     directory="app/templates",
-    context_processors=[_ui_branding_context, _csrf_context, _auth_context],
+    context_processors=[_ui_branding_context, _csrf_context, _auth_context, _tenant_context],
 )
 _build_info = get_build_info()
 _asset_build_stamp = f"{_build_info['version']}-{_build_info['commit_short']}"

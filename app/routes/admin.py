@@ -23,6 +23,7 @@ from ..services.system_setup import (
     uploads_path_status,
 )
 from ..services.ui_branding import get_branding
+from ..tenancy import request_platform_mode
 from ..templating import templates
 
 router = APIRouter()
@@ -185,6 +186,12 @@ def admin_audit(
     selected_user_id = int(selected_user_raw) if selected_user_raw.isdigit() else None
 
     query = select(AuditEvent)
+    option_filters = []
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if not request_platform_mode(request) and tenant_id is not None:
+        tenant_filter = AuditEvent.tenant_id == str(int(tenant_id))
+        option_filters.append(tenant_filter)
+        query = query.where(tenant_filter)
 
     now = utcnow()
     if selected_range == "today":
@@ -240,15 +247,20 @@ def admin_audit(
 
     entity_type_options = db.execute(
         select(AuditEvent.entity_type)
+        .where(*option_filters)
         .distinct()
         .order_by(AuditEvent.entity_type.asc())
     ).scalars().all()
     action_options = db.execute(
-        select(AuditEvent.action).distinct().order_by(AuditEvent.action.asc())
+        select(AuditEvent.action)
+        .where(*option_filters)
+        .distinct()
+        .order_by(AuditEvent.action.asc())
     ).scalars().all()
     user_options = db.execute(
         select(User)
         .join(AuditEvent, AuditEvent.user_id == User.id)
+        .where(*option_filters)
         .distinct()
         .order_by(User.username.asc())
     ).scalars().all()

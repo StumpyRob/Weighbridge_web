@@ -125,8 +125,8 @@ def _ensure_default_invoice_destination(db_session) -> None:
 
 
 def test_company_logo_upload_persists_file_and_path(client, db_session, monkeypatch, tmp_path):
-    upload_dir = tmp_path / "uploads" / "company"
-    monkeypatch.setattr(settings, "company_logo_upload_dir", str(upload_dir))
+    uploads_root = tmp_path / "uploads"
+    monkeypatch.setattr(settings, "uploads_dir", str(uploads_root))
 
     response = client.post(
         "/admin/company",
@@ -152,7 +152,15 @@ def test_company_logo_upload_persists_file_and_path(client, db_session, monkeypa
     assert setting.company_logo_path.startswith("/static/uploads/company/")
     assert setting.company_logo_updated_at is not None
 
-    uploaded_file = upload_dir / Path(setting.company_logo_path).name
+    tenant_id = int(setting.tenant_id or 0)
+    assert tenant_id > 0
+    uploaded_file = (
+        uploads_root
+        / "tenants"
+        / str(tenant_id)
+        / "company"
+        / Path(setting.company_logo_path).name
+    )
     assert uploaded_file.is_file()
 
     remove_response = client.post(

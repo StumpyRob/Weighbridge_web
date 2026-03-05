@@ -14,7 +14,11 @@ from ..audit import log as audit_log
 from ..audit import user_snapshot
 from ..auth import (
     ROLE_SUPERADMIN,
+    SESSION_PLATFORM_MODE_KEY,
+    SESSION_ROLE_KEY,
+    SESSION_TENANT_ID_KEY,
     SESSION_USER_ID_KEY,
+    ensure_user_role,
     hash_password,
     normalize_email,
     user_identity_kwargs,
@@ -24,6 +28,7 @@ from ..auth import (
 )
 from ..db import get_db
 from ..models import User
+from ..tenancy import request_platform_mode
 from ..templating import templates
 
 router = APIRouter()
@@ -41,6 +46,12 @@ def _safe_next_path(raw: str | None) -> str:
     if candidate.startswith("/logout"):
         return "/tickets"
     return candidate
+
+
+def _default_next_path(request: Request) -> str:
+    if request_platform_mode(request):
+        return "/admin/tenants"
+    return "/tickets"
 
 
 def _login_context(
@@ -62,12 +73,145 @@ def _login_context(
     }
 
 
-def _user_count(db: Session) -> int:
-    return int(db.execute(select(func.count(User.id))).scalar_one_or_none() or 0)
+def _request_tenant_id(request: Request) -> int | None:
+    tenant_id = getattr(getattr(request, "state", None), "tenant_id", None)
+    if tenant_id is None:
+        return None
+    try:
+        return int(tenant_id)
+    except (TypeError, ValueError):
+        return None
 
 
-def _bootstrap_enabled(db: Session) -> bool:
-    return _user_count(db) == 0
+def _legacy_single_host_mode(request: Request) -> bool:
+    return bool(getattr(getattr(request, "state", None), "legacy_single_host", False))
+
+
+def _identity_column():
+    email_col = getattr(User, "email", None)
+    if email_col is not None:
+        return email_col
+    return getattr(User, "username")
+
+
+def _login_user_lookup(db: Session, request: Request, email: str) -> User | None:
+    if request_platform_mode(request):
+        identity_col = _identity_column()
+        return (
+            db.execute(
+                select(User).where(
+                    func.lower(identity_col) == email,
+                    User.tenant_id.is_(None),
+                )
+            )
+            .scalars()
+            .first()
+        )
+
+    legacy_single_host = _legacy_single_host_mode(request)
+    if legacy_single_host:
+        return user_by_email(
+            db,
+            email,
+            skip_tenant_scope=True,
+        )
+
+    tenant_id = _request_tenant_id(request)
+    if tenant_id is None:
+        return None
+    identity_col = _identity_column()
+    return (
+        db.execute(
+            select(User).where(
+                func.lower(identity_col) == email,
+                User.tenant_id == int(tenant_id),
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
+def _login_scope_user_count(db: Session, request: Request) -> int:
+    if request_platform_mode(request):
+        return int(
+            db.execute(
+                select(func.count(User.id)).where(
+                    func.lower(func.trim(User.role)) == ROLE_SUPERADMIN,
+                    User.tenant_id.is_(None),
+                )
+            ).scalar_one_or_none()
+            or 0
+        )
+
+    if _legacy_single_host_mode(request):
+        return int(
+            db.execute(
+                select(func.count(User.id)).execution_options(skip_tenant_scope=True)
+            ).scalar_one_or_none()
+            or 0
+        )
+
+    tenant_id = _request_tenant_id(request)
+    if tenant_id is None:
+        return 0
+    return int(
+        db.execute(
+            select(func.count(User.id)).where(
+                User.tenant_id == tenant_id,
+                User.role != ROLE_SUPERADMIN,
+            )
+        ).scalar_one_or_none()
+        or 0
+    )
+
+
+def _bootstrap_enabled(db: Session, request: Request) -> bool:
+    if request_platform_mode(request):
+        return (
+            int(
+                db.execute(
+                    select(func.count(User.id))
+                    .execution_options(skip_tenant_scope=True)
+                    .where(
+                        func.lower(func.trim(User.role)) == ROLE_SUPERADMIN,
+                        User.tenant_id.is_(None),
+                    )
+                ).scalar_one_or_none()
+                or 0
+            )
+            == 0
+        )
+    if not _legacy_single_host_mode(request):
+        return False
+    return (
+        int(
+            db.execute(
+                select(func.count(User.id))
+                .execution_options(skip_tenant_scope=True)
+                .where(
+                    func.lower(func.trim(User.role)) == ROLE_SUPERADMIN,
+                    User.tenant_id.is_(None),
+                )
+            ).scalar_one_or_none()
+            or 0
+        )
+        == 0
+    )
+
+
+def _user_allowed_for_scope(user: User, request: Request, *, role: str) -> bool:
+    tenant_id = _request_tenant_id(request)
+    legacy_single_host = _legacy_single_host_mode(request)
+    if request_platform_mode(request):
+        return role == ROLE_SUPERADMIN and user.tenant_id is None
+    if tenant_id is None:
+        return False
+    if role == ROLE_SUPERADMIN:
+        return legacy_single_host and user.tenant_id is None
+    if user.tenant_id is None:
+        return legacy_single_host
+    return int(user.tenant_id) == int(tenant_id)
 
 
 def _bootstrap_context(
@@ -87,10 +231,11 @@ def _bootstrap_context(
 def login_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     current = getattr(request.state, "current_user", None)
     if isinstance(current, User) and current.is_active:
-        return RedirectResponse(url="/tickets", status_code=303)
+        return RedirectResponse(url=_default_next_path(request), status_code=303)
 
-    user_count = _user_count(db)
-    next_path = _safe_next_path(request.query_params.get("next"))
+    user_count = _login_scope_user_count(db, request)
+    next_raw = request.query_params.get("next")
+    next_path = _safe_next_path(next_raw) if next_raw else _default_next_path(request)
     return templates.TemplateResponse(
         request,
         "auth/login.html",
@@ -106,12 +251,13 @@ def login_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
 async def login_submit(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     current = getattr(request.state, "current_user", None)
     if isinstance(current, User) and current.is_active:
-        return RedirectResponse(url="/tickets", status_code=303)
+        return RedirectResponse(url=_default_next_path(request), status_code=303)
 
     form = await request.form()
     email = normalize_email(str(form.get("email", "")))
     password = str(form.get("password", ""))
-    next_path = _safe_next_path(form.get("next"))
+    next_raw = form.get("next")
+    next_path = _safe_next_path(next_raw) if next_raw else _default_next_path(request)
 
     errors: list[str] = []
     if not validate_email(email):
@@ -127,8 +273,15 @@ async def login_submit(request: Request, db: Session = Depends(get_db)) -> HTMLR
             status_code=400,
         )
 
-    user = user_by_email(db, email)
-    if user is None or not user.is_active or not verify_password(password, user.password_hash):
+    legacy_single_host = _legacy_single_host_mode(request)
+    user = _login_user_lookup(db, request, email)
+    role = ensure_user_role(db, user, allow_bootstrap=True) if user is not None else ""
+    if (
+        user is None
+        or not user.is_active
+        or not _user_allowed_for_scope(user, request, role=role)
+        or not verify_password(password, user.password_hash)
+    ):
         audit_log(
             db,
             request,
@@ -151,6 +304,15 @@ async def login_submit(request: Request, db: Session = Depends(get_db)) -> HTMLR
             status_code=401,
         )
 
+    request_tenant_id = _request_tenant_id(request)
+    if (
+        not request_platform_mode(request)
+        and role != ROLE_SUPERADMIN
+        and request_tenant_id is not None
+        and getattr(user, "tenant_id", None) is None
+    ):
+        user.tenant_id = int(request_tenant_id)
+
     audit_log(
         db,
         request,
@@ -165,12 +327,20 @@ async def login_submit(request: Request, db: Session = Depends(get_db)) -> HTMLR
     )
     db.commit()
     request.session[SESSION_USER_ID_KEY] = int(user.id)
+    request.session[SESSION_ROLE_KEY] = role
+    request.session[SESSION_PLATFORM_MODE_KEY] = bool(request_platform_mode(request))
+    if request_platform_mode(request):
+        request.session[SESSION_TENANT_ID_KEY] = None
+    elif role == ROLE_SUPERADMIN and legacy_single_host and request_tenant_id is not None:
+        request.session[SESSION_TENANT_ID_KEY] = int(request_tenant_id)
+    else:
+        request.session[SESSION_TENANT_ID_KEY] = int(getattr(user, "tenant_id", 0) or 0)
     return RedirectResponse(url=next_path, status_code=303)
 
 
 @router.get("/bootstrap", response_class=HTMLResponse)
 def bootstrap_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
-    if not _bootstrap_enabled(db):
+    if not _bootstrap_enabled(db, request):
         return HTMLResponse("Not Found", status_code=404)
     return templates.TemplateResponse(
         request,
@@ -181,7 +351,7 @@ def bootstrap_page(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
 
 @router.post("/bootstrap", response_class=HTMLResponse)
 async def bootstrap_submit(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
-    if not _bootstrap_enabled(db):
+    if not _bootstrap_enabled(db, request):
         return HTMLResponse("Not Found", status_code=404)
 
     form = await request.form()
@@ -221,6 +391,7 @@ async def bootstrap_submit(request: Request, db: Session = Depends(get_db)) -> H
         **user_identity_kwargs(email=email, role=ROLE_SUPERADMIN),
         password_hash=hash_password(password),
         is_active=True,
+        tenant_id=None,
     )
     db.add(user)
     try:

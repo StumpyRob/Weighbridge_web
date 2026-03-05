@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import sqlalchemy as sa
 from sqlalchemy import Boolean, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,8 +12,13 @@ from .base import Base, utcnow
 
 class CompanySetting(Base):
     __tablename__ = "company_settings"
+    __table_args__ = (
+        sa.UniqueConstraint("tenant_id", name="uq_company_settings_tenant_id"),
+        sa.Index("ix_company_settings_tenant_id", "tenant_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(sa.ForeignKey("tenants.id"), nullable=False, default=1)
     name: Mapped[str | None] = mapped_column(String(NAME_MAX), nullable=True)
     address_line1: Mapped[str | None] = mapped_column(String(ADDRESS_LINE_MAX), nullable=True)
     address_line2: Mapped[str | None] = mapped_column(String(ADDRESS_LINE_MAX), nullable=True)

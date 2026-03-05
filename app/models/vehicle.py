@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import sqlalchemy as sa
 from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -9,9 +10,18 @@ from .base import Base, utcnow
 
 class Vehicle(Base):
     __tablename__ = "vehicles"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "tenant_id",
+            "registration",
+            name="uq_vehicles_tenant_registration",
+        ),
+        sa.Index("ix_vehicles_tenant_id", "tenant_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    registration: Mapped[str] = mapped_column(String(REG_MAX), unique=True, nullable=False)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False, default=1)
+    registration: Mapped[str] = mapped_column(String(REG_MAX), nullable=False)
     owner_customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"))
     default_customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"))
     vehicle_type_id: Mapped[int | None] = mapped_column(

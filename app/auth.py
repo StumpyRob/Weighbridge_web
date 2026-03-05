@@ -10,12 +10,21 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .models import User
+from .user_roles import (
+    ROLE_SUPERADMIN,
+    ROLE_TENANT_ADMIN,
+    ROLE_USER,
+    legacy_role_for_tenant_id,
+    normalize_role,
+)
 
-ROLE_SUPERADMIN = "SUPERADMIN"
-ROLE_ADMIN = "ADMIN"
-ROLE_OPERATOR = "OPERATOR"
+ROLE_ADMIN = ROLE_TENANT_ADMIN
+ROLE_OPERATOR = ROLE_USER
 
 SESSION_USER_ID_KEY = "user_id"
+SESSION_TENANT_ID_KEY = "tenant_id"
+SESSION_ROLE_KEY = "role"
+SESSION_PLATFORM_MODE_KEY = "platform_mode"
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -56,16 +65,20 @@ def _user_email_column():
     return getattr(User, "username")
 
 
-def user_by_email(db: Session, email: str | None) -> User | None:
+def user_by_email(
+    db: Session,
+    email: str | None,
+    *,
+    skip_tenant_scope: bool = False,
+) -> User | None:
     normalized = normalize_email(email)
     if not normalized:
         return None
     email_col = _user_email_column()
-    return (
-        db.execute(select(User).where(func.lower(email_col) == normalized))
-        .scalars()
-        .first()
-    )
+    statement = select(User).where(func.lower(email_col) == normalized)
+    if skip_tenant_scope:
+        statement = statement.execution_options(skip_tenant_scope=True)
+    return db.execute(statement).scalars().first()
 
 
 def user_identity_kwargs(*, email: str, role: str | None = None) -> dict[str, object]:
@@ -76,29 +89,98 @@ def user_identity_kwargs(*, email: str, role: str | None = None) -> dict[str, ob
     if hasattr(User, "username"):
         kwargs["username"] = normalized
     if role and hasattr(User, "role"):
-        kwargs["role"] = role
+        kwargs["role"] = normalize_role(role, default=ROLE_USER)
     return kwargs
+
+
+def _all_users_statement(statement):
+    return statement.execution_options(skip_tenant_scope=True)
+
+
+def _platform_superadmin_count(db: Session) -> int:
+    return int(
+        db.execute(
+            _all_users_statement(
+                select(func.count(User.id)).where(
+                    User.tenant_id.is_(None),
+                    func.lower(func.trim(User.role)) == ROLE_SUPERADMIN,
+                )
+            )
+        ).scalar_one_or_none()
+        or 0
+    )
+
+
+def _first_platform_user_id(db: Session) -> int | None:
+    value = db.execute(
+        _all_users_statement(
+            select(func.min(User.id)).where(User.tenant_id.is_(None))
+        )
+    ).scalar_one_or_none()
+    if value is None:
+        return None
+    return int(value)
+
+
+def ensure_user_role(
+    db: Session,
+    user: User | None,
+    *,
+    allow_bootstrap: bool = True,
+) -> str:
+    if user is None:
+        return ROLE_USER
+
+    stored_role = getattr(user, "role", None)
+    tenant_id = getattr(user, "tenant_id", None)
+    normalized = normalize_role(stored_role, default=None)
+    changed = False
+
+    if normalized is None:
+        normalized = legacy_role_for_tenant_id(tenant_id)
+        changed = True
+    elif str(stored_role or "").strip().lower() != normalized:
+        changed = True
+
+    user_id = getattr(user, "id", None)
+    if (
+        allow_bootstrap
+        and tenant_id is None
+        and normalized != ROLE_SUPERADMIN
+        and user_id is not None
+        and _platform_superadmin_count(db) == 0
+    ):
+        first_platform_user_id = _first_platform_user_id(db)
+        if first_platform_user_id is not None and int(first_platform_user_id) == int(user_id):
+            normalized = ROLE_SUPERADMIN
+            changed = True
+
+    if normalized == ROLE_SUPERADMIN and tenant_id is not None:
+        user.tenant_id = None
+        changed = True
+
+    if str(getattr(user, "role", "") or "").strip() != normalized:
+        user.role = normalized
+        changed = True
+
+    if changed:
+        db.flush()
+    return normalized
 
 
 def is_superadmin_user(db: Session, user: User | None) -> bool:
     if user is None or not bool(getattr(user, "is_active", False)):
         return False
 
-    role = str(getattr(user, "role", "") or "").strip().upper()
-    if role:
-        return role == ROLE_SUPERADMIN
-
-    first_user_id = db.execute(select(func.min(User.id))).scalar_one_or_none()
-    return first_user_id is not None and int(first_user_id) == int(user.id)
+    role = ensure_user_role(db, user, allow_bootstrap=True)
+    return role == ROLE_SUPERADMIN and getattr(user, "tenant_id", None) is None
 
 
 def is_admin_user(db: Session, user: User | None) -> bool:
     if user is None or not bool(getattr(user, "is_active", False)):
         return False
-    role = str(getattr(user, "role", "") or "").strip().upper()
-    if role:
-        return role in {ROLE_SUPERADMIN, ROLE_ADMIN}
-    return is_superadmin_user(db, user)
+    role = ensure_user_role(db, user, allow_bootstrap=True)
+    return role in {ROLE_SUPERADMIN, ROLE_TENANT_ADMIN}
 
 
 def user_display_name(user: User | None) -> str:

@@ -9,6 +9,7 @@ from .admin_company import router as admin_company_router
 from .invoices import router as invoices_router
 from .products import router as products_router
 from .setup import router as setup_router
+from .superadmin import router as superadmin_router
 from .tickets import router as tickets_router
 from .vehicles import router as vehicles_router
 
@@ -24,3 +25,4 @@ api_router.include_router(invoices_router, tags=["invoices"])
 api_router.include_router(products_router, tags=["products"])
 api_router.include_router(tickets_router, tags=["tickets"])
 api_router.include_router(vehicles_router, tags=["vehicles"])
+api_router.include_router(superadmin_router, tags=["superadmin"])

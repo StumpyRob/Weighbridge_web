@@ -52,6 +52,13 @@
             <a href="/login" class="site-auth__link">Sign in</a>
           {% endif %}
         </div>
+        {% if platform_mode %}
+          <span class="mode-indicator mode-indicator--platform">Platform Admin</span>
+        {% elif current_tenant_subdomain %}
+          <span class="mode-indicator mode-indicator--tenant">
+            {{ current_tenant_name or "Tenant" }} ({{ current_tenant_subdomain }})
+          </span>
+        {% endif %}
         {% if DEV_MODE %}
           <span class="dev-mode-pill">DEV MODE</span>
         {% endif %}

@@ -2,6 +2,7 @@ from datetime import datetime
 
 from decimal import Decimal
 
+import sqlalchemy as sa
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,9 +18,18 @@ from .base import Base, utcnow
 
 class Customer(Base):
     __tablename__ = "customers"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "tenant_id",
+            "account_code",
+            name="uq_customers_tenant_account_code",
+        ),
+        sa.Index("ix_customers_tenant_id", "tenant_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    account_code: Mapped[str] = mapped_column(String(CODE_MAX), unique=True, nullable=False)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False, default=1)
+    account_code: Mapped[str] = mapped_column(String(CODE_MAX), nullable=False)
     name: Mapped[str] = mapped_column(String(NAME_MAX), nullable=False)
     invoice_email: Mapped[str | None] = mapped_column(String(DESC_MAX))
     phone: Mapped[str | None] = mapped_column(String(CODE_MAX))

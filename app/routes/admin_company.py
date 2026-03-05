@@ -10,10 +10,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile
 
-from ..config import settings
 from ..constants import ADDRESS_LINE_MAX, NAME_MAX, POSTCODE_MAX
 from ..db import get_db
 from ..models import CompanySetting
+from ..services.uploads import company_logo_upload_dir, logo_file_from_web_path
 from ..services.ui_branding import (
     DEFAULT_NAVBAR_COLOR_HEX,
     DEFAULT_NAV_LOGO_HEIGHT_PX,
@@ -37,21 +37,11 @@ ALLOWED_LOGO_TYPES = {
 
 
 def _logo_upload_dir() -> Path:
-    upload_dir = Path(
-        str(settings.effective_company_logo_upload_dir or "").strip()
-    ).resolve()
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    return upload_dir
+    return company_logo_upload_dir()
 
 
 def _logo_file_from_web_path(path: str | None) -> Path | None:
-    normalized = str(path or "").strip()
-    if not normalized.startswith(LOGO_WEB_PATH_PREFIX):
-        return None
-    filename = Path(normalized).name
-    if not filename:
-        return None
-    return (_logo_upload_dir() / filename).resolve()
+    return logo_file_from_web_path(path)
 
 
 def _safe_unlink(path: Path | None) -> None:

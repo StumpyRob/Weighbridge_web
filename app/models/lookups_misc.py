@@ -292,13 +292,15 @@ class ProductGroup(Base):
 class PrintDestination(Base):
     __tablename__ = "print_destinations"
     __table_args__ = (
-        sa.UniqueConstraint("name", name="uq_print_destinations_name"),
+        sa.UniqueConstraint("tenant_id", "name", name="uq_print_destinations_tenant_name"),
+        sa.Index("ix_print_destinations_tenant_id", "tenant_id"),
         sa.Index("ix_print_destinations_document_type", "document_type"),
         sa.Index("ix_print_destinations_delivery_type", "delivery_type"),
         sa.Index("ix_print_destinations_is_active", "is_active"),
         sa.Index("ix_print_destinations_template_id", "template_id"),
         sa.Index(
             "uq_print_destinations_default_active_doc_type",
+            "tenant_id",
             "document_type",
             unique=True,
             sqlite_where=sa.text("is_default = 1 AND is_active = 1"),
@@ -307,6 +309,7 @@ class PrintDestination(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False, default=1)
     name: Mapped[str] = mapped_column(String(CODE_MAX), nullable=False)
     description: Mapped[str | None] = mapped_column(String(DESC_MAX))
     document_type: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -325,12 +328,14 @@ class PrintDestination(Base):
 class PrintTemplate(Base):
     __tablename__ = "print_templates"
     __table_args__ = (
-        sa.UniqueConstraint("code", name="uq_print_templates_code"),
+        sa.UniqueConstraint("tenant_id", "code", name="uq_print_templates_tenant_code"),
+        sa.Index("ix_print_templates_tenant_id", "tenant_id"),
         sa.Index("ix_print_templates_document_type", "document_type"),
         sa.Index("ix_print_templates_is_active", "is_active"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False, default=1)
     code: Mapped[str | None] = mapped_column(String(CODE_MAX), nullable=True)
     description: Mapped[str | None] = mapped_column(String(DESC_MAX))
     document_type: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -345,9 +350,13 @@ class PrintTemplate(Base):
 
 class PrintTemplateVersion(Base):
     __tablename__ = "print_template_versions"
-    __table_args__ = (sa.Index("ix_print_template_versions_template_id", "template_id"),)
+    __table_args__ = (
+        sa.Index("ix_print_template_versions_tenant_id", "tenant_id"),
+        sa.Index("ix_print_template_versions_template_id", "template_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False, default=1)
     template_id: Mapped[int] = mapped_column(
         ForeignKey("print_templates.id"), nullable=False
     )
@@ -358,6 +367,7 @@ class PrintTemplateVersion(Base):
 class PrintJob(Base):
     __tablename__ = "print_jobs"
     __table_args__ = (
+        sa.Index("ix_print_jobs_tenant_id", "tenant_id"),
         sa.Index("ix_print_jobs_status", "status"),
         sa.Index("ix_print_jobs_document_type", "document_type"),
         sa.Index("ix_print_jobs_destination_id", "destination_id"),
@@ -368,6 +378,7 @@ class PrintJob(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True

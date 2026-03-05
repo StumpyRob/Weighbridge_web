@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,8 +32,41 @@ class Settings(BaseSettings):
     smtp_from_email: str = ""
     smtp_use_tls: bool = True
     smtp_use_ssl: bool = False
+    base_domain: str = ""
+    allowed_hosts: str = ""
+    platform_subdomain: str = "admin"
+    default_tenant_subdomain: str = "default"
+    reserved_subdomains: str = "admin,www,api,static"
+    trust_forwarded_host: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="")
+
+    @field_validator(
+        "indicator_connected",
+        "debug",
+        "dev_mode",
+        "print_network_enabled",
+        "receipts_wip_enabled",
+        "enable_credit_limit_enforcement",
+        "enable_vat_calculation",
+        "enable_cash_account_rules",
+        "enable_invoice_pdf_emailing",
+        "enable_invoice_pdf_printing",
+        "smtp_use_tls",
+        "smtp_use_ssl",
+        "trust_forwarded_host",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_boolean_values(cls, value):
+        if isinstance(value, bool):
+            return value
+        normalized = str(value or "").strip().lower()
+        if normalized in {"1", "true", "yes", "on", "debug", "dev", "development"}:
+            return True
+        if normalized in {"0", "false", "no", "off", "release", "prod", "production", ""}:
+            return False
+        return bool(value)
 
     @property
     def effective_secret_key(self) -> str:
@@ -59,6 +93,40 @@ class Settings(BaseSettings):
         if explicit and explicit not in legacy_defaults:
             return explicit
         return str((Path(self.effective_uploads_dir) / "company"))
+
+    @property
+    def effective_base_domain(self) -> str:
+        return str(self.base_domain or "").strip().lower()
+
+    @property
+    def effective_platform_subdomain(self) -> str:
+        return str(self.platform_subdomain or "admin").strip().lower() or "admin"
+
+    @property
+    def effective_default_tenant_subdomain(self) -> str:
+        return str(self.default_tenant_subdomain or "default").strip().lower() or "default"
+
+    @property
+    def effective_reserved_subdomains(self) -> set[str]:
+        configured = {
+            item.strip().lower()
+            for item in str(self.reserved_subdomains or "").split(",")
+            if item.strip()
+        }
+        configured.add(self.effective_platform_subdomain)
+        return configured
+
+    @property
+    def effective_allowed_hosts(self) -> set[str]:
+        return {
+            item.strip().lower()
+            for item in str(self.allowed_hosts or "").split(",")
+            if item.strip()
+        }
+
+    @property
+    def effective_trust_forwarded_host(self) -> bool:
+        return bool(self.trust_forwarded_host)
 
 
 settings = Settings()

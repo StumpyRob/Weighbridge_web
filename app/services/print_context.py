@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..models import CompanySetting
-from .uploads import resolve_company_logo_web_path
+from .uploads import logo_file_from_web_path, resolve_company_logo_web_path
 
 
 def _company_setting(db: Session | None) -> CompanySetting | None:
@@ -91,14 +91,7 @@ def _logo_file_from_logo_path(logo_path: str) -> Path | None:
         return None
 
     if normalized.startswith("/static/uploads/company/"):
-        filename = Path(normalized).name
-        if not filename:
-            return None
-        for upload_root in _logo_upload_root_candidates():
-            candidate = (upload_root / filename).resolve()
-            if candidate.is_file():
-                return candidate
-        return None
+        return logo_file_from_web_path(normalized)
 
     if normalized.startswith("/media/"):
         media_root = Path(str(settings.media_root or "").strip() or "app/media")
@@ -112,27 +105,6 @@ def _logo_file_from_logo_path(logo_path: str) -> Path | None:
     if absolute.is_absolute() and absolute.is_file():
         return absolute.resolve()
     return None
-
-
-def _logo_upload_root_candidates() -> tuple[Path, ...]:
-    configured = Path(
-        str(settings.effective_company_logo_upload_dir or "").strip()
-    )
-    uploads_default = Path(str(settings.effective_uploads_dir or "").strip()) / "company"
-    package_default = (
-        Path(__file__).resolve().parents[1] / "static" / "uploads" / "company"
-    )
-
-    candidates: list[Path] = []
-    for root in (configured, uploads_default, package_default):
-        try:
-            resolved = root.resolve()
-        except OSError:
-            continue
-        if resolved in candidates:
-            continue
-        candidates.append(resolved)
-    return tuple(candidates)
 
 
 def _company_logo_url(company: CompanySetting | None) -> str:

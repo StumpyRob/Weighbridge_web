@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..audit import diff as audit_diff
 from ..audit import log as audit_log
-from ..auth import user_display_name
+from ..auth import is_admin_user, user_display_name
 from ..constants import (
     ADDRESS_LINE_MAX,
     CODE_MAX,
@@ -56,6 +56,28 @@ ADJUSTMENT_REASONS: tuple[tuple[str, str], ...] = (
     ("OTHER", "Other"),
 )
 CREDIT_AVAILABLE_LOW_RATIO = Decimal("0.20")
+
+
+def _forbidden_response() -> HTMLResponse:
+    return HTMLResponse("Forbidden", status_code=403)
+
+
+def _current_user_is_admin(request: Request, db: Session) -> bool:
+    return is_admin_user(db, getattr(request.state, "current_user", None))
+
+
+def _customer_admin_controls_requested(payload: dict[str, object]) -> bool:
+    credit_limit_pence = payload.get("credit_limit_pence")
+    try:
+        has_credit_limit = int(credit_limit_pence or 0) > 0
+    except (TypeError, ValueError):
+        has_credit_limit = False
+    return bool(
+        payload.get("on_stop")
+        or payload.get("do_not_invoice")
+        or payload.get("must_have_po")
+        or has_credit_limit
+    )
 
 
 @router.get("/customers", response_class=HTMLResponse)
@@ -115,6 +137,8 @@ async def customers_create(
 ) -> HTMLResponse:
     form = await request.form()
     payload = _parse_customer_form(form)
+    if _customer_admin_controls_requested(payload) and not _current_user_is_admin(request, db):
+        return _forbidden_response()
     if payload["errors"]:
         return templates.TemplateResponse(request, 
             "customers/new.html",
@@ -215,6 +239,22 @@ async def customers_update(
 
     form = await request.form()
     payload = _parse_customer_form(form)
+    before_audit = {
+        "on_stop": bool(customer.on_stop),
+        "dont_invoice": bool(customer.do_not_invoice),
+        "po_required": bool(customer.must_have_po),
+        "credit_limit": customer.credit_limit_pence,
+        "phone": customer.phone,
+        "email": customer.invoice_email,
+    }
+    admin_control_change = bool(
+        before_audit["on_stop"] != bool(payload["on_stop"])
+        or before_audit["dont_invoice"] != bool(payload["do_not_invoice"])
+        or before_audit["po_required"] != bool(payload["must_have_po"])
+        or int(before_audit["credit_limit"] or 0) != int(payload["credit_limit_pence"] or 0)
+    )
+    if admin_control_change and not _current_user_is_admin(request, db):
+        return _forbidden_response()
     if payload["errors"]:
         return _render_customer_edit_with_overrides(
             request,
@@ -224,15 +264,6 @@ async def customers_update(
             form=payload["form"],
             status_code=400,
         )
-
-    before_audit = {
-        "on_stop": bool(customer.on_stop),
-        "dont_invoice": bool(customer.do_not_invoice),
-        "po_required": bool(customer.must_have_po),
-        "credit_limit": customer.credit_limit_pence,
-        "phone": customer.phone,
-        "email": customer.invoice_email,
-    }
 
     customer.account_code = payload["account_code"]
     customer.name = payload["name"]
@@ -480,6 +511,8 @@ async def customer_adjustment_create(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    if not _current_user_is_admin(request, db):
+        return _forbidden_response()
     customer = db.get(Customer, customer_id)
     if not customer:
         return templates.TemplateResponse(

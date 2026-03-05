@@ -16,6 +16,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -52,6 +53,8 @@ class WasteProducerSourceEnum(str, Enum):
 class Ticket(Base):
     __tablename__ = "tickets"
     __table_args__ = (
+        UniqueConstraint("tenant_id", "ticket_no", name="uq_tickets_tenant_ticket_no"),
+        Index("ix_tickets_tenant_id", "tenant_id"),
         Index("ix_tickets_datetime", "datetime"),
         Index("ix_tickets_status", "status"),
         Index("ix_tickets_customer_id", "customer_id"),
@@ -65,7 +68,8 @@ class Ticket(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    ticket_no: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False, default=1)
+    ticket_no: Mapped[str] = mapped_column(String(50), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow

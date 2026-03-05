@@ -12,6 +12,10 @@ class CustomerProductPrice(Base):
     __tablename__ = "customer_product_prices"
     __table_args__ = (
         sa.Index(
+            "ix_customer_product_prices_tenant_id",
+            "tenant_id",
+        ),
+        sa.Index(
             "ix_customer_product_prices_customer_id",
             "customer_id",
         ),
@@ -22,6 +26,7 @@ class CustomerProductPrice(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False, default=1)
     customer_id: Mapped[int] = mapped_column(
         ForeignKey("customers.id", ondelete="CASCADE"),
         nullable=False,

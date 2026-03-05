@@ -31,6 +31,7 @@ from ..seed import (
     seed_vehicle_types,
     seed_void_reasons,
 )
+from .uploads import company_logo_storage_layout, uploads_root
 
 DEFAULT_YARD_NAME = "Main Yard"
 DEFAULT_YARD_CODE_PREFIX = "Y"
@@ -230,13 +231,12 @@ def print_defaults_exist(db: Session) -> bool:
 
 
 def uploads_path_status() -> dict[str, object]:
-    upload_dir = Path(
-        str(settings.effective_company_logo_upload_dir or "").strip()
-    ).resolve()
+    upload_dir = uploads_root()
     exists = upload_dir.is_dir()
     writable = _is_dir_writable(upload_dir)
     return {
         "path": str(upload_dir),
+        "layout": company_logo_storage_layout(upload_dir),
         "exists": exists,
         "writable": writable,
     }
