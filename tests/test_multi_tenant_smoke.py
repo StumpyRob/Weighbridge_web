@@ -641,6 +641,43 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert bool(tenant.is_active) is True
 
 
+def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-platform-scope.db", monkeypatch=monkeypatch
+    )
+    _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", is_active=True)
+    _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+
+        home = admin_client.get("/", follow_redirects=False)
+        assert home.status_code == 303
+        assert home.headers.get("location") == "/admin/tenants"
+
+        tenants_page = admin_client.get("/admin/tenants")
+        assert tenants_page.status_code == 200
+        assert ">Tenant Management<" in tenants_page.text
+        assert ">System Status<" in tenants_page.text
+        assert ">Tickets<" not in tenants_page.text
+        assert ">Customers<" not in tenants_page.text
+        assert ">Vehicles<" not in tenants_page.text
+        assert ">Products<" not in tenants_page.text
+        assert ">Invoices<" not in tenants_page.text
+        assert ">Lookups<" not in tenants_page.text
+        assert ">Reports<" not in tenants_page.text
+
+        blocked_tickets = admin_client.get("/tickets")
+        assert blocked_tickets.status_code == 404
+        assert "Unknown tenant" in blocked_tickets.text
+
+
 def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "reserved_subdomains", "admin,www,api,static,ops")
     app, SessionLocal = _build_app_and_session(

@@ -12,7 +12,9 @@
     </div>
     <div class="actions btn-group">
       <a class="btn btn--secondary" href="/">Go Home</a>
-      <a class="btn btn--ghost" href="/tickets">Open Tickets</a>
+      <a class="btn btn--ghost" href="{{ '/admin/tenants' if platform_mode else '/tickets' }}">
+        {{ 'Tenant Management' if platform_mode else 'Open Tickets' }}
+      </a>
     </div>
   </section>
 {% endblock %}

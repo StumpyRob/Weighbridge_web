@@ -563,6 +563,8 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+        if bool(getattr(request.state, "platform_mode", False)):
+            return RedirectResponse(url="/admin/tenants", status_code=303)
         company = get_company_setting(db)
         initialized = bool(company and getattr(company, "is_initialized", False))
         missing_required = missing_required_lookup_messages(db) if initialized else []
