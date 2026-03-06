@@ -85,6 +85,14 @@ _LOGIN_EXEMPT_PATHS = (
     "/platform/bootstrap",
 )
 _UPLOADS_STATIC_PREFIX = "/static/uploads/"
+_PUBLIC_ALLOWED_EXACT_PATHS = {
+    "/",
+}
+_PUBLIC_ALLOWED_PREFIXES = (
+    "/t/",
+    "/static/",
+    "/media/",
+)
 _TENANT_ONLY_PREFIXES = (
     "/tickets",
     "/customers",
@@ -147,6 +155,17 @@ def _apply_tenant_route_redirect_prefix(request: Request, response: Response) ->
     if scoped_location and scoped_location != location:
         response.headers["location"] = scoped_location
     return response
+
+
+def _public_host_mode(request: Request) -> bool:
+    return bool(getattr(getattr(request, "state", None), "public_host_mode", False))
+
+
+def _path_allowed_for_public_host(path: str) -> bool:
+    target = str(path or "").strip() or "/"
+    if target in _PUBLIC_ALLOWED_EXACT_PATHS:
+        return True
+    return any(target.startswith(prefix) for prefix in _PUBLIC_ALLOWED_PREFIXES)
 
 
 def create_app(dev_mode: bool | None = None) -> FastAPI:
@@ -238,33 +257,10 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 host_value = forwarded_host.split(",", 1)[0].strip()
         return host_value
 
-    def _apex_platform_path_mode(request: Request, host_name: str) -> bool:
-        if not _is_exact_base_domain(host_name):
-            return False
-
-        request_path = _request_scope_path(request)
-        if request_path.startswith("/platform"):
-            request.session[SESSION_PLATFORM_MODE_KEY] = True
-            return True
-
-        if request_path != "/login":
-            return False
-
-        if request.method == "GET":
-            next_hint = str(request.query_params.get("next", "") or "").strip()
-            if next_hint.startswith("/platform"):
-                request.session[SESSION_PLATFORM_MODE_KEY] = True
-                return True
-            request.session.pop(SESSION_PLATFORM_MODE_KEY, None)
-            return False
-
-        if request.method == "POST":
-            return bool(request.session.get(SESSION_PLATFORM_MODE_KEY))
-
-        return False
-
     def _maybe_brand_plain_error_response(request: Request, response: Response) -> Response:
         if request.method not in {"GET", "HEAD"}:
+            return response
+        if _public_host_mode(request):
             return response
 
         status_code = int(response.status_code or 0)
@@ -419,6 +415,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         request.state.platform_mode = False
         request.state.request_subdomain = ""
         request.state.tenant_route_prefix = ""
+        request.state.public_host_mode = False
         request.state.legacy_single_host = False
 
         original_request_path = _request_scope_path(request)
@@ -478,15 +475,14 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                     request.state.tenant = tenant
                     request.state.tenant_id = int(tenant.id)
                     _switch_tenant_context(tenant_id=int(tenant.id), platform_mode=False)
+                elif _is_exact_base_domain(host_name):
+                    request.state.public_host_mode = True
+                    request.session.pop(SESSION_PLATFORM_MODE_KEY, None)
                 else:
                     subdomain = resolve_subdomain(host_value)
                     request.state.request_subdomain = subdomain
 
-                    if _apex_platform_path_mode(request, host_name):
-                        request.state.platform_mode = True
-                        request.state.request_subdomain = settings.effective_platform_subdomain
-                        _switch_tenant_context(tenant_id=None, platform_mode=True)
-                    elif subdomain == settings.effective_platform_subdomain:
+                    if subdomain == settings.effective_platform_subdomain:
                         request.state.platform_mode = True
                         _switch_tenant_context(tenant_id=None, platform_mode=True)
                     else:
@@ -513,6 +509,9 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
             ):
                 return _plain_error("Unknown tenant", 404)
 
+            if request.state.public_host_mode and not _path_allowed_for_public_host(request_path):
+                return _plain_error("Not Found", 404)
+
             platform_only = any(request_path.startswith(prefix) for prefix in _PLATFORM_ONLY_PREFIXES)
             allow_legacy_bootstrap = bool(
                 request.state.legacy_single_host
@@ -525,8 +524,9 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 return _plain_error("Not Found", 404)
 
             # 3) Load session user once.
-            with _request_db(request) as db:
-                request.state.current_user = _load_session_user(request, db)
+            if not request.state.public_host_mode:
+                with _request_db(request) as db:
+                    request.state.current_user = _load_session_user(request, db)
 
             # 4) Enforce login once.
             if _path_requires_login(request_path):
@@ -651,6 +651,67 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+        if _public_host_mode(request):
+            return HTMLResponse(
+                """
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Weighbridge Web</title>
+    <style>
+      :root { color-scheme: light; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        font-family: Georgia, "Times New Roman", serif;
+        background: linear-gradient(160deg, #f6f2e9 0%, #ebe3d2 100%);
+        color: #18212b;
+      }
+      main {
+        width: min(680px, calc(100vw - 2rem));
+        padding: 2.5rem;
+        border: 1px solid rgba(24, 33, 43, 0.12);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow: 0 18px 48px rgba(24, 33, 43, 0.08);
+      }
+      h1 { margin: 0 0 0.75rem; font-size: clamp(2rem, 5vw, 3rem); }
+      p { margin: 0 0 1rem; line-height: 1.6; font-size: 1.02rem; }
+      .eyebrow {
+        display: inline-block;
+        margin-bottom: 1rem;
+        padding: 0.25rem 0.65rem;
+        border-radius: 999px;
+        background: #18212b;
+        color: #f6f2e9;
+        font-size: 0.78rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .note {
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(24, 33, 43, 0.12);
+        color: #45515f;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <span class="eyebrow">Platform in development</span>
+      <h1>Weighbridge Web</h1>
+      <p>A multi-tenant weighbridge operations platform for tickets, customers, products, and invoicing.</p>
+      <p>Public access is not open yet. This site is currently a temporary landing page while the platform is being finished.</p>
+      <p class="note">Customers access the platform using their company subdomain, for example <code>your-company.roberthetherington.com</code>.</p>
+    </main>
+  </body>
+</html>
+                """.strip()
+            )
         if bool(getattr(request.state, "platform_mode", False)):
             return RedirectResponse(url="/platform/tenants", status_code=303)
         company = get_company_setting(db)

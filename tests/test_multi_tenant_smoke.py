@@ -196,7 +196,7 @@ def test_tenant_resolution_middleware(tmp_path, monkeypatch):
         assert response.headers.get("location", "").startswith("/login")
 
 
-def test_base_domain_routes_to_default_tenant_and_admin_subdomain_stays_platform(
+def test_base_domain_serves_public_landing_and_subdomains_still_route(
     tmp_path,
     monkeypatch,
 ):
@@ -204,23 +204,23 @@ def test_base_domain_routes_to_default_tenant_and_admin_subdomain_stays_platform
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-base-domain.db", monkeypatch=monkeypatch
     )
-    default_tenant = _seed_tenant(
+    tenant_id = _seed_tenant(
         SessionLocal,
-        name="Default Tenant",
-        subdomain=settings.effective_default_tenant_subdomain,
+        name="Company One",
+        subdomain="company1",
     )
     _seed_tenant_baseline(
         SessionLocal,
-        tenant_id=default_tenant,
-        company_name="Default Co",
+        tenant_id=tenant_id,
+        company_name="Company One",
         primary_color="#224466",
     )
     _seed_user(
         SessionLocal,
-        email="default-admin@example.com",
+        email="company1-admin@example.com",
         password="TestPass123!",
         role=ROLE_TENANT_ADMIN,
-        tenant_id=default_tenant,
+        tenant_id=tenant_id,
     )
     _seed_user(
         SessionLocal,
@@ -231,53 +231,16 @@ def test_base_domain_routes_to_default_tenant_and_admin_subdomain_stays_platform
     )
 
     with _client(app, base_url="https://example.test") as base_client:
-        login_page = base_client.get("/login")
-        assert login_page.status_code == 200
-        tickets_redirect = base_client.get("/tickets", follow_redirects=False)
-        assert tickets_redirect.status_code == 302
-        assert tickets_redirect.headers.get("location") == "/login?next=/tickets"
-        assert _login(base_client, email="default-admin@example.com", password="TestPass123!") == 303
-        branding = base_client.get("/branding.css")
-        assert branding.status_code == 200
-        assert "#224466" in branding.text
-        assert base_client.get("/tickets").status_code == 200
-        admin_company = base_client.get("/admin/company")
-        assert admin_company.status_code == 200
-        assert ">Tenant Management<" not in admin_company.text
+        landing = base_client.get("/")
+        assert landing.status_code == 200
+        assert "Weighbridge Web" in landing.text
+        assert "Platform in development" in landing.text
+        assert "Customers access the platform using their company subdomain" in landing.text
 
-        platform_tenants = base_client.get("/platform/tenants", follow_redirects=False)
-        assert platform_tenants.status_code == 302
-        assert platform_tenants.headers.get("location") == "/login?next=/platform/tenants"
-
-    with _client(app, base_url="https://example.test") as apex_platform_client:
-        platform_tenants = apex_platform_client.get("/platform/tenants", follow_redirects=False)
-        assert platform_tenants.status_code in {302, 303}
-        assert platform_tenants.headers.get("location") == "/login?next=/platform/tenants"
-
-        login_page = apex_platform_client.get(platform_tenants.headers["location"])
-        assert login_page.status_code == 200
-        csrf = str(apex_platform_client.cookies.get(CSRF_COOKIE_NAME) or "")
-        assert csrf
-        login = apex_platform_client.post(
-            "/login",
-            data={
-                "email": "superadmin@example.com",
-                "password": "TestPass123!",
-                "next": "/platform/tenants",
-                CSRF_FORM_FIELD: csrf,
-            },
-            follow_redirects=False,
-        )
-        assert login.status_code == 303
-        assert login.headers.get("location") == "/platform/tenants"
-        tenants_page = apex_platform_client.get("/platform/tenants")
-        assert tenants_page.status_code == 200
-        assert ">Tenant Management<" in tenants_page.text
-        assert apex_platform_client.get("/admin/system-status").status_code == 200
-
-        blocked_tickets = apex_platform_client.get("/tickets", follow_redirects=False)
-        assert blocked_tickets.status_code == 302
-        assert blocked_tickets.headers.get("location") == "/login?next=/tickets"
+        blocked_tickets = base_client.get("/tickets")
+        assert blocked_tickets.status_code == 404
+        blocked_platform = base_client.get("/platform/tenants")
+        assert blocked_platform.status_code == 404
 
     with _client(app, base_url="https://admin.example.test") as admin_client:
         platform_tenants = admin_client.get("/platform/tenants", follow_redirects=False)
@@ -286,14 +249,15 @@ def test_base_domain_routes_to_default_tenant_and_admin_subdomain_stays_platform
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
         assert admin_client.get("/platform/tenants").status_code == 200
 
-    with _client(app, base_url="https://admin.example.test") as tenant_on_admin_client:
-        login_page = tenant_on_admin_client.get("/login")
+    with _client(app, base_url="https://company1.example.test") as tenant_client:
+        login_page = tenant_client.get("/login")
         assert login_page.status_code == 200
         assert _login(
-            tenant_on_admin_client,
-            email="default-admin@example.com",
+            tenant_client,
+            email="company1-admin@example.com",
             password="TestPass123!",
-        ) == 401
+        ) == 303
+        assert tenant_client.get("/tickets").status_code == 200
 
     with _client(app, base_url="https://unknown.example.test") as unknown_client:
         response = unknown_client.get("/health")
@@ -301,7 +265,7 @@ def test_base_domain_routes_to_default_tenant_and_admin_subdomain_stays_platform
         assert "Unknown tenant" in response.text
 
 
-def test_platform_bootstrap_on_base_domain_creates_first_superadmin_without_breaking_default_tenant(
+def test_platform_bootstrap_on_admin_subdomain_creates_first_superadmin_without_breaking_tenant_access(
     tmp_path,
     monkeypatch,
 ):
@@ -328,7 +292,7 @@ def test_platform_bootstrap_on_base_domain_creates_first_superadmin_without_brea
         tenant_id=default_tenant,
     )
 
-    with _client(app, base_url="https://example.test") as platform_client:
+    with _client(app, base_url="https://admin.example.test") as platform_client:
         platform_entry = platform_client.get("/platform/tenants", follow_redirects=False)
         assert platform_entry.status_code in {302, 303}
         assert platform_entry.headers.get("location") == "/login?next=/platform/tenants"
@@ -395,7 +359,7 @@ def test_platform_bootstrap_on_base_domain_creates_first_superadmin_without_brea
         assert default_admin is not None
         assert int(default_admin.tenant_id or 0) == default_tenant
 
-    with _client(app, base_url="https://example.test") as tenant_client:
+    with _client(app, base_url=f"https://{settings.effective_default_tenant_subdomain}.example.test") as tenant_client:
         assert (
             _login(
                 tenant_client,
@@ -1019,7 +983,7 @@ def test_path_based_tenant_access_mode_on_base_domain(tmp_path, monkeypatch):
         assert disabled_login.status_code == 403
         assert "Tenant disabled" in disabled_login.text
 
-    with _client(app, base_url="https://example.test") as platform_client:
+    with _client(app, base_url="https://admin.example.test") as platform_client:
         assert (
             _login(
                 platform_client,
@@ -1033,7 +997,7 @@ def test_path_based_tenant_access_mode_on_base_domain(tmp_path, monkeypatch):
         assert platform_page.status_code == 200
         assert "/t/mjteale/login" in platform_page.text
 
-    with _client(app, base_url="https://example.test") as default_client:
+    with _client(app, base_url=f"https://{settings.effective_default_tenant_subdomain}.example.test") as default_client:
         assert (
             _login(
                 default_client,
