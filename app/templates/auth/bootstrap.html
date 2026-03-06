@@ -21,7 +21,7 @@
       </div>
     {% endif %}
 
-    <form method="post" action="/bootstrap" class="auth-form">
+    <form method="post" action="{{ bootstrap_path }}" class="auth-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
       <div class="field">
         <label for="email">Email</label>

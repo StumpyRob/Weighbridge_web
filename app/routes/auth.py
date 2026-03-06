@@ -67,6 +67,7 @@ def _login_context(
         "errors": errors or [],
         "email": email,
         "next": next_path,
+        "bootstrap_path": _bootstrap_path(request),
         "logged_out": request.query_params.get("logged_out") == "1",
         "bootstrapped": request.query_params.get("bootstrap") == "1",
         "no_users_configured": no_users_configured,
@@ -224,7 +225,21 @@ def _bootstrap_context(
         "request": request,
         "errors": errors or [],
         "email": email,
+        "bootstrap_path": _bootstrap_path(request),
     }
+
+
+def _bootstrap_path(request: Request) -> str:
+    if request_platform_mode(request):
+        return "/platform/bootstrap"
+    return "/bootstrap"
+
+
+def _bootstrap_login_redirect_path(request: Request) -> str:
+    params: dict[str, str] = {"bootstrap": "1"}
+    if request_platform_mode(request):
+        params["next"] = "/platform/tenants"
+    return f"/login?{urlencode(params)}"
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -338,6 +353,7 @@ async def login_submit(request: Request, db: Session = Depends(get_db)) -> HTMLR
     return RedirectResponse(url=next_path, status_code=303)
 
 
+@router.get("/platform/bootstrap", response_class=HTMLResponse)
 @router.get("/bootstrap", response_class=HTMLResponse)
 def bootstrap_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     if not _bootstrap_enabled(db, request):
@@ -349,6 +365,7 @@ def bootstrap_page(request: Request, db: Session = Depends(get_db)) -> HTMLRespo
     )
 
 
+@router.post("/platform/bootstrap", response_class=HTMLResponse)
 @router.post("/bootstrap", response_class=HTMLResponse)
 async def bootstrap_submit(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     if not _bootstrap_enabled(db, request):
@@ -416,7 +433,7 @@ async def bootstrap_submit(request: Request, db: Session = Depends(get_db)) -> H
         return HTMLResponse("Not Found", status_code=404)
 
     logger.info("Bootstrap superadmin created via web for email=%s", email)
-    return RedirectResponse(url="/login?bootstrap=1", status_code=303)
+    return RedirectResponse(url=_bootstrap_login_redirect_path(request), status_code=303)
 
 
 @router.post("/logout")

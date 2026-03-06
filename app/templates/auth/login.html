@@ -13,7 +13,7 @@
 
     {% if no_users_configured %}
       <div class="alert alert--warning">
-        No user accounts exist yet. Create the first superadmin at <a href="/bootstrap">/bootstrap</a>
+        No user accounts exist yet. Create the first superadmin at <a href="{{ bootstrap_path }}">{{ bootstrap_path }}</a>
         or run <code>python -m app.cli create-superadmin</code>.
       </div>
     {% endif %}

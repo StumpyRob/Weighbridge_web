@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -65,22 +66,32 @@ def _client(app: FastAPI, *, base_url: str) -> TestClient:
     return TestClient(app, base_url=base_url)
 
 
-def _prime_csrf(client: TestClient) -> str:
-    response = client.get("/login")
+def _prime_csrf(client: TestClient, *, login_path: str = "/login") -> str:
+    response = client.get(login_path)
     assert response.status_code in {200, 302, 303}
     token = str(client.cookies.get(CSRF_COOKIE_NAME) or "")
     assert token
     return token
 
 
-def _login(client: TestClient, *, email: str, password: str) -> int:
-    csrf = _prime_csrf(client)
+def _login(
+    client: TestClient,
+    *,
+    email: str,
+    password: str,
+    next_path: str = "/tickets",
+    login_path: str | None = None,
+) -> int:
+    csrf_login_path = login_path
+    if csrf_login_path is None and next_path.startswith("/platform/"):
+        csrf_login_path = f"/login?{urlencode({'next': next_path})}"
+    csrf = _prime_csrf(client, login_path=csrf_login_path or "/login")
     response = client.post(
         "/login",
         data={
             "email": email,
             "password": password,
-            "next": "/tickets",
+            "next": next_path,
             CSRF_FORM_FIELD: csrf,
         },
         follow_redirects=False,
@@ -287,6 +298,113 @@ def test_base_domain_routes_to_default_tenant_and_admin_subdomain_stays_platform
         response = unknown_client.get("/health")
         assert response.status_code == 404
         assert "Unknown tenant" in response.text
+
+
+def test_platform_bootstrap_on_base_domain_creates_first_superadmin_without_breaking_default_tenant(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "base_domain", "example.test")
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-platform-bootstrap.db", monkeypatch=monkeypatch
+    )
+    default_tenant = _seed_tenant(
+        SessionLocal,
+        name="Default Tenant",
+        subdomain=settings.effective_default_tenant_subdomain,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=default_tenant,
+        company_name="Default Co",
+        primary_color="#225577",
+    )
+    _seed_user(
+        SessionLocal,
+        email="default-admin@example.com",
+        password="TenantPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=default_tenant,
+    )
+
+    with _client(app, base_url="https://example.test") as platform_client:
+        platform_entry = platform_client.get("/platform/tenants", follow_redirects=False)
+        assert platform_entry.status_code in {302, 303}
+        assert platform_entry.headers.get("location") == "/login?next=/platform/tenants"
+
+        login_page = platform_client.get(platform_entry.headers["location"])
+        assert login_page.status_code == 200
+        assert "No user accounts exist yet." in login_page.text
+        assert 'href="/platform/bootstrap"' in login_page.text
+
+        bootstrap_page = platform_client.get("/platform/bootstrap")
+        assert bootstrap_page.status_code == 200
+        assert 'action="/platform/bootstrap"' in bootstrap_page.text
+
+        csrf = str(platform_client.cookies.get(CSRF_COOKIE_NAME) or "")
+        assert csrf
+        bootstrap_post = platform_client.post(
+            "/platform/bootstrap",
+            data={
+                "email": "platform-owner@example.com",
+                "password": "PlatformPass123!",
+                "confirm_password": "PlatformPass123!",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert bootstrap_post.status_code == 303
+        location = bootstrap_post.headers.get("location", "")
+        assert location.startswith("/login?")
+        assert "bootstrap=1" in location
+        assert "next=%2Fplatform%2Ftenants" in location
+
+        assert (
+            _login(
+                platform_client,
+                email="platform-owner@example.com",
+                password="PlatformPass123!",
+                next_path="/platform/tenants",
+            )
+            == 303
+        )
+        assert platform_client.get("/platform/tenants").status_code == 200
+
+        disabled_bootstrap = platform_client.get("/platform/bootstrap")
+        assert disabled_bootstrap.status_code == 404
+
+    with SessionLocal() as db:
+        platform_owner = (
+            db.execute(
+                select(User).where(getattr(User, "email", getattr(User, "username")) == "platform-owner@example.com")
+            )
+            .scalars()
+            .first()
+        )
+        default_admin = (
+            db.execute(
+                select(User).where(getattr(User, "email", getattr(User, "username")) == "default-admin@example.com")
+            )
+            .scalars()
+            .first()
+        )
+        assert platform_owner is not None
+        assert platform_owner.tenant_id is None
+        assert str(platform_owner.role or "").strip().lower() == ROLE_SUPERADMIN
+        assert default_admin is not None
+        assert int(default_admin.tenant_id or 0) == default_tenant
+
+    with _client(app, base_url="https://example.test") as tenant_client:
+        assert (
+            _login(
+                tenant_client,
+                email="default-admin@example.com",
+                password="TenantPass123!",
+            )
+            == 303
+        )
+        assert tenant_client.get("/admin/company").status_code == 200
+        assert tenant_client.get("/tickets").status_code == 200
 
 
 def test_tenant_scoped_auth_rules(tmp_path, monkeypatch):

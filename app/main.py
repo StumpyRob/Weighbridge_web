@@ -77,6 +77,10 @@ _LOGIN_REQUIRED_PREFIXES = (
     "/admin",
     "/platform",
 )
+_LOGIN_EXEMPT_PATHS = (
+    "/bootstrap",
+    "/platform/bootstrap",
+)
 _UPLOADS_STATIC_PREFIX = "/static/uploads/"
 _TENANT_ONLY_PREFIXES = (
     "/tickets",
@@ -192,6 +196,8 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
 
     def _path_requires_login(path: str) -> bool:
         target = str(path or "")
+        if target in _LOGIN_EXEMPT_PATHS:
+            return False
         return any(target.startswith(prefix) for prefix in _LOGIN_REQUIRED_PREFIXES)
 
     def _apply_cache_control_headers(path: str, response: Response) -> None:
@@ -467,7 +473,11 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
 
             platform_only = any(request_path.startswith(prefix) for prefix in _PLATFORM_ONLY_PREFIXES)
             allow_legacy_bootstrap = bool(
-                request.state.legacy_single_host and request_path.startswith("/bootstrap")
+                request.state.legacy_single_host
+                and (
+                    request_path.startswith("/bootstrap")
+                    or request_path.startswith("/platform/bootstrap")
+                )
             )
             if (not request.state.platform_mode) and platform_only and (not allow_legacy_bootstrap):
                 return _plain_error("Not Found", 404)
