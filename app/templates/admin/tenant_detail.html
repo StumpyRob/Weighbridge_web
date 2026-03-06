@@ -9,6 +9,17 @@
       <p class="muted">Tenant details, access state, and user summary.</p>
     </div>
     <div class="actions btn-group">
+      {% if tenant.is_active %}
+        <form method="post" action="/platform/tenants/{{ tenant.id }}/disable">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+          <button type="submit" class="btn btn--danger">Disable Tenant</button>
+        </form>
+      {% else %}
+        <form method="post" action="/platform/tenants/{{ tenant.id }}/enable">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+          <button type="submit" class="btn btn--secondary">Enable Tenant</button>
+        </form>
+      {% endif %}
       <a class="btn btn--secondary" href="{{ open_url }}" target="_blank" rel="noreferrer">Open Tenant</a>
       <a class="btn btn--ghost" href="/platform/tenants">Back to Tenants</a>
     </div>
@@ -55,59 +66,46 @@
         <span class="summary-value">{{ summary.active_user_count }}</span>
       </div>
     </div>
-    <div class="platform-tenant-detail-actions">
-      {% if tenant.is_active %}
-        <form method="post" action="/platform/tenants/{{ tenant.id }}/disable">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-          <button type="submit" class="btn btn--danger btn--sm">Disable Tenant</button>
-        </form>
-      {% else %}
-        <form method="post" action="/platform/tenants/{{ tenant.id }}/enable">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-          <button type="submit" class="btn btn--secondary btn--sm">Enable Tenant</button>
-        </form>
-      {% endif %}
-    </div>
   </section>
 
-  <section class="card">
-    <div class="page-header platform-tenant-detail-users-header">
-      <div>
-        <h2>Users</h2>
-        <p class="muted">Tenant-scoped accounts currently attached to this workspace.</p>
-      </div>
+  <section class="frame">
+    <div class="frame-header">
+      <h2>Users</h2>
     </div>
-    <div class="table-wrap list-table-wrap">
-      <table class="data-table list-table platform-tenants-table">
-        <thead>
-          <tr>
-            <th>Identity</th>
-            <th>Role</th>
-            <th>Status</th>
-            <th>Created</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for user in users %}
+    <div class="frame-body">
+      <p class="muted platform-tenant-detail-users-copy">Tenant-scoped accounts currently attached to this workspace.</p>
+      <div class="table-wrap list-table-wrap">
+        <table class="data-table list-table platform-tenants-table">
+          <thead>
             <tr>
-              <td>{{ user.email or user.username }}</td>
-              <td>{{ user.role }}</td>
-              <td>
-                {% if user.is_active %}
-                  <span class="status-pill status-open">Active</span>
-                {% else %}
-                  <span class="status-pill status-void">Inactive</span>
-                {% endif %}
-              </td>
-              <td>{{ user.created_at.strftime("%d/%m/%Y") if user.created_at else "-" }}</td>
+              <th>Identity</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Created</th>
             </tr>
-          {% else %}
-            <tr>
-              <td colspan="4" class="empty">No tenant users.</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {% for user in users %}
+              <tr>
+                <td>{{ user.email or user.username }}</td>
+                <td>{{ user.role }}</td>
+                <td>
+                  {% if user.is_active %}
+                    <span class="status-pill status-open">Active</span>
+                  {% else %}
+                    <span class="status-pill status-void">Inactive</span>
+                  {% endif %}
+                </td>
+                <td>{{ user.created_at.strftime("%d/%m/%Y") if user.created_at else "-" }}</td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="4" class="empty">No tenant users.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
   </section>
 {% endblock %}

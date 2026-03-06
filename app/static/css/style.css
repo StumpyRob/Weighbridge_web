@@ -530,6 +530,16 @@ body.js-help-tooltips .help-tooltip {
   align-items: center;
 }
 
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.auth-form .actions {
+  margin-top: 0.35rem;
+}
+
 .filters .actions {
   align-self: end;
   align-items: flex-end;
@@ -2465,14 +2475,7 @@ details > summary:focus-visible {
   min-width: 250px;
 }
 
-.platform-tenant-detail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  margin-top: 1rem;
-}
-
-.platform-tenant-detail-users-header {
+.platform-tenant-detail-users-copy {
   margin-bottom: 1rem;
 }
 
