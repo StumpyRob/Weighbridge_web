@@ -40,7 +40,7 @@
       </div>
     {% endif %}
 
-    <form method="post" action="/login" class="auth-form">
+    <form method="post" action="{{ tenant_path('/login') }}" class="auth-form">
       <input type="hidden" name="next" value="{{ next or '/tickets' }}" />
       <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
       <div class="field">

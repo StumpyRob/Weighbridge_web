@@ -1,41 +1,113 @@
 {% extends "base.html" %}
-{% block title %}Tenant Details{% endblock %}
+
+{% block title %}Tenant Details | Weighbridge Web{% endblock %}
+
 {% block content %}
-<section class="card">
-  <h1>Tenant: {{ tenant.name }}</h1>
-  <p class="text-muted">Subdomain: {{ tenant.subdomain }}</p>
-  <p>
-    Status:
-    {% if tenant.is_active %}
-      <span class="tenant-status-badge tenant-status-badge--active">Active</span>
-    {% else %}
-      <span class="tenant-status-badge tenant-status-badge--disabled">Disabled</span>
-    {% endif %}
-  </p>
-  <h2>Users</h2>
-  <table class="table">
-    <thead>
-      <tr>
-        <th>Username</th>
-        <th>Role</th>
-        <th>Active</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for user in users %}
-        <tr>
-          <td>{{ user.username }}</td>
-          <td>{{ user.role }}</td>
-          <td>{{ "Yes" if user.is_active else "No" }}</td>
-        </tr>
-      {% endfor %}
-      {% if not users %}
-        <tr>
-          <td colspan="3">No tenant users.</td>
-        </tr>
+  <div class="page-header">
+    <div>
+      <h1>{{ tenant.name }}</h1>
+      <p class="muted">Tenant details, access state, and user summary.</p>
+    </div>
+    <div class="actions btn-group">
+      <a class="btn btn--secondary" href="{{ open_url }}" target="_blank" rel="noreferrer">Open Tenant</a>
+      <a class="btn btn--ghost" href="/platform/tenants">Back to Tenants</a>
+    </div>
+  </div>
+
+  <section class="card">
+    <div class="invoice-summary-grid">
+      <div class="summary-item">
+        <span class="summary-label">Tenant name</span>
+        <span class="summary-value">{{ tenant.name }}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Subdomain</span>
+        <span class="summary-value"><code>{{ tenant.subdomain }}</code></span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Status</span>
+        <span class="summary-value">
+          {% if tenant.is_active %}
+            <span class="status-pill status-open">Active</span>
+          {% else %}
+            <span class="status-pill status-void">Disabled</span>
+          {% endif %}
+        </span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Created</span>
+        <span class="summary-value">{{ tenant.created_at.strftime("%d/%m/%Y") if tenant.created_at else "-" }}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Initial admin</span>
+        <span class="summary-value">{{ summary.initial_admin_email or "-" }}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Tenant admins</span>
+        <span class="summary-value">{{ summary.tenant_admin_count }}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Users</span>
+        <span class="summary-value">{{ summary.user_count }}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Active users</span>
+        <span class="summary-value">{{ summary.active_user_count }}</span>
+      </div>
+    </div>
+    <div class="platform-tenant-detail-actions">
+      {% if tenant.is_active %}
+        <form method="post" action="/platform/tenants/{{ tenant.id }}/disable">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+          <button type="submit" class="btn btn--danger btn--sm">Disable Tenant</button>
+        </form>
+      {% else %}
+        <form method="post" action="/platform/tenants/{{ tenant.id }}/enable">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+          <button type="submit" class="btn btn--secondary btn--sm">Enable Tenant</button>
+        </form>
       {% endif %}
-    </tbody>
-  </table>
-  <p><a class="button-link" href="/platform/tenants">Back to tenants</a></p>
-</section>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="page-header platform-tenant-detail-users-header">
+      <div>
+        <h2>Users</h2>
+        <p class="muted">Tenant-scoped accounts currently attached to this workspace.</p>
+      </div>
+    </div>
+    <div class="table-wrap list-table-wrap">
+      <table class="data-table list-table platform-tenants-table">
+        <thead>
+          <tr>
+            <th>Identity</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+            <tr>
+              <td>{{ user.email or user.username }}</td>
+              <td>{{ user.role }}</td>
+              <td>
+                {% if user.is_active %}
+                  <span class="status-pill status-open">Active</span>
+                {% else %}
+                  <span class="status-pill status-void">Inactive</span>
+                {% endif %}
+              </td>
+              <td>{{ user.created_at.strftime("%d/%m/%Y") if user.created_at else "-" }}</td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="4" class="empty">No tenant users.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
 {% endblock %}

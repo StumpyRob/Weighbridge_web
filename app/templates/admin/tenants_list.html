@@ -1,63 +1,129 @@
 {% extends "base.html" %}
-{% block title %}Tenants{% endblock %}
+
+{% block title %}Tenant Management | Weighbridge Web{% endblock %}
+
+{% block toast_messages %}
+  {% if created_subdomain %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Tenant {{ created_subdomain }} created. Use Open Tenant to sign in.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+  {% if updated_subdomain and updated_status %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Tenant {{ updated_subdomain }} {{ updated_status }}.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
 {% block content %}
-<section class="card">
-  <h1>Tenants</h1>
-  <p class="text-muted">Platform tenant management.</p>
-  <form method="get" class="inline-form">
-    <input type="text" name="q" value="{{ q }}" placeholder="Search name or subdomain" />
-    <button type="submit">Search</button>
-    <a class="button-link" href="/platform/tenants/new">Create tenant</a>
-  </form>
+  <div class="page-header">
+    <div>
+      <h1>Tenant Management</h1>
+      <p class="muted">Create, review, and control tenant access from the platform admin surface.</p>
+    </div>
+    <div class="actions btn-group">
+      <a class="btn btn--primary" href="/platform/tenants/new">Create Tenant</a>
+    </div>
+  </div>
+
+  <section class="card platform-tenants-summary-card">
+    <div class="invoice-summary-grid">
+      <div class="summary-item">
+        <span class="summary-label">Total tenants</span>
+        <span class="summary-value">{{ tenant_count }}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Active</span>
+        <span class="summary-value">{{ active_count }}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">Disabled</span>
+        <span class="summary-value">{{ disabled_count }}</span>
+      </div>
+    </div>
+  </section>
+
   {% if error %}
-    <p class="error">{{ error }}</p>
+    <div class="alert alert--danger">
+      {{ error }}
+    </div>
   {% endif %}
-  {% if saved %}
-    <p class="success">Saved.</p>
-  {% endif %}
-  <table class="table">
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Subdomain</th>
-        <th>Status</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for tenant in tenants %}
+
+  <form class="filters" method="get" action="/platform/tenants">
+    <div class="field">
+      <label for="q">Search name or subdomain</label>
+      <input type="text" id="q" name="q" value="{{ q }}" />
+    </div>
+    <div class="actions btn-group">
+      <button type="submit" class="btn btn--secondary">Search</button>
+      <a class="btn btn--ghost" href="/platform/tenants">Reset</a>
+    </div>
+  </form>
+
+  <div class="table-wrap list-table-wrap">
+    <table class="data-table list-table platform-tenants-table">
+      <thead>
         <tr>
-          <td>{{ tenant.name }}</td>
-          <td>{{ tenant.subdomain }}</td>
-          <td>
-            {% if tenant.is_active %}
-              <span class="tenant-status-badge tenant-status-badge--active">Active</span>
-            {% else %}
-              <span class="tenant-status-badge tenant-status-badge--disabled">Disabled</span>
-            {% endif %}
-          </td>
-          <td>
-            <a class="button-link" href="/platform/tenants/{{ tenant.id }}">Details</a>
-            {% if tenant.is_active %}
-              <form method="post" action="/platform/tenants/{{ tenant.id }}/disable">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-                <button type="submit">Disable</button>
-              </form>
-            {% else %}
-              <form method="post" action="/platform/tenants/{{ tenant.id }}/enable">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-                <button type="submit">Enable</button>
-              </form>
-            {% endif %}
-          </td>
+          <th>Name</th>
+          <th>Subdomain</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Initial admin</th>
+          <th class="actions-col">Actions</th>
         </tr>
-      {% endfor %}
-      {% if not tenants %}
-        <tr>
-          <td colspan="4">No tenants found.</td>
-        </tr>
-      {% endif %}
-    </tbody>
-  </table>
-</section>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          {% set tenant = row.tenant %}
+          <tr data-row-link="/platform/tenants/{{ tenant.id }}">
+            <td>
+              <a href="/platform/tenants/{{ tenant.id }}">{{ tenant.name }}</a>
+            </td>
+            <td>
+              <code>{{ tenant.subdomain }}</code>
+            </td>
+            <td>
+              {% if tenant.is_active %}
+                <span class="status-pill status-open">Active</span>
+              {% else %}
+                <span class="status-pill status-void">Disabled</span>
+              {% endif %}
+            </td>
+            <td>{{ tenant.created_at.strftime("%d/%m/%Y") if tenant.created_at else "-" }}</td>
+            <td>
+              {% if row.initial_admin_email %}
+                <div>{{ row.initial_admin_email }}</div>
+                <div class="muted platform-tenants-row-note">{{ row.active_user_count }} active of {{ row.user_count }} users</div>
+              {% else %}
+                <span class="status-text">&mdash;</span>
+              {% endif %}
+            </td>
+            <td class="actions-col" data-row-link-ignore>
+              <div class="actions btn-group platform-tenants-actions">
+                <a class="btn btn--ghost btn--sm" href="/platform/tenants/{{ tenant.id }}">Details</a>
+                <a class="btn btn--secondary btn--sm" href="{{ row.open_url }}" target="_blank" rel="noreferrer">Open Tenant</a>
+                {% if tenant.is_active %}
+                  <form method="post" action="/platform/tenants/{{ tenant.id }}/disable">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                    <button type="submit" class="btn btn--danger btn--sm">Disable</button>
+                  </form>
+                {% else %}
+                  <form method="post" action="/platform/tenants/{{ tenant.id }}/enable">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                    <button type="submit" class="btn btn--secondary btn--sm">Enable</button>
+                  </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="6" class="empty">No tenants found.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 {% endblock %}

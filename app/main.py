@@ -51,9 +51,12 @@ from .services.pdf import check_invoice_pdf_renderer
 from .services.ui_branding import get_branding, nav_foreground_color, normalize_hex_color
 from .tenancy import (
     host_without_port,
+    prefix_tenant_route_target,
     reset_request_tenant_context,
     resolve_subdomain,
     set_request_tenant_context,
+    split_tenant_route_path,
+    tenant_route_prefix,
 )
 from .templating import templates
 
@@ -127,6 +130,23 @@ def _strip_non_production_routes(app: FastAPI) -> None:
 def _is_exact_base_domain(host_name: str) -> bool:
     base_domain = settings.effective_base_domain
     return bool(base_domain and host_name == base_domain)
+
+
+def _request_scope_path(request: Request) -> str:
+    return str(request.scope.get("path", "") or "")
+
+
+def _apply_tenant_route_redirect_prefix(request: Request, response: Response) -> Response:
+    route_prefix = str(getattr(getattr(request, "state", None), "tenant_route_prefix", "") or "").strip()
+    if not route_prefix:
+        return response
+    location = str(response.headers.get("location", "") or "").strip()
+    if not location:
+        return response
+    scoped_location = prefix_tenant_route_target(route_prefix, location)
+    if scoped_location and scoped_location != location:
+        response.headers["location"] = scoped_location
+    return response
 
 
 def create_app(dev_mode: bool | None = None) -> FastAPI:
@@ -222,7 +242,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         if not _is_exact_base_domain(host_name):
             return False
 
-        request_path = str(request.url.path or "")
+        request_path = _request_scope_path(request)
         if request_path.startswith("/platform"):
             request.session[SESSION_PLATFORM_MODE_KEY] = True
             return True
@@ -398,15 +418,26 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         request.state.tenant_id = None
         request.state.platform_mode = False
         request.state.request_subdomain = ""
+        request.state.tenant_route_prefix = ""
         request.state.legacy_single_host = False
 
-        request_path = str(request.url.path or "")
+        original_request_path = _request_scope_path(request)
+        tenant_path_match = split_tenant_route_path(original_request_path)
+        tenant_path_subdomain = ""
+        if tenant_path_match is not None:
+            tenant_path_subdomain, stripped_path = tenant_path_match
+            request.state.tenant_route_prefix = tenant_route_prefix(tenant_path_subdomain)
+            request.scope["path"] = stripped_path
+            request.scope["raw_path"] = stripped_path.encode("utf-8")
+
+        request_path = _request_scope_path(request)
         tenant_context_tokens = set_request_tenant_context(
             tenant_id=None,
             platform_mode=False,
         )
 
         def _finalize_response(response: Response, *, force_set_csrf: bool = False) -> Response:
+            response = _apply_tenant_route_redirect_prefix(request, response)
             _apply_cache_control_headers(request_path, response)
             if should_set_csrf_cookie or force_set_csrf:
                 set_csrf_cookie(response, request, csrf_cookie)
@@ -437,26 +468,9 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                     )
                     if not host_allowed:
                         return _plain_error("Unknown tenant", 404)
-                subdomain = resolve_subdomain(host_value)
-                request.state.request_subdomain = subdomain
-
-                if _apex_platform_path_mode(request, host_name):
-                    request.state.platform_mode = True
-                    request.state.request_subdomain = settings.effective_platform_subdomain
-                    _switch_tenant_context(tenant_id=None, platform_mode=True)
-                elif subdomain == settings.effective_platform_subdomain:
-                    request.state.platform_mode = True
-                    _switch_tenant_context(tenant_id=None, platform_mode=True)
-                else:
-                    tenant = get_tenant_by_subdomain(db, subdomain)
-                    if tenant is None and subdomain == settings.effective_default_tenant_subdomain:
-                        tenant_count = int(
-                            db.execute(select(func.count(Tenant.id))).scalar_one_or_none() or 0
-                        )
-                        if tenant_count == 0:
-                            tenant = ensure_default_tenant(db)
-                            db.commit()
-
+                if tenant_path_subdomain:
+                    request.state.request_subdomain = tenant_path_subdomain
+                    tenant = get_tenant_by_subdomain(db, tenant_path_subdomain)
                     if tenant is None:
                         return _plain_error("Unknown tenant", 404)
                     if not bool(tenant.is_active):
@@ -464,6 +478,34 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                     request.state.tenant = tenant
                     request.state.tenant_id = int(tenant.id)
                     _switch_tenant_context(tenant_id=int(tenant.id), platform_mode=False)
+                else:
+                    subdomain = resolve_subdomain(host_value)
+                    request.state.request_subdomain = subdomain
+
+                    if _apex_platform_path_mode(request, host_name):
+                        request.state.platform_mode = True
+                        request.state.request_subdomain = settings.effective_platform_subdomain
+                        _switch_tenant_context(tenant_id=None, platform_mode=True)
+                    elif subdomain == settings.effective_platform_subdomain:
+                        request.state.platform_mode = True
+                        _switch_tenant_context(tenant_id=None, platform_mode=True)
+                    else:
+                        tenant = get_tenant_by_subdomain(db, subdomain)
+                        if tenant is None and subdomain == settings.effective_default_tenant_subdomain:
+                            tenant_count = int(
+                                db.execute(select(func.count(Tenant.id))).scalar_one_or_none() or 0
+                            )
+                            if tenant_count == 0:
+                                tenant = ensure_default_tenant(db)
+                                db.commit()
+
+                        if tenant is None:
+                            return _plain_error("Unknown tenant", 404)
+                        if not bool(tenant.is_active):
+                            return _plain_error("Tenant disabled", 403)
+                        request.state.tenant = tenant
+                        request.state.tenant_id = int(tenant.id)
+                        _switch_tenant_context(tenant_id=int(tenant.id), platform_mode=False)
 
             # 2) Enforce mode-specific route access.
             if request.state.platform_mode and any(

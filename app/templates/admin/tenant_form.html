@@ -1,33 +1,101 @@
 {% extends "base.html" %}
-{% block title %}Create Tenant{% endblock %}
+
+{% block title %}Create Tenant | Weighbridge Web{% endblock %}
+
 {% block content %}
-<section class="card">
-  <h1>Create Tenant</h1>
+  <div class="page-header">
+    <div>
+      <h1>Create Tenant</h1>
+      <p class="muted">Provision a tenant workspace and its first tenant admin in one step.</p>
+    </div>
+    <div class="actions btn-group">
+      <a class="btn btn--ghost" href="/platform/tenants">Back to Tenants</a>
+    </div>
+  </div>
+
   {% if errors %}
-    <ul class="error-list">
-      {% for error in errors %}
-        <li>{{ error }}</li>
-      {% endfor %}
-    </ul>
+    <div class="alert alert--danger">
+      <ul>
+        {% for error in errors %}
+          <li>{{ error }}</li>
+        {% endfor %}
+      </ul>
+    </div>
   {% endif %}
-  <form method="post" action="/platform/tenants/new" class="stack-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-    <label>Name</label>
-    <input type="text" name="name" value="{{ form.name }}" required />
 
-    <label>Subdomain</label>
-    <input type="text" name="subdomain" value="{{ form.subdomain }}" required />
+  <div class="notice">
+    Tenants can be opened from Railway without wildcard DNS at <code>{{ access_url }}</code>.
+  </div>
 
-    <label>Initial tenant admin email</label>
-    <input type="email" name="admin_email" value="{{ form.admin_email }}" required />
+  <form method="post" action="/platform/tenants/new" class="ticket-form">
+    <section class="card">
+      <div class="field">
+        <label for="name">Tenant name</label>
+        <input
+          type="text"
+          id="name"
+          name="name"
+          value="{{ form.name }}"
+          required
+          aria-invalid="{{ 'true' if field_errors.get('name') else 'false' }}"
+        />
+        {% if field_errors.get("name") %}
+          <p class="tenant-form__error">{{ field_errors["name"] }}</p>
+        {% endif %}
+      </div>
 
-    <label>Initial tenant admin password</label>
-    <input type="password" name="admin_password" value="{{ form.admin_password }}" required />
+      <div class="field">
+        <label for="subdomain">Subdomain</label>
+        <input
+          type="text"
+          id="subdomain"
+          name="subdomain"
+          value="{{ form.subdomain }}"
+          required
+          autocapitalize="none"
+          spellcheck="false"
+          aria-invalid="{{ 'true' if field_errors.get('subdomain') else 'false' }}"
+        />
+        <p class="hint">Used for tenant URLs and the Railway fallback path.</p>
+        {% if field_errors.get("subdomain") %}
+          <p class="tenant-form__error">{{ field_errors["subdomain"] }}</p>
+        {% endif %}
+      </div>
 
-    <div class="form-actions">
-      <button type="submit">Create tenant</button>
-      <a class="button-link" href="/platform/tenants">Back</a>
+      <div class="field">
+        <label for="admin_email">Initial tenant admin email</label>
+        <input
+          type="email"
+          id="admin_email"
+          name="admin_email"
+          value="{{ form.admin_email }}"
+          required
+          aria-invalid="{{ 'true' if field_errors.get('admin_email') else 'false' }}"
+        />
+        {% if field_errors.get("admin_email") %}
+          <p class="tenant-form__error">{{ field_errors["admin_email"] }}</p>
+        {% endif %}
+      </div>
+
+      <div class="field">
+        <label for="admin_password">Initial tenant admin password</label>
+        <input
+          type="password"
+          id="admin_password"
+          name="admin_password"
+          value="{{ form.admin_password }}"
+          required
+          aria-invalid="{{ 'true' if field_errors.get('admin_password') else 'false' }}"
+        />
+        {% if field_errors.get("admin_password") %}
+          <p class="tenant-form__error">{{ field_errors["admin_password"] }}</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <div class="actions btn-group">
+      <button type="submit" class="btn btn--primary">Create Tenant</button>
+      <a class="btn btn--ghost" href="/platform/tenants">Cancel</a>
     </div>
   </form>
-</section>
 {% endblock %}

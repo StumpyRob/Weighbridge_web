@@ -1,24 +1,24 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"{% if tenant_route_prefix %} data-tenant-path-prefix="{{ tenant_route_prefix }}"{% endif %}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="csrf-token" content="{{ csrf_token or '' }}" />
     <title>{% block title %}Weighbridge Web{% endblock %}</title>
-    <link rel="icon" href="{{ ui_branding.favicon_url or '/static/img/default-company-logo.svg' }}" />
+    <link rel="icon" href="{{ tenant_path(ui_branding.favicon_url or '/static/img/default-company-logo.svg') }}" />
     <link rel="stylesheet" href="/static/css/style.css?v={{ BUILD_STAMP }}" />
-    <link rel="stylesheet" href="/branding.css?v={{ BUILD_STAMP }}" />
+    <link rel="stylesheet" href="{{ tenant_path('/branding.css') }}?v={{ BUILD_STAMP }}" />
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
   </head>
   <body>
     <header class="site-header">
-      <a class="brand" href="{{ '/platform/tenants' if platform_mode else '/' }}">
+      <a class="brand" href="{{ tenant_path('/platform/tenants' if platform_mode else '/') }}">
         {% set show_logo_nav = ui_branding.show_nav_logo %}
         {% set show_title_nav = ui_branding.show_nav_title %}
         {% if show_logo_nav %}
           <span class="brand__logo-badge">
             <img
-              src="{{ ui_branding.nav_logo_url }}"
+              src="{{ tenant_path(ui_branding.nav_logo_url) }}"
               alt="Company logo"
               class="brand__logo"
               loading="lazy"
@@ -33,20 +33,20 @@
         <nav class="site-nav">
           {% if platform_mode %}
             {% if current_user_is_superadmin %}
-              <a href="/platform/tenants" class="{% if request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants') %}is-active{% endif %}" {% if request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants') %}aria-current="page"{% endif %}>Tenant Management</a>
-              <a href="/admin/system-status" class="{% if request.url.path.startswith('/admin/system-status') %}is-active{% endif %}" {% if request.url.path.startswith('/admin/system-status') %}aria-current="page"{% endif %}>System Status</a>
+              <a href="{{ tenant_path('/platform/tenants') }}" class="{% if request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants') %}is-active{% endif %}" {% if request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants') %}aria-current="page"{% endif %}>Tenant Management</a>
+              <a href="{{ tenant_path('/admin/system-status') }}" class="{% if request.url.path.startswith('/admin/system-status') %}is-active{% endif %}" {% if request.url.path.startswith('/admin/system-status') %}aria-current="page"{% endif %}>System Status</a>
             {% endif %}
           {% else %}
-            <a href="/tickets" class="{% if request.url.path.startswith('/tickets') %}is-active{% endif %}" {% if request.url.path.startswith('/tickets') %}aria-current="page"{% endif %}>Tickets</a>
-            <a href="/customers" class="{% if request.url.path.startswith('/customers') %}is-active{% endif %}" {% if request.url.path.startswith('/customers') %}aria-current="page"{% endif %}>Customers</a>
-            <a href="/vehicles" class="{% if request.url.path.startswith('/vehicles') %}is-active{% endif %}" {% if request.url.path.startswith('/vehicles') %}aria-current="page"{% endif %}>Vehicles</a>
-            <a href="/products" class="{% if request.url.path.startswith('/products') %}is-active{% endif %}" {% if request.url.path.startswith('/products') %}aria-current="page"{% endif %}>Products</a>
-            <a href="/invoices" class="{% if request.url.path.startswith('/invoices') %}is-active{% endif %}" {% if request.url.path.startswith('/invoices') %}aria-current="page"{% endif %}>Invoices</a>
-            <a href="/lookups/hauliers" class="{% if request.url.path.startswith('/lookups') %}is-active{% endif %}" {% if request.url.path.startswith('/lookups') %}aria-current="page"{% endif %}>Lookups</a>
-            <a href="/reports" class="{% if request.url.path.startswith('/reports') %}is-active{% endif %}" {% if request.url.path.startswith('/reports') %}aria-current="page"{% endif %}>Reports</a>
-            <a href="/admin" class="{% if request.url.path.startswith('/admin') %}is-active{% endif %}" {% if request.url.path.startswith('/admin') %}aria-current="page"{% endif %}>Admin</a>
+            <a href="{{ tenant_path('/tickets') }}" class="{% if request.url.path.startswith('/tickets') %}is-active{% endif %}" {% if request.url.path.startswith('/tickets') %}aria-current="page"{% endif %}>Tickets</a>
+            <a href="{{ tenant_path('/customers') }}" class="{% if request.url.path.startswith('/customers') %}is-active{% endif %}" {% if request.url.path.startswith('/customers') %}aria-current="page"{% endif %}>Customers</a>
+            <a href="{{ tenant_path('/vehicles') }}" class="{% if request.url.path.startswith('/vehicles') %}is-active{% endif %}" {% if request.url.path.startswith('/vehicles') %}aria-current="page"{% endif %}>Vehicles</a>
+            <a href="{{ tenant_path('/products') }}" class="{% if request.url.path.startswith('/products') %}is-active{% endif %}" {% if request.url.path.startswith('/products') %}aria-current="page"{% endif %}>Products</a>
+            <a href="{{ tenant_path('/invoices') }}" class="{% if request.url.path.startswith('/invoices') %}is-active{% endif %}" {% if request.url.path.startswith('/invoices') %}aria-current="page"{% endif %}>Invoices</a>
+            <a href="{{ tenant_path('/lookups/hauliers') }}" class="{% if request.url.path.startswith('/lookups') %}is-active{% endif %}" {% if request.url.path.startswith('/lookups') %}aria-current="page"{% endif %}>Lookups</a>
+            <a href="{{ tenant_path('/reports') }}" class="{% if request.url.path.startswith('/reports') %}is-active{% endif %}" {% if request.url.path.startswith('/reports') %}aria-current="page"{% endif %}>Reports</a>
+            <a href="{{ tenant_path('/admin') }}" class="{% if request.url.path.startswith('/admin') %}is-active{% endif %}" {% if request.url.path.startswith('/admin') %}aria-current="page"{% endif %}>Admin</a>
             {% if current_user_is_superadmin %}
-              <a href="/platform/tenants" class="{% if request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants') %}is-active{% endif %}" {% if request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants') %}aria-current="page"{% endif %}>Tenant Management</a>
+              <a href="{{ tenant_path('/platform/tenants') }}" class="{% if request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants') %}is-active{% endif %}" {% if request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants') %}aria-current="page"{% endif %}>Tenant Management</a>
             {% endif %}
           {% endif %}
         </nav>
@@ -54,12 +54,12 @@
           {% if current_user %}
             {% set signed_in_as = (current_user.email or current_user.username or 'User') %}
             <span class="site-auth__badge">Signed in as {{ signed_in_as }}</span>
-            <form method="post" action="/logout" class="site-auth__logout">
+            <form method="post" action="{{ tenant_path('/logout') }}" class="site-auth__logout">
               <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
               <button type="submit" class="site-auth__link">Logout</button>
             </form>
           {% else %}
-            <a href="/login" class="site-auth__link">Sign in</a>
+            <a href="{{ tenant_path('/login') }}" class="site-auth__link">Sign in</a>
           {% endif %}
         </div>
         {% if platform_mode %}
@@ -213,6 +213,9 @@
     <script src="/static/js/help_tooltips.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/toasts.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/table_rows.js?v={{ BUILD_STAMP }}" defer></script>
+    {% if tenant_route_prefix %}
+      <script src="/static/js/tenant_path_prefix.js?v={{ BUILD_STAMP }}" defer></script>
+    {% endif %}
   </body>
 </html>
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextvars import ContextVar, Token
 import re
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import HTTPException, Request
 
@@ -13,6 +14,15 @@ _SUBDOMAIN_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _NIP_IO_RE = re.compile(
     r"^(?P<sub>[a-z0-9-]+)\.(?:\d{1,3}\.){3}\d{1,3}\.nip\.io$",
     re.IGNORECASE,
+)
+_TENANT_ROUTE_RE = re.compile(
+    r"^/t/(?P<sub>[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?P<rest>/.*)?$",
+    re.IGNORECASE,
+)
+_TENANT_ROUTE_EXCLUDED_PREFIXES = (
+    "/platform",
+    "/static",
+    "/media",
 )
 
 _tenant_id_ctx: ContextVar[int | None] = ContextVar("tenant_id", default=None)
@@ -65,6 +75,55 @@ def resolve_subdomain(host: str) -> str:
     if len(parts) >= 3:
         return normalize_subdomain(parts[0])
     return ""
+
+
+def tenant_route_prefix(subdomain: str | None) -> str:
+    normalized = normalize_subdomain(subdomain)
+    if not normalized:
+        return ""
+    return f"/t/{normalized}"
+
+
+def split_tenant_route_path(path: str | None) -> tuple[str, str] | None:
+    raw_path = str(path or "").strip()
+    if not raw_path:
+        return None
+    match = _TENANT_ROUTE_RE.fullmatch(raw_path)
+    if match is None:
+        return None
+
+    subdomain = normalize_subdomain(match.group("sub"))
+    if not subdomain:
+        return None
+    remainder = str(match.group("rest") or "/").strip() or "/"
+    if not remainder.startswith("/"):
+        remainder = f"/{remainder}"
+    return subdomain, remainder
+
+
+def prefix_tenant_route_target(prefix: str | None, target: str | None) -> str:
+    normalized_prefix = str(prefix or "").strip()
+    raw_target = str(target or "").strip()
+    if not normalized_prefix or not raw_target:
+        return raw_target
+
+    parsed = urlsplit(raw_target)
+    if parsed.scheme or parsed.netloc:
+        return raw_target
+
+    path = str(parsed.path or "").strip() or "/"
+    if not path.startswith("/") or path.startswith("//"):
+        return raw_target
+    if path == normalized_prefix or path.startswith(f"{normalized_prefix}/"):
+        return raw_target
+    if path.startswith("/static/uploads/company/"):
+        scoped_path = f"{normalized_prefix}{path}"
+        return urlunsplit(("", "", scoped_path, parsed.query, parsed.fragment))
+    if any(path == blocked or path.startswith(f"{blocked}/") for blocked in _TENANT_ROUTE_EXCLUDED_PREFIXES):
+        return raw_target
+
+    scoped_path = f"{normalized_prefix}{path}"
+    return urlunsplit(("", "", scoped_path, parsed.query, parsed.fragment))
 
 
 def set_request_tenant_context(*, tenant_id: int | None, platform_mode: bool) -> tuple[Token, Token]:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -86,8 +86,9 @@ def _login(
     if csrf_login_path is None and next_path.startswith("/platform/"):
         csrf_login_path = f"/login?{urlencode({'next': next_path})}"
     csrf = _prime_csrf(client, login_path=csrf_login_path or "/login")
+    login_submit_path = str(urlsplit(csrf_login_path or "/login").path or "/login")
     response = client.post(
-        "/login",
+        login_submit_path,
         data={
             "email": email,
             "password": password,
@@ -718,14 +719,20 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
 
         tenants_page = admin_client.get("/platform/tenants")
         assert tenants_page.status_code == 200
-        assert "tenant-status-badge" in tenants_page.text
+        assert "Tenant Management" in tenants_page.text
+        assert "Tenant A" in tenants_page.text
+        assert "tenant-admin@example.com" in tenants_page.text
         assert f"/platform/tenants/{tenant_a}" in tenants_page.text
         assert f"/platform/tenants/{tenant_a}/disable" in tenants_page.text
+        assert f"/t/a/login" in tenants_page.text
         assert 'name="csrf_token"' in tenants_page.text
 
         tenant_detail = admin_client.get(f"/platform/tenants/{tenant_a}")
         assert tenant_detail.status_code == 200
-        assert "Tenant: Tenant A" in tenant_detail.text
+        assert "Tenant A" in tenant_detail.text
+        assert "Tenant details, access state, and user summary." in tenant_detail.text
+        assert "tenant-admin@example.com" in tenant_detail.text
+        assert f'href="/t/a/login"' in tenant_detail.text
 
         disable = admin_client.post(
             f"/platform/tenants/{tenant_a}/disable",
@@ -851,6 +858,21 @@ def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tm
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
         csrf = _prime_csrf(admin_client)
 
+        missing_name = admin_client.post(
+            "/platform/tenants/new",
+            data={
+                "name": "",
+                "subdomain": "missing-name",
+                "admin_email": "missing-name@example.com",
+                "admin_password": "Reserved123!",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert missing_name.status_code == 400
+        assert "Tenant name is required." in missing_name.text
+        assert "tenant-form__error" in missing_name.text
+
         reserved = admin_client.post(
             "/platform/tenants/new",
             data={
@@ -905,11 +927,122 @@ def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tm
             follow_redirects=False,
         )
         assert created.status_code in {302, 303}
+        assert created.headers.get("location") == "/platform/tenants?created_tenant=mytenant"
+
+        created_list = admin_client.get(created.headers["location"])
+        assert created_list.status_code == 200
+        assert "Tenant mytenant created. Use Open Tenant to sign in." in created_list.text
+        assert "/t/mytenant/login" in created_list.text
+        assert "normalized-admin@example.com" in created_list.text
 
     with SessionLocal() as db:
         tenant = db.execute(select(Tenant).where(Tenant.name == "Normalized Tenant")).scalars().first()
         assert tenant is not None
         assert tenant.subdomain == "mytenant"
+
+
+def test_path_based_tenant_access_mode_on_base_domain(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "base_domain", "example.test")
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-path-access.db", monkeypatch=monkeypatch
+    )
+    default_tenant = _seed_tenant(
+        SessionLocal,
+        name="Default Tenant",
+        subdomain=settings.effective_default_tenant_subdomain,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=default_tenant,
+        company_name="Default Co",
+        primary_color="#225577",
+    )
+    _seed_user(
+        SessionLocal,
+        email="default-admin@example.com",
+        password="TenantPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=default_tenant,
+    )
+
+    tenant_mjteale = _seed_tenant(SessionLocal, name="MJ Teale", subdomain="mjteale", is_active=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_mjteale,
+        company_name="MJ Teale",
+        primary_color="#334455",
+    )
+    _seed_user(
+        SessionLocal,
+        email="mjteale-admin@example.com",
+        password="PathPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_mjteale,
+    )
+
+    tenant_disabled = _seed_tenant(SessionLocal, name="Disabled Tenant", subdomain="disabled", is_active=False)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_disabled,
+        company_name="Disabled Co",
+        primary_color="#111111",
+    )
+
+    _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with _client(app, base_url="https://example.test") as tenant_client:
+        login_page = tenant_client.get("/t/mjteale/login")
+        assert login_page.status_code == 200
+        assert 'action="/t/mjteale/login"' in login_page.text
+        assert _login(
+            tenant_client,
+            email="mjteale-admin@example.com",
+            password="PathPass123!",
+            login_path="/t/mjteale/login",
+        ) == 303
+
+        tickets = tenant_client.get("/t/mjteale/tickets")
+        assert tickets.status_code == 200
+        assert "Tickets" in tickets.text
+        assert 'href="/t/mjteale/customers"' in tickets.text
+
+        admin_company = tenant_client.get("/t/mjteale/admin/company")
+        assert admin_company.status_code == 200
+
+        disabled_login = tenant_client.get("/t/disabled/login")
+        assert disabled_login.status_code == 403
+        assert "Tenant disabled" in disabled_login.text
+
+    with _client(app, base_url="https://example.test") as platform_client:
+        assert (
+            _login(
+                platform_client,
+                email="superadmin@example.com",
+                password="TestPass123!",
+                next_path="/platform/tenants",
+            )
+            == 303
+        )
+        platform_page = platform_client.get("/platform/tenants")
+        assert platform_page.status_code == 200
+        assert "/t/mjteale/login" in platform_page.text
+
+    with _client(app, base_url="https://example.test") as default_client:
+        assert (
+            _login(
+                default_client,
+                email="default-admin@example.com",
+                password="TenantPass123!",
+            )
+            == 303
+        )
+        assert default_client.get("/tickets").status_code == 200
 
 
 def test_forwarded_host_trust_flag_controls_tenant_resolution(tmp_path, monkeypatch):

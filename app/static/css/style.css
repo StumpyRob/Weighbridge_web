@@ -2445,6 +2445,44 @@ details > summary:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.platform-tenants-summary-card {
+  margin-bottom: 1.5rem;
+}
+
+.platform-tenants-summary-card .invoice-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.platform-tenants-actions {
+  flex-wrap: wrap;
+}
+
+.platform-tenants-row-note {
+  font-size: 0.78rem;
+}
+
+.platform-tenants-table .actions-col {
+  min-width: 250px;
+}
+
+.platform-tenant-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+.platform-tenant-detail-users-header {
+  margin-bottom: 1rem;
+}
+
+.tenant-form__error {
+  margin: 0.35rem 0 0;
+  color: #b91c1c;
+  font-size: 0.84rem;
+  font-weight: 500;
+}
+
 .customer-credit-summary__grid {
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
 }
