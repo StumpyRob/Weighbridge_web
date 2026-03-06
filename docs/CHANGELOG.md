@@ -8,6 +8,11 @@ All notable changes are tracked here by release chapter.
 - Add build stamp in UI footer: `Build v<version> (commit <shortsha>)`.
 - Add release discipline docs (`VERSION`, changelog workflow, contribution guide).
 
+## v0.15.1 - 2026-03-06
+
+### FIX
+- Make UI fixes for the backend tenant management pages, including tenant detail spacing, action placement, and login form button spacing.
+
 ## v0.15.0 - 2026-03-05
 
 ### FIX

@@ -1819,6 +1819,11 @@ body.js-help-tooltips .help-tooltip {
   margin-top: var(--section-gap);
 }
 
+.card + .frame,
+.frame + .card {
+  margin-top: var(--section-gap);
+}
+
 .page-header + .ticket-form {
   margin-top: var(--section-gap);
 }
