@@ -33,30 +33,14 @@
 {% endblock %}
 
 {% block content %}
-  <div class="page-header">
-    <div>
+  <section class="platform-tenants-hero">
+    <div class="platform-tenants-hero__copy">
+      <p class="platform-tenants-eyebrow">Platform Admin</p>
       <h1>Tenant Management</h1>
       <p class="muted">Create, review, and control tenant access from the platform admin surface.</p>
     </div>
-    <div class="actions btn-group">
+    <div class="platform-tenants-hero__actions">
       <a class="btn btn--primary" href="/platform/tenants/new">Create Tenant</a>
-    </div>
-  </div>
-
-  <section class="card platform-tenants-summary-card">
-    <div class="invoice-summary-grid">
-      <div class="summary-item">
-        <span class="summary-label">Total tenants</span>
-        <span class="summary-value">{{ tenant_count }}</span>
-      </div>
-      <div class="summary-item">
-        <span class="summary-label">Active</span>
-        <span class="summary-value">{{ active_count }}</span>
-      </div>
-      <div class="summary-item">
-        <span class="summary-label">Disabled</span>
-        <span class="summary-value">{{ disabled_count }}</span>
-      </div>
     </div>
   </section>
 
@@ -66,91 +50,127 @@
     </div>
   {% endif %}
 
-  <form class="filters" method="get" action="/platform/tenants">
-    <div class="field">
-      <label for="q">Search name or subdomain</label>
-      <input type="text" id="q" name="q" value="{{ q }}" />
-    </div>
-    <div class="actions btn-group">
-      <button type="submit" class="btn btn--secondary">Search</button>
-      <a class="btn btn--ghost" href="/platform/tenants">Reset</a>
-    </div>
-  </form>
+  <section class="platform-tenants-stats" aria-label="Tenant summary">
+    <article class="platform-tenants-stat">
+      <span class="platform-tenants-stat__label">Total tenants</span>
+      <span class="platform-tenants-stat__value">{{ tenant_count }}</span>
+      <span class="platform-tenants-stat__hint">All workspaces currently provisioned.</span>
+    </article>
+    <article class="platform-tenants-stat">
+      <span class="platform-tenants-stat__label">Active</span>
+      <span class="platform-tenants-stat__value">{{ active_count }}</span>
+      <span class="platform-tenants-stat__hint">Available for sign-in and daily operations.</span>
+    </article>
+    <article class="platform-tenants-stat">
+      <span class="platform-tenants-stat__label">Disabled</span>
+      <span class="platform-tenants-stat__value">{{ disabled_count }}</span>
+      <span class="platform-tenants-stat__hint">Blocked until manually re-enabled.</span>
+    </article>
+  </section>
 
-  <div class="table-wrap list-table-wrap">
-    <table class="data-table list-table platform-tenants-table">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Subdomain</th>
-          <th>Status</th>
-          <th>Created</th>
-          <th>Initial admin</th>
-          <th class="actions-col">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in rows %}
-          {% set tenant = row.tenant %}
-          <tr data-row-link="/platform/tenants/{{ tenant.id }}">
-            <td>
-              <a href="/platform/tenants/{{ tenant.id }}">{{ tenant.name }}</a>
-            </td>
-            <td>
-              <code>{{ tenant.subdomain }}</code>
-            </td>
-            <td>
-              {% if tenant.is_active %}
-                <span class="status-pill status-open">Active</span>
-              {% else %}
-                <span class="status-pill status-void">Disabled</span>
-              {% endif %}
-            </td>
-            <td>{{ tenant.created_at.strftime("%d/%m/%Y") if tenant.created_at else "-" }}</td>
-            <td>
-              {% if row.initial_admin_email %}
-                <div>{{ row.initial_admin_email }}</div>
-                <div class="muted platform-tenants-row-note">{{ row.active_user_count }} active of {{ row.user_count }} users</div>
-              {% else %}
-                <span class="status-text">&mdash;</span>
-              {% endif %}
-            </td>
-            <td class="actions-col" data-row-link-ignore>
-              <div class="actions btn-group platform-tenants-actions">
-                <a class="btn btn--ghost btn--sm" href="/platform/tenants/{{ tenant.id }}">Details</a>
-                <a class="btn btn--secondary btn--sm" href="{{ row.open_url }}" target="_blank" rel="noreferrer">Open Tenant</a>
-                {% if tenant.is_active %}
-                  <form method="post" action="/platform/tenants/{{ tenant.id }}/disable">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-                    <button type="submit" class="btn btn--danger btn--sm">Disable Tenant</button>
-                  </form>
-                {% else %}
-                  <form method="post" action="/platform/tenants/{{ tenant.id }}/enable">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-                    <button type="submit" class="btn btn--secondary btn--sm">Enable Tenant</button>
-                  </form>
-                {% endif %}
-                {% if row.delete_allowed %}
-                  <form method="post" action="/platform/tenants/{{ tenant.id }}/delete">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-                    <button
-                      type="submit"
-                      class="btn btn--danger btn--sm"
-                      onclick="return window.confirm('Delete this tenant? This permanently removes the tenant, its seeded settings, and uploaded files.');"
-                    >
-                      Delete Tenant
-                    </button>
-                  </form>
-                {% endif %}
-              </div>
-            </td>
-          </tr>
-        {% else %}
+  <section class="platform-tenants-toolbar">
+    <form class="filters platform-tenants-filters" method="get" action="/platform/tenants">
+      <div class="field">
+        <label for="q">Search name or subdomain</label>
+        <input type="text" id="q" name="q" value="{{ q }}" placeholder="Default, lotus, mjteale..." />
+      </div>
+      <div class="actions btn-group">
+        <button type="submit" class="btn btn--secondary">Search</button>
+        <a class="btn btn--ghost" href="/platform/tenants">Reset</a>
+      </div>
+    </form>
+    <p class="muted platform-tenants-toolbar__meta">
+      Delete is available only for empty tenants. Busy or protected tenants stay visible with their safety reason.
+    </p>
+  </section>
+
+  <section class="platform-tenants-table-card">
+    <div class="platform-tenants-table-card__header">
+      <div>
+        <h2>Tenant Directory</h2>
+        <p class="muted">Open, review, suspend, or remove workspaces from one place.</p>
+      </div>
+      <div class="platform-tenants-table-card__count">{{ rows | length }} listed</div>
+    </div>
+    <div class="table-wrap list-table-wrap">
+      <table class="data-table list-table platform-tenants-table">
+        <thead>
           <tr>
-            <td colspan="6" class="empty">No tenants found.</td>
+            <th>Name</th>
+            <th>Subdomain</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Initial admin</th>
+            <th class="actions-col">Actions</th>
           </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            {% set tenant = row.tenant %}
+            <tr data-row-link="/platform/tenants/{{ tenant.id }}">
+              <td>
+                <a class="platform-tenants-name" href="/platform/tenants/{{ tenant.id }}">{{ tenant.name }}</a>
+              </td>
+              <td>
+                <code class="platform-tenants-subdomain">{{ tenant.subdomain }}</code>
+              </td>
+              <td>
+                {% if tenant.is_active %}
+                  <span class="status-pill status-open">Active</span>
+                {% else %}
+                  <span class="status-pill status-void">Disabled</span>
+                {% endif %}
+              </td>
+              <td>{{ tenant.created_at.strftime("%d/%m/%Y") if tenant.created_at else "-" }}</td>
+              <td class="platform-tenants-table__admin">
+                {% if row.initial_admin_email %}
+                  <div class="platform-tenants-admin">
+                    <div>{{ row.initial_admin_email }}</div>
+                    <div class="platform-tenants-row-note">{{ row.active_user_count }} active of {{ row.user_count }} users</div>
+                  </div>
+                {% else %}
+                  <span class="status-text">&mdash;</span>
+                {% endif %}
+              </td>
+              <td class="actions-col" data-row-link-ignore>
+                <div class="actions btn-group platform-tenants-actions">
+                  <a class="btn btn--ghost btn--sm" href="/platform/tenants/{{ tenant.id }}">Details</a>
+                  <a class="btn btn--secondary btn--sm" href="{{ row.open_url }}" target="_blank" rel="noreferrer">Open Tenant</a>
+                  {% if tenant.is_active %}
+                    <form method="post" action="/platform/tenants/{{ tenant.id }}/disable">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                      <button type="submit" class="btn btn--danger btn--sm">Disable Tenant</button>
+                    </form>
+                  {% else %}
+                    <form method="post" action="/platform/tenants/{{ tenant.id }}/enable">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                      <button type="submit" class="btn btn--secondary btn--sm">Enable Tenant</button>
+                    </form>
+                  {% endif %}
+                  {% if row.delete_allowed %}
+                    <form method="post" action="/platform/tenants/{{ tenant.id }}/delete">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                      <button
+                        type="submit"
+                        class="btn btn--danger btn--sm"
+                        onclick='return window.confirm({{ ("Delete tenant \"" ~ tenant.name ~ "\"? This permanently removes the tenant, its seeded settings, and uploaded files.") | tojson }});'
+                      >
+                        Delete Tenant
+                      </button>
+                    </form>
+                  {% else %}
+                    <div class="platform-tenants-action-note">{{ row.delete_block_reason }}</div>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="6" class="empty">No tenants found.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
 {% endblock %}

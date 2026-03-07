@@ -10,12 +10,13 @@
     <link rel="stylesheet" href="{{ tenant_path('/branding.css') }}?v={{ BUILD_STAMP }}" />
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
   </head>
-  <body>
-    <header class="site-header">
+  {% set is_platform_tenants_page = request.url.path in ['/platform/tenants', '/admin/tenants'] %}
+  <body{% if is_platform_tenants_page %} class="platform-tenants-page"{% endif %}>
+    <header class="site-header{% if is_platform_tenants_page %} site-header--platform-tenants{% endif %}">
       <a class="brand" href="{{ tenant_path('/platform/tenants' if platform_mode else '/') }}">
         {% set show_logo_nav = ui_branding.show_nav_logo %}
         {% set show_title_nav = ui_branding.show_nav_title %}
-        {% if show_logo_nav %}
+        {% if show_logo_nav and not is_platform_tenants_page %}
           <span class="brand__logo-badge">
             <img
               src="{{ tenant_path(ui_branding.nav_logo_url) }}"

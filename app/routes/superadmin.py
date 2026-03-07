@@ -311,6 +311,7 @@ def tenants_list(
                 "tenant_admin_count": summary["tenant_admin_count"],
                 "open_url": _tenant_open_url(tenant.subdomain),
                 "delete_allowed": not bool(delete_block_reason),
+                "delete_block_reason": delete_block_reason,
             }
         )
     return templates.TemplateResponse(
