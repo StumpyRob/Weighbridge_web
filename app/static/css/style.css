@@ -2439,7 +2439,6 @@ details > summary:focus-visible {
 .dashboard-summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  grid-auto-rows: 1fr;
   align-items: stretch;
   gap: 1rem;
   margin-bottom: var(--section-gap);
@@ -2451,7 +2450,7 @@ details > summary:focus-visible {
 }
 
 .dashboard-stat-card {
-  min-height: 126px;
+  min-height: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -2556,6 +2555,13 @@ details > summary:focus-visible {
   padding-bottom: 0.15rem;
 }
 
+.dashboard-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--section-gap);
+  margin-top: var(--section-gap);
+}
+
 .dashboard-chart {
   display: grid;
   grid-auto-flow: column;
@@ -2596,6 +2602,10 @@ details > summary:focus-visible {
   min-height: 14px;
   border-radius: 10px;
   background: linear-gradient(180deg, #fca311 0%, #de7b00 100%);
+}
+
+.dashboard-chart__bar--throughput {
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
 }
 
 .dashboard-chart__label {
@@ -3922,6 +3932,10 @@ details > summary:focus-visible {
 }
 
 @media (max-width: 960px) {
+  .dashboard-chart-grid {
+    grid-template-columns: 1fr;
+  }
+
   .dashboard-overview-frame__header {
     flex-direction: column;
   }

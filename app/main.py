@@ -1,7 +1,7 @@
 import logging
 from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 import secrets
 from typing import Iterator
@@ -207,6 +207,13 @@ def _format_currency(value: object) -> str:
     return f"GBP {amount:,.2f}"
 
 
+def _normalize_decimal(value: object) -> Decimal:
+    try:
+        return Decimal(str(value or 0))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("0")
+
+
 def _datetime_bounds_for_day(target_day: date) -> tuple[datetime, datetime]:
     day_start = datetime.combine(target_day, time.min)
     next_day = datetime.combine(target_day + timedelta(days=1), time.min)
@@ -227,6 +234,26 @@ def _dashboard_period_window(period: str, today: date) -> tuple[datetime, dateti
     if period == "30d":
         return datetime.combine(today - timedelta(days=29), time.min), tomorrow_start
     return datetime.combine(today - timedelta(days=6), time.min), tomorrow_start
+
+
+def _trim_decimal_text(value: Decimal) -> str:
+    text = f"{value:f}"
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
+
+
+def _throughput_display_unit(max_weight_kg: Decimal, total_weight_kg: Decimal) -> str:
+    threshold = max(max_weight_kg, total_weight_kg)
+    return "tonnes" if threshold >= Decimal("1000") else "kg"
+
+
+def _format_throughput_weight(value_kg: object, *, unit: str) -> str:
+    amount = _normalize_decimal(value_kg)
+    if unit == "tonnes":
+        tonnes = (amount / Decimal("1000")).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        return f"{_trim_decimal_text(tonnes)} tonnes"
+    return _format_weight_kg(amount)
 
 
 def _dashboard_ticket_rows(
@@ -432,6 +459,83 @@ def _build_dashboard_chart_points(
     return chart_points, max_count, chart_title, chart_empty_message
 
 
+def _build_weight_throughput_chart(
+    rows: list[tuple[datetime, object]],
+    *,
+    period: str,
+    today: date,
+) -> dict[str, object]:
+    point_weights: dict[int | date, Decimal] = {}
+
+    if period == "today":
+        for activity_datetime, net_kg in rows:
+            bucket_hour = (activity_datetime.hour // 3) * 3
+            point_weights[bucket_hour] = point_weights.get(bucket_hour, Decimal("0")) + _normalize_decimal(net_kg)
+
+        chart_points: list[dict[str, object]] = []
+        max_weight = Decimal("0")
+        total_weight = Decimal("0")
+        for start_hour in range(0, 24, 3):
+            weight_kg = point_weights.get(start_hour, Decimal("0"))
+            total_weight += weight_kg
+            max_weight = max(max_weight, weight_kg)
+            end_hour = min(start_hour + 3, 24)
+            chart_points.append(
+                {
+                    "date_label": f"{start_hour:02d}:00-{end_hour:02d}:00",
+                    "short_label": f"{start_hour:02d}",
+                    "weight_kg": weight_kg,
+                    "weight_kg_raw": _trim_decimal_text(weight_kg),
+                    "height_percent": 0,
+                    "value_label": "",
+                }
+            )
+    else:
+        day_count = 30 if period == "30d" else 7
+        start_day = today - timedelta(days=day_count - 1)
+        for activity_datetime, net_kg in rows:
+            activity_day = activity_datetime.date()
+            point_weights[activity_day] = point_weights.get(activity_day, Decimal("0")) + _normalize_decimal(net_kg)
+
+        chart_points = []
+        max_weight = Decimal("0")
+        total_weight = Decimal("0")
+        for day_offset in range(day_count):
+            point_day = start_day + timedelta(days=day_offset)
+            weight_kg = point_weights.get(point_day, Decimal("0"))
+            total_weight += weight_kg
+            max_weight = max(max_weight, weight_kg)
+            chart_points.append(
+                {
+                    "date_label": point_day.strftime("%d %b"),
+                    "short_label": point_day.strftime("%a"),
+                    "weight_kg": weight_kg,
+                    "weight_kg_raw": _trim_decimal_text(weight_kg),
+                    "height_percent": 0,
+                    "value_label": "",
+                }
+            )
+
+    unit = _throughput_display_unit(max_weight, total_weight)
+    for point in chart_points:
+        weight_kg = point["weight_kg"]
+        point["value_label"] = _format_throughput_weight(weight_kg, unit=unit)
+        point["height_percent"] = (
+            max(14, round((float(weight_kg) / float(max_weight)) * 100))
+            if max_weight > 0 and weight_kg > 0
+            else 0
+        )
+
+    return {
+        "title": "Weight Throughput",
+        "summary": f"Total processed this period: {_format_throughput_weight(total_weight, unit=unit)}",
+        "unit": unit,
+        "points": chart_points,
+        "has_data": total_weight > 0,
+        "empty_message": "No completed ticket weight has been recorded for this period.",
+    }
+
+
 def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
     today = utcnow().date()
     today_start, tomorrow_start = _datetime_bounds_for_day(today)
@@ -525,8 +629,20 @@ def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
             Ticket.status != void_status,
         )
     ).scalars().all()
+    weight_throughput_rows = db.execute(
+        select(Ticket.datetime, Ticket.net_kg).where(
+            Ticket.datetime >= overview_start,
+            Ticket.datetime < overview_end,
+            Ticket.status == complete_status,
+        )
+    ).all()
     chart_points, max_count, chart_title, chart_empty_message = _build_dashboard_chart_points(
         recent_activity_datetimes,
+        period=overview_period,
+        today=today,
+    )
+    weight_throughput = _build_weight_throughput_chart(
+        weight_throughput_rows,
         period=overview_period,
         today=today,
     )
@@ -600,11 +716,11 @@ def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
         "recent_invoices": recent_invoices,
         "invoice_ready_tickets": invoice_ready_rows,
         "invoice_ready_count": invoice_ready_count,
-        "invoice_activity_has_data": bool(recent_invoices or invoice_ready_rows),
         "chart_points": chart_points,
         "chart_title": chart_title,
         "chart_empty_message": chart_empty_message,
         "chart_has_data": max_count > 0,
+        "weight_throughput": weight_throughput,
         "empty_state": empty_state,
     }
 

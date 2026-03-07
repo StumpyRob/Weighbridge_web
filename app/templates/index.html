@@ -4,7 +4,7 @@
 
 {% block content %}
   {% if show_dashboard %}
-    <div class="page-header dashboard-page-header">
+    <div class="page-header">
       <div>
         <h1>Operations Dashboard</h1>
         <p class="muted">
@@ -43,7 +43,7 @@
       {% endfor %}
     </section>
 
-    <section class="frame dashboard-overview-frame">
+    <section class="frame">
       <div class="frame-header dashboard-overview-frame__header">
         <div>
           <span>Overview Activity</span>
@@ -79,36 +79,73 @@
       </div>
     </section>
 
-    <section class="frame dashboard-chart-frame">
-      <div class="frame-header">{{ dashboard.chart_title }}</div>
-      <div class="frame-body">
-        <p class="muted dashboard-section-copy">{{ dashboard.period_label }}, scoped to this workspace only.</p>
-        {% if dashboard.chart_has_data %}
-          <div class="dashboard-chart-wrap">
-            <div
-              class="dashboard-chart"
-              role="img"
-              aria-label="{{ dashboard.chart_title }} for {{ dashboard.period_label | lower }}"
-            >
-              {% for point in dashboard.chart_points %}
-                <div class="dashboard-chart__column" data-dashboard-chart-day="{{ point.date_label }}">
-                  <div class="dashboard-chart__count">{{ point.count }}</div>
-                  <div class="dashboard-chart__bar-shell">
-                    <div class="dashboard-chart__bar" style="height: {{ point.height_percent }}%;"></div>
+    <div class="dashboard-chart-grid">
+      <section class="frame">
+        <div class="frame-header">{{ dashboard.chart_title }}</div>
+        <div class="frame-body">
+          <p class="muted dashboard-section-copy">{{ dashboard.period_label }}, scoped to this workspace only.</p>
+          {% if dashboard.chart_has_data %}
+            <div class="dashboard-chart-wrap">
+              <div
+                class="dashboard-chart"
+                role="img"
+                aria-label="{{ dashboard.chart_title }} for {{ dashboard.period_label | lower }}"
+              >
+                {% for point in dashboard.chart_points %}
+                  <div class="dashboard-chart__column" data-dashboard-chart-day="{{ point.date_label }}">
+                    <div class="dashboard-chart__count">{{ point.count }}</div>
+                    <div class="dashboard-chart__bar-shell">
+                      <div class="dashboard-chart__bar" style="height: {{ point.height_percent }}%;"></div>
+                    </div>
+                    <div class="dashboard-chart__label">{{ point.short_label }}</div>
+                    <div class="dashboard-chart__sub-label">{{ point.date_label }}</div>
                   </div>
-                  <div class="dashboard-chart__label">{{ point.short_label }}</div>
-                  <div class="dashboard-chart__sub-label">{{ point.date_label }}</div>
-                </div>
-              {% endfor %}
+                {% endfor %}
+              </div>
             </div>
-          </div>
-        {% else %}
-          <div class="dashboard-inline-empty">
-            {{ dashboard.chart_empty_message }}
-          </div>
-        {% endif %}
-      </div>
-    </section>
+          {% else %}
+            <div class="dashboard-inline-empty">
+              {{ dashboard.chart_empty_message }}
+            </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="frame" data-dashboard-panel="weight-throughput">
+        <div class="frame-header">Weight Throughput</div>
+        <div class="frame-body">
+          <p class="muted dashboard-section-copy">{{ dashboard.weight_throughput.summary }}</p>
+          {% if dashboard.weight_throughput.has_data %}
+            <div class="dashboard-chart-wrap">
+              <div
+                class="dashboard-chart dashboard-chart--throughput"
+                role="img"
+                aria-label="Weight throughput for {{ dashboard.period_label | lower }}"
+              >
+                {% for point in dashboard.weight_throughput.points %}
+                  <div
+                    class="dashboard-chart__column"
+                    data-dashboard-throughput-point="{{ point.date_label }}"
+                    data-dashboard-throughput-kg="{{ point.weight_kg_raw }}"
+                  >
+                    <div class="dashboard-chart__count">{{ point.value_label }}</div>
+                    <div class="dashboard-chart__bar-shell">
+                      <div class="dashboard-chart__bar dashboard-chart__bar--throughput" style="height: {{ point.height_percent }}%;"></div>
+                    </div>
+                    <div class="dashboard-chart__label">{{ point.short_label }}</div>
+                    <div class="dashboard-chart__sub-label">{{ point.date_label }}</div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          {% else %}
+            <div class="dashboard-inline-empty">
+              {{ dashboard.weight_throughput.empty_message }}
+            </div>
+          {% endif %}
+        </div>
+      </section>
+    </div>
 
     <section class="frame dashboard-traffic-panel" data-dashboard-panel="todays-traffic">
       <div class="frame-header">Today's Traffic</div>

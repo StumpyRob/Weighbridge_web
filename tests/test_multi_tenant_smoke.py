@@ -1629,6 +1629,7 @@ def test_logged_in_tenant_home_shows_dashboard_empty_state(tmp_path, monkeypatch
     assert "Setup complete. System initialization checks are green." not in response.text
     assert response.text.count('data-dashboard-metric="') == 4
     assert 'data-dashboard-panel="todays-traffic"' in response.text
+    assert 'data-dashboard-panel="weight-throughput"' in response.text
     assert 'data-dashboard-period="today"' in response.text
     assert 'data-dashboard-period="7d"' in response.text
     assert 'data-dashboard-period="30d"' in response.text
@@ -1636,6 +1637,7 @@ def test_logged_in_tenant_home_shows_dashboard_empty_state(tmp_path, monkeypatch
     assert 'data-dashboard-empty-state="1"' in response.text
     assert "No operational activity yet" in response.text
     assert "No completed tickets have been recorded today." in response.text
+    assert "No completed ticket weight has been recorded for this period." in response.text
     assert 'data-dashboard-panel="invoice-activity"' in response.text
     assert "No invoice activity recorded for last 7 days." in response.text
     assert "Create Ticket" in response.text
@@ -1832,15 +1834,20 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert "Setup complete. System initialization checks are green." not in response.text
     assert response.text.count('data-dashboard-metric="') == 4
     assert 'data-dashboard-empty-state="1"' not in response.text
+    assert 'data-dashboard-panel="weight-throughput"' in response.text
     assert 'data-dashboard-panel="invoice-activity"' in response.text
     assert _dashboard_metric_value(response.text, "open_tickets") == "1"
     assert _dashboard_metric_value(response.text, "completed_today") == "1"
     assert _dashboard_metric_value(response.text, "total_weight_today") == "1,500 kg"
     assert _dashboard_metric_value(response.text, "invoices_pending") == "2"
+    assert "Total processed this period: 5.5 tonnes" in response.text
     assert 'data-dashboard-ticket="A-COMP-1"' in response.text
     assert 'data-dashboard-ticket="A-OPEN-1"' in response.text
     assert 'data-dashboard-open-ticket="A-OPEN-1"' in response.text
     assert 'data-dashboard-traffic-ticket="A-COMP-1"' in response.text
+    assert 'data-dashboard-throughput-kg="1500"' in response.text
+    assert 'data-dashboard-throughput-kg="1750"' in response.text
+    assert 'data-dashboard-throughput-kg="2200"' in response.text
     assert "09:00" in response.text
     assert 'data-dashboard-invoice="INV-A-1"' in response.text
     assert 'data-dashboard-invoice-ready-ticket="A-COMP-1"' in response.text
@@ -1849,13 +1856,36 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert 'data-dashboard-traffic-ticket="A-YDAY-1"' not in response.text
     assert 'data-dashboard-traffic-ticket="A-OPEN-1"' not in response.text
     assert 'data-dashboard-ticket="A-20D-1"' not in response.text
+    assert 'data-dashboard-throughput-kg="3100"' not in response.text
     assert 'data-dashboard-invoice="INV-A-OLD"' not in response.text
     assert 'data-dashboard-ticket="B-ONLY-1"' not in response.text
     assert 'data-dashboard-open-ticket="B-ONLY-1"' not in response.text
     assert 'data-dashboard-traffic-ticket="B-ONLY-1"' not in response.text
+    assert 'data-dashboard-throughput-kg="9999"' not in response.text
     assert 'data-dashboard-invoice="INV-B-1"' not in response.text
     assert 'data-dashboard-invoice-ready-ticket="B-ONLY-1"' not in response.text
     assert "INV-B-1" not in response.text
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert (
+            _login(
+                tenant_client,
+                email="a-admin@example.com",
+                password="TestPass123!",
+                next_path="/?period=today",
+            )
+            == 303
+        )
+        response_today = tenant_client.get("/?period=today")
+
+    assert response_today.status_code == 200
+    assert 'data-dashboard-period="today"' in response_today.text
+    assert 'data-dashboard-period-active="1"' in response_today.text
+    assert "Total processed this period: 1.5 tonnes" in response_today.text
+    assert 'data-dashboard-throughput-kg="1500"' in response_today.text
+    assert 'data-dashboard-throughput-kg="1750"' not in response_today.text
+    assert 'data-dashboard-throughput-kg="2200"' not in response_today.text
+    assert 'data-dashboard-throughput-kg="3100"' not in response_today.text
 
     with _client(app, base_url="https://a.localhost") as tenant_client:
         assert (
@@ -1872,6 +1902,8 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert response_30d.status_code == 200
     assert 'data-dashboard-period="30d"' in response_30d.text
     assert 'data-dashboard-period-active="1"' in response_30d.text
+    assert "Total processed this period: 8.6 tonnes" in response_30d.text
+    assert 'data-dashboard-throughput-kg="3100"' in response_30d.text
     assert 'data-dashboard-ticket="A-20D-1"' in response_30d.text
     assert 'data-dashboard-invoice="INV-A-OLD"' in response_30d.text
 
