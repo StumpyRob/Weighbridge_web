@@ -1626,8 +1626,16 @@ def test_logged_in_tenant_home_shows_dashboard_empty_state(tmp_path, monkeypatch
 
     assert response.status_code == 200
     assert "Operations Dashboard" in response.text
+    assert "Setup complete. System initialization checks are green." not in response.text
+    assert response.text.count('data-dashboard-metric="') == 4
+    assert 'data-dashboard-period="today"' in response.text
+    assert 'data-dashboard-period="7d"' in response.text
+    assert 'data-dashboard-period="30d"' in response.text
+    assert 'data-dashboard-period-active="1"' in response.text
     assert 'data-dashboard-empty-state="1"' in response.text
     assert "No operational activity yet" in response.text
+    assert 'data-dashboard-panel="invoice-activity"' in response.text
+    assert "No invoice activity recorded for last 7 days." in response.text
     assert "Create Ticket" in response.text
     assert 'href="/tickets/new"' in response.text
     assert 'href="/customers/new"' in response.text
@@ -1674,6 +1682,7 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
         today = utcnow().replace(hour=10, minute=0, second=0, microsecond=0)
         yesterday = today - timedelta(days=1)
         five_days_ago = today - timedelta(days=5)
+        twenty_days_ago = today - timedelta(days=20)
 
         customer_a = Customer(tenant_id=tenant_a, account_code="CUST-A", name="Tenant A Customer")
         customer_b = Customer(tenant_id=tenant_b, account_code="CUST-B", name="Tenant B Customer")
@@ -1729,6 +1738,20 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
                     paid=False,
                 ),
                 Ticket(
+                    tenant_id=tenant_a,
+                    ticket_no="A-20D-1",
+                    datetime=twenty_days_ago,
+                    status=TicketStatusEnum.COMPLETE.value,
+                    direction=DirectionEnum.INWARD.value,
+                    transaction_type=TransactionTypeEnum.SALE.value,
+                    customer_id=customer_a.id,
+                    vehicle_id=vehicle_a.id,
+                    product_id=product_a.id,
+                    net_kg=3100,
+                    dont_invoice=False,
+                    paid=False,
+                ),
+                Ticket(
                     tenant_id=tenant_b,
                     ticket_no="B-ONLY-1",
                     datetime=yesterday,
@@ -1751,6 +1774,16 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
                     net_total=Decimal("100.00"),
                     vat_total=Decimal("20.00"),
                     gross_total=Decimal("120.00"),
+                ),
+                Invoice(
+                    tenant_id=tenant_a,
+                    invoice_no="INV-A-OLD",
+                    customer_id=customer_a.id,
+                    invoice_date=twenty_days_ago.date(),
+                    status="SENT",
+                    net_total=Decimal("80.00"),
+                    vat_total=Decimal("16.00"),
+                    gross_total=Decimal("96.00"),
                 ),
                 Invoice(
                     tenant_id=tenant_b,
@@ -1780,19 +1813,46 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
 
     assert response.status_code == 200
     assert "Operations Dashboard" in response.text
+    assert "Setup complete. System initialization checks are green." not in response.text
+    assert response.text.count('data-dashboard-metric="') == 4
     assert 'data-dashboard-empty-state="1"' not in response.text
+    assert 'data-dashboard-panel="invoice-activity"' in response.text
     assert _dashboard_metric_value(response.text, "open_tickets") == "1"
     assert _dashboard_metric_value(response.text, "completed_today") == "1"
     assert _dashboard_metric_value(response.text, "total_weight_today") == "1,500 kg"
-    assert _dashboard_metric_value(response.text, "invoices_pending") == "1"
+    assert _dashboard_metric_value(response.text, "invoices_pending") == "2"
     assert 'data-dashboard-ticket="A-COMP-1"' in response.text
     assert 'data-dashboard-ticket="A-OPEN-1"' in response.text
     assert 'data-dashboard-open-ticket="A-OPEN-1"' in response.text
+    assert 'data-dashboard-invoice="INV-A-1"' in response.text
+    assert 'data-dashboard-invoice-ready-ticket="A-COMP-1"' in response.text
     assert "Tenant A Customer" in response.text
     assert "Tenant B Customer" not in response.text
+    assert 'data-dashboard-ticket="A-20D-1"' not in response.text
+    assert 'data-dashboard-invoice="INV-A-OLD"' not in response.text
     assert 'data-dashboard-ticket="B-ONLY-1"' not in response.text
     assert 'data-dashboard-open-ticket="B-ONLY-1"' not in response.text
+    assert 'data-dashboard-invoice="INV-B-1"' not in response.text
+    assert 'data-dashboard-invoice-ready-ticket="B-ONLY-1"' not in response.text
     assert "INV-B-1" not in response.text
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert (
+            _login(
+                tenant_client,
+                email="a-admin@example.com",
+                password="TestPass123!",
+                next_path="/?period=30d",
+            )
+            == 303
+        )
+        response_30d = tenant_client.get("/?period=30d")
+
+    assert response_30d.status_code == 200
+    assert 'data-dashboard-period="30d"' in response_30d.text
+    assert 'data-dashboard-period-active="1"' in response_30d.text
+    assert 'data-dashboard-ticket="A-20D-1"' in response_30d.text
+    assert 'data-dashboard-invoice="INV-A-OLD"' in response_30d.text
 
 
 def test_all_tenant_subdomains_use_dashboard_on_root_and_non_tenant_hosts_do_not(

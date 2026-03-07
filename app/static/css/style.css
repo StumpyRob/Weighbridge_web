@@ -2439,12 +2439,14 @@ details > summary:focus-visible {
 .dashboard-summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-auto-rows: 1fr;
   gap: 1rem;
   margin-bottom: var(--section-gap);
 }
 
 .dashboard-stat-card {
   min-height: 126px;
+  height: 100%;
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
@@ -2470,13 +2472,71 @@ details > summary:focus-visible {
   color: #6b7280;
 }
 
+.dashboard-overview-frame__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.85rem 1rem;
+}
+
+.dashboard-frame-subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+}
+
+.dashboard-period-filter {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.dashboard-period-filter__option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 31px;
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #374151;
+  font-size: 0.84rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.dashboard-period-filter__option:hover,
+.dashboard-period-filter__option:focus {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.dashboard-period-filter__option.is-active {
+  background: #14213d;
+  border-color: #14213d;
+  color: #ffffff;
+}
+
 .dashboard-setup-alert .actions,
 .dashboard-empty-state .actions {
   margin-top: 0.85rem;
 }
 
-.dashboard-empty-state .frame-body > p:first-child {
-  margin-top: 0;
+.dashboard-empty-state {
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 1.1rem;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.dashboard-empty-state h2 {
+  margin: 0;
+  font-size: 1.08rem;
+}
+
+.dashboard-empty-state p {
+  margin: 0.75rem 0 0;
 }
 
 .dashboard-section-copy {
@@ -2484,11 +2544,19 @@ details > summary:focus-visible {
   margin-bottom: 1rem;
 }
 
+.dashboard-chart-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.15rem;
+}
+
 .dashboard-chart {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(58px, 1fr);
   gap: 0.85rem;
   align-items: end;
+  min-width: max-content;
 }
 
 .dashboard-chart__column {
@@ -2542,7 +2610,13 @@ details > summary:focus-visible {
   margin-top: var(--section-gap);
 }
 
+.dashboard-panel[data-dashboard-panel="invoice-activity"] {
+  grid-column: 1 / -1;
+}
+
 .dashboard-panel .frame-body {
+  display: grid;
+  gap: 1rem;
   padding-top: 1rem;
 }
 
@@ -2556,6 +2630,10 @@ details > summary:focus-visible {
 
 .dashboard-table a {
   font-weight: 600;
+}
+
+.dashboard-table--compact {
+  min-width: 640px;
 }
 
 .dashboard-status-pill {
@@ -2583,10 +2661,67 @@ details > summary:focus-visible {
   color: #166534;
 }
 
+.dashboard-status-pill--issued,
+.dashboard-status-pill--sent {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.dashboard-status-pill--paid {
+  background: #ecfdf5;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.dashboard-status-pill--draft {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
 .dashboard-status-pill--void {
   background: #f3f4f6;
   border-color: #d1d5db;
   color: #6b7280;
+}
+
+.dashboard-mini-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.dashboard-mini-stat {
+  padding: 0.85rem 0.95rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.dashboard-mini-stat__label {
+  display: block;
+  font-size: 0.82rem;
+  color: #4b5563;
+}
+
+.dashboard-mini-stat__value {
+  display: block;
+  margin-top: 0.28rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #14213d;
+}
+
+.dashboard-subsection {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.dashboard-subsection h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #14213d;
 }
 
 .platform-tenants-actions {
@@ -3777,6 +3912,14 @@ details > summary:focus-visible {
 }
 
 @media (max-width: 960px) {
+  .dashboard-overview-frame__header {
+    flex-direction: column;
+  }
+
+  .dashboard-period-filter {
+    justify-content: flex-start;
+  }
+
   .dashboard-panels {
     grid-template-columns: 1fr;
   }
@@ -3789,6 +3932,7 @@ details > summary:focus-visible {
 
   .dashboard-chart {
     gap: 0.55rem;
+    grid-auto-columns: minmax(48px, 1fr);
   }
 
   .dashboard-chart__bar-shell {
@@ -3799,6 +3943,11 @@ details > summary:focus-visible {
   .dashboard-chart__label,
   .dashboard-chart__sub-label {
     font-size: 0.72rem;
+  }
+
+  .dashboard-period-filter__option {
+    min-height: 28px;
+    padding: 0.24rem 0.65rem;
   }
 }
 

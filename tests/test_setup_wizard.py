@@ -497,7 +497,8 @@ def test_home_first_time_setup_panel_visibility(tmp_path, monkeypatch):
         ready = client.get("/")
         assert ready.status_code == 200
         assert "First-time Setup" not in ready.text
-        assert "Setup complete. System initialization checks are green." in ready.text
+        assert "Operations Dashboard" in ready.text
+        assert "Setup complete. System initialization checks are green." not in ready.text
     finally:
         client.close()
 

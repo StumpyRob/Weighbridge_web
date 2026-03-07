@@ -199,10 +199,34 @@ def _format_weight_kg(value: object) -> str:
     return f"{amount:,.3f} kg"
 
 
+def _format_currency(value: object) -> str:
+    try:
+        amount = Decimal(str(value or 0))
+    except (InvalidOperation, TypeError, ValueError):
+        amount = Decimal("0")
+    return f"GBP {amount:,.2f}"
+
+
 def _datetime_bounds_for_day(target_day: date) -> tuple[datetime, datetime]:
     day_start = datetime.combine(target_day, time.min)
     next_day = datetime.combine(target_day + timedelta(days=1), time.min)
     return day_start, next_day
+
+
+def _normalize_dashboard_period(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"today", "7d", "30d"}:
+        return normalized
+    return "7d"
+
+
+def _dashboard_period_window(period: str, today: date) -> tuple[datetime, datetime]:
+    today_start, tomorrow_start = _datetime_bounds_for_day(today)
+    if period == "today":
+        return today_start, tomorrow_start
+    if period == "30d":
+        return datetime.combine(today - timedelta(days=29), time.min), tomorrow_start
+    return datetime.combine(today - timedelta(days=6), time.min), tomorrow_start
 
 
 def _dashboard_ticket_rows(
@@ -212,6 +236,8 @@ def _dashboard_ticket_rows(
     status: str | None = None,
     include_void: bool = False,
     oldest_first: bool = False,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> list[dict[str, object]]:
     stmt = (
         select(Ticket, Vehicle, Customer, Product)
@@ -219,6 +245,10 @@ def _dashboard_ticket_rows(
         .outerjoin(Customer, Ticket.customer_id == Customer.id)
         .outerjoin(Product, Ticket.product_id == Product.id)
     )
+    if date_from is not None:
+        stmt = stmt.where(Ticket.datetime >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(Ticket.datetime < date_to)
     if status:
         stmt = stmt.where(Ticket.status == status)
     elif not include_void:
@@ -258,10 +288,156 @@ def _dashboard_ticket_rows(
     return rows
 
 
-def _build_tenant_dashboard(db: Session) -> dict[str, object]:
+def _dashboard_invoice_rows(
+    db: Session,
+    *,
+    limit: int = 5,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> list[dict[str, object]]:
+    stmt = (
+        select(Invoice, Customer)
+        .outerjoin(Customer, Invoice.customer_id == Customer.id)
+        .order_by(Invoice.invoice_date.desc(), Invoice.id.desc())
+        .limit(limit)
+    )
+    if date_from is not None:
+        stmt = stmt.where(Invoice.invoice_date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(Invoice.invoice_date < date_to)
+
+    rows = []
+    for invoice, customer in db.execute(stmt).all():
+        status = str(invoice.status or "").upper()
+        rows.append(
+            {
+                "invoice_no": str(invoice.invoice_no or ""),
+                "invoice_date_display": invoice.invoice_date.strftime("%d/%m/%Y"),
+                "customer_name": (
+                    str(customer.name or "").strip()
+                    if customer is not None and str(customer.name or "").strip()
+                    else "Unassigned"
+                ),
+                "status": status or "-",
+                "status_class": f"dashboard-status-pill--{status.lower()}" if status else "",
+                "gross_total_display": _format_currency(invoice.gross_total),
+            }
+        )
+    return rows
+
+
+def _dashboard_invoice_ready_rows(
+    db: Session,
+    *,
+    limit: int = 5,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> list[dict[str, object]]:
+    stmt = (
+        select(Ticket, Customer)
+        .outerjoin(Customer, Ticket.customer_id == Customer.id)
+        .where(
+            Ticket.status == _ticket_status_value(TicketStatusEnum.COMPLETE),
+            Ticket.invoice_id.is_(None),
+            Ticket.dont_invoice.is_(False),
+        )
+        .order_by(Ticket.datetime.desc(), Ticket.id.desc())
+        .limit(limit)
+    )
+    if date_from is not None:
+        stmt = stmt.where(Ticket.datetime >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(Ticket.datetime < date_to)
+
+    rows = []
+    for ticket, customer in db.execute(stmt).all():
+        rows.append(
+            {
+                "ticket_id": int(ticket.id),
+                "ticket_no": str(ticket.ticket_no or ""),
+                "datetime_display": ticket.datetime.strftime("%d/%m/%Y %H:%M"),
+                "customer_name": (
+                    str(customer.name or "").strip()
+                    if customer is not None and str(customer.name or "").strip()
+                    else "Unassigned"
+                ),
+                "net_kg_display": _format_weight_kg(ticket.net_kg),
+            }
+        )
+    return rows
+
+
+def _build_dashboard_chart_points(
+    activity_datetimes: list[datetime],
+    *,
+    period: str,
+    today: date,
+) -> tuple[list[dict[str, object]], int, str, str]:
+    chart_points: list[dict[str, object]] = []
+    max_count = 0
+
+    if period == "today":
+        activity_counts: dict[int, int] = {}
+        for activity_datetime in activity_datetimes:
+            bucket_hour = (activity_datetime.hour // 3) * 3
+            activity_counts[bucket_hour] = activity_counts.get(bucket_hour, 0) + 1
+        for start_hour in range(0, 24, 3):
+            count = int(activity_counts.get(start_hour, 0))
+            max_count = max(max_count, count)
+            end_hour = min(start_hour + 3, 24)
+            chart_points.append(
+                {
+                    "date_label": f"{start_hour:02d}:00-{end_hour:02d}:00",
+                    "short_label": f"{start_hour:02d}",
+                    "count": count,
+                    "height_percent": 0,
+                }
+            )
+        chart_title = "Ticket Activity Today"
+        chart_empty_message = "No ticket activity has been recorded today."
+    else:
+        day_count = 30 if period == "30d" else 7
+        start_day = today - timedelta(days=day_count - 1)
+        activity_counts: dict[date, int] = {}
+        for activity_datetime in activity_datetimes:
+            activity_day = activity_datetime.date()
+            activity_counts[activity_day] = activity_counts.get(activity_day, 0) + 1
+        for day_offset in range(day_count):
+            point_day = start_day + timedelta(days=day_offset)
+            count = int(activity_counts.get(point_day, 0))
+            max_count = max(max_count, count)
+            chart_points.append(
+                {
+                    "date_label": point_day.strftime("%d %b"),
+                    "short_label": point_day.strftime("%a"),
+                    "count": count,
+                    "height_percent": 0,
+                }
+            )
+        chart_title = "Tickets Processed Per Day"
+        chart_empty_message = (
+            "No ticket activity has been recorded in the last 30 days."
+            if period == "30d"
+            else "No ticket activity has been recorded in the last 7 days."
+        )
+
+    for point in chart_points:
+        count = int(point["count"])
+        point["height_percent"] = (
+            max(14, round((count / max_count) * 100))
+            if max_count and count
+            else 0
+        )
+    return chart_points, max_count, chart_title, chart_empty_message
+
+
+def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
     today = utcnow().date()
     today_start, tomorrow_start = _datetime_bounds_for_day(today)
-    week_start, _ = _datetime_bounds_for_day(today - timedelta(days=6))
+    overview_period = _normalize_dashboard_period(period)
+    overview_start, overview_end = _dashboard_period_window(overview_period, today)
+    overview_start_date = overview_start.date()
+    overview_end_date = overview_end.date()
 
     open_status = _ticket_status_value(TicketStatusEnum.OPEN)
     complete_status = _ticket_status_value(TicketStatusEnum.COMPLETE)
@@ -309,47 +485,43 @@ def _build_tenant_dashboard(db: Session) -> dict[str, object]:
         or 0
     )
 
-    recent_tickets = _dashboard_ticket_rows(db, limit=6)
+    recent_tickets = _dashboard_ticket_rows(
+        db,
+        limit=6,
+        date_from=overview_start,
+        date_to=overview_end,
+    )
     open_ticket_rows = _dashboard_ticket_rows(
         db,
         limit=6,
         status=open_status,
         oldest_first=True,
     )
+    recent_invoices = _dashboard_invoice_rows(
+        db,
+        limit=5,
+        date_from=overview_start_date,
+        date_to=overview_end_date,
+    )
+    invoice_ready_rows = _dashboard_invoice_ready_rows(
+        db,
+        limit=5,
+        date_from=overview_start,
+        date_to=overview_end,
+    )
 
     recent_activity_datetimes = db.execute(
         select(Ticket.datetime).where(
-            Ticket.datetime >= week_start,
-            Ticket.datetime < tomorrow_start,
+            Ticket.datetime >= overview_start,
+            Ticket.datetime < overview_end,
             Ticket.status != void_status,
         )
     ).scalars().all()
-    activity_counts: dict[date, int] = {}
-    for activity_datetime in recent_activity_datetimes:
-        activity_day = activity_datetime.date()
-        activity_counts[activity_day] = activity_counts.get(activity_day, 0) + 1
-
-    chart_points: list[dict[str, object]] = []
-    max_count = 0
-    for day_offset in range(7):
-        point_day = today - timedelta(days=6 - day_offset)
-        count = int(activity_counts.get(point_day, 0))
-        max_count = max(max_count, count)
-        chart_points.append(
-            {
-                "date_label": point_day.strftime("%d %b"),
-                "short_label": point_day.strftime("%a"),
-                "count": count,
-                "height_percent": 0,
-            }
-        )
-    for point in chart_points:
-        count = int(point["count"])
-        point["height_percent"] = (
-            max(14, round((count / max_count) * 100))
-            if max_count and count
-            else 0
-        )
+    chart_points, max_count, chart_title, chart_empty_message = _build_dashboard_chart_points(
+        recent_activity_datetimes,
+        period=overview_period,
+        today=today,
+    )
 
     activity_count = int(
         db.execute(
@@ -361,6 +533,24 @@ def _build_tenant_dashboard(db: Session) -> dict[str, object]:
         db.execute(select(func.count(Invoice.id))).scalar_one() or 0
     )
     empty_state = activity_count == 0 and invoice_count == 0
+    invoice_ready_count = int(
+        db.execute(
+            select(func.count(Ticket.id)).where(
+                Ticket.status == complete_status,
+                Ticket.invoice_id.is_(None),
+                Ticket.dont_invoice.is_(False),
+                Ticket.datetime >= overview_start,
+                Ticket.datetime < overview_end,
+            )
+        ).scalar_one()
+        or 0
+    )
+
+    period_labels = {
+        "today": "Today",
+        "7d": "Last 7 Days",
+        "30d": "Last 30 Days",
+    }
 
     return {
         "summary_cards": [
@@ -389,9 +579,22 @@ def _build_tenant_dashboard(db: Session) -> dict[str, object]:
                 "hint": "Outstanding issued invoices",
             },
         ],
+        "overview_period": overview_period,
+        "period_label": period_labels[overview_period],
+        "period_options": (
+            {"key": "today", "label": "Today", "active": overview_period == "today"},
+            {"key": "7d", "label": "7 Days", "active": overview_period == "7d"},
+            {"key": "30d", "label": "30 Days", "active": overview_period == "30d"},
+        ),
         "recent_tickets": recent_tickets,
         "open_tickets": open_ticket_rows,
+        "recent_invoices": recent_invoices,
+        "invoice_ready_tickets": invoice_ready_rows,
+        "invoice_ready_count": invoice_ready_count,
+        "invoice_activity_has_data": bool(recent_invoices or invoice_ready_rows),
         "chart_points": chart_points,
+        "chart_title": chart_title,
+        "chart_empty_message": chart_empty_message,
         "chart_has_data": max_count > 0,
         "empty_state": empty_state,
     }
@@ -889,7 +1092,11 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         return response
 
     @app.get("/", response_class=HTMLResponse)
-    def index(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    def index(
+        request: Request,
+        period: str | None = None,
+        db: Session = Depends(get_db),
+    ) -> HTMLResponse:
         if _public_host_mode(request):
             host_name = host_without_port(str(request.url.hostname or ""))
             if _is_exact_base_domain(host_name) and settings.effective_base_domain:
@@ -917,7 +1124,12 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
             "index.html",
             {
                 "request": request,
-                "dashboard": _build_tenant_dashboard(db) if show_dashboard else None,
+                "dashboard": _build_tenant_dashboard(
+                    db,
+                    period=_normalize_dashboard_period(period),
+                )
+                if show_dashboard
+                else None,
                 "show_dashboard": show_dashboard,
                 "show_first_time_setup": not setup_ready,
                 "setup_ready": setup_ready,

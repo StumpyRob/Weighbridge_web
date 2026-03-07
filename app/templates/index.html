@@ -31,8 +31,6 @@
           </ul>
         {% endif %}
       </div>
-    {% else %}
-      <div class="notice">Setup complete. System initialization checks are green.</div>
     {% endif %}
 
     <section class="dashboard-summary-grid" aria-label="Operational summary">
@@ -45,27 +43,53 @@
       {% endfor %}
     </section>
 
-    {% if dashboard.empty_state %}
-      <section class="frame dashboard-empty-state" data-dashboard-empty-state="1">
-        <div class="frame-header">No operational activity yet</div>
-        <div class="frame-body">
-          <p>
-            This workspace has no tickets or invoices yet. Start with the core records below, then create the first ticket when vehicles arrive on site.
-          </p>
-          <div class="actions btn-group">
-            <a class="btn" href="{{ tenant_path('/tickets/new') }}">Create Ticket</a>
-            <a class="btn btn--secondary" href="{{ tenant_path('/customers/new') }}">Add Customer</a>
-            <a class="btn btn--secondary" href="{{ tenant_path('/vehicles/new') }}">Add Vehicle</a>
-          </div>
+    <section class="frame dashboard-overview-frame">
+      <div class="frame-header dashboard-overview-frame__header">
+        <div>
+          <span>Overview Activity</span>
+          <p class="muted dashboard-frame-subtitle">{{ dashboard.period_label }}, scoped to this workspace only.</p>
         </div>
-      </section>
-    {% else %}
-      <section class="frame dashboard-chart-frame">
-        <div class="frame-header">Tickets Processed Per Day</div>
-        <div class="frame-body">
-          <p class="muted dashboard-section-copy">Last 7 days, scoped to this workspace only.</p>
-          {% if dashboard.chart_has_data %}
-            <div class="dashboard-chart" role="img" aria-label="Tickets processed per day for the last 7 days">
+        <div class="dashboard-period-filter" role="tablist" aria-label="Dashboard overview period">
+          {% for option in dashboard.period_options %}
+            <a
+              href="?period={{ option.key }}"
+              class="dashboard-period-filter__option{% if option.active %} is-active{% endif %}"
+              data-dashboard-period="{{ option.key }}"
+              {% if option.active %}data-dashboard-period-active="1" aria-current="page"{% endif %}
+            >
+              {{ option.label }}
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="frame-body">
+        {% if dashboard.empty_state %}
+          <section class="dashboard-empty-state" data-dashboard-empty-state="1">
+            <h2>No operational activity yet</h2>
+            <p>
+              This workspace has no tickets or invoices yet. Start with the core records below, then create the first ticket when vehicles arrive on site.
+            </p>
+            <div class="actions btn-group">
+              <a class="btn" href="{{ tenant_path('/tickets/new') }}">Create Ticket</a>
+              <a class="btn btn--secondary" href="{{ tenant_path('/customers/new') }}">Add Customer</a>
+              <a class="btn btn--secondary" href="{{ tenant_path('/vehicles/new') }}">Add Vehicle</a>
+            </div>
+          </section>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="frame dashboard-chart-frame">
+      <div class="frame-header">{{ dashboard.chart_title }}</div>
+      <div class="frame-body">
+        <p class="muted dashboard-section-copy">{{ dashboard.period_label }}, scoped to this workspace only.</p>
+        {% if dashboard.chart_has_data %}
+          <div class="dashboard-chart-wrap">
+            <div
+              class="dashboard-chart"
+              role="img"
+              aria-label="{{ dashboard.chart_title }} for {{ dashboard.period_label | lower }}"
+            >
               {% for point in dashboard.chart_points %}
                 <div class="dashboard-chart__column" data-dashboard-chart-day="{{ point.date_label }}">
                   <div class="dashboard-chart__count">{{ point.count }}</div>
@@ -77,88 +101,166 @@
                 </div>
               {% endfor %}
             </div>
-          {% else %}
-            <div class="dashboard-inline-empty">
-              No ticket activity has been recorded in the last 7 days.
+          </div>
+        {% else %}
+          <div class="dashboard-inline-empty">
+            {{ dashboard.chart_empty_message }}
+          </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <div class="dashboard-panels">
+      <section class="frame dashboard-panel" data-dashboard-panel="recent-tickets">
+        <div class="frame-header">Recent Tickets</div>
+        <div class="frame-body">
+          <p class="muted dashboard-section-copy">{{ dashboard.period_label }} activity window.</p>
+          {% if dashboard.recent_tickets %}
+            <div class="table-wrap">
+              <table class="data-table dashboard-table">
+                <thead>
+                  <tr>
+                    <th>Ticket</th>
+                    <th>Date / Time</th>
+                    <th>Customer</th>
+                    <th>Vehicle</th>
+                    <th>Status</th>
+                    <th class="num">Net</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in dashboard.recent_tickets %}
+                    <tr data-dashboard-ticket="{{ row.ticket_no }}">
+                      <td><a href="{{ tenant_path('/tickets/' ~ row.ticket_id) }}">{{ row.ticket_no }}</a></td>
+                      <td>{{ row.datetime_display }}</td>
+                      <td>{{ row.customer_name }}</td>
+                      <td>{{ row.vehicle_registration }}</td>
+                      <td>
+                        <span class="dashboard-status-pill {{ row.status_class }}">{{ row.status }}</span>
+                      </td>
+                      <td class="num">{{ row.net_kg_display }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
             </div>
+          {% else %}
+            <div class="dashboard-inline-empty">No recent tickets recorded for {{ dashboard.period_label | lower }}.</div>
           {% endif %}
         </div>
       </section>
 
-      <div class="dashboard-panels">
-        <section class="frame dashboard-panel" data-dashboard-panel="recent-tickets">
-          <div class="frame-header">Recent Tickets</div>
-          <div class="frame-body">
-            {% if dashboard.recent_tickets %}
+      <section class="frame dashboard-panel" data-dashboard-panel="open-tickets">
+        <div class="frame-header">Open Tickets Awaiting Completion</div>
+        <div class="frame-body">
+          <p class="muted dashboard-section-copy">Open tickets currently awaiting completion.</p>
+          {% if dashboard.open_tickets %}
+            <div class="table-wrap">
+              <table class="data-table dashboard-table">
+                <thead>
+                  <tr>
+                    <th>Ticket</th>
+                    <th>Date / Time</th>
+                    <th>Customer</th>
+                    <th>Vehicle</th>
+                    <th>Product</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in dashboard.open_tickets %}
+                    <tr data-dashboard-open-ticket="{{ row.ticket_no }}">
+                      <td><a href="{{ tenant_path('/tickets/' ~ row.ticket_id) }}">{{ row.ticket_no }}</a></td>
+                      <td>{{ row.datetime_display }}</td>
+                      <td>{{ row.customer_name }}</td>
+                      <td>{{ row.vehicle_registration }}</td>
+                      <td>{{ row.product_name }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="dashboard-inline-empty">No open tickets are waiting for completion.</div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="frame dashboard-panel" data-dashboard-panel="invoice-activity">
+        <div class="frame-header">Invoice Activity</div>
+        <div class="frame-body">
+          <p class="muted dashboard-section-copy">{{ dashboard.period_label }} invoice and invoice-ready activity.</p>
+          <div class="dashboard-mini-stats">
+            <div class="dashboard-mini-stat">
+              <span class="dashboard-mini-stat__label">Recent invoices</span>
+              <strong class="dashboard-mini-stat__value">{{ dashboard.recent_invoices | length }}</strong>
+            </div>
+            <div class="dashboard-mini-stat">
+              <span class="dashboard-mini-stat__label">Ready to invoice</span>
+              <strong class="dashboard-mini-stat__value">{{ dashboard.invoice_ready_count }}</strong>
+            </div>
+          </div>
+
+          {% if dashboard.recent_invoices %}
+            <div class="table-wrap">
+              <table class="data-table dashboard-table dashboard-table--compact">
+                <thead>
+                  <tr>
+                    <th>Invoice</th>
+                    <th>Date</th>
+                    <th>Customer</th>
+                    <th>Status</th>
+                    <th class="num">Gross</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in dashboard.recent_invoices %}
+                    <tr data-dashboard-invoice="{{ row.invoice_no }}">
+                      <td>{{ row.invoice_no }}</td>
+                      <td>{{ row.invoice_date_display }}</td>
+                      <td>{{ row.customer_name }}</td>
+                      <td>
+                        <span class="dashboard-status-pill {{ row.status_class }}">{{ row.status }}</span>
+                      </td>
+                      <td class="num">{{ row.gross_total_display }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% endif %}
+
+          {% if dashboard.invoice_ready_tickets %}
+            <div class="dashboard-subsection">
+              <h3>Tickets Ready To Invoice</h3>
               <div class="table-wrap">
-                <table class="data-table dashboard-table">
+                <table class="data-table dashboard-table dashboard-table--compact">
                   <thead>
                     <tr>
                       <th>Ticket</th>
                       <th>Date / Time</th>
                       <th>Customer</th>
-                      <th>Vehicle</th>
-                      <th>Status</th>
                       <th class="num">Net</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {% for row in dashboard.recent_tickets %}
-                      <tr data-dashboard-ticket="{{ row.ticket_no }}">
+                    {% for row in dashboard.invoice_ready_tickets %}
+                      <tr data-dashboard-invoice-ready-ticket="{{ row.ticket_no }}">
                         <td><a href="{{ tenant_path('/tickets/' ~ row.ticket_id) }}">{{ row.ticket_no }}</a></td>
                         <td>{{ row.datetime_display }}</td>
                         <td>{{ row.customer_name }}</td>
-                        <td>{{ row.vehicle_registration }}</td>
-                        <td>
-                          <span class="dashboard-status-pill {{ row.status_class }}">{{ row.status }}</span>
-                        </td>
                         <td class="num">{{ row.net_kg_display }}</td>
                       </tr>
                     {% endfor %}
                   </tbody>
                 </table>
               </div>
-            {% else %}
-              <div class="dashboard-inline-empty">No recent tickets recorded yet.</div>
-            {% endif %}
-          </div>
-        </section>
-
-        <section class="frame dashboard-panel" data-dashboard-panel="open-tickets">
-          <div class="frame-header">Open Tickets Awaiting Completion</div>
-          <div class="frame-body">
-            {% if dashboard.open_tickets %}
-              <div class="table-wrap">
-                <table class="data-table dashboard-table">
-                  <thead>
-                    <tr>
-                      <th>Ticket</th>
-                      <th>Date / Time</th>
-                      <th>Customer</th>
-                      <th>Vehicle</th>
-                      <th>Product</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for row in dashboard.open_tickets %}
-                      <tr data-dashboard-open-ticket="{{ row.ticket_no }}">
-                        <td><a href="{{ tenant_path('/tickets/' ~ row.ticket_id) }}">{{ row.ticket_no }}</a></td>
-                        <td>{{ row.datetime_display }}</td>
-                        <td>{{ row.customer_name }}</td>
-                        <td>{{ row.vehicle_registration }}</td>
-                        <td>{{ row.product_name }}</td>
-                      </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-            {% else %}
-              <div class="dashboard-inline-empty">No open tickets are waiting for completion.</div>
-            {% endif %}
-          </div>
-        </section>
-      </div>
-    {% endif %}
+            </div>
+          {% elif not dashboard.recent_invoices %}
+            <div class="dashboard-inline-empty">No invoice activity recorded for {{ dashboard.period_label | lower }}.</div>
+          {% endif %}
+        </div>
+      </section>
+    </div>
   {% else %}
     <div class="page-header">
       <div>
