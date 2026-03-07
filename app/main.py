@@ -267,6 +267,7 @@ def _dashboard_ticket_rows(
                 "status": ticket_status,
                 "status_class": f"dashboard-status-pill--{ticket_status.lower()}",
                 "datetime_display": ticket.datetime.strftime("%d/%m/%Y %H:%M"),
+                "time_display": ticket.datetime.strftime("%H:%M"),
                 "customer_name": (
                     str(customer.name or "").strip()
                     if customer is not None and str(customer.name or "").strip()
@@ -497,6 +498,13 @@ def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
         status=open_status,
         oldest_first=True,
     )
+    todays_traffic_rows = _dashboard_ticket_rows(
+        db,
+        limit=20,
+        status=complete_status,
+        date_from=today_start,
+        date_to=tomorrow_start,
+    )
     recent_invoices = _dashboard_invoice_rows(
         db,
         limit=5,
@@ -588,6 +596,7 @@ def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
         ),
         "recent_tickets": recent_tickets,
         "open_tickets": open_ticket_rows,
+        "todays_traffic": todays_traffic_rows,
         "recent_invoices": recent_invoices,
         "invoice_ready_tickets": invoice_ready_rows,
         "invoice_ready_count": invoice_ready_count,

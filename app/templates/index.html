@@ -110,6 +110,42 @@
       </div>
     </section>
 
+    <section class="frame dashboard-traffic-panel" data-dashboard-panel="todays-traffic">
+      <div class="frame-header">Today's Traffic</div>
+      <div class="frame-body">
+        {% if dashboard.todays_traffic %}
+          <div class="table-wrap">
+            <table class="data-table dashboard-table">
+              <thead>
+                <tr>
+                  <th>Ticket</th>
+                  <th>Time</th>
+                  <th>Vehicle</th>
+                  <th>Customer</th>
+                  <th>Product</th>
+                  <th class="num">Net Weight</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in dashboard.todays_traffic %}
+                  <tr data-dashboard-traffic-ticket="{{ row.ticket_no }}">
+                    <td><a href="{{ tenant_path('/tickets/' ~ row.ticket_id) }}">{{ row.ticket_no }}</a></td>
+                    <td>{{ row.time_display }}</td>
+                    <td>{{ row.vehicle_registration }}</td>
+                    <td>{{ row.customer_name }}</td>
+                    <td>{{ row.product_name }}</td>
+                    <td class="num">{{ row.net_kg_display }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="dashboard-inline-empty">No completed tickets have been recorded today.</div>
+        {% endif %}
+      </div>
+    </section>
+
     <div class="dashboard-panels">
       <section class="frame dashboard-panel" data-dashboard-panel="recent-tickets">
         <div class="frame-header">Recent Tickets</div>

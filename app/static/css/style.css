@@ -2440,8 +2440,14 @@ details > summary:focus-visible {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   grid-auto-rows: 1fr;
+  align-items: stretch;
   gap: 1rem;
   margin-bottom: var(--section-gap);
+}
+
+.dashboard-summary-grid > .card,
+.dashboard-summary-grid > .card + .card {
+  margin-top: 0;
 }
 
 .dashboard-stat-card {
@@ -2607,6 +2613,10 @@ details > summary:focus-visible {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--section-gap);
+  margin-top: var(--section-gap);
+}
+
+.dashboard-traffic-panel {
   margin-top: var(--section-gap);
 }
 
