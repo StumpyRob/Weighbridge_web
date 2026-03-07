@@ -762,7 +762,13 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                     request.state.current_user = _load_session_user(request, db)
 
             # 4) Enforce login once.
-            if _path_requires_login(request_path):
+            tenant_root_requires_login = bool(
+                request_path == "/"
+                and not request.state.public_host_mode
+                and not request.state.platform_mode
+                and not request.state.legacy_single_host
+            )
+            if tenant_root_requires_login or _path_requires_login(request_path):
                 authenticated = require_user(request)
                 if not isinstance(authenticated, User):
                     return _finalize_response(authenticated)

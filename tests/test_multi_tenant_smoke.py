@@ -1795,6 +1795,128 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert "INV-B-1" not in response.text
 
 
+def test_all_tenant_subdomains_use_dashboard_on_root_and_non_tenant_hosts_do_not(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "base_domain", "example.test")
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-dashboard-hosts.db", monkeypatch=monkeypatch
+    )
+    mjteale_id = _seed_tenant(SessionLocal, name="MJ Teale Ltd.", subdomain="mjteale")
+    lotus_id = _seed_tenant(SessionLocal, name="Lotus Cars Ltd.", subdomain="lotus")
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=mjteale_id,
+        company_name="MJ Teale Ltd.",
+        primary_color="#0f4c81",
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=lotus_id,
+        company_name="Lotus Cars Ltd.",
+        primary_color="#235d3a",
+    )
+    _seed_user(
+        SessionLocal,
+        email="mjteale-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=mjteale_id,
+    )
+    _seed_user(
+        SessionLocal,
+        email="lotus-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=lotus_id,
+    )
+
+    with SessionLocal() as db:
+        customer = Customer(
+            tenant_id=mjteale_id,
+            account_code="MJ-CUST-1",
+            name="MJ Teale Customer",
+        )
+        vehicle = Vehicle(tenant_id=mjteale_id, registration="MJ24 TST")
+        product = Product(
+            tenant_id=mjteale_id,
+            code="MJ-PROD-1",
+            description="Screened Aggregate",
+            unit_price=Decimal("15.00"),
+        )
+        db.add_all([customer, vehicle, product])
+        db.flush()
+        db.add(
+            Ticket(
+                tenant_id=mjteale_id,
+                ticket_no="MJ-DASH-1",
+                datetime=utcnow().replace(hour=9, minute=15, second=0, microsecond=0),
+                status=TicketStatusEnum.OPEN.value,
+                direction=DirectionEnum.INWARD.value,
+                transaction_type=TransactionTypeEnum.SALE.value,
+                customer_id=customer.id,
+                vehicle_id=vehicle.id,
+                product_id=product.id,
+                net_kg=1800,
+                dont_invoice=False,
+                paid=False,
+            )
+        )
+        db.commit()
+
+    with _client(app, base_url="https://lotus.example.test") as lotus_client:
+        lotus_root = lotus_client.get("/", follow_redirects=False)
+        assert lotus_root.status_code in {302, 303}
+        assert lotus_root.headers.get("location", "").startswith("/login")
+        assert (
+            _login(
+                lotus_client,
+                email="lotus-admin@example.com",
+                password="TestPass123!",
+                next_path="/",
+            )
+            == 303
+        )
+        lotus_dashboard = lotus_client.get("/")
+        assert lotus_dashboard.status_code == 200
+        assert "Operations Dashboard" in lotus_dashboard.text
+        assert 'data-dashboard-empty-state="1"' in lotus_dashboard.text
+        assert "No operational activity yet" in lotus_dashboard.text
+
+    with _client(app, base_url="https://mjteale.example.test") as mjteale_client:
+        mjteale_root = mjteale_client.get("/", follow_redirects=False)
+        assert mjteale_root.status_code in {302, 303}
+        assert mjteale_root.headers.get("location", "").startswith("/login")
+        assert (
+            _login(
+                mjteale_client,
+                email="mjteale-admin@example.com",
+                password="TestPass123!",
+                next_path="/",
+            )
+            == 303
+        )
+        mjteale_dashboard = mjteale_client.get("/")
+        assert mjteale_dashboard.status_code == 200
+        assert "Operations Dashboard" in mjteale_dashboard.text
+        assert 'data-dashboard-empty-state="1"' not in mjteale_dashboard.text
+        assert 'data-dashboard-ticket="MJ-DASH-1"' in mjteale_dashboard.text
+        assert _dashboard_metric_value(mjteale_dashboard.text, "open_tickets") == "1"
+        assert "Lotus Cars Ltd." not in mjteale_dashboard.text
+
+    with _client(app, base_url="https://software.example.test") as marketing_client:
+        marketing = marketing_client.get("/")
+        assert marketing.status_code == 200
+        assert "Cloud Weighbridge Operations" in marketing.text
+        assert "Operations Dashboard" not in marketing.text
+
+    with _client(app, base_url="https://admin.example.test") as admin_client:
+        admin_root = admin_client.get("/", follow_redirects=False)
+        assert admin_root.status_code in {302, 303}
+        assert admin_root.headers.get("location") == "/platform/tenants"
+
+
 def test_new_tenant_creation_flow_seeds_usable_baseline(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-create-seed.db", monkeypatch=monkeypatch
