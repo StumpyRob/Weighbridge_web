@@ -31,6 +31,20 @@ _AUDIT_TIMEZONE = ZoneInfo("Europe/London")
 _AUDIT_TIMEZONE_LABEL = "Europe/London"
 
 
+def _platform_tools_allowed(request: Request) -> bool:
+    return request_platform_mode(request) or bool(
+        getattr(getattr(request, "state", None), "legacy_single_host", False)
+    )
+
+
+def _require_platform_superadmin(request: Request, db: Session) -> None:
+    if not _platform_tools_allowed(request):
+        raise HTTPException(status_code=404, detail="Not Found")
+    current_user = getattr(request.state, "current_user", None)
+    if not is_superadmin_user(db, current_user):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
 def _audit_display_time(value):
     if value is None:
         return None
@@ -82,7 +96,11 @@ def _admin_health_enabled() -> bool:
 
 
 @router.post("/admin/dev-mode")
-async def admin_dev_mode_toggle(request: Request) -> RedirectResponse:
+async def admin_dev_mode_toggle(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    _require_platform_superadmin(request, db)
     form = await request.form()
     enabled = str(form.get("enabled", "")).strip().lower() in {
         "1",
@@ -92,7 +110,7 @@ async def admin_dev_mode_toggle(request: Request) -> RedirectResponse:
     }
     templates.env.globals["DEV_MODE"] = bool(enabled)
     return RedirectResponse(
-        url=f"/admin?dev_mode_updated=1&dev_mode={'1' if enabled else '0'}",
+        url="/platform/tenants" if request_platform_mode(request) else "/admin",
         status_code=303,
     )
 
@@ -132,9 +150,7 @@ def admin_system_status(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    current_user = getattr(request.state, "current_user", None)
-    if not is_superadmin_user(db, current_user):
-        return HTMLResponse("Forbidden", status_code=403)
+    _require_platform_superadmin(request, db)
 
     company = (
         db.execute(select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1))

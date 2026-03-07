@@ -107,7 +107,8 @@ _TENANT_ONLY_PREFIXES = (
 _PLATFORM_ONLY_PREFIXES = (
     "/platform",
     "/admin/tenants",
-    "/admin/ewc-codes",
+    "/admin/system-status",
+    "/admin/dev-mode",
     "/bootstrap",
 )
 _LEGACY_SINGLE_HOSTS = {
@@ -129,6 +130,9 @@ def _strip_non_production_routes(app: FastAPI) -> None:
     filtered_routes = []
     for route in app.router.routes:
         path = str(getattr(route, "path", "")).lower()
+        if path == "/admin/dev-mode":
+            filtered_routes.append(route)
+            continue
         if "debug" in path or "__" in path or "dev" in path:
             continue
         filtered_routes.append(route)
@@ -521,14 +525,16 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 return _plain_error("Not Found", 404)
 
             platform_only = any(request_path.startswith(prefix) for prefix in _PLATFORM_ONLY_PREFIXES)
-            allow_legacy_bootstrap = bool(
+            allow_legacy_platform_route = bool(
                 request.state.legacy_single_host
                 and (
                     request_path.startswith("/bootstrap")
                     or request_path.startswith("/platform/bootstrap")
+                    or request_path.startswith("/admin/system-status")
+                    or request_path.startswith("/admin/dev-mode")
                 )
             )
-            if (not request.state.platform_mode) and platform_only and (not allow_legacy_bootstrap):
+            if (not request.state.platform_mode) and platform_only and (not allow_legacy_platform_route):
                 return _plain_error("Not Found", 404)
 
             # 3) Load session user once.

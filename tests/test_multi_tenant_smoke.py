@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+import re
 from urllib.parse import urlencode, urlsplit
 
 from fastapi import FastAPI
@@ -24,6 +25,7 @@ from app.services.system_setup import (
     seed_required_reference_data,
     upsert_default_yard,
 )
+from app.templating import templates
 from app.tenancy import current_platform_mode, current_tenant_id
 
 
@@ -64,6 +66,22 @@ def _build_app_and_session(
 
 def _client(app: FastAPI, *, base_url: str) -> TestClient:
     return TestClient(app, base_url=base_url)
+
+
+def _extract_nav_markup(html: str) -> str:
+    match = re.search(r'<nav class="site-nav">(.*?)</nav>', html, flags=re.DOTALL)
+    assert match is not None
+    return match.group(1)
+
+
+def _extract_utility_bar_markup(html: str) -> str:
+    match = re.search(
+        r'<div class="site-utility-bar">(.*?)</div>',
+        html,
+        flags=re.DOTALL,
+    )
+    assert match is not None
+    return match.group(1)
 
 
 def _prime_csrf(client: TestClient, *, login_path: str = "/login") -> str:
@@ -764,7 +782,15 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert _login(tenant_client, email="tenant-admin@example.com", password="TenantPass123!") == 303
         tenant_admin_page = tenant_client.get("/admin/company")
         assert tenant_admin_page.status_code == 200
+        tenant_nav = _extract_nav_markup(tenant_admin_page.text)
+        tenant_utility = _extract_utility_bar_markup(tenant_admin_page.text)
         assert "Tenant Management" not in tenant_admin_page.text
+        assert "Tenant A" not in tenant_nav
+        assert "Signed in as tenant-admin@example.com" not in tenant_nav
+        assert "Logout" not in tenant_nav
+        assert "Tenant A" in tenant_utility
+        assert "Signed in as tenant-admin@example.com" in tenant_utility
+        assert "Logout" in tenant_utility
         csrf = _prime_csrf(tenant_client)
         tenant_session_cookie = str(tenant_client.cookies.get("session") or "")
         assert tenant_session_cookie
@@ -1060,6 +1086,8 @@ def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypa
 
         tenants_page = admin_client.get("/platform/tenants")
         assert tenants_page.status_code == 200
+        platform_nav = _extract_nav_markup(tenants_page.text)
+        platform_utility = _extract_utility_bar_markup(tenants_page.text)
         assert ">Tenant Management<" in tenants_page.text
         assert ">System Status<" in tenants_page.text
         assert ">Tickets<" not in tenants_page.text
@@ -1069,10 +1097,94 @@ def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypa
         assert ">Invoices<" not in tenants_page.text
         assert ">Lookups<" not in tenants_page.text
         assert ">Reports<" not in tenants_page.text
+        assert "Platform Admin" not in platform_nav
+        assert "Signed in as superadmin@example.com" not in platform_nav
+        assert "Logout" not in platform_nav
+        assert "Platform Admin" in platform_utility
+        assert "Signed in as superadmin@example.com" in platform_utility
+        assert "Logout" in platform_utility
 
         blocked_tickets = admin_client.get("/tickets")
         assert blocked_tickets.status_code == 404
         assert "Unknown tenant" in blocked_tickets.text
+
+
+def test_tenant_settings_hides_platform_tools_and_keeps_platform_routes_separate(
+    tmp_path, monkeypatch
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-settings-cleanup.db", monkeypatch=monkeypatch
+    )
+    _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", is_active=True)
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TenantPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=1,
+    )
+    _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="a-admin@example.com", password="TenantPass123!") == 303
+        settings_page = tenant_client.get("/admin")
+        assert settings_page.status_code == 200
+        tenant_nav = _extract_nav_markup(settings_page.text)
+        assert ">Settings<" in tenant_nav
+        assert ">Admin<" not in tenant_nav
+        assert "Setup & Configuration" in settings_page.text
+        assert "Operations" in settings_page.text
+        assert "Support" in settings_page.text
+        assert "Company" in settings_page.text
+        assert "EWC Codes" in settings_page.text
+        assert "Printing" in settings_page.text
+        assert "Audit Log" in settings_page.text
+        assert "Help" in settings_page.text
+        assert "Manage Company" in settings_page.text
+        assert "Manage EWC Codes" in settings_page.text
+        assert "View Audit Log" in settings_page.text
+        assert "Open Help" in settings_page.text
+        assert "Open Company" not in settings_page.text
+        assert "Open EWC Codes" not in settings_page.text
+        assert "Open Audit Log" not in settings_page.text
+        assert "System Status" not in settings_page.text
+        assert "DEV mode" not in settings_page.text
+        assert "Turn DEV Mode" not in settings_page.text
+        assert "Tenant Management" not in settings_page.text
+        assert tenant_client.get("/admin/system-status").status_code == 404
+        tenant_csrf = str(tenant_client.cookies.get(CSRF_COOKIE_NAME) or "")
+        assert tenant_csrf
+        forbidden_toggle = tenant_client.post(
+            "/admin/dev-mode",
+            data={"enabled": "1", CSRF_FORM_FIELD: tenant_csrf},
+            follow_redirects=False,
+        )
+        assert forbidden_toggle.status_code == 404
+
+    original_dev_mode = bool(templates.env.globals.get("DEV_MODE", False))
+    try:
+        with _client(app, base_url="https://admin.localhost") as admin_client:
+            assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+            system_status = admin_client.get("/admin/system-status")
+            assert system_status.status_code == 200
+            admin_csrf = _prime_csrf(admin_client)
+            toggle = admin_client.post(
+                "/admin/dev-mode",
+                data={
+                    "enabled": "0" if original_dev_mode else "1",
+                    CSRF_FORM_FIELD: admin_csrf,
+                },
+                follow_redirects=False,
+            )
+            assert toggle.status_code == 303
+    finally:
+        templates.env.globals["DEV_MODE"] = original_dev_mode
 
 
 def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tmp_path, monkeypatch):
@@ -1752,7 +1864,7 @@ def test_global_ewc_reads_on_tenant_host_and_admin_management_is_platform_only(
         products_new = tenant_client.get("/products/new")
         assert products_new.status_code == 200
         assert "17 09 04" in products_new.text
-        assert tenant_client.get("/admin/ewc-codes").status_code == 404
+        assert tenant_client.get("/admin/ewc-codes").status_code == 200
 
     with _client(app, base_url="https://admin.localhost") as admin_client:
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303

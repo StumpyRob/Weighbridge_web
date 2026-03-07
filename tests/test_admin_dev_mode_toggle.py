@@ -1,10 +1,23 @@
 from app.templating import templates
 
 
-def test_admin_page_shows_dev_mode_toggle(client):
+def test_settings_page_hides_platform_only_tools(client):
     response = client.get("/admin")
     assert response.status_code == 200
-    assert "Turn DEV Mode" in response.text
+    assert "<h1>Settings</h1>" in response.text
+    assert ">Settings<" in response.text
+    assert "Setup & Configuration" in response.text
+    assert "Operations" in response.text
+    assert "Support" in response.text
+    assert "Manage Company" in response.text
+    assert "Manage EWC Codes" in response.text
+    assert "View Audit Log" in response.text
+    assert "Open Help" in response.text
+    assert "Open Company" not in response.text
+    assert "Open EWC Codes" not in response.text
+    assert "Open Audit Log" not in response.text
+    assert "Turn DEV Mode" not in response.text
+    assert "System Status" not in response.text
 
 
 def test_admin_dev_mode_toggle_updates_runtime_flag(client):
@@ -17,7 +30,7 @@ def test_admin_dev_mode_toggle_updates_runtime_flag(client):
             follow_redirects=False,
         )
         assert enable.status_code == 303
-        assert "dev_mode_updated=1" in enable.headers["location"]
+        assert enable.headers["location"] == "/admin"
         assert templates.env.globals.get("DEV_MODE") is True
 
         disable = client.post(

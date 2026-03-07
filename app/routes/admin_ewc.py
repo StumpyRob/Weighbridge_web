@@ -12,11 +12,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.datastructures import UploadFile
 
-from ..auth import is_superadmin_user
+from ..auth import is_admin_user
 from ..db import get_db
-from ..models import EwcCode, EwcImportLog, User
+from ..models import EwcCode, EwcImportLog
 from ..services.ewc_import import import_ewc_codes, parse_import_errors_json
-from ..tenancy import request_platform_mode
 from ..templating import templates
 
 router = APIRouter()
@@ -25,13 +24,9 @@ logger = logging.getLogger(__name__)
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
-def _require_platform_superadmin(request: Request, db: Session) -> None:
-    if not request_platform_mode(request):
-        raise HTTPException(status_code=404, detail="Not Found")
+def _require_admin_access(request: Request, db: Session) -> None:
     current_user = getattr(getattr(request, "state", None), "current_user", None)
-    if not isinstance(current_user, User):
-        raise HTTPException(status_code=403, detail="Forbidden")
-    if not is_superadmin_user(db, current_user):
+    if not is_admin_user(db, current_user):
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
@@ -82,7 +77,7 @@ def admin_ewc_codes(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    _require_platform_superadmin(request, db)
+    _require_admin_access(request, db)
     return templates.TemplateResponse(
         request,
         "admin/ewc_codes.html",
@@ -95,7 +90,7 @@ async def admin_ewc_codes_import(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    _require_platform_superadmin(request, db)
+    _require_admin_access(request, db)
     form = await request.form()
     file_obj = form.get("csv_file")
     replace_existing = str(form.get("replace_existing", "")).strip().lower() in {
@@ -193,7 +188,7 @@ def admin_ewc_codes_sample_csv(
     request: Request,
     db: Session = Depends(get_db),
 ) -> PlainTextResponse:
-    _require_platform_superadmin(request, db)
+    _require_admin_access(request, db)
     rows = list(
         db.execute(select(EwcCode).order_by(EwcCode.code_6.asc())).scalars()
     )

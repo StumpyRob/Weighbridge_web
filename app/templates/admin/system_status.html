@@ -9,7 +9,9 @@
       <p class="muted">Quick diagnostics for initialization and required lookups.</p>
     </div>
     <div class="actions btn-group">
-      <a class="btn btn--secondary" href="/admin">Back to Admin</a>
+      <a class="btn btn--secondary" href="{{ '/platform/tenants' if platform_mode else '/admin' }}">
+        {{ "Back to Platform" if platform_mode else "Back to Settings" }}
+      </a>
     </div>
   </div>
 

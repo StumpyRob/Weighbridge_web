@@ -1,55 +1,37 @@
 {% extends "base.html" %}
 
-{% block title %}Admin | Weighbridge Web{% endblock %}
-
-{% block toast_messages %}
-  {% if request.query_params.get("dev_mode_updated") == "1" %}
-    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
-      <div class="flash-toast__content">
-        DEV mode {{ "enabled" if request.query_params.get("dev_mode") == "1" else "disabled" }}.
-      </div>
-      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
-    </div>
-  {% endif %}
-{% endblock %}
+{% block title %}Settings | Weighbridge Web{% endblock %}
 
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>Admin</h1>
-      <p class="muted">System configuration and maintenance.</p>
+      <h1>Settings</h1>
+      <p class="muted">Manage business settings, compliance data, operational oversight, and support resources.</p>
     </div>
   </div>
 
   <div class="stacked-frames">
     <section class="frame">
       <div class="frame-header">
-        <h2>Setup & Configuration</h2>
+        <div class="admin-hub-section-heading">
+          <h2>Setup & Configuration</h2>
+          <p>Core business settings that are configured up front and updated when operational rules or branding change.</p>
+        </div>
       </div>
       <div class="frame-body admin-hub-grid">
         <article class="admin-hub-card">
           <h3>Company</h3>
           <p>Manage company name, address, branding, and invoice/logo settings.</p>
           <div class="actions btn-group">
-            <a class="btn btn--secondary btn--sm" href="/admin/company">Open Company</a>
+            <a class="btn btn--secondary btn--sm" href="/admin/company">Manage Company</a>
           </div>
         </article>
-
-        {% if platform_mode and current_user_is_superadmin %}
-          <article class="admin-hub-card">
-            <h3>Tenants</h3>
-            <p>Create, enable, disable, and review tenant accounts from the platform host.</p>
-            <div class="actions btn-group">
-              <a class="btn btn--secondary btn--sm" href="/platform/tenants">Open Tenants</a>
-            </div>
-          </article>
-        {% endif %}
 
         <article class="admin-hub-card">
           <h3>EWC Codes</h3>
           <p>Upload and refresh EWC regulatory codes from CSV.</p>
           <div class="actions btn-group">
-            <a class="btn btn--secondary btn--sm" href="/admin/ewc-codes">Open EWC Codes</a>
+            <a class="btn btn--secondary btn--sm" href="/admin/ewc-codes">Manage EWC Codes</a>
           </div>
         </article>
 
@@ -67,25 +49,30 @@
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Operations & Oversight</h2>
+        <div class="admin-hub-section-heading">
+          <h2>Operations</h2>
+          <p>Review administrative activity and trace key actions across day-to-day usage.</p>
+        </div>
       </div>
       <div class="frame-body admin-hub-grid">
         <article class="admin-hub-card">
           <h3>Audit Log</h3>
           <p>Review authentication and data-change events across key entities.</p>
           <div class="actions btn-group">
-            <a class="btn btn--secondary btn--sm" href="/admin/audit">Open Audit Log</a>
+            <a class="btn btn--secondary btn--sm" href="/admin/audit">View Audit Log</a>
           </div>
         </article>
+      </div>
+    </section>
 
-        <article class="admin-hub-card">
-          <h3>System Status</h3>
-          <p>Check setup/readiness and required data status (superadmin only).</p>
-          <div class="actions btn-group">
-            <a class="btn btn--secondary btn--sm" href="/admin/system-status">Open System Status</a>
-          </div>
-        </article>
-
+    <section class="frame">
+      <div class="frame-header">
+        <div class="admin-hub-section-heading">
+          <h2>Support</h2>
+          <p>Guidance and reference material for setup, printing, and ongoing administrator workflows.</p>
+        </div>
+      </div>
+      <div class="frame-body admin-hub-grid">
         <article class="admin-hub-card">
           <h3>Help</h3>
           <p>Access getting-started guides and template variable reference.</p>
@@ -93,31 +80,6 @@
             <a class="btn btn--secondary btn--sm" href="/admin/help/getting-started">Open Help</a>
           </div>
         </article>
-
-        {% if DEV_MODE %}
-          <article class="admin-hub-card">
-            <h3>Health Check</h3>
-            <p>Run diagnostics for renderer, templates, uploads, and database health.</p>
-            <div class="actions btn-group">
-              <a class="btn btn--secondary btn--sm" href="/admin/health">Open Health Check</a>
-            </div>
-          </article>
-        {% endif %}
-      </div>
-    </section>
-
-    <section class="frame">
-      <div class="frame-header">
-        <h2>Environment</h2>
-      </div>
-      <div class="frame-body admin-env-panel">
-        <p><strong>DEV mode:</strong> {{ "Enabled" if DEV_MODE else "Disabled" }}</p>
-        <form method="post" action="/admin/dev-mode" class="actions btn-group">
-          <input type="hidden" name="enabled" value="{{ '0' if DEV_MODE else '1' }}" />
-          <button type="submit" class="btn btn--secondary">
-            {{ "Turn DEV Mode Off" if DEV_MODE else "Turn DEV Mode On" }}
-          </button>
-        </form>
       </div>
     </section>
   </div>

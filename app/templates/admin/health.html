@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Admin Health | Weighbridge Web{% endblock %}
+{% block title %}System Health | Weighbridge Web{% endblock %}
 
 {% block content %}
   {% set logo_badge_label = "OK (LOGO SET)" if report.logo.status == "ok" else report.logo.summary %}
@@ -11,7 +11,9 @@
       <h1>System Health</h1>
       <p class="muted">DEV diagnostics for printing, PDFs, uploads, and data safety.</p>
     </div>
-    <a class="btn btn--ghost" href="/admin">Back to Admin</a>
+    <a class="btn btn--ghost" href="{{ '/platform/tenants' if platform_mode else '/admin' }}">
+      {{ "Back to Platform" if platform_mode else "Back to Settings" }}
+    </a>
   </div>
 
   <section class="health-grid">

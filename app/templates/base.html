@@ -12,24 +12,57 @@
   </head>
   <body>
     <header class="site-header">
-      <a class="brand" href="{{ tenant_path('/platform/tenants' if platform_mode else '/') }}">
-        {% set show_logo_nav = ui_branding.show_nav_logo %}
-        {% set show_title_nav = ui_branding.show_nav_title %}
-        {% if show_logo_nav %}
-          <span class="brand__logo-badge">
-            <img
-              src="{{ tenant_path(ui_branding.nav_logo_url) }}"
-              alt="Company logo"
-              class="brand__logo"
-              loading="lazy"
-            />
-          </span>
-        {% endif %}
-        {% if show_title_nav %}
-          <span class="brand__text">{{ ui_branding.brand_name }}</span>
-        {% endif %}
-      </a>
-      <div class="site-header__right">
+      <div class="site-header__utility">
+        {% set signed_in_as = (current_user.email or current_user.username or 'User') if current_user else '' %}
+        <div class="site-utility-bar">
+          {% if platform_mode %}
+            <span class="site-utility-bar__item site-utility-bar__item--platform">Platform Admin</span>
+          {% elif current_tenant_name or current_tenant_subdomain %}
+            <span
+              class="site-utility-bar__item site-utility-bar__item--tenant"
+              {% if current_tenant_subdomain %}title="{{ current_tenant_subdomain }}"{% endif %}
+            >
+              {{ current_tenant_name or ui_branding.brand_name or "Workspace" }}
+            </span>
+          {% endif %}
+          {% if current_user %}
+            <span
+              class="site-utility-bar__item site-utility-bar__item--user"
+              title="{{ signed_in_as }}"
+              aria-label="Signed in as {{ signed_in_as }}"
+            >
+              Signed in as {{ signed_in_as }}
+            </span>
+            <form method="post" action="{{ tenant_path('/logout') }}" class="site-auth__logout site-utility-bar__action">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+              <button type="submit" class="site-auth__link">Logout</button>
+            </form>
+          {% else %}
+            <a href="{{ tenant_path('/login') }}" class="site-auth__link site-utility-bar__action">Sign in</a>
+          {% endif %}
+          {% if DEV_MODE and platform_mode %}
+            <span class="dev-mode-pill">DEV</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="site-header__main">
+        <a class="brand" href="{{ tenant_path('/platform/tenants' if platform_mode else '/') }}">
+          {% set show_logo_nav = ui_branding.show_nav_logo %}
+          {% set show_title_nav = ui_branding.show_nav_title %}
+          {% if show_logo_nav %}
+            <span class="brand__logo-badge">
+              <img
+                src="{{ tenant_path(ui_branding.nav_logo_url) }}"
+                alt="Company logo"
+                class="brand__logo"
+                loading="lazy"
+              />
+            </span>
+          {% endif %}
+          {% if show_title_nav %}
+            <span class="brand__text">{{ ui_branding.brand_name }}</span>
+          {% endif %}
+        </a>
         <nav class="site-nav">
           {% if platform_mode %}
             {% if current_user_is_superadmin %}
@@ -44,41 +77,9 @@
             <a href="{{ tenant_path('/invoices') }}" class="{% if request.url.path.startswith('/invoices') %}is-active{% endif %}" {% if request.url.path.startswith('/invoices') %}aria-current="page"{% endif %}>Invoices</a>
             <a href="{{ tenant_path('/lookups/hauliers') }}" class="{% if request.url.path.startswith('/lookups') %}is-active{% endif %}" {% if request.url.path.startswith('/lookups') %}aria-current="page"{% endif %}>Lookups</a>
             <a href="{{ tenant_path('/reports') }}" class="{% if request.url.path.startswith('/reports') %}is-active{% endif %}" {% if request.url.path.startswith('/reports') %}aria-current="page"{% endif %}>Reports</a>
-            <a href="{{ tenant_path('/admin') }}" class="{% if request.url.path.startswith('/admin') %}is-active{% endif %}" {% if request.url.path.startswith('/admin') %}aria-current="page"{% endif %}>Admin</a>
+            <a href="{{ tenant_path('/admin') }}" class="{% if request.url.path.startswith('/admin') %}is-active{% endif %}" {% if request.url.path.startswith('/admin') %}aria-current="page"{% endif %}>Settings</a>
           {% endif %}
         </nav>
-        <div class="site-header__meta">
-          {% if platform_mode %}
-            <span class="site-context-badge site-context-badge--platform">Platform Admin</span>
-          {% elif current_tenant_name or current_tenant_subdomain %}
-            <span
-              class="site-context-badge site-context-badge--tenant"
-              {% if current_tenant_subdomain %}title="{{ current_tenant_subdomain }}"{% endif %}
-            >
-              {{ current_tenant_name or ui_branding.brand_name or "Tenant Workspace" }}
-            </span>
-          {% endif %}
-          <div class="site-auth">
-            {% if current_user %}
-              {% set signed_in_as = (current_user.email or current_user.username or 'User') %}
-              <span class="site-auth__label">Signed in as</span>
-              <span
-                class="site-auth__badge"
-                title="{{ signed_in_as }}"
-                aria-label="Signed in as {{ signed_in_as }}"
-              >{{ signed_in_as }}</span>
-              <form method="post" action="{{ tenant_path('/logout') }}" class="site-auth__logout">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-                <button type="submit" class="site-auth__link">Logout</button>
-              </form>
-            {% else %}
-              <a href="{{ tenant_path('/login') }}" class="site-auth__link">Sign in</a>
-            {% endif %}
-          </div>
-          {% if DEV_MODE %}
-            <span class="dev-mode-pill">DEV</span>
-          {% endif %}
-        </div>
       </div>
     </header>
     {% block toasts %}

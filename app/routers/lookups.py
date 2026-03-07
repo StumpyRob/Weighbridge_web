@@ -67,11 +67,11 @@ def _render_lookup_list(
     try:
         if missing_required_lookup_messages(db):
             readiness_warning = (
-                "System not fully configured. Go to Admin -> System Status."
+                "System not fully configured. Review Settings and complete the missing setup data."
             )
     except SQLAlchemyError:
         readiness_warning = (
-            "Migrations incomplete. Check deployment logs and Admin -> System Status."
+            "Migrations incomplete. Check deployment logs or contact platform support."
         )
 
     items = []
@@ -86,7 +86,7 @@ def _render_lookup_list(
     except SQLAlchemyError:
         lookup_error = (
             "Migrations incomplete: lookup tables unavailable. "
-            "Check deployment logs and Admin -> System Status."
+            "Check deployment logs or contact platform support."
         )
 
     return templates.TemplateResponse(request, 

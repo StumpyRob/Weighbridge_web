@@ -230,6 +230,7 @@ def test_protected_pages_redirect_to_login_when_unauthenticated(tmp_path, monkey
         assert tickets_after_login.status_code == 200
         admin_after_login = client.get("/admin")
         assert admin_after_login.status_code == 200
+        assert "<h1>Settings</h1>" in admin_after_login.text
     finally:
         client.close()
 
@@ -416,7 +417,9 @@ def test_navbar_shows_signed_in_indicator_and_sign_in_link(tmp_path, monkeypatch
         )
         signed_in_page = client.get("/admin")
         assert signed_in_page.status_code == 200
+        assert 'class="site-utility-bar"' in signed_in_page.text
         assert "Signed in as owner@example.com" in signed_in_page.text
+        assert "Logout" in signed_in_page.text
 
         logout = client.post(
             "/logout",

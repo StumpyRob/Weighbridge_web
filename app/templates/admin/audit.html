@@ -15,9 +15,11 @@
     <a class="btn btn--ghost" href="/admin/ewc-codes">EWC Codes</a>
     <a class="btn btn--ghost" href="/admin/help/getting-started">Help</a>
     <a class="btn btn--ghost" href="/admin/company">Company</a>
-    <a class="btn btn--ghost" href="/admin/system-status">System Status</a>
     <a class="btn btn--ghost is-active" href="/admin/audit">Audit Log</a>
-    {% if DEV_MODE %}
+    {% if platform_mode %}
+      <a class="btn btn--ghost" href="/admin/system-status">System Status</a>
+    {% endif %}
+    {% if DEV_MODE and platform_mode %}
       <a class="btn btn--ghost" href="/admin/health">Health Check</a>
     {% endif %}
   </div>
