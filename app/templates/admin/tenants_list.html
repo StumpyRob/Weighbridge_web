@@ -5,7 +5,16 @@
 {% block toast_messages %}
   {% if created_subdomain %}
     <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
-      <div class="flash-toast__content">Tenant {{ created_subdomain }} created. Use Open Tenant to sign in.</div>
+      <div class="flash-toast__content">
+        Tenant {{ created_subdomain }} created.
+        {% if created_open_url %}
+          {% if created_uses_subdomain_url %}
+            Sign in at <a href="{{ created_open_url }}" target="_blank" rel="noreferrer">{{ created_open_url }}</a>.
+          {% else %}
+            Fallback sign-in is available at <a href="{{ created_open_url }}">{{ created_open_url }}</a>.
+          {% endif %}
+        {% endif %}
+      </div>
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}

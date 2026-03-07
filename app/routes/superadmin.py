@@ -52,7 +52,12 @@ from ..services.system_setup import (
 )
 from ..services.tenants import normalize_subdomain, validate_subdomain
 from ..services.uploads import company_logo_upload_dir
-from ..tenancy import request_platform_mode, tenant_external_url, tenant_external_url_template
+from ..tenancy import (
+    base_domain_supports_direct_tenant_hosts,
+    request_platform_mode,
+    tenant_external_url,
+    tenant_external_url_template,
+)
 from ..templating import templates
 
 router = APIRouter()
@@ -260,7 +265,7 @@ def _tenant_form_context(
         "field_errors": field_errors or {},
         "form": form,
         "access_url": access_url,
-        "access_uses_subdomain_url": access_url.startswith("http"),
+        "access_uses_subdomain_url": base_domain_supports_direct_tenant_hosts(),
     }
 
 
@@ -281,6 +286,8 @@ def tenants_list(
         )
     tenants = list(db.execute(query).scalars())
     tenant_users = _tenant_users_map(db, [int(tenant.id) for tenant in tenants])
+    created_subdomain = str(request.query_params.get("created_tenant", "") or "").strip()
+    created_open_url = _tenant_open_url(created_subdomain)
     rows: list[dict[str, object]] = []
     active_count = 0
     disabled_count = 0
@@ -314,7 +321,9 @@ def tenants_list(
             "rows": rows,
             "q": q or "",
             "error": request.query_params.get("error", ""),
-            "created_subdomain": request.query_params.get("created_tenant", ""),
+            "created_subdomain": created_subdomain,
+            "created_open_url": created_open_url,
+            "created_uses_subdomain_url": bool(created_open_url) and base_domain_supports_direct_tenant_hosts(),
             "updated_subdomain": request.query_params.get("updated_tenant", ""),
             "updated_status": request.query_params.get("status", ""),
             "deleted_subdomain": request.query_params.get("deleted_tenant", ""),

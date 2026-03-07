@@ -618,6 +618,10 @@ def test_superadmin_enable_disable_actions_block_tenant_access(tmp_path, monkeyp
 
     with _client(app, base_url="https://admin.localhost") as admin_client:
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+        new_form = admin_client.get("/platform/tenants/new")
+        assert new_form.status_code == 200
+        assert "/t/&lt;subdomain&gt;/login" in new_form.text
+        assert "Used for tenant subdomains and the `/t/&lt;subdomain&gt;` fallback path." in new_form.text
         csrf = _prime_csrf(admin_client)
         disable = admin_client.post(
             f"/platform/tenants/{tenant_a}/disable",
@@ -1051,8 +1055,10 @@ def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tm
 
         created_list = admin_client.get(created.headers["location"])
         assert created_list.status_code == 200
-        assert "Tenant mytenant created. Use Open Tenant to sign in." in created_list.text
-        assert "/t/mytenant/login" in created_list.text
+        assert "Tenant mytenant created." in created_list.text
+        assert "Fallback sign-in is available at" in created_list.text
+        assert 'href="/t/mytenant/login"' in created_list.text
+        assert "https://mytenant.example.test/login" not in created_list.text
         assert "normalized-admin@example.com" in created_list.text
 
     with SessionLocal() as db:
@@ -1149,13 +1155,43 @@ def test_path_based_tenant_access_mode_on_base_domain(tmp_path, monkeypatch):
             )
             == 303
         )
+        new_form = platform_client.get("/platform/tenants/new")
+        assert new_form.status_code == 200
+        assert "https://&lt;subdomain&gt;.example.test/login" in new_form.text
+        assert "/t/&lt;subdomain&gt;/login" not in new_form.text
+        assert "Used for the tenant subdomain in production sign-in URLs." in new_form.text
+
         platform_page = platform_client.get("/platform/tenants")
         assert platform_page.status_code == 200
         assert 'href="https://mjteale.example.test/login"' in platform_page.text
+        assert "/t/mjteale/login" not in platform_page.text
 
         tenant_detail = platform_client.get(f"/platform/tenants/{tenant_mjteale}")
         assert tenant_detail.status_code == 200
         assert 'href="https://mjteale.example.test/login"' in tenant_detail.text
+        assert "/t/mjteale/login" not in tenant_detail.text
+
+        csrf = _prime_csrf(platform_client)
+        created = platform_client.post(
+            "/platform/tenants/new",
+            data={
+                "name": "Custom Domain Tenant",
+                "subdomain": "customdomain",
+                "admin_email": "customdomain-admin@example.com",
+                "admin_password": "CustomDomain123!",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert created.status_code in {302, 303}
+        assert created.headers.get("location") == "/platform/tenants?created_tenant=customdomain"
+
+        created_list = platform_client.get(created.headers["location"])
+        assert created_list.status_code == 200
+        assert "Tenant customdomain created." in created_list.text
+        assert "Sign in at" in created_list.text
+        assert 'href="https://customdomain.example.test/login"' in created_list.text
+        assert "/t/customdomain/login" not in created_list.text
 
     with _client(app, base_url=f"https://{settings.effective_default_tenant_subdomain}.example.test") as default_client:
         assert (
