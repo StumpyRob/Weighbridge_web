@@ -13,7 +13,7 @@ from fastapi.responses import (
     RedirectResponse,
     Response,
 )
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -45,7 +45,7 @@ from .security_hardening import (
     validate_production_secret,
 )
 from .services.system_setup import get_company_setting, missing_required_lookup_messages
-from .services.tenants import ensure_default_tenant, get_tenant_by_subdomain
+from .services.tenants import ensure_demo_tenant, get_tenant_by_subdomain
 from .services.uploads import company_logo_upload_dir
 from .services.pdf import check_invoice_pdf_renderer
 from .services.ui_branding import get_branding, nav_foreground_color, normalize_hex_color
@@ -138,6 +138,12 @@ def _strip_non_production_routes(app: FastAPI) -> None:
 def _is_exact_base_domain(host_name: str) -> bool:
     base_domain = settings.effective_base_domain
     return bool(base_domain and host_name == base_domain)
+
+
+def _is_marketing_host(host_name: str) -> bool:
+    base_domain = settings.effective_base_domain
+    marketing_subdomain = settings.effective_marketing_subdomain
+    return bool(base_domain and marketing_subdomain and host_name == f"{marketing_subdomain}.{base_domain}")
 
 
 def _request_scope_path(request: Request) -> str:
@@ -465,6 +471,11 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                     )
                     if not host_allowed:
                         return _plain_error("Unknown tenant", 404)
+
+                ensure_demo_tenant(db, create_missing=False)
+                if db.new or db.dirty:
+                    db.commit()
+
                 if tenant_path_subdomain:
                     request.state.request_subdomain = tenant_path_subdomain
                     tenant = get_tenant_by_subdomain(db, tenant_path_subdomain)
@@ -475,7 +486,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                     request.state.tenant = tenant
                     request.state.tenant_id = int(tenant.id)
                     _switch_tenant_context(tenant_id=int(tenant.id), platform_mode=False)
-                elif _is_exact_base_domain(host_name):
+                elif _is_exact_base_domain(host_name) or _is_marketing_host(host_name):
                     request.state.public_host_mode = True
                     request.session.pop(SESSION_PLATFORM_MODE_KEY, None)
                 else:
@@ -487,12 +498,9 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                         _switch_tenant_context(tenant_id=None, platform_mode=True)
                     else:
                         tenant = get_tenant_by_subdomain(db, subdomain)
-                        if tenant is None and subdomain == settings.effective_default_tenant_subdomain:
-                            tenant_count = int(
-                                db.execute(select(func.count(Tenant.id))).scalar_one_or_none() or 0
-                            )
-                            if tenant_count == 0:
-                                tenant = ensure_default_tenant(db)
+                        if tenant is None and subdomain == settings.effective_demo_tenant_subdomain:
+                            tenant = ensure_demo_tenant(db, create_missing=True)
+                            if tenant is not None:
                                 db.commit()
 
                         if tenant is None:
@@ -652,65 +660,17 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
         if _public_host_mode(request):
-            return HTMLResponse(
-                """
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Weighbridge Web</title>
-    <style>
-      :root { color-scheme: light; }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        font-family: Georgia, "Times New Roman", serif;
-        background: linear-gradient(160deg, #f6f2e9 0%, #ebe3d2 100%);
-        color: #18212b;
-      }
-      main {
-        width: min(680px, calc(100vw - 2rem));
-        padding: 2.5rem;
-        border: 1px solid rgba(24, 33, 43, 0.12);
-        border-radius: 20px;
-        background: rgba(255, 255, 255, 0.88);
-        box-shadow: 0 18px 48px rgba(24, 33, 43, 0.08);
-      }
-      h1 { margin: 0 0 0.75rem; font-size: clamp(2rem, 5vw, 3rem); }
-      p { margin: 0 0 1rem; line-height: 1.6; font-size: 1.02rem; }
-      .eyebrow {
-        display: inline-block;
-        margin-bottom: 1rem;
-        padding: 0.25rem 0.65rem;
-        border-radius: 999px;
-        background: #18212b;
-        color: #f6f2e9;
-        font-size: 0.78rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-      }
-      .note {
-        margin-top: 1.5rem;
-        padding-top: 1rem;
-        border-top: 1px solid rgba(24, 33, 43, 0.12);
-        color: #45515f;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <span class="eyebrow">Platform in development</span>
-      <h1>Weighbridge Web</h1>
-      <p>A multi-tenant weighbridge operations platform for tickets, customers, products, and invoicing.</p>
-      <p>Public access is not open yet. This site is currently a temporary landing page while the platform is being finished.</p>
-      <p class="note">Customers access the platform using their company subdomain, for example <code>your-company.roberthetherington.com</code>.</p>
-    </main>
-  </body>
-</html>
-                """.strip()
+            host_name = host_without_port(str(request.url.hostname or ""))
+            if _is_exact_base_domain(host_name) and settings.effective_base_domain:
+                marketing_host = f"{settings.effective_marketing_subdomain}.{settings.effective_base_domain}"
+                return RedirectResponse(url=f"https://{marketing_host}/", status_code=307)
+            return templates.TemplateResponse(
+                request,
+                "marketing_home.html",
+                {
+                    "request": request,
+                    "marketing_base_domain": settings.effective_base_domain or host_without_port(str(request.url.hostname or "")),
+                },
             )
         if bool(getattr(request.state, "platform_mode", False)):
             return RedirectResponse(url="/platform/tenants", status_code=303)

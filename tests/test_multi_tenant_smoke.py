@@ -196,7 +196,7 @@ def test_tenant_resolution_middleware(tmp_path, monkeypatch):
         assert response.headers.get("location", "").startswith("/login")
 
 
-def test_base_domain_serves_public_landing_and_subdomains_still_route(
+def test_software_subdomain_serves_marketing_page_and_other_subdomains_still_route(
     tmp_path,
     monkeypatch,
 ):
@@ -230,17 +230,32 @@ def test_base_domain_serves_public_landing_and_subdomains_still_route(
         tenant_id=None,
     )
 
-    with _client(app, base_url="https://example.test") as base_client:
-        landing = base_client.get("/")
+    with _client(app, base_url="https://example.test") as apex_client:
+        landing_redirect = apex_client.get("/", follow_redirects=False)
+        assert landing_redirect.status_code == 307
+        assert landing_redirect.headers.get("location") == "https://software.example.test/"
+
+    with _client(app, base_url="https://software.example.test") as marketing_client:
+        landing = marketing_client.get("/")
         assert landing.status_code == 200
         assert "Weighbridge Web" in landing.text
-        assert "Platform in development" in landing.text
-        assert "Customers access the platform using their company subdomain" in landing.text
+        assert "Cloud Weighbridge Operations" in landing.text
+        assert "Operational software for weighbridges, waste, recycling, and aggregates." in landing.text
+        assert "[INSERT HERO SCREENSHOT HERE]" in landing.text
+        assert "[INSERT TICKET SCREENSHOT HERE]" in landing.text
+        assert "[INSERT INVOICE SCREENSHOT HERE]" in landing.text
+        assert "[INSERT ADMIN SCREENSHOT HERE]" in landing.text
+        assert 'name="description"' in landing.text
+        assert 'property="og:title"' in landing.text
+        assert 'property="og:description"' in landing.text
+        assert "your-company.example.test" in landing.text
 
-        blocked_tickets = base_client.get("/tickets")
+        blocked_tickets = marketing_client.get("/tickets")
         assert blocked_tickets.status_code == 404
-        blocked_platform = base_client.get("/platform/tenants")
+        blocked_platform = marketing_client.get("/platform/tenants")
         assert blocked_platform.status_code == 404
+        blocked_login = marketing_client.get("/login")
+        assert blocked_login.status_code == 404
 
     with _client(app, base_url="https://admin.example.test") as admin_client:
         platform_tenants = admin_client.get("/platform/tenants", follow_redirects=False)
@@ -273,23 +288,23 @@ def test_platform_bootstrap_on_admin_subdomain_creates_first_superadmin_without_
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-platform-bootstrap.db", monkeypatch=monkeypatch
     )
-    default_tenant = _seed_tenant(
+    demo_tenant = _seed_tenant(
         SessionLocal,
-        name="Default Tenant",
-        subdomain=settings.effective_default_tenant_subdomain,
+        name="Demo",
+        subdomain=settings.effective_demo_tenant_subdomain,
     )
     _seed_tenant_baseline(
         SessionLocal,
-        tenant_id=default_tenant,
-        company_name="Default Co",
+        tenant_id=demo_tenant,
+        company_name="Demo Co",
         primary_color="#225577",
     )
     _seed_user(
         SessionLocal,
-        email="default-admin@example.com",
+        email="demo-admin@example.com",
         password="TenantPass123!",
         role=ROLE_TENANT_ADMIN,
-        tenant_id=default_tenant,
+        tenant_id=demo_tenant,
     )
 
     with _client(app, base_url="https://admin.example.test") as platform_client:
@@ -346,9 +361,9 @@ def test_platform_bootstrap_on_admin_subdomain_creates_first_superadmin_without_
             .scalars()
             .first()
         )
-        default_admin = (
+        demo_admin = (
             db.execute(
-                select(User).where(getattr(User, "email", getattr(User, "username")) == "default-admin@example.com")
+                select(User).where(getattr(User, "email", getattr(User, "username")) == "demo-admin@example.com")
             )
             .scalars()
             .first()
@@ -356,14 +371,14 @@ def test_platform_bootstrap_on_admin_subdomain_creates_first_superadmin_without_
         assert platform_owner is not None
         assert platform_owner.tenant_id is None
         assert str(platform_owner.role or "").strip().lower() == ROLE_SUPERADMIN
-        assert default_admin is not None
-        assert int(default_admin.tenant_id or 0) == default_tenant
+        assert demo_admin is not None
+        assert int(demo_admin.tenant_id or 0) == demo_tenant
 
-    with _client(app, base_url=f"https://{settings.effective_default_tenant_subdomain}.example.test") as tenant_client:
+    with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.example.test") as tenant_client:
         assert (
             _login(
                 tenant_client,
-                email="default-admin@example.com",
+                email="demo-admin@example.com",
                 password="TenantPass123!",
             )
             == 303
@@ -783,6 +798,26 @@ def test_superadmin_can_delete_empty_tenant_and_delete_blocks_linked_data(tmp_pa
     uploads_root = (tmp_path / "uploads").resolve()
     monkeypatch.setattr(settings, "uploads_dir", str(uploads_root))
 
+    demo_tenant = _seed_tenant(
+        SessionLocal,
+        name="Demo",
+        subdomain=settings.effective_demo_tenant_subdomain,
+        is_active=True,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=demo_tenant,
+        company_name="Demo Co",
+        primary_color="#773333",
+    )
+    _seed_user(
+        SessionLocal,
+        email="demo-admin@example.com",
+        password="DemoPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=demo_tenant,
+    )
+
     empty_tenant = _seed_tenant(SessionLocal, name="Empty Tenant", subdomain="empty", is_active=True)
     _seed_tenant_baseline(
         SessionLocal,
@@ -831,12 +866,28 @@ def test_superadmin_can_delete_empty_tenant_and_delete_blocks_linked_data(tmp_pa
 
         tenants_page = admin_client.get("/platform/tenants")
         assert tenants_page.status_code == 200
+        assert "default tenant" not in tenants_page.text.lower()
+        assert f"/platform/tenants/{demo_tenant}/delete" not in tenants_page.text
         assert f"/platform/tenants/{empty_tenant}/delete" in tenants_page.text
         assert f"/platform/tenants/{busy_tenant}/delete" not in tenants_page.text
+
+        demo_detail = admin_client.get(f"/platform/tenants/{demo_tenant}")
+        assert demo_detail.status_code == 200
+        assert "Delete is blocked for the demo tenant because it is reserved for internal demo/testing use." in demo_detail.text
+        assert "default tenant" not in demo_detail.text.lower()
 
         busy_detail = admin_client.get(f"/platform/tenants/{busy_tenant}")
         assert busy_detail.status_code == 200
         assert "Delete is blocked because this tenant still has customer records." in busy_detail.text
+
+        csrf = _prime_csrf(admin_client)
+        blocked_demo_delete = admin_client.post(
+            f"/platform/tenants/{demo_tenant}/delete",
+            data={CSRF_FORM_FIELD: csrf},
+            follow_redirects=False,
+        )
+        assert blocked_demo_delete.status_code in {302, 303}
+        assert blocked_demo_delete.headers.get("location", "").startswith(f"/platform/tenants/{demo_tenant}?")
 
         csrf = _prime_csrf(admin_client)
         blocked_delete = admin_client.post(
@@ -863,6 +914,7 @@ def test_superadmin_can_delete_empty_tenant_and_delete_blocks_linked_data(tmp_pa
         assert "Busy Tenant" in deleted_list.text
 
     with SessionLocal() as db:
+        assert db.get(Tenant, demo_tenant) is not None
         assert db.get(Tenant, empty_tenant) is None
         assert db.execute(select(User).where(User.tenant_id == empty_tenant)).scalars().first() is None
         assert (
@@ -874,6 +926,64 @@ def test_superadmin_can_delete_empty_tenant_and_delete_blocks_linked_data(tmp_pa
         assert db.get(Tenant, busy_tenant) is not None
 
     assert not (uploads_root / "tenants" / str(empty_tenant)).exists()
+
+
+def test_legacy_default_tenant_is_renamed_to_demo_and_hidden_from_platform_ui(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-demo-backfill.db", monkeypatch=monkeypatch
+    )
+    legacy_tenant = _seed_tenant(
+        SessionLocal,
+        name="Default Tenant",
+        subdomain="default",
+        is_active=True,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=legacy_tenant,
+        company_name="Legacy Default Co",
+        primary_color="#334455",
+    )
+    _seed_user(
+        SessionLocal,
+        email="legacy-default-admin@example.com",
+        password="LegacyPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=legacy_tenant,
+    )
+    _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+
+        tenants_page = admin_client.get("/platform/tenants")
+        assert tenants_page.status_code == 200
+        assert "Default Tenant" not in tenants_page.text
+        assert "default tenant" not in tenants_page.text.lower()
+        assert "Demo" in tenants_page.text
+        assert f"/platform/tenants/{legacy_tenant}/delete" not in tenants_page.text
+
+        detail = admin_client.get(f"/platform/tenants/{legacy_tenant}")
+        assert detail.status_code == 200
+        assert "<h1>Demo</h1>" in detail.text
+        assert "Delete is blocked for the demo tenant because it is reserved for internal demo/testing use." in detail.text
+        assert "default tenant" not in detail.text.lower()
+
+    with SessionLocal() as db:
+        renamed = db.get(Tenant, legacy_tenant)
+        assert renamed is not None
+        assert renamed.subdomain == settings.effective_demo_tenant_subdomain
+        assert renamed.name == "Demo"
+        legacy_lookup = db.execute(
+            select(Tenant).where(Tenant.subdomain == "default")
+        ).scalars().first()
+        assert legacy_lookup is None
 
 
 def test_non_superadmin_cannot_delete_tenant(tmp_path, monkeypatch):
@@ -1025,6 +1135,20 @@ def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tm
         assert configured_reserved.status_code == 400
         assert "Subdomain is reserved." in configured_reserved.text
 
+        marketing_reserved = admin_client.post(
+            "/platform/tenants/new",
+            data={
+                "name": "Reserved Software",
+                "subdomain": "software",
+                "admin_email": "reserved-software@example.com",
+                "admin_password": "Reserved123!",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert marketing_reserved.status_code == 400
+        assert "Subdomain is reserved." in marketing_reserved.text
+
         invalid = admin_client.post(
             "/platform/tenants/new",
             data={
@@ -1072,23 +1196,23 @@ def test_path_based_tenant_access_mode_on_base_domain(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-path-access.db", monkeypatch=monkeypatch
     )
-    default_tenant = _seed_tenant(
+    demo_tenant = _seed_tenant(
         SessionLocal,
-        name="Default Tenant",
-        subdomain=settings.effective_default_tenant_subdomain,
+        name="Demo",
+        subdomain=settings.effective_demo_tenant_subdomain,
     )
     _seed_tenant_baseline(
         SessionLocal,
-        tenant_id=default_tenant,
-        company_name="Default Co",
+        tenant_id=demo_tenant,
+        company_name="Demo Co",
         primary_color="#225577",
     )
     _seed_user(
         SessionLocal,
-        email="default-admin@example.com",
+        email="demo-admin@example.com",
         password="TenantPass123!",
         role=ROLE_TENANT_ADMIN,
-        tenant_id=default_tenant,
+        tenant_id=demo_tenant,
     )
 
     tenant_mjteale = _seed_tenant(SessionLocal, name="MJ Teale", subdomain="mjteale", is_active=True)
@@ -1193,16 +1317,16 @@ def test_path_based_tenant_access_mode_on_base_domain(tmp_path, monkeypatch):
         assert 'href="https://customdomain.example.test/login"' in created_list.text
         assert "/t/customdomain/login" not in created_list.text
 
-    with _client(app, base_url=f"https://{settings.effective_default_tenant_subdomain}.example.test") as default_client:
+    with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.example.test") as demo_client:
         assert (
             _login(
-                default_client,
-                email="default-admin@example.com",
+                demo_client,
+                email="demo-admin@example.com",
                 password="TenantPass123!",
             )
             == 303
         )
-        assert default_client.get("/tickets").status_code == 200
+        assert demo_client.get("/tickets").status_code == 200
 
 
 def test_forwarded_host_trust_flag_controls_tenant_resolution(tmp_path, monkeypatch):

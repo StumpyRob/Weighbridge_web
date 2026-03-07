@@ -9,8 +9,10 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..models import Tenant
 
-DEFAULT_TENANT_NAME = "Default"
-DEFAULT_TENANT_SUBDOMAIN = "default"
+DEMO_TENANT_NAME = "Demo"
+DEMO_TENANT_SUBDOMAIN = "demo"
+LEGACY_DEFAULT_TENANT_SUBDOMAIN = "default"
+_LEGACY_DEFAULT_TENANT_NAMES = {"", "default", "default tenant"}
 TENANT_SUBDOMAIN_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
 
@@ -43,20 +45,42 @@ def get_tenant_by_subdomain(db: Session, subdomain: str | None) -> Tenant | None
     )
 
 
-def ensure_default_tenant(db: Session) -> Tenant:
-    tenant = get_tenant_by_subdomain(db, settings.effective_default_tenant_subdomain)
+def _should_rename_to_demo(name: str | None) -> bool:
+    return str(name or "").strip().lower() in _LEGACY_DEFAULT_TENANT_NAMES
+
+
+def ensure_demo_tenant(db: Session, *, create_missing: bool = True) -> Tenant | None:
+    demo_subdomain = settings.effective_demo_tenant_subdomain or DEMO_TENANT_SUBDOMAIN
+    tenant = get_tenant_by_subdomain(db, demo_subdomain)
     if tenant is not None:
+        if _should_rename_to_demo(getattr(tenant, "name", None)):
+            tenant.name = DEMO_TENANT_NAME
         if not bool(tenant.is_active):
             tenant.is_active = True
-            db.flush()
         return tenant
 
+    legacy_tenant = get_tenant_by_subdomain(db, LEGACY_DEFAULT_TENANT_SUBDOMAIN)
+    if legacy_tenant is not None:
+        legacy_tenant.subdomain = demo_subdomain
+        if _should_rename_to_demo(getattr(legacy_tenant, "name", None)):
+            legacy_tenant.name = DEMO_TENANT_NAME
+        if not bool(legacy_tenant.is_active):
+            legacy_tenant.is_active = True
+        return legacy_tenant
+
+    if not create_missing:
+        return None
+
     tenant = Tenant(
-        name=DEFAULT_TENANT_NAME,
-        subdomain=settings.effective_default_tenant_subdomain or DEFAULT_TENANT_SUBDOMAIN,
+        name=DEMO_TENANT_NAME,
+        subdomain=demo_subdomain,
         is_active=True,
         created_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.add(tenant)
     db.flush()
     return tenant
+
+
+def ensure_default_tenant(db: Session) -> Tenant | None:
+    return ensure_demo_tenant(db)

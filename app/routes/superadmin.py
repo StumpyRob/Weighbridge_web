@@ -227,8 +227,8 @@ def _tenant_delete_block_reason(
     user_count_hint: int | None = None,
 ) -> str:
     subdomain = normalize_subdomain(getattr(tenant, "subdomain", None))
-    if subdomain and subdomain == settings.effective_default_tenant_subdomain:
-        return "Delete is blocked for the default tenant because fallback tenant routing depends on it."
+    if subdomain and subdomain == settings.effective_demo_tenant_subdomain:
+        return "Delete is blocked for the demo tenant because it is reserved for internal demo/testing use."
 
     user_count = user_count_hint
     if user_count is None:
@@ -311,7 +311,6 @@ def tenants_list(
                 "tenant_admin_count": summary["tenant_admin_count"],
                 "open_url": _tenant_open_url(tenant.subdomain),
                 "delete_allowed": not bool(delete_block_reason),
-                "delete_block_reason": delete_block_reason,
             }
         )
     return templates.TemplateResponse(

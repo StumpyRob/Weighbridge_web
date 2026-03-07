@@ -35,7 +35,9 @@ class Settings(BaseSettings):
     base_domain: str = ""
     allowed_hosts: str = ""
     platform_subdomain: str = "admin"
-    default_tenant_subdomain: str = "default"
+    marketing_subdomain: str = "software"
+    demo_tenant_subdomain: str = "demo"
+    default_tenant_subdomain: str = ""
     reserved_subdomains: str = "admin,www,api,static"
     trust_forwarded_host: bool = False
 
@@ -103,8 +105,21 @@ class Settings(BaseSettings):
         return str(self.platform_subdomain or "admin").strip().lower() or "admin"
 
     @property
+    def effective_marketing_subdomain(self) -> str:
+        return str(self.marketing_subdomain or "software").strip().lower() or "software"
+
+    @property
+    def effective_demo_tenant_subdomain(self) -> str:
+        explicit = str(self.demo_tenant_subdomain or "").strip().lower()
+        legacy = str(self.default_tenant_subdomain or "").strip().lower()
+        candidate = explicit or legacy
+        if candidate in {"", "default"}:
+            return "demo"
+        return candidate
+
+    @property
     def effective_default_tenant_subdomain(self) -> str:
-        return str(self.default_tenant_subdomain or "default").strip().lower() or "default"
+        return self.effective_demo_tenant_subdomain
 
     @property
     def effective_reserved_subdomains(self) -> set[str]:
@@ -114,6 +129,8 @@ class Settings(BaseSettings):
             if item.strip()
         }
         configured.add(self.effective_platform_subdomain)
+        configured.add(self.effective_marketing_subdomain)
+        configured.add(self.effective_demo_tenant_subdomain)
         return configured
 
     @property

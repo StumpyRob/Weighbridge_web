@@ -64,7 +64,7 @@ def resolve_subdomain(host: str) -> str:
         return ""
 
     if cleaned in {"localhost", "127.0.0.1", "testserver"}:
-        return settings.effective_default_tenant_subdomain
+        return settings.effective_demo_tenant_subdomain
 
     if cleaned.endswith(".localhost"):
         return normalize_subdomain(cleaned[: -len(".localhost")].split(".")[0])
@@ -82,7 +82,7 @@ def resolve_subdomain(host: str) -> str:
 
     parts = cleaned.split(".")
     if len(parts) <= 2:
-        return settings.effective_default_tenant_subdomain
+        return settings.effective_demo_tenant_subdomain
     if len(parts) >= 3:
         return normalize_subdomain(parts[0])
     return ""

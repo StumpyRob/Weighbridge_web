@@ -2500,15 +2500,15 @@ details > summary:focus-visible {
 }
 
 .platform-tenants-page {
-  background: linear-gradient(180deg, #f5f5f6 0%, #eceff1 100%);
+  background: #f3f4f6;
   color: #1f2937;
 }
 
 .site-header--platform-tenants {
-  background: linear-gradient(180deg, #ffffff 0%, #f8f4f4 100%);
-  color: #991b1b;
-  border-bottom: 1px solid #ead7d7;
-  box-shadow: 0 12px 26px rgba(127, 29, 29, 0.08);
+  background: #ffffff;
+  color: #b91c1c;
+  border-bottom: 1px solid #e7d3d3;
+  box-shadow: 0 8px 20px rgba(127, 29, 29, 0.08);
 }
 
 .site-header--platform-tenants .brand,
@@ -2519,14 +2519,14 @@ details > summary:focus-visible {
 .site-header--platform-tenants .brand__text,
 .site-header--platform-tenants .site-nav a,
 .site-header--platform-tenants .site-auth__link {
-  color: #991b1b;
+  color: #b91c1c;
 }
 
 .site-header--platform-tenants .site-nav a:hover,
 .site-header--platform-tenants .site-nav a:focus-visible,
 .site-header--platform-tenants .site-auth__link:hover,
 .site-header--platform-tenants .site-auth__link:focus-visible {
-  color: #7f1d1d;
+  color: #991b1b;
 }
 
 .site-header--platform-tenants .site-nav a.is-active {
@@ -2537,7 +2537,7 @@ details > summary:focus-visible {
 }
 
 .site-header--platform-tenants .site-context-badge--platform {
-  border-color: #ef4444;
+  border-color: #fca5a5;
   background: #fee2e2;
   color: #991b1b;
 }
@@ -2553,15 +2553,24 @@ details > summary:focus-visible {
 }
 
 .platform-tenants-page .container {
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid #e5e7eb;
-  border-radius: 24px;
-  box-shadow: 0 24px 52px rgba(15, 23, 42, 0.08);
+  background: #ffffff;
+  border: 1px solid #ebe5e5;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+}
+
+.platform-tenants-page .page-header h1 {
+  color: #7f1d1d;
+}
+
+.platform-tenants-page .page-header .muted,
+.platform-tenants-page .platform-tenants-row-note {
+  color: #6b7280;
+  opacity: 1;
 }
 
 .platform-tenants-page .btn--primary {
-  background: linear-gradient(180deg, #dc2626 0%, #b91c1c 100%);
-  border-color: #b91c1c;
+  background: #c62828;
+  border-color: #c62828;
   color: #ffffff;
 }
 
@@ -2572,13 +2581,13 @@ details > summary:focus-visible {
 }
 
 .platform-tenants-page .btn--ghost {
-  background: #fff1f2;
+  background: #fff5f5;
   border-color: #fecdd3;
   color: #9f1239;
 }
 
 .platform-tenants-page .btn--danger {
-  background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+  background: #dc2626;
   border-color: #dc2626;
   color: #ffffff;
 }
@@ -2595,271 +2604,80 @@ details > summary:focus-visible {
   color: #4b5563;
 }
 
-.platform-tenants-hero {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 1.5rem;
-  align-items: end;
-  margin-bottom: 1.5rem;
-  padding: 1.8rem 1.9rem 1.7rem 2rem;
-  border: 1px solid #f1d6d6;
-  border-radius: 20px;
-  background: linear-gradient(140deg, #fff7f7 0%, #ffffff 60%, #f7f7f8 100%);
-  box-shadow: 0 18px 40px rgba(127, 29, 29, 0.08);
-  overflow: hidden;
+.platform-tenants-actions {
+  flex-wrap: wrap;
+  gap: 0.4rem;
 }
 
-.platform-tenants-hero::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 8px;
-  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
-}
-
-.platform-tenants-hero__copy {
-  position: relative;
-  z-index: 1;
-}
-
-.platform-tenants-eyebrow {
-  margin: 0 0 0.4rem;
-  color: #b91c1c;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.platform-tenants-hero h1 {
-  margin: 0;
-  color: #7f1d1d;
-  font-size: clamp(2rem, 4vw, 3rem);
-  line-height: 1.05;
-}
-
-.platform-tenants-hero .muted {
-  margin-top: 0.65rem;
-  max-width: 46rem;
-  color: #6b7280;
-  opacity: 1;
-}
-
-.platform-tenants-hero__actions {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  justify-content: flex-end;
-}
-
-.platform-tenants-hero__actions .btn {
-  min-width: 168px;
-  height: 42px;
+.platform-tenants-page .platform-tenants-actions .btn,
+.platform-tenants-page .platform-tenants-actions button {
   border-radius: 999px;
-  font-weight: 700;
 }
 
-.platform-tenants-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 1rem;
+.platform-tenants-page .platform-tenants-summary-card {
   margin-bottom: 1.5rem;
-}
-
-.platform-tenants-stat {
-  display: grid;
-  gap: 0.45rem;
-  padding: 1.05rem 1.1rem;
-  border: 1px solid #e5d8d8;
-  border-radius: 16px;
-  background: linear-gradient(180deg, #ffffff 0%, #fcfcfd 100%);
+  border-color: #eadbdb;
+  background: linear-gradient(180deg, #fff7f7 0%, #ffffff 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
-.platform-tenants-stat__label {
+.platform-tenants-page .platform-tenants-summary-card .invoice-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.platform-tenants-page .platform-tenants-summary-card .summary-label {
   color: #b91c1c;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
-.platform-tenants-stat__value {
-  color: #111827;
-  font-size: 1.95rem;
-  font-weight: 700;
-  line-height: 1;
+.platform-tenants-page .filters {
+  padding: 1rem;
+  border: 1px solid #eadbdb;
+  border-radius: 14px;
+  background: #fafafa;
 }
 
-.platform-tenants-stat__hint {
-  color: #6b7280;
-  font-size: 0.84rem;
-  line-height: 1.4;
-}
-
-.platform-tenants-toolbar {
-  margin-bottom: 1.5rem;
-  padding: 1rem 1.1rem 1.05rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 18px;
-  background: linear-gradient(180deg, #ffffff 0%, #fafafa 100%);
-}
-
-.platform-tenants-filters {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  margin-bottom: 0;
-}
-
-.platform-tenants-filters .field {
-  min-width: 0;
-}
-
-.platform-tenants-filters input {
-  height: 44px;
+.platform-tenants-page .filters input {
   border-color: #d1d5db;
   background: #ffffff;
 }
 
-.platform-tenants-filters .actions {
-  margin-left: auto;
-}
-
-.platform-tenants-toolbar__meta {
-  margin-top: 0.8rem;
-  color: #6b7280;
-  opacity: 1;
-}
-
-.platform-tenants-table-card {
-  border: 1px solid #e5d8d8;
-  border-radius: 18px;
+.platform-tenants-page .table-wrap {
+  border-color: #eadbdb;
   background: #ffffff;
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
-  overflow: hidden;
 }
 
-.platform-tenants-table-card__header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1.2rem 1.25rem 1rem;
-  border-bottom: 1px solid #f1e0e0;
-  background: linear-gradient(180deg, #fff7f7 0%, #ffffff 100%);
-}
-
-.platform-tenants-table-card__header h2 {
-  margin: 0;
-  color: #7f1d1d;
-  font-size: 1.08rem;
-}
-
-.platform-tenants-table-card__header .muted {
-  margin-top: 0.35rem;
-  color: #6b7280;
-  opacity: 1;
-}
-
-.platform-tenants-table-card__count {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.35rem 0.72rem;
-  border-radius: 999px;
-  border: 1px solid #fecdd3;
+.platform-tenants-page .platform-tenants-table th {
   background: #fff1f2;
-  color: #9f1239;
-  font-size: 0.82rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.platform-tenants-table-card .table-wrap {
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-}
-
-.platform-tenants-table th {
-  background: #fff1f2;
-  border-bottom-color: #f2d3d7;
+  border-bottom-color: #f1d5d9;
   color: #7f1d1d;
 }
 
-.platform-tenants-table td {
+.platform-tenants-page .platform-tenants-table td {
   border-bottom-color: #ece7e7;
 }
 
-.platform-tenants-table tbody tr:hover td {
-  background: #fff8f8;
-}
-
-.platform-tenants-name {
-  color: #7f1d1d;
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.platform-tenants-name:hover,
-.platform-tenants-name:focus-visible {
+.platform-tenants-page .platform-tenants-table a {
   color: #991b1b;
-  text-decoration: underline;
 }
 
-.platform-tenants-subdomain {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.22rem 0.52rem;
-  border: 1px solid #f3d0d4;
-  border-radius: 999px;
-  background: #fff7f7;
+.platform-tenants-page .platform-tenants-table code {
   color: #7f1d1d;
-  font-size: 0.82rem;
-}
-
-.platform-tenants-table__admin,
-.platform-tenants-table .actions-col {
-  white-space: normal;
-}
-
-.platform-tenants-admin {
-  display: grid;
-  gap: 0.2rem;
-}
-
-.platform-tenants-actions {
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.42rem;
-}
-
-.platform-tenants-actions form {
-  margin: 0;
-}
-
-.platform-tenants-actions .btn {
+  background: #fff7f7;
+  border: 1px solid #f1d5d9;
   border-radius: 999px;
+  padding: 0.15rem 0.45rem;
+}
+
+.platform-tenants-page .data-row-link:hover {
+  background: #fff8f8;
 }
 
 .platform-tenants-row-note {
   font-size: 0.78rem;
-  color: #6b7280;
-  opacity: 1;
 }
 
 .platform-tenants-table .actions-col {
-  min-width: 430px;
-}
-
-.platform-tenants-action-note {
-  width: 100%;
-  margin-top: 0.1rem;
-  color: #991b1b;
-  font-size: 0.76rem;
-  line-height: 1.45;
-  text-align: right;
+  min-width: 360px;
 }
 
 .platform-tenant-detail-users-copy {
@@ -2868,25 +2686,6 @@ details > summary:focus-visible {
 
 .platform-tenant-delete-note {
   margin-top: 0;
-}
-
-@media (max-width: 980px) {
-  .platform-tenants-hero {
-    grid-template-columns: 1fr;
-    align-items: start;
-  }
-
-  .platform-tenants-hero__actions {
-    justify-content: flex-start;
-  }
-
-  .platform-tenants-filters {
-    grid-template-columns: 1fr;
-  }
-
-  .platform-tenants-filters .actions {
-    margin-left: 0;
-  }
 }
 
 .tenant-form__error {
@@ -3725,6 +3524,357 @@ details > summary:focus-visible {
 
 .company-logo-preview-meta code {
   overflow-wrap: anywhere;
+}
+
+.marketing-home {
+  background:
+    radial-gradient(circle at top right, rgba(252, 163, 17, 0.18), transparent 28%),
+    linear-gradient(180deg, #eef2f7 0%, #f7f9fc 48%, #edf1f6 100%);
+  color: #1f2a44;
+}
+
+.marketing-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(12px);
+  background: rgba(20, 33, 61, 0.9);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.marketing-header__inner,
+.marketing-main,
+.marketing-footer {
+  width: min(1180px, calc(100vw - 2rem));
+  margin: 0 auto;
+}
+
+.marketing-header__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem 1.2rem;
+  padding: 1rem 0;
+}
+
+.marketing-brand {
+  color: #ffffff;
+  text-decoration: none;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.marketing-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.1rem;
+}
+
+.marketing-nav a {
+  color: rgba(255, 255, 255, 0.82);
+  text-decoration: none;
+  font-size: 0.92rem;
+}
+
+.marketing-nav a:hover,
+.marketing-nav a:focus-visible {
+  color: #fca311;
+  text-decoration: underline;
+}
+
+.marketing-main {
+  padding: 2rem 0 3rem;
+}
+
+.marketing-hero,
+.marketing-section,
+.marketing-cta {
+  margin-bottom: 1.5rem;
+  border: 1px solid rgba(20, 33, 61, 0.08);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 45px rgba(20, 33, 61, 0.08);
+}
+
+.marketing-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+  gap: 1.6rem;
+  padding: 2rem;
+}
+
+.marketing-eyebrow,
+.marketing-section__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(20, 33, 61, 0.08);
+  color: #14213d;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.marketing-hero h1,
+.marketing-section h2,
+.marketing-cta h2 {
+  margin: 0;
+  color: #14213d;
+  line-height: 1.08;
+}
+
+.marketing-hero h1 {
+  margin-top: 0.85rem;
+  font-size: clamp(2.3rem, 5vw, 4rem);
+  max-width: 11ch;
+}
+
+.marketing-lead,
+.marketing-section__heading p,
+.marketing-card p,
+.marketing-benefit-item p,
+.marketing-value-panel p,
+.marketing-placeholder p,
+.marketing-cta p {
+  color: #43516e;
+  line-height: 1.65;
+}
+
+.marketing-lead {
+  margin: 1rem 0 0;
+  font-size: 1.03rem;
+  max-width: 62ch;
+}
+
+.marketing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.3rem;
+}
+
+.marketing-actions .btn {
+  min-width: 150px;
+  height: 42px;
+}
+
+.marketing-note {
+  margin: 1rem 0 0;
+  color: #526277;
+  font-size: 0.92rem;
+}
+
+.marketing-note code {
+  padding: 0.12rem 0.35rem;
+  border: 1px solid #d6dde7;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #14213d;
+}
+
+.marketing-section {
+  padding: 1.7rem;
+}
+
+.marketing-section--contrast {
+  background:
+    linear-gradient(180deg, rgba(20, 33, 61, 0.98) 0%, rgba(27, 43, 79, 0.98) 100%);
+  border-color: rgba(20, 33, 61, 0.24);
+}
+
+.marketing-section--contrast h2,
+.marketing-section--contrast h3,
+.marketing-section--contrast .marketing-section__eyebrow {
+  color: #ffffff;
+}
+
+.marketing-section--contrast .marketing-section__eyebrow {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.marketing-section--contrast p {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.marketing-section__heading {
+  display: grid;
+  gap: 0.85rem;
+  margin-bottom: 1.35rem;
+}
+
+.marketing-feature-grid,
+.marketing-screenshot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.marketing-card,
+.marketing-value-panel,
+.marketing-placeholder {
+  border: 1px solid rgba(20, 33, 61, 0.08);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbfd 100%);
+  padding: 1.15rem;
+}
+
+.marketing-card h3,
+.marketing-benefit-item h3,
+.marketing-value-panel h3 {
+  margin: 0 0 0.5rem;
+  color: #14213d;
+}
+
+.marketing-benefit-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.marketing-benefit-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.marketing-benefit-item {
+  padding: 1rem 1.05rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.marketing-value-panel {
+  min-height: 100%;
+  background:
+    linear-gradient(160deg, rgba(252, 163, 17, 0.12) 0%, rgba(255, 255, 255, 0.92) 100%);
+}
+
+.marketing-placeholder {
+  display: grid;
+  gap: 0.6rem;
+  min-height: 220px;
+  border-style: dashed;
+  border-color: #a9b7cb;
+  place-content: center;
+  text-align: center;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(20, 33, 61, 0.03),
+      rgba(20, 33, 61, 0.03) 14px,
+      rgba(255, 255, 255, 0.9) 14px,
+      rgba(255, 255, 255, 0.9) 28px
+    );
+}
+
+.marketing-placeholder--hero {
+  min-height: 100%;
+}
+
+.marketing-placeholder__label {
+  color: #14213d;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.marketing-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  padding: 1.7rem;
+  background: linear-gradient(135deg, #14213d 0%, #1f2f57 100%);
+}
+
+.marketing-cta h2 {
+  color: #ffffff;
+}
+
+.marketing-cta p {
+  margin: 0.75rem 0 0;
+  max-width: 60ch;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.marketing-cta .marketing-section__eyebrow {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.marketing-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem 1.25rem;
+  padding: 0 0 2rem;
+  color: #526277;
+  font-size: 0.92rem;
+}
+
+.marketing-footer strong {
+  display: block;
+  color: #14213d;
+  margin-bottom: 0.2rem;
+}
+
+.marketing-footer__contact {
+  padding: 0.5rem 0.8rem;
+  border: 1px dashed #b8c3d4;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #43516e;
+}
+
+@media (max-width: 1024px) {
+  .marketing-hero,
+  .marketing-benefit-grid,
+  .marketing-feature-grid,
+  .marketing-screenshot-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .marketing-benefit-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .marketing-header__inner,
+  .marketing-main,
+  .marketing-footer {
+    width: min(calc(100vw - 1.25rem), 100%);
+  }
+
+  .marketing-main {
+    padding: 1rem 0 2rem;
+  }
+
+  .marketing-hero,
+  .marketing-section,
+  .marketing-cta {
+    border-radius: 18px;
+    padding: 1.25rem;
+  }
+
+  .marketing-nav {
+    gap: 0.5rem 0.8rem;
+  }
+
+  .marketing-actions .btn {
+    width: 100%;
+  }
+
+  .marketing-placeholder {
+    min-height: 180px;
+  }
 }
 
 /* Theme cascade guard: keep tenant branding authoritative. */
