@@ -1,5 +1,7 @@
 import logging
 from contextlib import contextmanager
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 import secrets
 from typing import Iterator
@@ -13,7 +15,7 @@ from fastapi.responses import (
     RedirectResponse,
     Response,
 )
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -30,7 +32,8 @@ from .auth import (
 )
 from .config import settings
 from .db import get_db
-from .models import User
+from .models import Customer, Invoice, Product, Ticket, TicketStatusEnum, User, Vehicle
+from .models.base import utcnow
 from .routes import api_router
 from .routers.lookups import router as lookups_router
 from .security_hardening import (
@@ -47,6 +50,10 @@ from .security_hardening import (
 from .services.system_setup import get_company_setting, missing_required_lookup_messages
 from .services.tenants import ensure_demo_tenant, get_tenant_by_subdomain
 from .services.uploads import company_logo_upload_dir
+from .services.credit import (
+    INVOICE_OUTSTANDING_EXCLUDED_STATUSES,
+    INVOICE_OUTSTANDING_ISSUED_STATUSES,
+)
 from .services.pdf import check_invoice_pdf_renderer
 from .services.ui_branding import get_branding, nav_foreground_color, normalize_hex_color
 from .tenancy import (
@@ -176,6 +183,218 @@ def _path_allowed_for_public_host(path: str) -> bool:
     if target in _PUBLIC_ALLOWED_EXACT_PATHS:
         return True
     return any(target.startswith(prefix) for prefix in _PUBLIC_ALLOWED_PREFIXES)
+
+
+def _ticket_status_value(status: TicketStatusEnum | str) -> str:
+    return str(getattr(status, "value", status or "")).upper()
+
+
+def _format_weight_kg(value: object) -> str:
+    try:
+        amount = Decimal(str(value or 0))
+    except (InvalidOperation, TypeError, ValueError):
+        amount = Decimal("0")
+    if amount == amount.to_integral_value():
+        return f"{int(amount):,} kg"
+    return f"{amount:,.3f} kg"
+
+
+def _datetime_bounds_for_day(target_day: date) -> tuple[datetime, datetime]:
+    day_start = datetime.combine(target_day, time.min)
+    next_day = datetime.combine(target_day + timedelta(days=1), time.min)
+    return day_start, next_day
+
+
+def _dashboard_ticket_rows(
+    db: Session,
+    *,
+    limit: int = 6,
+    status: str | None = None,
+    include_void: bool = False,
+    oldest_first: bool = False,
+) -> list[dict[str, object]]:
+    stmt = (
+        select(Ticket, Vehicle, Customer, Product)
+        .outerjoin(Vehicle, Ticket.vehicle_id == Vehicle.id)
+        .outerjoin(Customer, Ticket.customer_id == Customer.id)
+        .outerjoin(Product, Ticket.product_id == Product.id)
+    )
+    if status:
+        stmt = stmt.where(Ticket.status == status)
+    elif not include_void:
+        stmt = stmt.where(Ticket.status != _ticket_status_value(TicketStatusEnum.VOID))
+
+    order_column = Ticket.datetime.asc() if oldest_first else Ticket.datetime.desc()
+    stmt = stmt.order_by(order_column, Ticket.id.desc()).limit(limit)
+
+    rows = []
+    for ticket, vehicle, customer, product in db.execute(stmt).all():
+        ticket_status = _ticket_status_value(ticket.status)
+        rows.append(
+            {
+                "ticket_id": int(ticket.id),
+                "ticket_no": str(ticket.ticket_no or ""),
+                "status": ticket_status,
+                "status_class": f"dashboard-status-pill--{ticket_status.lower()}",
+                "datetime_display": ticket.datetime.strftime("%d/%m/%Y %H:%M"),
+                "customer_name": (
+                    str(customer.name or "").strip()
+                    if customer is not None and str(customer.name or "").strip()
+                    else "Unassigned"
+                ),
+                "vehicle_registration": (
+                    str(vehicle.registration or "").strip()
+                    if vehicle is not None and str(vehicle.registration or "").strip()
+                    else str(ticket.vehicle_reg_text or "").strip() or "-"
+                ),
+                "product_name": (
+                    str(product.description or "").strip()
+                    if product is not None and str(product.description or "").strip()
+                    else "-"
+                ),
+                "net_kg_display": _format_weight_kg(ticket.net_kg),
+            }
+        )
+    return rows
+
+
+def _build_tenant_dashboard(db: Session) -> dict[str, object]:
+    today = utcnow().date()
+    today_start, tomorrow_start = _datetime_bounds_for_day(today)
+    week_start, _ = _datetime_bounds_for_day(today - timedelta(days=6))
+
+    open_status = _ticket_status_value(TicketStatusEnum.OPEN)
+    complete_status = _ticket_status_value(TicketStatusEnum.COMPLETE)
+    void_status = _ticket_status_value(TicketStatusEnum.VOID)
+
+    open_tickets = int(
+        db.execute(
+            select(func.count(Ticket.id)).where(Ticket.status == open_status)
+        ).scalar_one()
+        or 0
+    )
+    completed_today = int(
+        db.execute(
+            select(func.count(Ticket.id)).where(
+                Ticket.status == complete_status,
+                Ticket.datetime >= today_start,
+                Ticket.datetime < tomorrow_start,
+            )
+        ).scalar_one()
+        or 0
+    )
+    total_weight_today = (
+        db.execute(
+            select(func.coalesce(func.sum(Ticket.net_kg), 0)).where(
+                Ticket.status == complete_status,
+                Ticket.datetime >= today_start,
+                Ticket.datetime < tomorrow_start,
+            )
+        ).scalar_one()
+        or 0
+    )
+
+    invoice_status_upper = func.upper(func.coalesce(Invoice.status, ""))
+    invoices_pending = int(
+        db.execute(
+            select(func.count(Invoice.id))
+            .where(invoice_status_upper != "")
+            .where(
+                or_(
+                    invoice_status_upper.in_(INVOICE_OUTSTANDING_ISSUED_STATUSES),
+                    ~invoice_status_upper.in_(INVOICE_OUTSTANDING_EXCLUDED_STATUSES),
+                )
+            )
+        ).scalar_one()
+        or 0
+    )
+
+    recent_tickets = _dashboard_ticket_rows(db, limit=6)
+    open_ticket_rows = _dashboard_ticket_rows(
+        db,
+        limit=6,
+        status=open_status,
+        oldest_first=True,
+    )
+
+    recent_activity_datetimes = db.execute(
+        select(Ticket.datetime).where(
+            Ticket.datetime >= week_start,
+            Ticket.datetime < tomorrow_start,
+            Ticket.status != void_status,
+        )
+    ).scalars().all()
+    activity_counts: dict[date, int] = {}
+    for activity_datetime in recent_activity_datetimes:
+        activity_day = activity_datetime.date()
+        activity_counts[activity_day] = activity_counts.get(activity_day, 0) + 1
+
+    chart_points: list[dict[str, object]] = []
+    max_count = 0
+    for day_offset in range(7):
+        point_day = today - timedelta(days=6 - day_offset)
+        count = int(activity_counts.get(point_day, 0))
+        max_count = max(max_count, count)
+        chart_points.append(
+            {
+                "date_label": point_day.strftime("%d %b"),
+                "short_label": point_day.strftime("%a"),
+                "count": count,
+                "height_percent": 0,
+            }
+        )
+    for point in chart_points:
+        count = int(point["count"])
+        point["height_percent"] = (
+            max(14, round((count / max_count) * 100))
+            if max_count and count
+            else 0
+        )
+
+    activity_count = int(
+        db.execute(
+            select(func.count(Ticket.id)).where(Ticket.status != void_status)
+        ).scalar_one()
+        or 0
+    )
+    invoice_count = int(
+        db.execute(select(func.count(Invoice.id))).scalar_one() or 0
+    )
+    empty_state = activity_count == 0 and invoice_count == 0
+
+    return {
+        "summary_cards": [
+            {
+                "key": "open_tickets",
+                "label": "Open Tickets",
+                "value": str(open_tickets),
+                "hint": "Currently awaiting completion",
+            },
+            {
+                "key": "completed_today",
+                "label": "Completed Today",
+                "value": str(completed_today),
+                "hint": today.strftime("%d %b %Y"),
+            },
+            {
+                "key": "total_weight_today",
+                "label": "Total Weight Today",
+                "value": _format_weight_kg(total_weight_today),
+                "hint": "Completed tickets only",
+            },
+            {
+                "key": "invoices_pending",
+                "label": "Invoices Pending",
+                "value": str(invoices_pending),
+                "hint": "Outstanding issued invoices",
+            },
+        ],
+        "recent_tickets": recent_tickets,
+        "open_tickets": open_ticket_rows,
+        "chart_points": chart_points,
+        "chart_has_data": max_count > 0,
+        "empty_state": empty_state,
+    }
 
 
 def create_app(dev_mode: bool | None = None) -> FastAPI:
@@ -685,11 +904,15 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         missing_required = missing_required_lookup_messages(db) if initialized else []
         user_count = int(db.execute(select(func.count(User.id))).scalar_one_or_none() or 0)
         setup_ready = initialized and len(missing_required) == 0
+        current_user = getattr(request.state, "current_user", None)
+        show_dashboard = current_user is not None
         return templates.TemplateResponse(
             request,
             "index.html",
             {
                 "request": request,
+                "dashboard": _build_tenant_dashboard(db) if show_dashboard else None,
+                "show_dashboard": show_dashboard,
                 "show_first_time_setup": not setup_ready,
                 "setup_ready": setup_ready,
                 "setup_initialized": initialized,

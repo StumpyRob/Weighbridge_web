@@ -3,83 +3,241 @@
 {% block title %}Weighbridge Web{% endblock %}
 
 {% block content %}
-  <div class="page-header">
-    <div>
-      <h1>Weighbridge Web</h1>
-      <p class="muted">
-        A weighbridge operations platform for recording tickets, managing customer and
-        product data, and generating invoices and print outputs from one workflow.
-      </p>
+  {% if show_dashboard %}
+    <div class="page-header dashboard-page-header">
+      <div>
+        <h1>Operations Dashboard</h1>
+        <p class="muted">
+          Live overview of ticket activity, completion workload, and invoice follow-up for this workspace.
+        </p>
+      </div>
     </div>
-  </div>
 
-  {% if show_first_time_setup %}
-    <div class="frame">
-      <div class="frame-header">First-time Setup</div>
-      <div class="frame-body">
-        <p class="muted">Complete these steps before using operational pages.</p>
-        <ol>
-          <li>
-            Step 1: Create first user account
-            {% if needs_first_admin %}
-              -> <a href="/bootstrap">/bootstrap</a>
-            {% else %}
-              -> Done
-            {% endif %}
-          </li>
-          <li>
-            Step 2: Complete Company Setup
-            {% if not setup_initialized %}
-              -> <a href="/setup">/setup</a>
-            {% else %}
-              -> Done
-            {% endif %}
-          </li>
-          <li>Step 3: Load EWC Codes -> <a href="/admin/ewc-codes">/admin/ewc-codes</a></li>
-          <li>Step 4: Configure Printing -> <a href="/admin/printing">/admin/printing</a></li>
-        </ol>
+    {% if show_first_time_setup %}
+      <div class="alert alert--warning dashboard-setup-alert">
+        <strong>Setup is still incomplete.</strong>
+        Finish core configuration before relying on live operational workflows.
+        <div class="actions btn-group">
+          {% if not setup_initialized %}
+            <a class="btn btn--secondary btn--sm" href="{{ tenant_path('/setup') }}">Complete Company Setup</a>
+          {% endif %}
+          <a class="btn btn--secondary btn--sm" href="{{ tenant_path('/admin') }}">Open Settings</a>
+        </div>
         {% if missing_required_lookups %}
-          <div class="alert alert--warning">
-            Required reference data is incomplete. Review Settings and complete the missing setup data.
-          </div>
+          <ul>
+            {% for message in missing_required_lookups %}
+              <li>{{ message }}</li>
+            {% endfor %}
+          </ul>
         {% endif %}
       </div>
-    </div>
+    {% else %}
+      <div class="notice">Setup complete. System initialization checks are green.</div>
+    {% endif %}
+
+    <section class="dashboard-summary-grid" aria-label="Operational summary">
+      {% for metric in dashboard.summary_cards %}
+        <article class="card dashboard-stat-card" data-dashboard-metric="{{ metric.key }}">
+          <div class="dashboard-stat-card__label">{{ metric.label }}</div>
+          <div class="dashboard-stat-card__value">{{ metric.value }}</div>
+          <div class="dashboard-stat-card__hint">{{ metric.hint }}</div>
+        </article>
+      {% endfor %}
+    </section>
+
+    {% if dashboard.empty_state %}
+      <section class="frame dashboard-empty-state" data-dashboard-empty-state="1">
+        <div class="frame-header">No operational activity yet</div>
+        <div class="frame-body">
+          <p>
+            This workspace has no tickets or invoices yet. Start with the core records below, then create the first ticket when vehicles arrive on site.
+          </p>
+          <div class="actions btn-group">
+            <a class="btn" href="{{ tenant_path('/tickets/new') }}">Create Ticket</a>
+            <a class="btn btn--secondary" href="{{ tenant_path('/customers/new') }}">Add Customer</a>
+            <a class="btn btn--secondary" href="{{ tenant_path('/vehicles/new') }}">Add Vehicle</a>
+          </div>
+        </div>
+      </section>
+    {% else %}
+      <section class="frame dashboard-chart-frame">
+        <div class="frame-header">Tickets Processed Per Day</div>
+        <div class="frame-body">
+          <p class="muted dashboard-section-copy">Last 7 days, scoped to this workspace only.</p>
+          {% if dashboard.chart_has_data %}
+            <div class="dashboard-chart" role="img" aria-label="Tickets processed per day for the last 7 days">
+              {% for point in dashboard.chart_points %}
+                <div class="dashboard-chart__column" data-dashboard-chart-day="{{ point.date_label }}">
+                  <div class="dashboard-chart__count">{{ point.count }}</div>
+                  <div class="dashboard-chart__bar-shell">
+                    <div class="dashboard-chart__bar" style="height: {{ point.height_percent }}%;"></div>
+                  </div>
+                  <div class="dashboard-chart__label">{{ point.short_label }}</div>
+                  <div class="dashboard-chart__sub-label">{{ point.date_label }}</div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="dashboard-inline-empty">
+              No ticket activity has been recorded in the last 7 days.
+            </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <div class="dashboard-panels">
+        <section class="frame dashboard-panel" data-dashboard-panel="recent-tickets">
+          <div class="frame-header">Recent Tickets</div>
+          <div class="frame-body">
+            {% if dashboard.recent_tickets %}
+              <div class="table-wrap">
+                <table class="data-table dashboard-table">
+                  <thead>
+                    <tr>
+                      <th>Ticket</th>
+                      <th>Date / Time</th>
+                      <th>Customer</th>
+                      <th>Vehicle</th>
+                      <th>Status</th>
+                      <th class="num">Net</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in dashboard.recent_tickets %}
+                      <tr data-dashboard-ticket="{{ row.ticket_no }}">
+                        <td><a href="{{ tenant_path('/tickets/' ~ row.ticket_id) }}">{{ row.ticket_no }}</a></td>
+                        <td>{{ row.datetime_display }}</td>
+                        <td>{{ row.customer_name }}</td>
+                        <td>{{ row.vehicle_registration }}</td>
+                        <td>
+                          <span class="dashboard-status-pill {{ row.status_class }}">{{ row.status }}</span>
+                        </td>
+                        <td class="num">{{ row.net_kg_display }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="dashboard-inline-empty">No recent tickets recorded yet.</div>
+            {% endif %}
+          </div>
+        </section>
+
+        <section class="frame dashboard-panel" data-dashboard-panel="open-tickets">
+          <div class="frame-header">Open Tickets Awaiting Completion</div>
+          <div class="frame-body">
+            {% if dashboard.open_tickets %}
+              <div class="table-wrap">
+                <table class="data-table dashboard-table">
+                  <thead>
+                    <tr>
+                      <th>Ticket</th>
+                      <th>Date / Time</th>
+                      <th>Customer</th>
+                      <th>Vehicle</th>
+                      <th>Product</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in dashboard.open_tickets %}
+                      <tr data-dashboard-open-ticket="{{ row.ticket_no }}">
+                        <td><a href="{{ tenant_path('/tickets/' ~ row.ticket_id) }}">{{ row.ticket_no }}</a></td>
+                        <td>{{ row.datetime_display }}</td>
+                        <td>{{ row.customer_name }}</td>
+                        <td>{{ row.vehicle_registration }}</td>
+                        <td>{{ row.product_name }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="dashboard-inline-empty">No open tickets are waiting for completion.</div>
+            {% endif %}
+          </div>
+        </section>
+      </div>
+    {% endif %}
   {% else %}
-    <div class="notice">Setup complete. System initialization checks are green.</div>
-  {% endif %}
-
-  <div class="stacked-frames">
-    <div class="frame">
-      <div class="frame-header">What This Application Does</div>
-      <div class="frame-body">
-        <p>
-          Weighbridge Web is designed for day-to-day site operations. It helps teams:
-        </p>
-        <ul>
-          <li>Create and manage inbound/outbound tickets.</li>
-          <li>Maintain customer, vehicle, product, and lookup data.</li>
-          <li>Generate invoices from completed ticket activity.</li>
-          <li>Preview, print, and track print jobs through the admin printing tools.</li>
-        </ul>
+    <div class="page-header">
+      <div>
+        <h1>Weighbridge Web</h1>
         <p class="muted">
-          Status: This platform is still in active development. Some features are evolving.
+          A weighbridge operations platform for recording tickets, managing customer and
+          product data, and generating invoices and print outputs from one workflow.
         </p>
       </div>
     </div>
 
-    <div class="frame">
-      <div class="frame-header">Get Started Guide</div>
-      <div class="frame-body">
-        <p>Need setup guidance? Go to <a href="/admin/help/getting-started">Settings -> Help</a> for a full getting-started walkthrough.</p>
-        <ol>
-          <li>Open <a href="/lookups/hauliers">Lookups</a> and confirm required lookup values exist.</li>
-          <li>Set up core records in <a href="/customers">Customers</a>, <a href="/vehicles">Vehicles</a>, and <a href="/products">Products</a>.</li>
-          <li>Create your first transaction from <a href="/tickets">Tickets</a>.</li>
-          <li>Review invoice-ready work in <a href="/invoices">Invoices</a> and generate invoices.</li>
-          <li>Configure templates and destinations in <a href="/admin/printing/templates">Settings -> Printing</a> for operational printing.</li>
-        </ol>
+    {% if show_first_time_setup %}
+      <div class="frame">
+        <div class="frame-header">First-time Setup</div>
+        <div class="frame-body">
+          <p class="muted">Complete these steps before using operational pages.</p>
+          <ol>
+            <li>
+              Step 1: Create first user account
+              {% if needs_first_admin %}
+                -> <a href="/bootstrap">/bootstrap</a>
+              {% else %}
+                -> Done
+              {% endif %}
+            </li>
+            <li>
+              Step 2: Complete Company Setup
+              {% if not setup_initialized %}
+                -> <a href="/setup">/setup</a>
+              {% else %}
+                -> Done
+              {% endif %}
+            </li>
+            <li>Step 3: Load EWC Codes -> <a href="/admin/ewc-codes">/admin/ewc-codes</a></li>
+            <li>Step 4: Configure Printing -> <a href="/admin/printing">/admin/printing</a></li>
+          </ol>
+          {% if missing_required_lookups %}
+            <div class="alert alert--warning">
+              Required reference data is incomplete. Review Settings and complete the missing setup data.
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    {% else %}
+      <div class="notice">Setup complete. System initialization checks are green.</div>
+    {% endif %}
+
+    <div class="stacked-frames">
+      <div class="frame">
+        <div class="frame-header">What This Application Does</div>
+        <div class="frame-body">
+          <p>
+            Weighbridge Web is designed for day-to-day site operations. It helps teams:
+          </p>
+          <ul>
+            <li>Create and manage inbound/outbound tickets.</li>
+            <li>Maintain customer, vehicle, product, and lookup data.</li>
+            <li>Generate invoices from completed ticket activity.</li>
+            <li>Preview, print, and track print jobs through the admin printing tools.</li>
+          </ul>
+          <p class="muted">
+            Status: This platform is still in active development. Some features are evolving.
+          </p>
+        </div>
+      </div>
+
+      <div class="frame">
+        <div class="frame-header">Get Started Guide</div>
+        <div class="frame-body">
+          <p>Need setup guidance? Go to <a href="/admin/help/getting-started">Settings -> Help</a> for a full getting-started walkthrough.</p>
+          <ol>
+            <li>Open <a href="/lookups/hauliers">Lookups</a> and confirm required lookup values exist.</li>
+            <li>Set up core records in <a href="/customers">Customers</a>, <a href="/vehicles">Vehicles</a>, and <a href="/products">Products</a>.</li>
+            <li>Create your first transaction from <a href="/tickets">Tickets</a>.</li>
+            <li>Review invoice-ready work in <a href="/invoices">Invoices</a> and generate invoices.</li>
+            <li>Configure templates and destinations in <a href="/admin/printing/templates">Settings -> Printing</a> for operational printing.</li>
+          </ol>
+        </div>
       </div>
     </div>
-  </div>
+  {% endif %}
 {% endblock %}

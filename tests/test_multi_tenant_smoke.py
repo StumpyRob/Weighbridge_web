@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 import re
@@ -15,7 +17,22 @@ from app.auth import ROLE_SUPERADMIN, ROLE_TENANT_ADMIN, hash_password, user_ide
 from app.config import settings
 from app.db import TenantSession, get_db
 from app.main import create_app
-from app.models import AuditEvent, Base, CompanySetting, Customer, EwcCode, Product, Tenant, Ticket, User
+from app.models import (
+    AuditEvent,
+    Base,
+    CompanySetting,
+    Customer,
+    DirectionEnum,
+    EwcCode,
+    Invoice,
+    Product,
+    Tenant,
+    Ticket,
+    TicketStatusEnum,
+    TransactionTypeEnum,
+    User,
+    Vehicle,
+)
 from app.models.base import utcnow
 from app.seed import seed_print_destinations, seed_print_templates
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD
@@ -90,6 +107,16 @@ def _prime_csrf(client: TestClient, *, login_path: str = "/login") -> str:
     token = str(client.cookies.get(CSRF_COOKIE_NAME) or "")
     assert token
     return token
+
+
+def _dashboard_metric_value(html: str, key: str) -> str:
+    pattern = (
+        rf'data-dashboard-metric="{re.escape(key)}".*?'
+        r'<div class="dashboard-stat-card__value">(.*?)</div>'
+    )
+    match = re.search(pattern, html, flags=re.DOTALL)
+    assert match is not None
+    return re.sub(r"\s+", " ", match.group(1)).strip()
 
 
 def _login(
@@ -1564,6 +1591,208 @@ def test_multi_tenant_smoke(tmp_path, monkeypatch):
 
     with _client(app, base_url="https://b.localhost") as tenant_b_client:
         assert tenant_b_client.get("/health").status_code == 403
+
+
+def test_logged_in_tenant_home_shows_dashboard_empty_state(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-dashboard-empty.db", monkeypatch=monkeypatch
+    )
+    tenant_id = _seed_tenant(SessionLocal, name="Dashboard Co", subdomain="dash")
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_id,
+        company_name="Dashboard Co",
+        primary_color="#224466",
+    )
+    _seed_user(
+        SessionLocal,
+        email="dash-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_id,
+    )
+
+    with _client(app, base_url="https://dash.localhost") as tenant_client:
+        assert (
+            _login(
+                tenant_client,
+                email="dash-admin@example.com",
+                password="TestPass123!",
+                next_path="/",
+            )
+            == 303
+        )
+        response = tenant_client.get("/")
+
+    assert response.status_code == 200
+    assert "Operations Dashboard" in response.text
+    assert 'data-dashboard-empty-state="1"' in response.text
+    assert "No operational activity yet" in response.text
+    assert "Create Ticket" in response.text
+    assert 'href="/tickets/new"' in response.text
+    assert 'href="/customers/new"' in response.text
+    assert 'href="/vehicles/new"' in response.text
+    assert _dashboard_metric_value(response.text, "open_tickets") == "0"
+    assert _dashboard_metric_value(response.text, "completed_today") == "0"
+    assert _dashboard_metric_value(response.text, "invoices_pending") == "0"
+
+
+def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-dashboard-data.db", monkeypatch=monkeypatch
+    )
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a")
+    tenant_b = _seed_tenant(SessionLocal, name="Tenant B", subdomain="b")
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_b,
+        company_name="Tenant B Co",
+        primary_color="#225577",
+    )
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+    _seed_user(
+        SessionLocal,
+        email="b-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_b,
+    )
+
+    with SessionLocal() as db:
+        today = utcnow().replace(hour=10, minute=0, second=0, microsecond=0)
+        yesterday = today - timedelta(days=1)
+        five_days_ago = today - timedelta(days=5)
+
+        customer_a = Customer(tenant_id=tenant_a, account_code="CUST-A", name="Tenant A Customer")
+        customer_b = Customer(tenant_id=tenant_b, account_code="CUST-B", name="Tenant B Customer")
+        vehicle_a = Vehicle(tenant_id=tenant_a, registration="A123 DASH")
+        vehicle_b = Vehicle(tenant_id=tenant_b, registration="B123 OTHER")
+        product_a = Product(tenant_id=tenant_a, code="PROD-A", description="Tenant A Product", unit_price=Decimal("12.50"))
+        product_b = Product(tenant_id=tenant_b, code="PROD-B", description="Tenant B Product", unit_price=Decimal("10.00"))
+        db.add_all([customer_a, customer_b, vehicle_a, vehicle_b, product_a, product_b])
+        db.flush()
+
+        db.add_all(
+            [
+                Ticket(
+                    tenant_id=tenant_a,
+                    ticket_no="A-OPEN-1",
+                    datetime=today,
+                    status=TicketStatusEnum.OPEN.value,
+                    direction=DirectionEnum.INWARD.value,
+                    transaction_type=TransactionTypeEnum.SALE.value,
+                    customer_id=customer_a.id,
+                    vehicle_id=vehicle_a.id,
+                    product_id=product_a.id,
+                    net_kg=1250,
+                    dont_invoice=False,
+                    paid=False,
+                ),
+                Ticket(
+                    tenant_id=tenant_a,
+                    ticket_no="A-COMP-1",
+                    datetime=today - timedelta(hours=1),
+                    status=TicketStatusEnum.COMPLETE.value,
+                    direction=DirectionEnum.INWARD.value,
+                    transaction_type=TransactionTypeEnum.SALE.value,
+                    customer_id=customer_a.id,
+                    vehicle_id=vehicle_a.id,
+                    product_id=product_a.id,
+                    net_kg=1500,
+                    dont_invoice=False,
+                    paid=False,
+                ),
+                Ticket(
+                    tenant_id=tenant_a,
+                    ticket_no="A-COMP-OLD",
+                    datetime=five_days_ago,
+                    status=TicketStatusEnum.COMPLETE.value,
+                    direction=DirectionEnum.OUTWARD.value,
+                    transaction_type=TransactionTypeEnum.WASTEOUT.value,
+                    customer_id=customer_a.id,
+                    vehicle_id=vehicle_a.id,
+                    product_id=product_a.id,
+                    net_kg=2200,
+                    dont_invoice=False,
+                    paid=False,
+                ),
+                Ticket(
+                    tenant_id=tenant_b,
+                    ticket_no="B-ONLY-1",
+                    datetime=yesterday,
+                    status=TicketStatusEnum.COMPLETE.value,
+                    direction=DirectionEnum.INWARD.value,
+                    transaction_type=TransactionTypeEnum.SALE.value,
+                    customer_id=customer_b.id,
+                    vehicle_id=vehicle_b.id,
+                    product_id=product_b.id,
+                    net_kg=9999,
+                    dont_invoice=False,
+                    paid=False,
+                ),
+                Invoice(
+                    tenant_id=tenant_a,
+                    invoice_no="INV-A-1",
+                    customer_id=customer_a.id,
+                    invoice_date=today.date(),
+                    status="OPEN",
+                    net_total=Decimal("100.00"),
+                    vat_total=Decimal("20.00"),
+                    gross_total=Decimal("120.00"),
+                ),
+                Invoice(
+                    tenant_id=tenant_b,
+                    invoice_no="INV-B-1",
+                    customer_id=customer_b.id,
+                    invoice_date=today.date(),
+                    status="OPEN",
+                    net_total=Decimal("90.00"),
+                    vat_total=Decimal("18.00"),
+                    gross_total=Decimal("108.00"),
+                ),
+            ]
+        )
+        db.commit()
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert (
+            _login(
+                tenant_client,
+                email="a-admin@example.com",
+                password="TestPass123!",
+                next_path="/",
+            )
+            == 303
+        )
+        response = tenant_client.get("/")
+
+    assert response.status_code == 200
+    assert "Operations Dashboard" in response.text
+    assert 'data-dashboard-empty-state="1"' not in response.text
+    assert _dashboard_metric_value(response.text, "open_tickets") == "1"
+    assert _dashboard_metric_value(response.text, "completed_today") == "1"
+    assert _dashboard_metric_value(response.text, "total_weight_today") == "1,500 kg"
+    assert _dashboard_metric_value(response.text, "invoices_pending") == "1"
+    assert 'data-dashboard-ticket="A-COMP-1"' in response.text
+    assert 'data-dashboard-ticket="A-OPEN-1"' in response.text
+    assert 'data-dashboard-open-ticket="A-OPEN-1"' in response.text
+    assert "Tenant A Customer" in response.text
+    assert "Tenant B Customer" not in response.text
+    assert 'data-dashboard-ticket="B-ONLY-1"' not in response.text
+    assert 'data-dashboard-open-ticket="B-ONLY-1"' not in response.text
+    assert "INV-B-1" not in response.text
 
 
 def test_new_tenant_creation_flow_seeds_usable_baseline(tmp_path, monkeypatch):
