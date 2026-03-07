@@ -24,7 +24,11 @@
   {% endif %}
 
   <div class="notice">
-    Tenants can be opened from Railway without wildcard DNS at <code>{{ access_url }}</code>.
+    {% if access_uses_subdomain_url %}
+      Tenant sign-in will use the custom-domain host <code>{{ access_url }}</code>.
+    {% else %}
+      Tenant sign-in will use the fallback path <code>{{ access_url }}</code> when wildcard subdomains are unavailable.
+    {% endif %}
   </div>
 
   <form method="post" action="/platform/tenants/new" class="ticket-form">
@@ -56,7 +60,7 @@
           spellcheck="false"
           aria-invalid="{{ 'true' if field_errors.get('subdomain') else 'false' }}"
         />
-        <p class="hint">Used for tenant URLs and the Railway fallback path.</p>
+        <p class="hint">Used for tenant subdomains and the `/t/&lt;subdomain&gt;` fallback path.</p>
         {% if field_errors.get("subdomain") %}
           <p class="tenant-form__error">{{ field_errors["subdomain"] }}</p>
         {% endif %}

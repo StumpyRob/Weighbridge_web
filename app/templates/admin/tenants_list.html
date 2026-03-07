@@ -15,6 +15,12 @@
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}
+  {% if deleted_subdomain %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Tenant {{ deleted_subdomain }} deleted.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
@@ -107,12 +113,24 @@
                 {% if tenant.is_active %}
                   <form method="post" action="/platform/tenants/{{ tenant.id }}/disable">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-                    <button type="submit" class="btn btn--danger btn--sm">Disable</button>
+                    <button type="submit" class="btn btn--danger btn--sm">Disable Tenant</button>
                   </form>
                 {% else %}
                   <form method="post" action="/platform/tenants/{{ tenant.id }}/enable">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-                    <button type="submit" class="btn btn--secondary btn--sm">Enable</button>
+                    <button type="submit" class="btn btn--secondary btn--sm">Enable Tenant</button>
+                  </form>
+                {% endif %}
+                {% if row.delete_allowed %}
+                  <form method="post" action="/platform/tenants/{{ tenant.id }}/delete">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                    <button
+                      type="submit"
+                      class="btn btn--danger btn--sm"
+                      onclick="return window.confirm('Delete this tenant? This permanently removes the tenant, its seeded settings, and uploaded files.');"
+                    >
+                      Delete Tenant
+                    </button>
                   </form>
                 {% endif %}
               </div>

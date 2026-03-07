@@ -20,10 +20,32 @@
           <button type="submit" class="btn btn--secondary">Enable Tenant</button>
         </form>
       {% endif %}
+      {% if delete_allowed %}
+        <form method="post" action="/platform/tenants/{{ tenant.id }}/delete">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+          <button
+            type="submit"
+            class="btn btn--danger"
+            onclick="return window.confirm('Delete this tenant? This permanently removes the tenant, its seeded settings, and uploaded files.');"
+          >
+            Delete Tenant
+          </button>
+        </form>
+      {% endif %}
       <a class="btn btn--secondary" href="{{ open_url }}" target="_blank" rel="noreferrer">Open Tenant</a>
       <a class="btn btn--ghost" href="/platform/tenants">Back to Tenants</a>
     </div>
   </div>
+
+  {% if delete_error %}
+    <div class="alert alert--warning platform-tenant-delete-note">
+      {{ delete_error }}
+    </div>
+  {% elif delete_block_reason %}
+    <div class="alert alert--warning platform-tenant-delete-note">
+      {{ delete_block_reason }}
+    </div>
+  {% endif %}
 
   <section class="card">
     <div class="invoice-summary-grid">

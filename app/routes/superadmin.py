@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import shutil
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import or_, select, text
+from sqlalchemy import delete, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -18,8 +19,29 @@ from ..auth import (
     user_identity_kwargs,
     validate_email,
 )
+from ..config import settings
 from ..db import get_db
-from ..models import Tenant, User
+from ..models import (
+    AuditEvent,
+    CompanySetting,
+    Customer,
+    CustomerAdjustment,
+    CustomerProductPrice,
+    Invoice,
+    InvoiceLine,
+    InvoiceVoid,
+    PrintDestination,
+    PrintJob,
+    PrintTemplate,
+    PrintTemplateVersion,
+    Product,
+    Tenant,
+    Ticket,
+    TicketVoid,
+    User,
+    Vehicle,
+    VehicleTare,
+)
 from ..models.base import utcnow
 from ..seed import seed_print_destinations, seed_print_templates
 from ..services.system_setup import (
@@ -29,10 +51,43 @@ from ..services.system_setup import (
     upsert_default_yard,
 )
 from ..services.tenants import normalize_subdomain, validate_subdomain
-from ..tenancy import request_platform_mode, tenant_route_prefix
+from ..services.uploads import company_logo_upload_dir
+from ..tenancy import request_platform_mode, tenant_external_url, tenant_external_url_template
 from ..templating import templates
 
 router = APIRouter()
+_DELETE_BLOCKING_MODELS = (
+    ("customer records", Customer),
+    ("customer adjustments", CustomerAdjustment),
+    ("customer product prices", CustomerProductPrice),
+    ("products", Product),
+    ("vehicles", Vehicle),
+    ("vehicle tares", VehicleTare),
+    ("tickets", Ticket),
+    ("ticket voids", TicketVoid),
+    ("invoices", Invoice),
+    ("invoice lines", InvoiceLine),
+    ("invoice voids", InvoiceVoid),
+    ("print jobs", PrintJob),
+)
+_DELETE_CASCADE_MODELS = (
+    PrintJob,
+    CustomerProductPrice,
+    CustomerAdjustment,
+    VehicleTare,
+    InvoiceVoid,
+    TicketVoid,
+    InvoiceLine,
+    Ticket,
+    Invoice,
+    Vehicle,
+    Product,
+    Customer,
+    PrintDestination,
+    PrintTemplateVersion,
+    PrintTemplate,
+    CompanySetting,
+)
 
 
 @contextmanager
@@ -153,7 +208,41 @@ def _tenant_summary(users: list[User]) -> dict[str, object]:
 
 
 def _tenant_open_url(subdomain: str | None) -> str:
-    return f"{tenant_route_prefix(subdomain)}/login"
+    return tenant_external_url(subdomain, path="/login")
+
+
+def _tenant_access_url_template() -> str:
+    return tenant_external_url_template(path="/login")
+
+
+def _tenant_delete_block_reason(
+    db: Session,
+    tenant: Tenant,
+    *,
+    user_count_hint: int | None = None,
+) -> str:
+    subdomain = normalize_subdomain(getattr(tenant, "subdomain", None))
+    if subdomain and subdomain == settings.effective_default_tenant_subdomain:
+        return "Delete is blocked for the default tenant because fallback tenant routing depends on it."
+
+    user_count = user_count_hint
+    if user_count is None:
+        user_count = int(
+            db.execute(
+                select(func.count(User.id)).where(User.tenant_id == int(tenant.id))
+            ).scalar_one()
+        )
+    if user_count > 1:
+        return "Delete is blocked until additional tenant user accounts are removed."
+
+    tenant_id = int(tenant.id)
+    for label, model in _DELETE_BLOCKING_MODELS:
+        existing = db.execute(
+            select(model.id).where(model.tenant_id == tenant_id).limit(1)
+        ).scalar_one_or_none()
+        if existing is not None:
+            return f"Delete is blocked because this tenant still has {label}."
+    return ""
 
 
 def _tenant_form_context(
@@ -164,13 +253,14 @@ def _tenant_form_context(
     field_errors: dict[str, str] | None = None,
 ) -> dict[str, object]:
     preview_subdomain = normalize_subdomain(form.get("subdomain"))
-    access_url = _tenant_open_url(preview_subdomain) if preview_subdomain else "/t/<subdomain>/login"
+    access_url = _tenant_open_url(preview_subdomain) if preview_subdomain else _tenant_access_url_template()
     return {
         "request": request,
         "errors": errors or [],
         "field_errors": field_errors or {},
         "form": form,
         "access_url": access_url,
+        "access_uses_subdomain_url": access_url.startswith("http"),
     }
 
 
@@ -200,6 +290,11 @@ def tenants_list(
         else:
             disabled_count += 1
         summary = _tenant_summary(tenant_users.get(int(tenant.id), []))
+        delete_block_reason = _tenant_delete_block_reason(
+            db,
+            tenant,
+            user_count_hint=int(summary["user_count"]),
+        )
         rows.append(
             {
                 "tenant": tenant,
@@ -208,6 +303,7 @@ def tenants_list(
                 "active_user_count": summary["active_user_count"],
                 "tenant_admin_count": summary["tenant_admin_count"],
                 "open_url": _tenant_open_url(tenant.subdomain),
+                "delete_allowed": not bool(delete_block_reason),
             }
         )
     return templates.TemplateResponse(
@@ -221,6 +317,7 @@ def tenants_list(
             "created_subdomain": request.query_params.get("created_tenant", ""),
             "updated_subdomain": request.query_params.get("updated_tenant", ""),
             "updated_status": request.query_params.get("status", ""),
+            "deleted_subdomain": request.query_params.get("deleted_tenant", ""),
             "tenant_count": len(tenants),
             "active_count": active_count,
             "disabled_count": disabled_count,
@@ -247,6 +344,11 @@ def tenant_detail(
         ).scalars()
     )
     summary = _tenant_summary(users)
+    delete_block_reason = _tenant_delete_block_reason(
+        db,
+        tenant,
+        user_count_hint=int(summary["user_count"]),
+    )
     return templates.TemplateResponse(
         request,
         "admin/tenant_detail.html",
@@ -256,6 +358,9 @@ def tenant_detail(
             "users": users,
             "summary": summary,
             "open_url": _tenant_open_url(tenant.subdomain),
+            "delete_allowed": not bool(delete_block_reason),
+            "delete_block_reason": delete_block_reason,
+            "delete_error": request.query_params.get("delete_error", ""),
         },
     )
 
@@ -451,5 +556,76 @@ def tenants_enable(
     db.commit()
     return RedirectResponse(
         url=f"/platform/tenants?{urlencode({'updated_tenant': subdomain, 'status': 'enabled'})}",
+        status_code=303,
+    )
+
+
+@router.post("/platform/tenants/{tenant_id:int}/delete")
+@router.post("/admin/tenants/{tenant_id:int}/delete")
+def tenants_delete(
+    tenant_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None:
+        return RedirectResponse(url="/platform/tenants?error=Tenant+not+found", status_code=303)
+
+    users = list(
+        db.execute(
+            select(User)
+            .where(User.tenant_id == int(tenant.id))
+            .order_by(User.id.asc())
+        ).scalars()
+    )
+    delete_block_reason = _tenant_delete_block_reason(
+        db,
+        tenant,
+        user_count_hint=len(users),
+    )
+    if delete_block_reason:
+        return RedirectResponse(
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'delete_error': delete_block_reason})}",
+            status_code=303,
+        )
+
+    tenant_upload_dir = company_logo_upload_dir(int(tenant.id), create=False).parent
+    subdomain = str(tenant.subdomain or "").strip()
+    tenant_name = str(tenant.name or "").strip()
+    user_ids = [int(user.id) for user in users if getattr(user, "id", None) is not None]
+
+    if user_ids:
+        db.execute(
+            update(AuditEvent)
+            .where(AuditEvent.user_id.in_(user_ids))
+            .values(user_id=None)
+        )
+
+    for model in _DELETE_CASCADE_MODELS:
+        db.execute(delete(model).where(model.tenant_id == int(tenant.id)))
+    db.execute(delete(User).where(User.tenant_id == int(tenant.id)))
+
+    audit_log(
+        db,
+        request,
+        action="TENANT_DELETE",
+        entity_type="tenant",
+        entity_id=tenant.id,
+        summary=f"Deleted tenant {tenant_name}",
+        details={
+            "subdomain": subdomain,
+            "deleted_user_count": len(users),
+            "hard_delete": True,
+        },
+        user=current_user,
+        tenant_id=tenant.id,
+    )
+    db.delete(tenant)
+    db.commit()
+    shutil.rmtree(tenant_upload_dir, ignore_errors=True)
+    return RedirectResponse(
+        url=f"/platform/tenants?{urlencode({'deleted_tenant': subdomain})}",
         status_code=303,
     )

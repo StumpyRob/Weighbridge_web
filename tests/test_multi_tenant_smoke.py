@@ -688,7 +688,8 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert "tenant-admin@example.com" in tenants_page.text
         assert f"/platform/tenants/{tenant_a}" in tenants_page.text
         assert f"/platform/tenants/{tenant_a}/disable" in tenants_page.text
-        assert f"/t/a/login" in tenants_page.text
+        assert f"/platform/tenants/{tenant_a}/delete" in tenants_page.text
+        assert "/t/a/login" in tenants_page.text
         assert 'name="csrf_token"' in tenants_page.text
 
         tenant_detail = admin_client.get(f"/platform/tenants/{tenant_a}")
@@ -696,7 +697,8 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert "Tenant A" in tenant_detail.text
         assert "Tenant details, access state, and user summary." in tenant_detail.text
         assert "tenant-admin@example.com" in tenant_detail.text
-        assert f'href="/t/a/login"' in tenant_detail.text
+        assert 'href="/t/a/login"' in tenant_detail.text
+        assert f'action="/platform/tenants/{tenant_a}/delete"' in tenant_detail.text
 
         disable = admin_client.post(
             f"/platform/tenants/{tenant_a}/disable",
@@ -741,7 +743,9 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
 
     with _client(app, base_url="https://a.localhost") as tenant_client:
         assert _login(tenant_client, email="tenant-admin@example.com", password="TenantPass123!") == 303
-        assert tenant_client.get("/admin/company").status_code == 200
+        tenant_admin_page = tenant_client.get("/admin/company")
+        assert tenant_admin_page.status_code == 200
+        assert "Tenant Management" not in tenant_admin_page.text
         csrf = _prime_csrf(tenant_client)
         tenant_session_cookie = str(tenant_client.cookies.get("session") or "")
         assert tenant_session_cookie
@@ -766,6 +770,158 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         tenant = db.get(Tenant, tenant_a)
         assert tenant is not None
         assert bool(tenant.is_active) is True
+
+
+def test_superadmin_can_delete_empty_tenant_and_delete_blocks_linked_data(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-delete-flow.db", monkeypatch=monkeypatch
+    )
+    uploads_root = (tmp_path / "uploads").resolve()
+    monkeypatch.setattr(settings, "uploads_dir", str(uploads_root))
+
+    empty_tenant = _seed_tenant(SessionLocal, name="Empty Tenant", subdomain="empty", is_active=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=empty_tenant,
+        company_name="Empty Tenant",
+        primary_color="#224466",
+    )
+    _seed_user(
+        SessionLocal,
+        email="empty-admin@example.com",
+        password="EmptyPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=empty_tenant,
+    )
+    (uploads_root / "tenants" / str(empty_tenant) / "company").mkdir(parents=True, exist_ok=True)
+    (uploads_root / "tenants" / str(empty_tenant) / "company" / "logo.png").write_bytes(b"empty-logo")
+
+    busy_tenant = _seed_tenant(SessionLocal, name="Busy Tenant", subdomain="busy", is_active=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=busy_tenant,
+        company_name="Busy Tenant",
+        primary_color="#335577",
+    )
+    _seed_user(
+        SessionLocal,
+        email="busy-admin@example.com",
+        password="BusyPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=busy_tenant,
+    )
+    with SessionLocal() as db:
+        db.add(Customer(tenant_id=busy_tenant, account_code="BUSY-001", name="Busy Customer"))
+        db.commit()
+
+    _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+
+        tenants_page = admin_client.get("/platform/tenants")
+        assert tenants_page.status_code == 200
+        assert f"/platform/tenants/{empty_tenant}/delete" in tenants_page.text
+        assert f"/platform/tenants/{busy_tenant}/delete" not in tenants_page.text
+
+        busy_detail = admin_client.get(f"/platform/tenants/{busy_tenant}")
+        assert busy_detail.status_code == 200
+        assert "Delete is blocked because this tenant still has customer records." in busy_detail.text
+
+        csrf = _prime_csrf(admin_client)
+        blocked_delete = admin_client.post(
+            f"/platform/tenants/{busy_tenant}/delete",
+            data={CSRF_FORM_FIELD: csrf},
+            follow_redirects=False,
+        )
+        assert blocked_delete.status_code in {302, 303}
+        assert blocked_delete.headers.get("location", "").startswith(f"/platform/tenants/{busy_tenant}?")
+
+        csrf = _prime_csrf(admin_client)
+        delete_empty = admin_client.post(
+            f"/platform/tenants/{empty_tenant}/delete",
+            data={CSRF_FORM_FIELD: csrf},
+            follow_redirects=False,
+        )
+        assert delete_empty.status_code in {302, 303}
+        assert delete_empty.headers.get("location") == "/platform/tenants?deleted_tenant=empty"
+
+        deleted_list = admin_client.get(delete_empty.headers["location"])
+        assert deleted_list.status_code == 200
+        assert "Tenant empty deleted." in deleted_list.text
+        assert "Empty Tenant" not in deleted_list.text
+        assert "Busy Tenant" in deleted_list.text
+
+    with SessionLocal() as db:
+        assert db.get(Tenant, empty_tenant) is None
+        assert db.execute(select(User).where(User.tenant_id == empty_tenant)).scalars().first() is None
+        assert (
+            db.execute(select(CompanySetting).where(CompanySetting.tenant_id == empty_tenant))
+            .scalars()
+            .first()
+            is None
+        )
+        assert db.get(Tenant, busy_tenant) is not None
+
+    assert not (uploads_root / "tenants" / str(empty_tenant)).exists()
+
+
+def test_non_superadmin_cannot_delete_tenant(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-delete-scope.db", monkeypatch=monkeypatch
+    )
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", is_active=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A",
+        primary_color="#2a4768",
+    )
+    _seed_user(
+        SessionLocal,
+        email="tenant-admin@example.com",
+        password="TenantPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+    _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="tenant-admin@example.com", password="TenantPass123!") == 303
+        csrf = _prime_csrf(tenant_client)
+        tenant_session_cookie = str(tenant_client.cookies.get("session") or "")
+        assert tenant_session_cookie
+        forbidden_tenant_host = tenant_client.post(
+            f"/platform/tenants/{tenant_a}/delete",
+            data={CSRF_FORM_FIELD: csrf},
+            follow_redirects=False,
+        )
+        assert forbidden_tenant_host.status_code == 404
+
+    with _client(app, base_url="https://admin.localhost") as admin_host_client:
+        csrf = _prime_csrf(admin_host_client)
+        admin_host_client.cookies.set("session", tenant_session_cookie)
+        forbidden_non_superadmin = admin_host_client.post(
+            f"/platform/tenants/{tenant_a}/delete",
+            data={CSRF_FORM_FIELD: csrf},
+            follow_redirects=False,
+        )
+        assert forbidden_non_superadmin.status_code in {302, 403}
+
+    with SessionLocal() as db:
+        assert db.get(Tenant, tenant_a) is not None
 
 
 def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypatch):
@@ -995,7 +1151,11 @@ def test_path_based_tenant_access_mode_on_base_domain(tmp_path, monkeypatch):
         )
         platform_page = platform_client.get("/platform/tenants")
         assert platform_page.status_code == 200
-        assert "/t/mjteale/login" in platform_page.text
+        assert 'href="https://mjteale.example.test/login"' in platform_page.text
+
+        tenant_detail = platform_client.get(f"/platform/tenants/{tenant_mjteale}")
+        assert tenant_detail.status_code == 200
+        assert 'href="https://mjteale.example.test/login"' in tenant_detail.text
 
     with _client(app, base_url=f"https://{settings.effective_default_tenant_subdomain}.example.test") as default_client:
         assert (

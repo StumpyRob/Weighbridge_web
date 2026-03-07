@@ -24,6 +24,17 @@ _TENANT_ROUTE_EXCLUDED_PREFIXES = (
     "/static",
     "/media",
 )
+_NON_WILDCARD_BASE_DOMAINS = {
+    "",
+    "localhost",
+    "127.0.0.1",
+    "testserver",
+}
+_NON_WILDCARD_BASE_DOMAIN_SUFFIXES = (
+    ".localhost",
+    ".nip.io",
+    ".railway.app",
+)
 
 _tenant_id_ctx: ContextVar[int | None] = ContextVar("tenant_id", default=None)
 _platform_mode_ctx: ContextVar[bool] = ContextVar("platform_mode", default=False)
@@ -82,6 +93,34 @@ def tenant_route_prefix(subdomain: str | None) -> str:
     if not normalized:
         return ""
     return f"/t/{normalized}"
+
+
+def base_domain_supports_direct_tenant_hosts(base_domain: str | None = None) -> bool:
+    normalized = host_without_port(base_domain or settings.effective_base_domain)
+    if normalized in _NON_WILDCARD_BASE_DOMAINS:
+        return False
+    return not any(normalized.endswith(suffix) for suffix in _NON_WILDCARD_BASE_DOMAIN_SUFFIXES)
+
+
+def tenant_external_url(subdomain: str | None, *, path: str = "/login") -> str:
+    normalized = normalize_subdomain(subdomain)
+    normalized_path = str(path or "").strip() or "/"
+    if not normalized_path.startswith("/"):
+        normalized_path = f"/{normalized_path}"
+    if not normalized:
+        return ""
+    if base_domain_supports_direct_tenant_hosts():
+        return f"https://{normalized}.{settings.effective_base_domain}{normalized_path}"
+    return prefix_tenant_route_target(tenant_route_prefix(normalized), normalized_path)
+
+
+def tenant_external_url_template(*, path: str = "/login") -> str:
+    normalized_path = str(path or "").strip() or "/"
+    if not normalized_path.startswith("/"):
+        normalized_path = f"/{normalized_path}"
+    if base_domain_supports_direct_tenant_hosts():
+        return f"https://<subdomain>.{settings.effective_base_domain}{normalized_path}"
+    return f"/t/<subdomain>{normalized_path}"
 
 
 def split_tenant_route_path(path: str | None) -> tuple[str, str] | None:
