@@ -22,7 +22,7 @@ def stub_invoice_pdf_renderer(monkeypatch):
     monkeypatch.setattr(
         invoices_routes,
         "render_invoice_pdf",
-        lambda invoice_id, db, **kwargs: b"%PDF-1.4\n%stub-invoice-pdf\n",
+        lambda _invoice_id, _db, **_kwargs: b"%PDF-1.4\n%stub-invoice-pdf\n",
     )
 
 

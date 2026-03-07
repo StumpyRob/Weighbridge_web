@@ -76,7 +76,7 @@ def _normalize_user_for_write(target: User) -> None:
 
 
 @event.listens_for(Session, "before_flush")
-def _assign_new_user_roles_before_flush(session: Session, flush_context, instances) -> None:
+def _assign_new_user_roles_before_flush(session: Session, _flush_context, _instances) -> None:
     new_users = [item for item in session.new if isinstance(item, User)]
     if not new_users:
         return
@@ -106,10 +106,10 @@ def _assign_new_user_roles_before_flush(session: Session, flush_context, instanc
 
 
 @event.listens_for(User, "before_insert")
-def _normalize_user_before_insert(mapper, connection, target: User) -> None:
+def _normalize_user_before_insert(_mapper, _connection, target: User) -> None:
     _normalize_user_for_write(target)
 
 
 @event.listens_for(User, "before_update")
-def _normalize_user_before_update(mapper, connection, target: User) -> None:
+def _normalize_user_before_update(_mapper, _connection, target: User) -> None:
     _normalize_user_for_write(target)

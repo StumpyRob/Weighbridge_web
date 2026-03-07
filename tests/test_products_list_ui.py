@@ -65,6 +65,7 @@ def test_units_list_actions_use_small_button_class(client, db_session):
 
 
 def test_units_list_shows_system_weight_units_with_highlight(client, db_session):
+    _ = db_session
     response = client.get("/products/units")
 
     assert response.status_code == 200

@@ -338,10 +338,6 @@
     <div class="page-header">
       <div>
         <h1>Weighbridge Web</h1>
-        <p class="muted">
-          A weighbridge operations platform for recording tickets, managing customer and
-          product data, and generating invoices and print outputs from one workflow.
-        </p>
       </div>
     </div>
 
@@ -380,39 +376,5 @@
     {% else %}
       <div class="notice">Setup complete. System initialization checks are green.</div>
     {% endif %}
-
-    <div class="stacked-frames">
-      <div class="frame">
-        <div class="frame-header">What This Application Does</div>
-        <div class="frame-body">
-          <p>
-            Weighbridge Web is designed for day-to-day site operations. It helps teams:
-          </p>
-          <ul>
-            <li>Create and manage inbound/outbound tickets.</li>
-            <li>Maintain customer, vehicle, product, and lookup data.</li>
-            <li>Generate invoices from completed ticket activity.</li>
-            <li>Preview, print, and track print jobs through the admin printing tools.</li>
-          </ul>
-          <p class="muted">
-            Status: This platform is still in active development. Some features are evolving.
-          </p>
-        </div>
-      </div>
-
-      <div class="frame">
-        <div class="frame-header">Get Started Guide</div>
-        <div class="frame-body">
-          <p>Need setup guidance? Go to <a href="/admin/help/getting-started">Settings -> Help</a> for a full getting-started walkthrough.</p>
-          <ol>
-            <li>Open <a href="/lookups/hauliers">Lookups</a> and confirm required lookup values exist.</li>
-            <li>Set up core records in <a href="/customers">Customers</a>, <a href="/vehicles">Vehicles</a>, and <a href="/products">Products</a>.</li>
-            <li>Create your first transaction from <a href="/tickets">Tickets</a>.</li>
-            <li>Review invoice-ready work in <a href="/invoices">Invoices</a> and generate invoices.</li>
-            <li>Configure templates and destinations in <a href="/admin/printing/templates">Settings -> Printing</a> for operational printing.</li>
-          </ol>
-        </div>
-      </div>
-    </div>
   {% endif %}
 {% endblock %}

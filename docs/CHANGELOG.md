@@ -8,6 +8,15 @@ All notable changes are tracked here by release chapter.
 - Add build stamp in UI footer: `Build v<version> (commit <shortsha>)`.
 - Add release discipline docs (`VERSION`, changelog workflow, contribution guide).
 
+## v0.15.2 - 2026-03-07
+
+### FIX
+- Clean up stale tenant dashboard and invoice context fields, remove old non-dashboard home copy, and keep the dashboard summary/chart spacing fixes in place.
+- Tighten callback and compatibility-only parameters so active compatibility paths remain explicit without carrying dead helper plumbing.
+
+### TEST
+- Re-run auth, tenant dashboard, setup wizard, invoice PDF, print payload, and product list regressions after the cleanup pass.
+
 ## v0.15.1 - 2026-03-06
 
 ### FIX

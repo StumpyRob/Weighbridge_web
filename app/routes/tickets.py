@@ -411,6 +411,8 @@ def ticket_product_defaults(
     transaction_type: str | None = Query(None),
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    # Older ticket forms still send this field when requesting product defaults.
+    _ = unit_price
     product_id_values = request.query_params.getlist("product_id")
     parsed_product_id = None
     for raw in product_id_values:
@@ -652,6 +654,8 @@ def tickets_vehicle_suggest(
     readout_kg: str | None = Query(None),
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    # Older UI flows still include these inputs in the suggest request payload.
+    _ = (direction, gross_kg, tare_kg, readout_kg)
     if not reg or not ticket_id:
         return HTMLResponse("", status_code=204)
     if walk_in and str(walk_in).lower() in ("1", "true", "on", "yes"):

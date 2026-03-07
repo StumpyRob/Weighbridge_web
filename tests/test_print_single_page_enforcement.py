@@ -119,6 +119,7 @@ def _install_fake_weasyprint(monkeypatch, *, requested_url: str):
 
     class _FakeHTML:
         def __init__(self, string, base_url=None, url_fetcher=None):
+            _ = (string, base_url)
             self.url_fetcher = url_fetcher
 
         def render(self):
@@ -132,7 +133,7 @@ def _install_fake_weasyprint(monkeypatch, *, requested_url: str):
 
     fake_module = types.ModuleType("weasyprint")
     fake_module.HTML = _FakeHTML
-    fake_module.default_url_fetcher = lambda url, *args, **kwargs: {"string": b""}
+    fake_module.default_url_fetcher = lambda _url, *_args, **_kwargs: {"string": b""}
     monkeypatch.setitem(sys.modules, "weasyprint", fake_module)
 
 

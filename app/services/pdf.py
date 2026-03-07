@@ -277,6 +277,7 @@ def render_invoice_pdf_html(
     template: PrintTemplate | None = None,
     allow_builtin_template_fallback: bool = True,
 ) -> str:
+    _ = allow_builtin_template_fallback
     context = build_invoice_pdf_context(invoice_id, db)
     resolved_template = template or resolve_default_invoice_pdf_template(db)
     if resolved_template is not None:

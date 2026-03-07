@@ -1159,11 +1159,8 @@ def _render_invoice_print_html(
 
 
 def _invoice_print_actions_context(
-    request: Request,
     db: Session,
     invoice_id: int,
-    *,
-    is_admin: bool = False,
 ) -> dict[str, object]:
     destinations = _load_active_invoice_destinations(db)
     default_destination = _default_invoice_destination(destinations)
@@ -1330,12 +1327,9 @@ def _invoice_detail_context(
         }
         for ticket, vehicle_registration in ticket_rows
     ]
-    is_admin = False
     print_actions_context = _invoice_print_actions_context(
-        request,
         db,
         invoice.id,
-        is_admin=is_admin,
     )
     return {
         "request": request,
@@ -1355,7 +1349,6 @@ def _invoice_detail_context(
         "created": created,
         "paid": paid,
         "voided": voided,
-        "is_admin": is_admin,
         **print_actions_context,
     }
 

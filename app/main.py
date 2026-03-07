@@ -703,7 +703,6 @@ def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
                 "hint": "Outstanding issued invoices",
             },
         ],
-        "overview_period": overview_period,
         "period_label": period_labels[overview_period],
         "period_options": (
             {"key": "today", "label": "Today", "active": overview_period == "today"},
@@ -1257,7 +1256,6 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 else None,
                 "show_dashboard": show_dashboard,
                 "show_first_time_setup": not setup_ready,
-                "setup_ready": setup_ready,
                 "setup_initialized": initialized,
                 "missing_required_lookups": missing_required,
                 "needs_first_admin": user_count == 0,

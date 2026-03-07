@@ -108,7 +108,7 @@ def _add_tenant_filter(execute_state) -> None:
 
 
 @event.listens_for(TenantSession, "before_flush")
-def _stamp_tenant_id(session: TenantSession, flush_context, instances) -> None:
+def _stamp_tenant_id(session: TenantSession, _flush_context, _instances) -> None:
     platform_mode = bool(session.info.get("platform_mode", False))
     tenant_id = session.info.get("tenant_id")
 
