@@ -10,7 +10,6 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..config import settings
 from ..models import (
     CompanySetting,
     PaymentMethod,

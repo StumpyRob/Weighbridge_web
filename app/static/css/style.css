@@ -762,24 +762,6 @@ body.js-help-tooltips .help-tooltip {
   overflow-wrap: anywhere;
 }
 
-.template-preview-ticket-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-}
-
-.template-preview-ticket-row input {
-  width: auto;
-  flex: 1 1 320px;
-  min-width: 180px;
-}
-
-.template-preview-ticket-row .btn {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
 .template-vars-disclosure {
   border-color: #d6dde7;
   background: #f8fafc;
@@ -1625,28 +1607,6 @@ body.js-help-tooltips .help-tooltip {
   border-radius: 4px;
   margin-left: 0.35rem;
   line-height: 1.2;
-}
-
-.tenant-status-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  font-size: 0.76rem;
-  font-weight: 700;
-  padding: 0.14rem 0.52rem;
-}
-
-.tenant-status-badge--active {
-  color: #166534;
-  background: #dcfce7;
-  border: 1px solid #86efac;
-}
-
-.tenant-status-badge--disabled {
-  color: #991b1b;
-  background: #fee2e2;
-  border: 1px solid #fca5a5;
 }
 
 .status-void {
@@ -2499,177 +2459,16 @@ details > summary:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.platform-tenants-page {
-  background: #f3f4f6;
-  color: #1f2937;
-}
-
-.site-header--platform-tenants {
-  background: #ffffff;
-  color: #b91c1c;
-  border-bottom: 1px solid #e7d3d3;
-  box-shadow: 0 8px 20px rgba(127, 29, 29, 0.08);
-}
-
-.site-header--platform-tenants .brand,
-.site-header--platform-tenants .brand:visited,
-.site-header--platform-tenants .brand:hover,
-.site-header--platform-tenants .brand:focus-visible,
-.site-header--platform-tenants .brand:active,
-.site-header--platform-tenants .brand__text,
-.site-header--platform-tenants .site-nav a,
-.site-header--platform-tenants .site-auth__link {
-  color: #b91c1c;
-}
-
-.site-header--platform-tenants .site-nav a:hover,
-.site-header--platform-tenants .site-nav a:focus-visible,
-.site-header--platform-tenants .site-auth__link:hover,
-.site-header--platform-tenants .site-auth__link:focus-visible {
-  color: #991b1b;
-}
-
-.site-header--platform-tenants .site-nav a.is-active {
-  background: #b91c1c;
-  border-color: #b91c1c;
-  color: #ffffff;
-  text-decoration: none;
-}
-
-.site-header--platform-tenants .site-context-badge--platform {
-  border-color: #fca5a5;
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.site-header--platform-tenants .site-auth__label {
-  color: #6b7280;
-}
-
-.site-header--platform-tenants .site-auth__badge {
-  border-color: #d1d5db;
-  background: #ffffff;
-  color: #374151;
-}
-
-.platform-tenants-page .container {
-  background: #ffffff;
-  border: 1px solid #ebe5e5;
-  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
-}
-
-.platform-tenants-page .page-header h1 {
-  color: #7f1d1d;
-}
-
-.platform-tenants-page .page-header .muted,
-.platform-tenants-page .platform-tenants-row-note {
-  color: #6b7280;
-  opacity: 1;
-}
-
-.platform-tenants-page .btn--primary {
-  background: #c62828;
-  border-color: #c62828;
-  color: #ffffff;
-}
-
-.platform-tenants-page .btn--secondary {
-  background: #ffffff;
-  border-color: #d1d5db;
-  color: #1f2937;
-}
-
-.platform-tenants-page .btn--ghost {
-  background: #fff5f5;
-  border-color: #fecdd3;
-  color: #9f1239;
-}
-
-.platform-tenants-page .btn--danger {
-  background: #dc2626;
-  border-color: #dc2626;
-  color: #ffffff;
-}
-
-.platform-tenants-page .status-pill.status-open {
-  background: #fee2e2;
-  border-color: #fca5a5;
-  color: #991b1b;
-}
-
-.platform-tenants-page .status-pill.status-void {
-  background: #f3f4f6;
-  border-color: #d1d5db;
-  color: #4b5563;
-}
-
 .platform-tenants-actions {
   flex-wrap: wrap;
-  gap: 0.4rem;
 }
 
-.platform-tenants-page .platform-tenants-actions .btn,
-.platform-tenants-page .platform-tenants-actions button {
-  border-radius: 999px;
-}
-
-.platform-tenants-page .platform-tenants-summary-card {
+.platform-tenants-summary-card {
   margin-bottom: 1.5rem;
-  border-color: #eadbdb;
-  background: linear-gradient(180deg, #fff7f7 0%, #ffffff 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
-.platform-tenants-page .platform-tenants-summary-card .invoice-summary-grid {
+.platform-tenants-summary-card .invoice-summary-grid {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-}
-
-.platform-tenants-page .platform-tenants-summary-card .summary-label {
-  color: #b91c1c;
-}
-
-.platform-tenants-page .filters {
-  padding: 1rem;
-  border: 1px solid #eadbdb;
-  border-radius: 14px;
-  background: #fafafa;
-}
-
-.platform-tenants-page .filters input {
-  border-color: #d1d5db;
-  background: #ffffff;
-}
-
-.platform-tenants-page .table-wrap {
-  border-color: #eadbdb;
-  background: #ffffff;
-}
-
-.platform-tenants-page .platform-tenants-table th {
-  background: #fff1f2;
-  border-bottom-color: #f1d5d9;
-  color: #7f1d1d;
-}
-
-.platform-tenants-page .platform-tenants-table td {
-  border-bottom-color: #ece7e7;
-}
-
-.platform-tenants-page .platform-tenants-table a {
-  color: #991b1b;
-}
-
-.platform-tenants-page .platform-tenants-table code {
-  color: #7f1d1d;
-  background: #fff7f7;
-  border: 1px solid #f1d5d9;
-  border-radius: 999px;
-  padding: 0.15rem 0.45rem;
-}
-
-.platform-tenants-page .data-row-link:hover {
-  background: #fff8f8;
 }
 
 .platform-tenants-row-note {

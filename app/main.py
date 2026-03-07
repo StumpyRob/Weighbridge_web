@@ -13,7 +13,7 @@ from fastapi.responses import (
     RedirectResponse,
     Response,
 )
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -30,7 +30,7 @@ from .auth import (
 )
 from .config import settings
 from .db import get_db
-from .models import Tenant, User
+from .models import User
 from .routes import api_router
 from .routers.lookups import router as lookups_router
 from .security_hardening import (

@@ -15,7 +15,6 @@ from ..models.base import utcnow
 from ..models import (
     CustomerProductPrice,
     Destination,
-    NominalCode,
     Product,
     ProductGroup,
     TaxRate,
@@ -998,7 +997,6 @@ def _load_options(
         ).scalars()
     )
     tax_rates = db.execute(select(TaxRate).order_by(TaxRate.code)).scalars()
-    nominal_codes = db.execute(select(NominalCode).order_by(NominalCode.code)).scalars()
     ewc_codes = list(
         db.execute(
             select(EwcCode).where(EwcCode.active.is_(True)).order_by(EwcCode.code_6)
@@ -1095,9 +1093,6 @@ def _parse_product_form(form) -> dict:
     group_id = _parse_int(group_id_raw)
     nominal_code = _normalize_nominal_code(value("nominal_code"))
     sale_type = _normalize_sale_type(value("sale_type"))
-    tax_rate_raw = value("tax_rate_id")
-    tax_rate_id = _parse_int(tax_rate_raw)
-
     validate_no_html_fields(
         {
             "Code": code,

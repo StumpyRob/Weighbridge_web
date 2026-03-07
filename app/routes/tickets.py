@@ -3858,8 +3858,6 @@ def _parse_ticket_form(
         _form_value(form, "ewc_product_default_code_6")
     )
     ewc_product_default_display = _form_value(form, "ewc_product_default_display")
-    yard_id_present = "yard_id" in form
-    area_id_present = "area_id" in form
     yard_raw = _form_value(form, "yard_id")
     area_raw = _form_value(form, "area_id")
 

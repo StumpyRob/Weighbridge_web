@@ -10,13 +10,12 @@
     <link rel="stylesheet" href="{{ tenant_path('/branding.css') }}?v={{ BUILD_STAMP }}" />
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
   </head>
-  {% set is_platform_tenants_page = request.url.path in ['/platform/tenants', '/admin/tenants'] %}
-  <body{% if is_platform_tenants_page %} class="platform-tenants-page"{% endif %}>
-    <header class="site-header{% if is_platform_tenants_page %} site-header--platform-tenants{% endif %}">
+  <body>
+    <header class="site-header">
       <a class="brand" href="{{ tenant_path('/platform/tenants' if platform_mode else '/') }}">
         {% set show_logo_nav = ui_branding.show_nav_logo %}
         {% set show_title_nav = ui_branding.show_nav_title %}
-        {% if show_logo_nav and not is_platform_tenants_page %}
+        {% if show_logo_nav %}
           <span class="brand__logo-badge">
             <img
               src="{{ tenant_path(ui_branding.nav_logo_url) }}"
@@ -62,8 +61,12 @@
           <div class="site-auth">
             {% if current_user %}
               {% set signed_in_as = (current_user.email or current_user.username or 'User') %}
-              <span class="site-auth__label">Account</span>
-              <span class="site-auth__badge" title="{{ signed_in_as }}">{{ signed_in_as }}</span>
+              <span class="site-auth__label">Signed in as</span>
+              <span
+                class="site-auth__badge"
+                title="{{ signed_in_as }}"
+                aria-label="Signed in as {{ signed_in_as }}"
+              >{{ signed_in_as }}</span>
               <form method="post" action="{{ tenant_path('/logout') }}" class="site-auth__logout">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
                 <button type="submit" class="site-auth__link">Logout</button>
