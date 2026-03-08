@@ -1582,6 +1582,10 @@ def test_multi_tenant_smoke(tmp_path, monkeypatch):
     assert branding_a != branding_b
     assert "#111111" in branding_a
     assert "#0055CC" in branding_b
+    assert "--dashboard-chart-bar-end: #111111;" in branding_a
+    assert "--dashboard-chart-bar-end: #0055CC;" in branding_b
+    assert "--dashboard-throughput-bar-start: #111111;" in branding_a
+    assert "--dashboard-throughput-bar-start: #0055CC;" in branding_b
 
     with SessionLocal() as db:
         tenant_b_obj = db.get(Tenant, tenant_b)

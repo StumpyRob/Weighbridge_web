@@ -66,5 +66,5 @@ def get_build_info() -> BuildInfo:
     return {
         "version": version,
         "commit_short": commit_short,
-        "label": f"Build v{version} (commit {commit_short})",
+        "label": f"R.Hetherington Build v{version} (commit {commit_short})",
     }

@@ -143,6 +143,29 @@ def primary_soft_rgba(hex_color: str, *, alpha: float = 0.16) -> str:
     return f"rgba({red}, {green}, {blue}, {clamped_alpha:.2f})"
 
 
+def _mix_hex_color(base_hex: str, target_hex: str, *, amount: float) -> str:
+    base_red, base_green, base_blue = _hex_to_rgb(base_hex)
+    target_red, target_green, target_blue = _hex_to_rgb(target_hex)
+    clamped_amount = max(0.0, min(1.0, amount))
+
+    def _channel(base: int, target: int) -> int:
+        return int(round(base + ((target - base) * clamped_amount)))
+
+    return "#{:02X}{:02X}{:02X}".format(
+        _channel(base_red, target_red),
+        _channel(base_green, target_green),
+        _channel(base_blue, target_blue),
+    )
+
+
+def lighten_hex_color(hex_color: str, *, amount: float = 0.18) -> str:
+    return _mix_hex_color(hex_color, "#FFFFFF", amount=amount)
+
+
+def darken_hex_color(hex_color: str, *, amount: float = 0.18) -> str:
+    return _mix_hex_color(hex_color, "#000000", amount=amount)
+
+
 def logo_url_with_version(url: str, logo_version: int | None) -> str:
     clean_url = str(url or "").strip()
     if not clean_url:

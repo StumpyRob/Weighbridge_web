@@ -55,7 +55,13 @@ from .services.credit import (
     INVOICE_OUTSTANDING_ISSUED_STATUSES,
 )
 from .services.pdf import check_invoice_pdf_renderer
-from .services.ui_branding import get_branding, nav_foreground_color, normalize_hex_color
+from .services.ui_branding import (
+    darken_hex_color,
+    get_branding,
+    lighten_hex_color,
+    nav_foreground_color,
+    normalize_hex_color,
+)
 from .tenancy import (
     host_without_port,
     prefix_tenant_route_target,
@@ -1191,6 +1197,24 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         primary_color = str(branding.get("primary_color", "") or "#FCA311")
         primary_contrast = str(branding.get("primary_contrast_hex", "") or "#111827")
         primary_soft = str(branding.get("primary_soft_rgba", "") or "rgba(252, 163, 17, 0.16)")
+        primary_light = lighten_hex_color(primary_color)
+        primary_dark = darken_hex_color(primary_color)
+        dark_nav = nav_foreground == "#FFFFFF"
+        utility_text = (
+            lighten_hex_color(primary_color, amount=0.2)
+            if dark_nav
+            else darken_hex_color(primary_color, amount=0.2)
+        )
+        utility_text_strong = (
+            lighten_hex_color(primary_color, amount=0.34)
+            if dark_nav
+            else darken_hex_color(primary_color, amount=0.34)
+        )
+        utility_link = (
+            lighten_hex_color(primary_color, amount=0.12)
+            if dark_nav
+            else darken_hex_color(primary_color, amount=0.28)
+        )
         logo_url = str(branding.get("logo_url", "") or "").replace("'", "\\'")
         try:
             nav_logo_height = int(branding.get("nav_logo_height_px", 34) or 34)
@@ -1204,6 +1228,15 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
             f"  --theme-primary: {primary_color};\n"
             f"  --theme-primary-contrast: {primary_contrast};\n"
             f"  --theme-primary-soft: {primary_soft};\n"
+            f"  --theme-primary-light: {primary_light};\n"
+            f"  --theme-primary-dark: {primary_dark};\n"
+            f"  --utility-bar-text: {utility_text};\n"
+            f"  --utility-bar-text-strong: {utility_text_strong};\n"
+            f"  --utility-bar-link: {utility_link};\n"
+            f"  --dashboard-chart-bar-start: {primary_light};\n"
+            f"  --dashboard-chart-bar-end: {primary_color};\n"
+            f"  --dashboard-throughput-bar-start: {primary_color};\n"
+            f"  --dashboard-throughput-bar-end: {primary_dark};\n"
             f"  --theme-logo-url: url('{logo_url}');\n"
             f"  --theme-nav-logo-height: {nav_logo_height}px;\n"
             f"  --nav-bg: {nav_color};\n"

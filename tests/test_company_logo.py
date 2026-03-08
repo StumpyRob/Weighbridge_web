@@ -17,6 +17,7 @@ from app.models import (
     PrintTemplate,
 )
 from app.services.pdf import render_invoice_pdf_html
+from app.services.ui_branding import darken_hex_color
 from app.templating import templates
 
 
@@ -278,6 +279,8 @@ def test_company_settings_theme_values_apply_globally(client, db_session):
     assert "--nav-bg: #112233;" in branding_css.text
     assert "--nav-fg:" in branding_css.text
     assert "--primary: #EE7700;" in branding_css.text
+    assert "--dashboard-chart-bar-end: #EE7700;" in branding_css.text
+    assert "--dashboard-throughput-bar-start: #EE7700;" in branding_css.text
 
 
 def test_base_template_uses_company_branding_for_logo_favicon_and_theme(
@@ -398,6 +401,9 @@ def test_navbar_and_primary_styles_use_root_branding_variables(
     assert branding_css.status_code == 200
     assert "--nav-bg: #123ABC;" in branding_css.text
     assert "--nav-fg:" in branding_css.text
+    assert "--utility-bar-text:" in branding_css.text
+    assert "--utility-bar-text-strong:" in branding_css.text
+    assert "--utility-bar-link:" in branding_css.text
 
     stylesheet = client_anonymous.get("/static/css/style.css")
     assert stylesheet.status_code == 200
@@ -417,6 +423,16 @@ def test_navbar_and_primary_styles_use_root_branding_variables(
     assert ".btn--primary{" in compact_css
     assert "background-color:var(--primary)!important;" in compact_css
     assert "border-color:var(--primary)!important;" in compact_css
+    assert ".dashboard-chart__bar{" in compact_css
+    assert "background:linear-gradient(180deg,var(--dashboard-chart-bar-start)0%,var(--dashboard-chart-bar-end)100%);" in compact_css
+    assert ".dashboard-chart__bar--throughput{" in compact_css
+    assert "background:linear-gradient(180deg,var(--dashboard-throughput-bar-start)0%,var(--dashboard-throughput-bar-end)100%);" in compact_css
+    assert ".site-utility-bar{" in compact_css
+    assert "color:var(--utility-bar-text);" in compact_css
+    assert ".site-utility-bar__item--tenant{" in compact_css
+    assert "color:var(--utility-bar-text-strong);" in compact_css
+    assert ".site-auth__link{" in compact_css
+    assert "color:var(--utility-bar-link);" in compact_css
     assert ".site-nava.is-active{" in compact_css
     assert "border:1pxsolidvar(--primary);" in compact_css
     assert "border-radius:999px;" in compact_css
@@ -436,6 +452,26 @@ def test_navbar_and_primary_styles_use_root_branding_variables(
         flags=re.IGNORECASE,
     )
     assert hardcoded_header_bg_after_var is None
+
+
+def test_utility_bar_colors_switch_to_dark_primary_shades_for_light_nav(
+    client_anonymous,
+    db_session,
+):
+    setting = _get_or_create_company_setting(db_session)
+    setting.navbar_color_hex = "#FFFFFF"
+    setting.primary_color_hex = "#2E8B57"
+    db_session.commit()
+
+    branding_css = client_anonymous.get("/branding.css")
+
+    assert branding_css.status_code == 200
+    assert "--nav-bg: #FFFFFF;" in branding_css.text
+    assert "--nav-fg: #14213D;" in branding_css.text
+    assert f"--utility-bar-text: {darken_hex_color('#2E8B57', amount=0.2)};" in branding_css.text
+    assert f"--utility-bar-text-strong: {darken_hex_color('#2E8B57', amount=0.34)};" in branding_css.text
+    assert f"--utility-bar-link: {darken_hex_color('#2E8B57', amount=0.28)};" in branding_css.text
+    assert "--utility-bar-text: #FFFFFF;" not in branding_css.text
 
 
 def test_uploaded_logo_url_returns_200(client, db_session):

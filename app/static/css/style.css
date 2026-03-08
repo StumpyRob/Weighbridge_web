@@ -6,6 +6,15 @@
   --theme-primary: var(--primary);
   --theme-primary-contrast: #14213D;
   --theme-primary-soft: rgba(252, 163, 17, 0.16);
+  --theme-primary-light: #FDB43C;
+  --theme-primary-dark: #CF860E;
+  --utility-bar-text: #FDCB73;
+  --utility-bar-text-strong: #FFE1A7;
+  --utility-bar-link: #FDB43C;
+  --dashboard-chart-bar-start: var(--theme-primary-light);
+  --dashboard-chart-bar-end: var(--theme-primary);
+  --dashboard-throughput-bar-start: var(--theme-primary);
+  --dashboard-throughput-bar-end: var(--theme-primary-dark);
   --theme-nav-logo-height: 34px;
   --section-gap: 1rem;
   --flash-toast-top: 72px;
@@ -42,7 +51,7 @@ body {
   min-height: 30px;
   font-size: 0.78rem;
   line-height: 1.2;
-  color: rgba(255, 255, 255, 0.76);
+  color: var(--utility-bar-text);
 }
 
 .site-utility-bar__item,
@@ -145,7 +154,7 @@ body {
 }
 
 .site-utility-bar__item--tenant {
-  color: rgba(255, 255, 255, 0.94);
+  color: var(--utility-bar-text-strong);
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -153,14 +162,14 @@ body {
 }
 
 .site-utility-bar__item--platform {
-  color: var(--primary);
+  color: var(--utility-bar-text-strong);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .site-utility-bar__item--user {
-  color: rgba(255, 255, 255, 0.76);
+  color: var(--utility-bar-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -174,7 +183,7 @@ body {
   appearance: none;
   border: none;
   background: transparent;
-  color: var(--primary);
+  color: var(--utility-bar-link);
   font: inherit;
   font-size: 0.78rem;
   font-weight: 600;
@@ -186,7 +195,7 @@ body {
 
 .site-auth__link:hover,
 .site-auth__link:focus-visible {
-  color: var(--primary);
+  color: var(--utility-bar-text-strong);
   opacity: 0.82;
 }
 
@@ -2600,11 +2609,19 @@ details > summary:focus-visible {
   width: 100%;
   min-height: 14px;
   border-radius: 10px;
-  background: linear-gradient(180deg, #fca311 0%, #de7b00 100%);
+  background: linear-gradient(
+    180deg,
+    var(--dashboard-chart-bar-start) 0%,
+    var(--dashboard-chart-bar-end) 100%
+  );
 }
 
 .dashboard-chart__bar--throughput {
-  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+  background: linear-gradient(
+    180deg,
+    var(--dashboard-throughput-bar-start) 0%,
+    var(--dashboard-throughput-bar-end) 100%
+  );
 }
 
 .dashboard-chart__label {
