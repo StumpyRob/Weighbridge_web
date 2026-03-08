@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en" class="marketing-landing-root">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Weighbridge Web | Cloud Software for Weighbridge Operations</title>
+    <meta
+      name="description"
+      content="Weighbridge Web is browser-based software for weighbridge operations."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Weighbridge Web | Cloud Software for Weighbridge Operations" />
+    <meta
+      property="og:description"
+      content="A modern, browser-based platform for weighbridge operations."
+    />
+    <meta property="og:url" content="https://software.{{ marketing_base_domain or 'example.com' }}/" />
+    <link rel="icon" type="image/svg+xml" href="/static/img/default-company-logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/marketing.css?v={{ BUILD_STAMP }}" />
+  </head>
+  <body class="marketing-landing-page">
+    <nav class="marketing-nav" aria-label="Marketing navigation">
+      <span class="marketing-nav__brand">Weighbridge Web</span>
+      <span class="marketing-nav__badge">In development</span>
+    </nav>
+
+    <main class="marketing-hero">
+      <span class="marketing-hero__eyebrow">Weighbridge Software</span>
+
+      <h1 class="marketing-hero__title">
+        <span>Cloud software for weighbridge operations.</span>
+      </h1>
+
+      <p class="marketing-hero__lead">
+        A modern, browser-based platform handling everything from first weigh-in to final invoice -
+        built for the way weighbridge businesses actually work.
+      </p>
+
+      <div class="marketing-chips" aria-label="Core product areas">
+        <span class="marketing-chip">Ticketing</span>
+        <span class="marketing-chip">Customer Records</span>
+        <span class="marketing-chip">Vehicle Tracking</span>
+        <span class="marketing-chip">Invoicing</span>
+        <span class="marketing-chip">Compliance</span>
+        <span class="marketing-chip">Reporting</span>
+      </div>
+
+      <div class="marketing-card-wrap">
+        <section class="marketing-card" aria-labelledby="marketing-status-title">
+          <div class="marketing-card__label">Status</div>
+          <h2 id="marketing-status-title">Site in progress</h2>
+          <p>
+            The public website is being simplified for now. Product information and screenshots will be
+            added once they are ready.
+          </p>
+          <hr class="marketing-card__divider" />
+          <div class="marketing-card__note">
+            <svg
+              class="marketing-card__note-icon"
+              width="14"
+              height="14"
+              viewBox="0 0 14 14"
+              fill="none"
+              aria-hidden="true"
+            >
+              <circle cx="7" cy="7" r="5.5" stroke="white" stroke-width="1.2" />
+              <path d="M7 4.5V7.5L9 9" stroke="white" stroke-width="1.2" stroke-linecap="round" />
+            </svg>
+            <span>
+              Product details, screenshots, and pricing are on the way once the platform reaches a
+              suitable stage of development.
+            </span>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="marketing-footer">
+      <span class="marketing-footer__brand">Weighbridge Web</span>
+      <span class="marketing-footer__note">Public landing page in development</span>
+    </footer>
+  </body>
+</html>
