@@ -437,6 +437,65 @@ def test_ticket_numbers_are_scoped_per_tenant_year_and_concurrency_safe(
     ]
 
 
+def test_ticket_number_uniqueness_is_tenant_scoped_but_still_enforced_within_tenant(
+    tmp_path,
+    monkeypatch,
+):
+    _app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ticket-unique.db", monkeypatch=monkeypatch
+    )
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="tenant-a")
+    tenant_b = _seed_tenant(SessionLocal, name="Tenant B", subdomain="tenant-b")
+    ticket_when = datetime(2026, 3, 8, 9, 0, 0)
+
+    with SessionLocal() as db:
+        db.add(
+            Ticket(
+                tenant_id=tenant_a,
+                ticket_no="26-00001",
+                datetime=ticket_when,
+                status=TicketStatusEnum.OPEN.value,
+                direction=DirectionEnum.INWARD.value,
+                transaction_type=TransactionTypeEnum.SALE.value,
+                dont_invoice=False,
+                paid=False,
+            )
+        )
+        db.commit()
+
+        db.add(
+            Ticket(
+                tenant_id=tenant_b,
+                ticket_no="26-00001",
+                datetime=ticket_when,
+                status=TicketStatusEnum.OPEN.value,
+                direction=DirectionEnum.INWARD.value,
+                transaction_type=TransactionTypeEnum.SALE.value,
+                dont_invoice=False,
+                paid=False,
+            )
+        )
+        db.commit()
+
+        db.add(
+            Ticket(
+                tenant_id=tenant_a,
+                ticket_no="26-00001",
+                datetime=ticket_when + timedelta(minutes=5),
+                status=TicketStatusEnum.OPEN.value,
+                direction=DirectionEnum.INWARD.value,
+                transaction_type=TransactionTypeEnum.SALE.value,
+                dont_invoice=False,
+                paid=False,
+            )
+        )
+        try:
+            db.commit()
+            assert False, "Expected same-tenant duplicate ticket_no to fail."
+        except IntegrityError:
+            db.rollback()
+
+
 def test_platform_bootstrap_on_admin_subdomain_creates_first_superadmin_without_breaking_tenant_access(
     tmp_path,
     monkeypatch,
