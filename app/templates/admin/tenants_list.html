@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_help.html" import help %}
 
 {% block title %}Tenant Management | Weighbridge Web{% endblock %}
 
@@ -35,7 +36,7 @@
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>Tenant Management</h1>
+      <h1>Tenant Management{{ help(help_text.platform_tenant_management, "platform-tenants-title-help") }}</h1>
       <p class="muted">Create, review, and control tenant access from the platform admin surface.</p>
     </div>
     <div class="actions btn-group">
@@ -52,7 +53,7 @@
   <section class="card platform-tenants-summary-card">
     <div class="invoice-summary-grid">
       <div class="summary-item">
-        <span class="summary-label">Total tenants</span>
+        <span class="summary-label">Total tenants{{ help(help_text.platform_total_tenants, "platform-total-tenants-help") }}</span>
         <span class="summary-value">{{ tenant_count }}</span>
       </div>
       <div class="summary-item">
@@ -85,7 +86,7 @@
           <th>Subdomain</th>
           <th>Status</th>
           <th>Created</th>
-          <th>Initial admin</th>
+          <th>Initial admin{{ help(help_text.platform_initial_admin, "platform-initial-admin-help") }}</th>
           <th class="actions-col">Actions</th>
         </tr>
       </thead>

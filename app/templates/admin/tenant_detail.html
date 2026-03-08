@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_help.html" import help %}
 
 {% block title %}Tenant Details | Weighbridge Web{% endblock %}
 
@@ -72,7 +73,7 @@
         <span class="summary-value">{{ tenant.created_at.strftime("%d/%m/%Y") if tenant.created_at else "-" }}</span>
       </div>
       <div class="summary-item">
-        <span class="summary-label">Initial admin</span>
+        <span class="summary-label">Initial admin{{ help(help_text.platform_initial_admin, "platform-tenant-detail-initial-admin-help") }}</span>
         <span class="summary-value">{{ summary.initial_admin_email or "-" }}</span>
       </div>
       <div class="summary-item">
@@ -92,7 +93,7 @@
 
   <section class="frame">
     <div class="frame-header">
-      <h2>Users</h2>
+      <h2>Users{{ help(help_text.platform_tenant_users, "platform-tenant-users-help") }}</h2>
     </div>
     <div class="frame-body">
       <p class="muted platform-tenant-detail-users-copy">Tenant-scoped accounts currently attached to this workspace.</p>

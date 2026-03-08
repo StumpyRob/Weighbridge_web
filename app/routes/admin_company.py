@@ -6,13 +6,17 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile
 
+from ..audit import diff as audit_diff
+from ..audit import log as audit_log
+from ..audit import user_snapshot
+from ..auth import normalize_email, set_user_identity_email, validate_email
 from ..constants import ADDRESS_LINE_MAX, NAME_MAX, POSTCODE_MAX
 from ..db import get_db
-from ..models import CompanySetting
+from ..models import CompanySetting, User
 from ..services.uploads import company_logo_upload_dir, logo_file_from_web_path
 from ..services.ui_branding import (
     DEFAULT_NAVBAR_COLOR_HEX,
@@ -84,6 +88,12 @@ def _truthy(value: object) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _current_login_email(user: User | None) -> str:
+    if user is None:
+        return ""
+    return str(getattr(user, "email", "") or getattr(user, "username", "") or "").strip()
+
+
 def _form_checkbox(form, key: str) -> bool:
     values = list(form.getlist(key)) if hasattr(form, "getlist") else [form.get(key)]
     return any(_truthy(value) for value in values)
@@ -112,6 +122,7 @@ def admin_company_settings(
     setting = _get_company_setting(db) or CompanySetting()
     branding = get_branding(db)
     has_logo_configured = bool(str(getattr(setting, "company_logo_path", "") or "").strip())
+    current_user = getattr(getattr(request, "state", None), "current_user", None)
     return templates.TemplateResponse(
         request,
         "admin/company_settings.html",
@@ -124,6 +135,8 @@ def admin_company_settings(
             },
             "has_logo_configured": has_logo_configured,
             "saved": request.query_params.get("saved") == "1",
+            "account_saved": request.query_params.get("account_saved") == "1",
+            "login_email": _current_login_email(current_user),
             "errors": [],
         },
     )
@@ -136,6 +149,9 @@ async def admin_company_settings_save(
 ) -> HTMLResponse:
     form = await request.form()
     setting = _get_or_create_company_setting(db)
+    request_user = getattr(getattr(request, "state", None), "current_user", None)
+    current_user_id = getattr(request_user, "id", None)
+    current_user = db.get(User, int(current_user_id)) if current_user_id is not None else None
     logo_action = _trim(form.get("logo_action")).lower()
     remove_logo = logo_action == "remove"
     require_upload = logo_action == "upload"
@@ -151,6 +167,8 @@ async def admin_company_settings_save(
     nav_logo_height_raw = _trim(form.get("nav_logo_height_px"))
     show_nav_logo = _form_checkbox(form, "show_nav_logo")
     show_nav_title = _form_checkbox(form, "show_nav_title")
+    current_login_email = _current_login_email(current_user)
+    login_email = normalize_email(form.get("login_email")) or current_login_email
     logo_file = form.get("company_logo_file")
 
     errors: list[str] = []
@@ -170,6 +188,33 @@ async def admin_company_settings_save(
         errors.append("Navbar colour must be a valid HEX colour.")
     if primary_color_hex and not is_valid_hex_color(primary_color_hex):
         errors.append("Primary colour must be a valid HEX colour.")
+    if current_user is not None:
+        if not validate_email(login_email):
+            errors.append("Sign-in email must be a valid email address.")
+        else:
+            identity_col = getattr(User, "email", None)
+            if identity_col is None:
+                identity_col = getattr(User, "username")
+            existing_user = (
+                db.execute(
+                    select(User)
+                    .execution_options(skip_tenant_scope=True)
+                    .where(
+                        User.id != int(current_user.id),
+                        (
+                            User.tenant_id.is_(None)
+                            if getattr(current_user, "tenant_id", None) is None
+                            else User.tenant_id == int(getattr(current_user, "tenant_id", 0) or 0)
+                        ),
+                        func.lower(identity_col) == login_email,
+                    )
+                    .limit(1)
+                )
+                .scalars()
+                .first()
+            )
+            if existing_user is not None:
+                errors.append("That sign-in email is already in use for this workspace.")
 
     has_upload = isinstance(logo_file, UploadFile) and bool(_trim(logo_file.filename))
     if require_upload and not has_upload:
@@ -239,10 +284,33 @@ async def admin_company_settings_save(
                 },
                 "has_logo_configured": bool(str(form_logo_value or "").strip()),
                 "saved": False,
+                "account_saved": False,
+                "login_email": login_email or _current_login_email(current_user),
                 "errors": errors,
             },
             status_code=400,
         )
+
+    account_saved = False
+    if current_user is not None:
+        identity_before = user_snapshot(current_user)
+        previous_login_email = _current_login_email(current_user)
+        if login_email and login_email != previous_login_email:
+            set_user_identity_email(current_user, login_email)
+            account_saved = True
+            audit_log(
+                db,
+                request,
+                action="USER_UPDATE",
+                entity_type="user",
+                entity_id=current_user.id,
+                summary="Updated sign-in email",
+                details=audit_diff(
+                    identity_before,
+                    user_snapshot(current_user),
+                    ["username", "email"],
+                ),
+            )
 
     old_logo_file = _logo_file_from_web_path(setting.company_logo_path)
 
@@ -293,4 +361,7 @@ async def admin_company_settings_save(
         except OSError:
             _safe_unlink(old_logo_file)
 
-    return RedirectResponse(url="/admin/company?saved=1", status_code=303)
+    redirect_url = "/admin/company?saved=1"
+    if account_saved:
+        redirect_url += "&account_saved=1"
+    return RedirectResponse(url=redirect_url, status_code=303)

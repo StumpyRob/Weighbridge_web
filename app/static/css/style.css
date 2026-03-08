@@ -447,6 +447,14 @@ a.btn[aria-disabled="true"] {
   z-index: 1;
 }
 
+.page-header h1 .help-inline,
+.frame-header .help-inline,
+.dashboard-stat-card__label .help-inline,
+.summary-label .help-inline,
+.data-table th .help-inline {
+  vertical-align: middle;
+}
+
 .help-icon {
   appearance: none;
   -webkit-appearance: none;

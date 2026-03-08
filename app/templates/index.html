@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_help.html" import help %}
 
 {% block title %}Weighbridge Web{% endblock %}
 
@@ -36,7 +37,12 @@
     <section class="dashboard-summary-grid" aria-label="Operational summary">
       {% for metric in dashboard.summary_cards %}
         <article class="card dashboard-stat-card" data-dashboard-metric="{{ metric.key }}">
-          <div class="dashboard-stat-card__label">{{ metric.label }}</div>
+          <div class="dashboard-stat-card__label">
+            {{ metric.label }}
+            {% if metric.help_key %}
+              {{ help(help_text[metric.help_key], "dashboard-" ~ metric.key ~ "-help") }}
+            {% endif %}
+          </div>
           <div class="dashboard-stat-card__value">{{ metric.value }}</div>
           <div class="dashboard-stat-card__hint">{{ metric.hint }}</div>
         </article>
@@ -46,7 +52,7 @@
     <section class="frame">
       <div class="frame-header dashboard-overview-frame__header">
         <div>
-          <span>Overview Activity</span>
+          <span>Overview Activity{{ help(help_text.dashboard_overview_activity, "dashboard-overview-activity-help") }}</span>
           <p class="muted dashboard-frame-subtitle">{{ dashboard.period_label }}, scoped to this workspace only.</p>
         </div>
         <div class="dashboard-period-filter" role="tablist" aria-label="Dashboard overview period">
@@ -81,7 +87,7 @@
 
     <div class="dashboard-chart-grid">
       <section class="frame">
-        <div class="frame-header">{{ dashboard.chart_title }}</div>
+        <div class="frame-header">{{ dashboard.chart_title }}{{ help(help_text.dashboard_ticket_activity, "dashboard-ticket-activity-help") }}</div>
         <div class="frame-body">
           <p class="muted dashboard-section-copy">{{ dashboard.period_label }}, scoped to this workspace only.</p>
           {% if dashboard.chart_has_data %}
@@ -112,7 +118,7 @@
       </section>
 
       <section class="frame" data-dashboard-panel="weight-throughput">
-        <div class="frame-header">Weight Throughput</div>
+        <div class="frame-header">Weight Throughput{{ help(help_text.dashboard_weight_throughput, "dashboard-weight-throughput-help") }}</div>
         <div class="frame-body">
           <p class="muted dashboard-section-copy">{{ dashboard.weight_throughput.summary }}</p>
           {% if dashboard.weight_throughput.has_data %}
@@ -148,7 +154,7 @@
     </div>
 
     <section class="frame dashboard-traffic-panel" data-dashboard-panel="todays-traffic">
-      <div class="frame-header">Today's Traffic</div>
+      <div class="frame-header">Today's Traffic{{ help(help_text.dashboard_todays_traffic, "dashboard-todays-traffic-help") }}</div>
       <div class="frame-body">
         {% if dashboard.todays_traffic %}
           <div class="table-wrap">
@@ -185,7 +191,7 @@
 
     <div class="dashboard-panels">
       <section class="frame dashboard-panel" data-dashboard-panel="recent-tickets">
-        <div class="frame-header">Recent Tickets</div>
+        <div class="frame-header">Recent Tickets{{ help(help_text.dashboard_recent_tickets, "dashboard-recent-tickets-help") }}</div>
         <div class="frame-body">
           <p class="muted dashboard-section-copy">{{ dashboard.period_label }} activity window.</p>
           {% if dashboard.recent_tickets %}
@@ -224,7 +230,7 @@
       </section>
 
       <section class="frame dashboard-panel" data-dashboard-panel="open-tickets">
-        <div class="frame-header">Open Tickets Awaiting Completion</div>
+        <div class="frame-header">Open Tickets Awaiting Completion{{ help(help_text.dashboard_open_ticket_queue, "dashboard-open-ticket-queue-help") }}</div>
         <div class="frame-body">
           <p class="muted dashboard-section-copy">Open tickets currently awaiting completion.</p>
           {% if dashboard.open_tickets %}
@@ -259,7 +265,7 @@
       </section>
 
       <section class="frame dashboard-panel" data-dashboard-panel="invoice-activity">
-        <div class="frame-header">Invoice Activity</div>
+        <div class="frame-header">Invoice Activity{{ help(help_text.dashboard_invoice_activity, "dashboard-invoice-activity-help") }}</div>
         <div class="frame-body">
           <p class="muted dashboard-section-copy">{{ dashboard.period_label }} invoice and invoice-ready activity.</p>
           <div class="dashboard-mini-stats">

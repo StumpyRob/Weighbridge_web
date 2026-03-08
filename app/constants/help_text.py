@@ -107,3 +107,23 @@ HELP_TEXT.update(
         "company_primary_color": "Primary accent color used for buttons, highlights, and active states.",
     }
 )
+
+HELP_TEXT.update(
+    {
+        "dashboard_open_tickets": "Open tickets saved in this workspace that still need to be completed or voided.",
+        "dashboard_completed_today": "Tickets completed today for this workspace only.",
+        "dashboard_total_weight_today": "Total net weight from completed tickets today. Open and void tickets are excluded.",
+        "dashboard_invoices_pending": "Issued invoices still awaiting payment or other final closure.",
+        "dashboard_overview_activity": "Use the period filter to switch the activity window for charts and activity panels below.",
+        "dashboard_ticket_activity": "Shows ticket volume over time for the selected period using ticket counts, not weight.",
+        "dashboard_weight_throughput": "Shows completed net weight over time for the selected period so managers can track throughput, not just ticket count.",
+        "dashboard_todays_traffic": "Most recent completed tickets from today, newest first, limited to the latest 20 rows.",
+        "dashboard_recent_tickets": "Latest ticket activity inside the selected period, including open and completed work.",
+        "dashboard_open_ticket_queue": "Tickets that are still open and awaiting completion by operators.",
+        "dashboard_invoice_activity": "Recent invoices plus completed tickets that are ready to invoice inside the selected period.",
+        "platform_tenant_management": "Platform-only controls for provisioning tenants, checking access state, and opening customer workspaces.",
+        "platform_total_tenants": "All configured tenants, including active and disabled workspaces.",
+        "platform_initial_admin": "The first tenant-scoped administrator account created for that workspace.",
+        "platform_tenant_users": "Accounts currently attached to this tenant workspace, including role and active state.",
+    }
+)

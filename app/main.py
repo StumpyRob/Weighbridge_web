@@ -687,24 +687,28 @@ def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
             {
                 "key": "open_tickets",
                 "label": "Open Tickets",
+                "help_key": "dashboard_open_tickets",
                 "value": str(open_tickets),
                 "hint": "Currently awaiting completion",
             },
             {
                 "key": "completed_today",
                 "label": "Completed Today",
+                "help_key": "dashboard_completed_today",
                 "value": str(completed_today),
                 "hint": today.strftime("%d %b %Y"),
             },
             {
                 "key": "total_weight_today",
                 "label": "Total Weight Today",
+                "help_key": "dashboard_total_weight_today",
                 "value": _format_weight_kg(total_weight_today),
                 "hint": "Completed tickets only",
             },
             {
                 "key": "invoices_pending",
                 "label": "Invoices Pending",
+                "help_key": "dashboard_invoices_pending",
                 "value": str(invoices_pending),
                 "hint": "Outstanding issued invoices",
             },

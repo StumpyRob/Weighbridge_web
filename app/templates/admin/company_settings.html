@@ -4,9 +4,17 @@
 {% block title %}Company Settings | Weighbridge Web{% endblock %}
 
 {% block toast_messages %}
-  {% if saved %}
+  {% if saved or account_saved %}
     <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
-      <div class="flash-toast__content">Company settings saved.</div>
+      <div class="flash-toast__content">
+        {% if saved and account_saved %}
+          Company settings and sign-in email saved.
+        {% elif account_saved %}
+          Sign-in email updated.
+        {% else %}
+          Company settings saved.
+        {% endif %}
+      </div>
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}
@@ -38,6 +46,26 @@
       <label for="name">Company name</label>
       <input type="text" id="name" name="name" maxlength="{{ limits.NAME_MAX }}" value="{{ setting.name or '' }}" />
     </div>
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Administrator Sign-In</h2>
+      </div>
+      <div class="frame-body">
+        <div class="field">
+          <label for="login_email">Sign-in email</label>
+          <input
+            type="email"
+            id="login_email"
+            name="login_email"
+            value="{{ login_email or '' }}"
+            autocomplete="username"
+            required
+          />
+          <p class="hint">Used to sign in to this workspace.</p>
+        </div>
+      </div>
+    </section>
 
     <div class="field">
       <label for="address_line1">Address line 1</label>

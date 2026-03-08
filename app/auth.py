@@ -93,6 +93,14 @@ def user_identity_kwargs(*, email: str, role: str | None = None) -> dict[str, ob
     return kwargs
 
 
+def set_user_identity_email(user: User, email: str) -> None:
+    normalized = normalize_email(email)
+    if hasattr(User, "email"):
+        setattr(user, "email", normalized)
+    if hasattr(User, "username"):
+        setattr(user, "username", normalized)
+
+
 def _all_users_statement(statement):
     return statement.execution_options(skip_tenant_scope=True)
 

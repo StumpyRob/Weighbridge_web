@@ -157,6 +157,25 @@ def test_admin_printing_pages_show_tooltips_for_non_obvious_fields(client, db_se
     assert 'id="company-primary-color-help"' in company_settings.text
 
 
+def test_dashboard_home_shows_tooltips_for_operational_overview(client):
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'id="dashboard-open_tickets-help"' in response.text
+    assert 'id="dashboard-completed_today-help"' in response.text
+    assert 'id="dashboard-total_weight_today-help"' in response.text
+    assert 'id="dashboard-invoices_pending-help"' in response.text
+    assert 'id="dashboard-overview-activity-help"' in response.text
+    assert 'id="dashboard-ticket-activity-help"' in response.text
+    assert 'id="dashboard-weight-throughput-help"' in response.text
+    assert 'id="dashboard-todays-traffic-help"' in response.text
+    assert 'id="dashboard-recent-tickets-help"' in response.text
+    assert 'id="dashboard-open-ticket-queue-help"' in response.text
+    assert 'id="dashboard-invoice-activity-help"' in response.text
+    assert "Use the period filter to switch the activity window for charts and activity panels below." in response.text
+    assert "Shows completed net weight over time for the selected period so managers can track throughput, not just ticket count." in response.text
+
+
 def test_vehicle_pages_show_tooltips_for_defaults_and_tares(client, db_session):
     seed_vehicle_types(db_session)
     vehicle = Vehicle(registration="VH-HELP-1")

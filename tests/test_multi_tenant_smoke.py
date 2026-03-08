@@ -591,6 +591,91 @@ def test_tenant_scoped_auth_rules(tmp_path, monkeypatch):
         assert disabled_client.get("/login").status_code == 403
 
 
+def test_tenant_admin_can_update_their_sign_in_email_from_company_settings(
+    tmp_path,
+    monkeypatch,
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-company-email.db", monkeypatch=monkeypatch
+    )
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a")
+    tenant_b = _seed_tenant(SessionLocal, name="Tenant B", subdomain="b")
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_b,
+        company_name="Tenant B Co",
+        primary_color="#225577",
+    )
+    user_a = _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+    _seed_user(
+        SessionLocal,
+        email="b-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_b,
+    )
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="a-admin@example.com", password="TestPass123!") == 303
+        settings_page = tenant_client.get("/admin/company")
+        assert settings_page.status_code == 200
+        assert 'name="login_email"' in settings_page.text
+        assert 'value="a-admin@example.com"' in settings_page.text
+
+        csrf = _prime_csrf(tenant_client)
+        update_response = tenant_client.post(
+            "/admin/company",
+            data={
+                "name": "Tenant A Co",
+                "login_email": "ops-admin@example.com",
+                "navbar_color_hex": "#113355",
+                "primary_color_hex": "#225577",
+                "nav_logo_height_px": "34",
+                "show_nav_logo": "1",
+                "show_nav_title": "1",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert update_response.status_code == 303
+        assert update_response.headers.get("location") == "/admin/company?saved=1&account_saved=1"
+
+    with SessionLocal() as db:
+        updated_user_a = db.get(User, user_a)
+        user_b = (
+            db.execute(select(User).where(User.tenant_id == tenant_b).limit(1))
+            .scalars()
+            .first()
+        )
+        assert updated_user_a is not None
+        assert user_b is not None
+        assert str(updated_user_a.username or "") == "ops-admin@example.com"
+        assert str(user_b.username or "") == "b-admin@example.com"
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="a-admin@example.com", password="TestPass123!") == 401
+        assert _login(tenant_client, email="ops-admin@example.com", password="TestPass123!") == 303
+        refreshed_settings_page = tenant_client.get("/admin/company?saved=1&account_saved=1")
+        assert refreshed_settings_page.status_code == 200
+        assert "Company settings and sign-in email saved." in refreshed_settings_page.text
+        assert 'value="ops-admin@example.com"' in refreshed_settings_page.text
+
+    with _client(app, base_url="https://b.localhost") as tenant_client:
+        assert _login(tenant_client, email="b-admin@example.com", password="TestPass123!") == 303
+
+
 def test_user_identity_uniqueness_is_tenant_scoped(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-user-unique.db", monkeypatch=monkeypatch
@@ -860,6 +945,9 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         tenants_page = admin_client.get("/platform/tenants")
         assert tenants_page.status_code == 200
         assert "Tenant Management" in tenants_page.text
+        assert 'id="platform-tenants-title-help"' in tenants_page.text
+        assert 'id="platform-total-tenants-help"' in tenants_page.text
+        assert 'id="platform-initial-admin-help"' in tenants_page.text
         assert "Tenant A" in tenants_page.text
         assert "tenant-admin@example.com" in tenants_page.text
         assert f"/platform/tenants/{tenant_a}" in tenants_page.text
@@ -872,6 +960,8 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert tenant_detail.status_code == 200
         assert "Tenant A" in tenant_detail.text
         assert "Tenant details, access state, and user summary." in tenant_detail.text
+        assert 'id="platform-tenant-detail-initial-admin-help"' in tenant_detail.text
+        assert 'id="platform-tenant-users-help"' in tenant_detail.text
         assert "tenant-admin@example.com" in tenant_detail.text
         assert 'href="/t/a/login"' in tenant_detail.text
         assert f'action="/platform/tenants/{tenant_a}/delete"' in tenant_detail.text
