@@ -6,7 +6,7 @@ from .constants import field_limits
 from .constants.help_text import HELP_TEXT
 from .db import get_db
 from .services.ui_branding import get_branding
-from .tenancy import prefix_tenant_route_target
+from .tenancy import host_without_port, prefix_tenant_route_target
 
 _MISSING = object()
 
@@ -91,6 +91,11 @@ def _tenant_context(request) -> dict[str, object]:
     tenant_name = str(getattr(tenant, "name", "") or "").strip()
     tenant_subdomain = str(getattr(tenant, "subdomain", "") or "").strip()
     route_prefix = str(getattr(request.state, "tenant_route_prefix", "") or "").strip()
+    host_label_source = (
+        settings.effective_base_domain
+        or host_without_port(str(getattr(getattr(request, "url", None), "hostname", "") or ""))
+    )
+    host_label = host_without_port(str(host_label_source or "")).upper()
 
     def _tenant_path(path: str) -> str:
         return prefix_tenant_route_target(route_prefix, path)
@@ -99,6 +104,7 @@ def _tenant_context(request) -> dict[str, object]:
         "current_tenant": tenant,
         "current_tenant_name": tenant_name,
         "current_tenant_subdomain": tenant_subdomain,
+        "current_host_label": host_label,
         "tenant_route_prefix": route_prefix,
         "tenant_path": _tenant_path,
         "platform_mode": bool(getattr(request.state, "platform_mode", False)),

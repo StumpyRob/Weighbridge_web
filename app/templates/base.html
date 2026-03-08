@@ -13,6 +13,9 @@
   <body>
     <header class="site-header">
       <div class="site-header__utility">
+        {% if current_host_label %}
+          <div class="site-utility-host" aria-label="Host domain">{{ current_host_label }}</div>
+        {% endif %}
         {% set signed_in_as = (current_user.email or current_user.username or 'User') if current_user else '' %}
         <div class="site-utility-bar">
           {% if platform_mode %}

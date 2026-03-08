@@ -815,6 +815,7 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert "Tenant A" not in tenant_nav
         assert "Signed in as tenant-admin@example.com" not in tenant_nav
         assert "Logout" not in tenant_nav
+        assert "LOCALHOST" in tenant_admin_page.text
         assert "Tenant A" in tenant_utility
         assert "Signed in as tenant-admin@example.com" in tenant_utility
         assert "Logout" in tenant_utility
@@ -1127,6 +1128,7 @@ def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypa
         assert "Platform Admin" not in platform_nav
         assert "Signed in as superadmin@example.com" not in platform_nav
         assert "Logout" not in platform_nav
+        assert "LOCALHOST" in tenants_page.text
         assert "Platform Admin" in platform_utility
         assert "Signed in as superadmin@example.com" in platform_utility
         assert "Logout" in platform_utility
