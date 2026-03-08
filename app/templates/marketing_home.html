@@ -3,179 +3,46 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Weighbridge Web | Cloud Software for Weighbridge Operations</title>
+    <title>Weighbridge Web | In Development</title>
     <meta
       name="description"
-      content="Weighbridge Web is cloud software for waste operators, recycling businesses, aggregates, and quarry operations managing tickets, customers, compliance, invoicing, and reporting."
+      content="Weighbridge Web is browser-based software for weighbridge operations. The public landing page is currently in development."
     />
-    <meta property="og:type" content="website" />
-    <meta property="og:title" content="Weighbridge Web | Cloud Software for Weighbridge Operations" />
-    <meta
-      property="og:description"
-      content="Cloud software for practical weighbridge operations across waste, recycling, aggregate, and quarry businesses."
-    />
-    {% if marketing_base_domain %}
-      <meta property="og:url" content="https://{{ marketing_base_domain }}" />
-    {% endif %}
     <link rel="stylesheet" href="/static/css/style.css?v={{ BUILD_STAMP }}" />
   </head>
   <body class="marketing-home">
     <header class="marketing-header">
       <div class="marketing-header__inner">
-        <a href="/" class="marketing-brand">Weighbridge Web</a>
-        <nav class="marketing-nav" aria-label="Marketing navigation">
-          <a href="#features">Features</a>
-          <a href="#benefits">Benefits</a>
-          <a href="#workflow">Workflow</a>
-          <a href="#contact">Contact</a>
-        </nav>
+        <span class="marketing-brand">Weighbridge Web</span>
       </div>
     </header>
 
     <main class="marketing-main">
-      <section class="marketing-hero">
+      <section class="marketing-hero" aria-labelledby="marketing-home-title">
         <div class="marketing-hero__content">
-          <span class="marketing-eyebrow">Cloud Weighbridge Operations</span>
-          <h1>Operational software for weighbridges, waste, recycling, and aggregates.</h1>
+          <span class="marketing-eyebrow">Weighbridge Software</span>
+          <h1 id="marketing-home-title">Cloud software for weighbridge operations.</h1>
           <p class="marketing-lead">
-            Weighbridge Web gives operators and managers a browser-based system for ticketing, customer
-            records, vehicle tracking, waste compliance, invoicing, and audit-ready reporting across one or
-            multiple sites.
-          </p>
-          <div class="marketing-actions">
-            <a class="btn btn--primary" href="#contact">Request Demo</a>
-            <a class="btn btn--secondary" href="#contact">Contact</a>
-          </div>
-          <p class="marketing-note">
-            Customers access the live platform using their company subdomain, for example
-            <code>your-company.{{ marketing_base_domain or "example.com" }}</code>.
+            Weighbridge Web is a browser-based platform for ticketing, customer records, vehicle tracking,
+            invoicing, compliance, and reporting for weighbridge-based businesses.
           </p>
         </div>
-        <aside class="marketing-placeholder marketing-placeholder--hero" aria-label="Hero screenshot placeholder">
-          <span class="marketing-placeholder__label">[INSERT HERO SCREENSHOT HERE]</span>
-          <p>Suggested content: dashboard, ticket queue, or operator ticket screen.</p>
+        <aside class="marketing-card" aria-label="Site status">
+          <span class="marketing-section__eyebrow">Status</span>
+          <h3>In development</h3>
+          <p>
+            The public website is being simplified for now. Product information and screenshots will be added
+            later when they are ready.
+          </p>
         </aside>
-      </section>
-
-      <section id="features" class="marketing-section">
-        <div class="marketing-section__heading">
-          <span class="marketing-section__eyebrow">Core Features</span>
-          <h2>Built for practical yard, gatehouse, and office workflows.</h2>
-          <p>
-            The platform is designed for day-to-day weighbridge operations where accuracy, speed, and traceable
-            records matter more than novelty.
-          </p>
-        </div>
-        <div class="marketing-feature-grid">
-          <article class="marketing-card">
-            <h3>Ticket management</h3>
-            <p>Create, edit, complete, reprint, and track weighbridge tickets with operator-friendly workflows.</p>
-          </article>
-          <article class="marketing-card">
-            <h3>Customer and vehicle records</h3>
-            <p>Keep account details, registrations, tare data, pricing, and operational defaults in one place.</p>
-          </article>
-          <article class="marketing-card">
-            <h3>Waste compliance and EWC support</h3>
-            <p>Support waste transfer workflows, EWC coding, and audit-friendly operational controls.</p>
-          </article>
-          <article class="marketing-card">
-            <h3>Invoicing</h3>
-            <p>Move from completed tickets to invoice candidates and billing records without duplicate entry.</p>
-          </article>
-          <article class="marketing-card">
-            <h3>Reporting and audit history</h3>
-            <p>Review operational history, user actions, and document output with clear traceability.</p>
-          </article>
-          <article class="marketing-card">
-            <h3>Multi-user cloud access</h3>
-            <p>Run the same system across operators, office staff, and remote managers without local installs.</p>
-          </article>
-        </div>
-      </section>
-
-      <section id="benefits" class="marketing-section marketing-section--contrast">
-        <div class="marketing-section__heading">
-          <span class="marketing-section__eyebrow">Why Cloud</span>
-          <h2>Simple deployment, easier access, fewer local support headaches.</h2>
-        </div>
-        <div class="marketing-benefit-grid">
-          <div class="marketing-benefit-list">
-            <div class="marketing-benefit-item">
-              <h3>Cloud-hosted</h3>
-              <p>Run the platform without maintaining an on-site server stack for each customer or depot.</p>
-            </div>
-            <div class="marketing-benefit-item">
-              <h3>No local server required</h3>
-              <p>Operators use a modern browser rather than relying on thick-client desktop installs.</p>
-            </div>
-            <div class="marketing-benefit-item">
-              <h3>Accessible from multiple sites</h3>
-              <p>Suitable for businesses running more than one yard, transfer station, or satellite location.</p>
-            </div>
-            <div class="marketing-benefit-item">
-              <h3>Modern browser-based UI</h3>
-              <p>Clear workflows for operators and admin users with responsive access across desktop and mobile.</p>
-            </div>
-          </div>
-          <aside class="marketing-value-panel">
-            <h3>Designed for serious operational use</h3>
-            <p>
-              Weighbridge Web is aimed at waste operators, recycling companies, aggregate suppliers, quarries, and
-              other businesses that need reliable ticketing and commercial records without fragile local setups.
-            </p>
-          </aside>
-        </div>
-      </section>
-
-      <section id="workflow" class="marketing-section">
-        <div class="marketing-section__heading">
-          <span class="marketing-section__eyebrow">Workflow and Screens</span>
-          <h2>Drop product screenshots into the layout when they are ready.</h2>
-          <p>The placeholders below are intentionally visible so they can be replaced manually later without redesigning the page.</p>
-        </div>
-        <div class="marketing-screenshot-grid">
-          <div class="marketing-placeholder">
-            <span class="marketing-placeholder__label">[INSERT TICKET SCREENSHOT HERE]</span>
-            <p>Suggested content: live ticket entry or weighbridge operator workflow.</p>
-          </div>
-          <div class="marketing-placeholder">
-            <span class="marketing-placeholder__label">[INSERT INVOICE SCREENSHOT HERE]</span>
-            <p>Suggested content: invoice candidates, invoice detail, or billing workflow.</p>
-          </div>
-          <div class="marketing-placeholder">
-            <span class="marketing-placeholder__label">[INSERT ADMIN SCREENSHOT HERE]</span>
-            <p>Suggested content: system setup, tenant management, or printing configuration.</p>
-          </div>
-          <div class="marketing-placeholder">
-            <span class="marketing-placeholder__label">[INSERT REPORTING SCREENSHOT HERE]</span>
-            <p>Suggested content: audit history, reports, or operational summaries.</p>
-          </div>
-        </div>
-      </section>
-
-      <section id="contact" class="marketing-cta">
-        <div>
-          <span class="marketing-section__eyebrow">Early Access</span>
-          <h2>Interested in a demo or rollout discussion?</h2>
-          <p>
-            If you run a weighbridge operation and want to review the product for your business, get in touch for a
-            demo conversation or early access enquiry.
-          </p>
-        </div>
-        <div class="marketing-actions">
-          <a class="btn btn--primary" href="#footer-contact">Request Demo</a>
-          <a class="btn btn--secondary" href="#footer-contact">Contact</a>
-        </div>
       </section>
     </main>
 
-    <footer class="marketing-footer" id="footer-contact">
+    <footer class="marketing-footer">
       <div>
         <strong>Weighbridge Web</strong>
-        <span>{{ marketing_base_domain or "roberthetherington.com" }}</span>
+        <span>Public landing page in development.</span>
       </div>
-      <div class="marketing-footer__contact">[INSERT CONTACT EMAIL / PHONE HERE]</div>
     </footer>
   </body>
 </html>

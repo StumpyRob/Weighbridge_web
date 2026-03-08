@@ -90,14 +90,15 @@
       </section>
     {% endif %}
 
-    <div class="dashboard-chart-grid">
+    <div class="dashboard-chart-grid{% if dashboard.chart_points|length >= 14 or dashboard.weight_throughput.points|length >= 14 %} dashboard-chart-grid--stacked{% endif %}">
       <section class="frame">
         <div class="frame-header">{{ dashboard.chart_title }}{{ help(help_text.dashboard_ticket_activity, "dashboard-ticket-activity-help") }}</div>
         <div class="frame-body">
           {% if dashboard.chart_has_data %}
             <div class="dashboard-chart-wrap">
               <div
-                class="dashboard-chart"
+                class="dashboard-chart{% if dashboard.chart_points|length >= 14 %} dashboard-chart--compact{% endif %}"
+                style="--dashboard-chart-columns: {{ dashboard.chart_points|length }};"
                 role="img"
                 aria-label="{{ dashboard.chart_title }} for {{ dashboard.period_label | lower }}"
               >
@@ -128,7 +129,8 @@
           {% if dashboard.weight_throughput.has_data %}
             <div class="dashboard-chart-wrap">
               <div
-                class="dashboard-chart dashboard-chart--throughput"
+                class="dashboard-chart dashboard-chart--throughput{% if dashboard.weight_throughput.points|length >= 14 %} dashboard-chart--compact{% endif %}"
+                style="--dashboard-chart-columns: {{ dashboard.weight_throughput.points|length }};"
                 role="img"
                 aria-label="Weight throughput for {{ dashboard.period_label | lower }}"
               >

@@ -48,6 +48,18 @@
     </div>
   {% endif %}
 
+  {% if email_saved %}
+    <div class="notice">
+      Tenant admin email updated.
+    </div>
+  {% endif %}
+
+  {% if email_error %}
+    <div class="alert alert--danger">
+      {{ email_error }}
+    </div>
+  {% endif %}
+
   <section class="card">
     <div class="invoice-summary-grid">
       <div class="summary-item">
@@ -88,6 +100,39 @@
         <span class="summary-label">Active users</span>
         <span class="summary-value">{{ summary.active_user_count }}</span>
       </div>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="frame-header">
+      <h2>Tenant Admin Email</h2>
+    </div>
+    <div class="frame-body">
+      {% if primary_admin_email %}
+        <p class="muted platform-tenant-detail-users-copy">
+          Update the primary tenant admin sign-in email shown for this workspace. This also applies to the demo tenant.
+        </p>
+        <form method="post" action="/platform/tenants/{{ tenant.id }}/admin-email" class="ticket-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+          <div class="field">
+            <label for="admin_email">Primary tenant admin email</label>
+            <input
+              type="email"
+              id="admin_email"
+              name="admin_email"
+              value="{{ primary_admin_email }}"
+              required
+            />
+          </div>
+          <div class="actions btn-group">
+            <button type="submit" class="btn btn--primary">Update Email</button>
+          </div>
+        </form>
+      {% else %}
+        <div class="alert alert--warning">
+          This tenant does not currently have a tenant user account to update.
+        </div>
+      {% endif %}
     </div>
   </section>
 

@@ -10,12 +10,15 @@ from sqlalchemy import delete, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..audit import diff as audit_diff
 from ..audit import log as audit_log
+from ..audit import user_snapshot
 from ..auth import (
     ROLE_TENANT_ADMIN,
     hash_password,
     is_superadmin_user,
     normalize_email,
+    set_user_identity_email,
     user_identity_kwargs,
     validate_email,
 )
@@ -204,13 +207,28 @@ def _tenant_users_map(db: Session, tenant_ids: list[int]) -> dict[int, list[User
 def _tenant_summary(users: list[User]) -> dict[str, object]:
     ordered_users = list(users)
     tenant_admins = [user for user in ordered_users if _normalize_role(getattr(user, "role", "")) == ROLE_TENANT_ADMIN]
-    initial_admin = tenant_admins[0] if tenant_admins else (ordered_users[0] if ordered_users else None)
+    initial_admin = _tenant_primary_admin(ordered_users)
     return {
         "initial_admin_email": _user_identity(initial_admin),
         "user_count": len(ordered_users),
         "active_user_count": sum(1 for user in ordered_users if bool(getattr(user, "is_active", False))),
         "tenant_admin_count": len(tenant_admins),
     }
+
+
+def _tenant_primary_admin(users: list[User]) -> User | None:
+    ordered_users = list(users)
+    for user in ordered_users:
+        if _normalize_role(getattr(user, "role", "")) == ROLE_TENANT_ADMIN:
+            return user
+    return ordered_users[0] if ordered_users else None
+
+
+def _user_identity_column():
+    email_col = getattr(User, "email", None)
+    if email_col is not None:
+        return email_col
+    return getattr(User, "username")
 
 
 def _tenant_open_url(subdomain: str | None) -> str:
@@ -353,6 +371,7 @@ def tenant_detail(
             .order_by(User.created_at.asc(), User.username.asc(), User.id.asc())
         ).scalars()
     )
+    primary_admin = _tenant_primary_admin(users)
     summary = _tenant_summary(users)
     delete_block_reason = _tenant_delete_block_reason(
         db,
@@ -367,10 +386,13 @@ def tenant_detail(
             "tenant": tenant,
             "users": users,
             "summary": summary,
+            "primary_admin_email": _user_identity(primary_admin),
             "open_url": _tenant_open_url(tenant.subdomain),
             "delete_allowed": not bool(delete_block_reason),
             "delete_block_reason": delete_block_reason,
             "delete_error": request.query_params.get("delete_error", ""),
+            "email_saved": request.query_params.get("email_saved") == "1",
+            "email_error": request.query_params.get("email_error", ""),
         },
     )
 
@@ -502,6 +524,105 @@ async def tenants_create(request: Request, db: Session = Depends(get_db)) -> HTM
 
     return RedirectResponse(
         url=f"/platform/tenants?{urlencode({'created_tenant': tenant.subdomain})}",
+        status_code=303,
+    )
+
+
+@router.post("/platform/tenants/{tenant_id:int}/admin-email")
+@router.post("/admin/tenants/{tenant_id:int}/admin-email")
+async def tenant_update_admin_email(
+    tenant_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None:
+        return RedirectResponse(url="/platform/tenants?error=Tenant+not+found", status_code=303)
+
+    users = list(
+        db.execute(
+            select(User)
+            .where(User.tenant_id == int(tenant.id))
+            .order_by(User.created_at.asc(), User.username.asc(), User.id.asc())
+        ).scalars()
+    )
+    primary_admin = _tenant_primary_admin(users)
+    if primary_admin is None:
+        return RedirectResponse(
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'email_error': 'This tenant has no user account to update yet.'})}",
+            status_code=303,
+        )
+
+    form = await request.form()
+    admin_email = normalize_email(form.get("admin_email"))
+    if not validate_email(admin_email):
+        return RedirectResponse(
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'email_error': 'A valid tenant admin email is required.'})}",
+            status_code=303,
+        )
+
+    existing_user = (
+        db.execute(
+            select(User)
+            .where(
+                User.id != int(primary_admin.id),
+                User.tenant_id == int(tenant.id),
+                func.lower(_user_identity_column()) == admin_email,
+            )
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    if existing_user is not None:
+        return RedirectResponse(
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'email_error': 'That email is already in use for this tenant.'})}",
+            status_code=303,
+        )
+
+    previous_email = _user_identity(primary_admin)
+    if admin_email != previous_email:
+        identity_before = user_snapshot(primary_admin)
+        set_user_identity_email(primary_admin, admin_email)
+        audit_log(
+            db,
+            request,
+            action="USER_UPDATE",
+            entity_type="user",
+            entity_id=primary_admin.id,
+            summary=f"Updated tenant admin sign-in email for {tenant.name}",
+            details=audit_diff(
+                identity_before,
+                user_snapshot(primary_admin),
+                ["username", "email"],
+            ),
+            user=current_user,
+            tenant_id=tenant.id,
+        )
+        audit_log(
+            db,
+            request,
+            action="TENANT_UPDATE",
+            entity_type="tenant",
+            entity_id=tenant.id,
+            summary=f"Updated initial admin email for tenant {tenant.name}",
+            details={
+                "changed": {
+                    "initial_admin_email": {
+                        "from": previous_email,
+                        "to": admin_email,
+                    }
+                }
+            },
+            user=current_user,
+            tenant_id=tenant.id,
+        )
+        db.commit()
+
+    return RedirectResponse(
+        url=f"/platform/tenants/{tenant.id}?email_saved=1",
         status_code=303,
     )
 
