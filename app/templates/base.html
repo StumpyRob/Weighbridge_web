@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="csrf-token" content="{{ csrf_token or '' }}" />
     <title>{% block title %}Weighbridge Web{% endblock %}</title>
-    <link rel="icon" href="{{ tenant_path(ui_branding.favicon_url or '/static/img/default-company-logo.svg') }}" />
+    {% set favicon_href = tenant_path(ui_branding.favicon_url or '/static/img/default-company-logo.svg') %}
+    <link rel="icon" type="{{ ui_branding.favicon_mime_type or 'image/svg+xml' }}" href="{{ favicon_href }}" />
+    <link rel="shortcut icon" href="{{ favicon_href }}" />
+    <link rel="apple-touch-icon" href="{{ favicon_href }}" />
     <link rel="stylesheet" href="/static/css/style.css?v={{ BUILD_STAMP }}" />
     <link rel="stylesheet" href="{{ tenant_path('/branding.css') }}?v={{ BUILD_STAMP }}" />
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
@@ -73,6 +76,7 @@
               <a href="{{ tenant_path('/admin/system-status') }}" class="{% if request.url.path.startswith('/admin/system-status') %}is-active{% endif %}" {% if request.url.path.startswith('/admin/system-status') %}aria-current="page"{% endif %}>System Status</a>
             {% endif %}
           {% else %}
+            <a href="{{ tenant_path('/') }}" class="{% if request.url.path == '/' %}is-active{% endif %}" {% if request.url.path == '/' %}aria-current="page"{% endif %}>Home</a>
             <a href="{{ tenant_path('/tickets') }}" class="{% if request.url.path.startswith('/tickets') %}is-active{% endif %}" {% if request.url.path.startswith('/tickets') %}aria-current="page"{% endif %}>Tickets</a>
             <a href="{{ tenant_path('/customers') }}" class="{% if request.url.path.startswith('/customers') %}is-active{% endif %}" {% if request.url.path.startswith('/customers') %}aria-current="page"{% endif %}>Customers</a>
             <a href="{{ tenant_path('/vehicles') }}" class="{% if request.url.path.startswith('/vehicles') %}is-active{% endif %}" {% if request.url.path.startswith('/vehicles') %}aria-current="page"{% endif %}>Vehicles</a>

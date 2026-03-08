@@ -315,6 +315,9 @@ def test_base_template_uses_company_branding_for_logo_favicon_and_theme(
     build_stamp = str(templates.env.globals.get("BUILD_STAMP") or "")
     assert f'/branding.css?v={build_stamp}' in response.text
     assert 'rel="icon"' in response.text
+    assert 'type="image/png"' in response.text
+    assert 'rel="shortcut icon"' in response.text
+    assert 'rel="apple-touch-icon"' in response.text
     assert "/static/uploads/company/logo-nav.png?v=" in response.text
     assert 'class="brand__logo-badge"' in response.text
     assert 'class="brand__logo"' in response.text

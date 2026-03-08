@@ -206,6 +206,7 @@ def _default_branding() -> dict[str, object]:
         "logo_exists": logo_file_exists_on_disk(DEFAULT_COMPANY_LOGO_WEB_PATH),
         "nav_logo_url": DEFAULT_COMPANY_LOGO_WEB_PATH,
         "favicon_url": DEFAULT_COMPANY_LOGO_WEB_PATH,
+        "favicon_mime_type": "image/svg+xml",
         "nav_logo_height_px": DEFAULT_NAV_LOGO_HEIGHT_PX,
         "show_nav_logo": True,
         "show_nav_title": True,
@@ -216,6 +217,19 @@ def _default_branding() -> dict[str, object]:
         "primary_contrast_hex": primary_contrast_color(primary_color),
         "primary_soft_rgba": primary_soft_rgba(primary_color),
     }
+
+
+def _favicon_mime_type(url: str | None) -> str:
+    suffix = Path(_strip_query(url)).suffix.lower()
+    if suffix == ".png":
+        return "image/png"
+    if suffix in {".jpg", ".jpeg"}:
+        return "image/jpeg"
+    if suffix == ".svg":
+        return "image/svg+xml"
+    if suffix == ".ico":
+        return "image/x-icon"
+    return "image/png"
 
 
 def build_ui_branding(company: CompanySetting | None) -> dict[str, object]:
@@ -246,6 +260,7 @@ def build_ui_branding(company: CompanySetting | None) -> dict[str, object]:
             "logo_exists": logo_file_exists_on_disk(nav_logo_resolved),
             "nav_logo_url": logo_url,
             "favicon_url": logo_url,
+            "favicon_mime_type": _favicon_mime_type(logo_url),
             "nav_logo_height_px": logo_height,
             "show_nav_logo": True if show_nav_logo is None else bool(show_nav_logo),
             "show_nav_title": True if show_nav_title is None else bool(show_nav_title),

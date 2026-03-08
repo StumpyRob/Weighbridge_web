@@ -538,7 +538,7 @@ def _build_weight_throughput_chart(
         "unit": unit,
         "points": chart_points,
         "has_data": total_weight > 0,
-        "empty_message": "No completed ticket weight has been recorded for this period.",
+        "empty_message": "No completed ticket weight recorded for this period.",
     }
 
 
@@ -689,14 +689,14 @@ def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
                 "label": "Open Tickets",
                 "help_key": "dashboard_open_tickets",
                 "value": str(open_tickets),
-                "hint": "Currently awaiting completion",
+                "hint": "Awaiting completion",
             },
             {
                 "key": "completed_today",
                 "label": "Completed Today",
                 "help_key": "dashboard_completed_today",
                 "value": str(completed_today),
-                "hint": today.strftime("%d %b %Y"),
+                "hint": "",
             },
             {
                 "key": "total_weight_today",
@@ -1251,6 +1251,18 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         response = PlainTextResponse(css, media_type="text/css")
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
+        branding = get_branding(db)
+        favicon_url = str(
+            branding.get("favicon_url", "") or "/static/img/default-company-logo.svg"
+        )
+        scoped_favicon_url = prefix_tenant_route_target(
+            str(getattr(request.state, "tenant_route_prefix", "") or ""),
+            favicon_url,
+        )
+        return RedirectResponse(url=scoped_favicon_url, status_code=307)
 
     @app.get("/", response_class=HTMLResponse)
     def index(

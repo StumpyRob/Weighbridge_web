@@ -1426,6 +1426,8 @@ def test_tenant_settings_hides_platform_tools_and_keeps_platform_routes_separate
         settings_page = tenant_client.get("/admin")
         assert settings_page.status_code == 200
         tenant_nav = _extract_nav_markup(settings_page.text)
+        assert '>Home<' in tenant_nav
+        assert tenant_nav.index('>Home<') < tenant_nav.index('>Tickets<')
         assert ">Settings<" in tenant_nav
         assert ">Admin<" not in tenant_nav
         assert "Setup & Configuration" in settings_page.text
@@ -1901,10 +1903,16 @@ def test_logged_in_tenant_home_shows_dashboard_empty_state(tmp_path, monkeypatch
     assert 'data-dashboard-period="7d"' in response.text
     assert 'data-dashboard-period="30d"' in response.text
     assert 'data-dashboard-period-active="1"' in response.text
+    assert "Activity Overview" in response.text
+    assert "Updated just now" in response.text
+    assert "Overview Activity" not in response.text
     assert 'data-dashboard-empty-state="1"' in response.text
     assert "No operational activity yet" in response.text
-    assert "No completed tickets have been recorded today." in response.text
-    assert "No completed ticket weight has been recorded for this period." in response.text
+    assert "Awaiting completion" in response.text
+    assert "Currently awaiting completion" not in response.text
+    assert "No completed tickets yet today." in response.text
+    assert "No completed ticket weight recorded for this period." in response.text
+    assert "Open tickets currently awaiting completion." not in response.text
     assert 'data-dashboard-panel="invoice-activity"' in response.text
     assert "No invoice activity recorded for last 7 days." in response.text
     assert "Create Ticket" in response.text
@@ -2547,6 +2555,94 @@ def test_tenant_scoped_logo_upload_and_file_access_isolation(tmp_path, monkeypat
         own_collision = tenant_b_client.get(collision_url)
         assert own_collision.status_code == 200
         assert own_collision.content == b"\x89PNG\r\n\x1a\ncollision-b"
+
+
+def test_tenant_hosts_use_uploaded_logo_for_html_favicon_and_favicon_route(
+    tmp_path,
+    monkeypatch,
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-favicon.db", monkeypatch=monkeypatch
+    )
+    uploads_root = (tmp_path / "uploads").resolve()
+    monkeypatch.setattr(settings, "uploads_dir", str(uploads_root))
+
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a")
+    tenant_b = _seed_tenant(SessionLocal, name="Tenant B", subdomain="b")
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_b,
+        company_name="Tenant B Co",
+        primary_color="#225577",
+    )
+
+    logo_a_name = "tenant-a-favicon.png"
+    logo_b_name = "tenant-b-favicon.png"
+    logo_a_bytes = b"\x89PNG\r\n\x1a\ntenant-a-favicon"
+    logo_b_bytes = b"\x89PNG\r\n\x1a\ntenant-b-favicon"
+    logo_a_file = uploads_root / "tenants" / str(tenant_a) / "company" / logo_a_name
+    logo_b_file = uploads_root / "tenants" / str(tenant_b) / "company" / logo_b_name
+    logo_a_file.parent.mkdir(parents=True, exist_ok=True)
+    logo_b_file.parent.mkdir(parents=True, exist_ok=True)
+    logo_a_file.write_bytes(logo_a_bytes)
+    logo_b_file.write_bytes(logo_b_bytes)
+
+    with SessionLocal() as db:
+        company_a = db.execute(
+            select(CompanySetting).where(CompanySetting.tenant_id == tenant_a).limit(1)
+        ).scalars().first()
+        company_b = db.execute(
+            select(CompanySetting).where(CompanySetting.tenant_id == tenant_b).limit(1)
+        ).scalars().first()
+        assert company_a is not None and company_b is not None
+        company_a.company_logo_path = f"/static/uploads/company/{logo_a_name}"
+        company_b.company_logo_path = f"/static/uploads/company/{logo_b_name}"
+        company_a.company_logo_updated_at = datetime(2026, 3, 8, 12, 0, 0)
+        company_b.company_logo_updated_at = datetime(2026, 3, 8, 12, 5, 0)
+        db.commit()
+
+    with _client(app, base_url="https://a.localhost") as tenant_a_client:
+        login_page = tenant_a_client.get("/login")
+        assert login_page.status_code == 200
+        assert 'rel="icon"' in login_page.text
+        assert 'type="image/png"' in login_page.text
+        assert 'rel="shortcut icon"' in login_page.text
+        assert f"/static/uploads/company/{logo_a_name}?v=" in login_page.text
+        assert f"/static/uploads/company/{logo_b_name}?v=" not in login_page.text
+
+        favicon_redirect = tenant_a_client.get("/favicon.ico", follow_redirects=False)
+        assert favicon_redirect.status_code == 307
+        assert f"/static/uploads/company/{logo_a_name}?v=" in favicon_redirect.headers.get(
+            "location", ""
+        )
+
+        favicon_response = tenant_a_client.get("/favicon.ico")
+        assert favicon_response.status_code == 200
+        assert favicon_response.content == logo_a_bytes
+
+    with _client(app, base_url="https://b.localhost") as tenant_b_client:
+        login_page = tenant_b_client.get("/login")
+        assert login_page.status_code == 200
+        assert 'rel="icon"' in login_page.text
+        assert 'type="image/png"' in login_page.text
+        assert f"/static/uploads/company/{logo_b_name}?v=" in login_page.text
+        assert f"/static/uploads/company/{logo_a_name}?v=" not in login_page.text
+
+        favicon_redirect = tenant_b_client.get("/favicon.ico", follow_redirects=False)
+        assert favicon_redirect.status_code == 307
+        assert f"/static/uploads/company/{logo_b_name}?v=" in favicon_redirect.headers.get(
+            "location", ""
+        )
+
+        favicon_response = tenant_b_client.get("/favicon.ico")
+        assert favicon_response.status_code == 200
+        assert favicon_response.content == logo_b_bytes
 
 
 def test_global_ewc_reads_on_tenant_host_and_admin_management_is_platform_only(

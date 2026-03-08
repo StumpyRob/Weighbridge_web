@@ -37,24 +37,30 @@
     <section class="dashboard-summary-grid" aria-label="Operational summary">
       {% for metric in dashboard.summary_cards %}
         <article class="card dashboard-stat-card" data-dashboard-metric="{{ metric.key }}">
-          <div class="dashboard-stat-card__label">
-            {{ metric.label }}
-            {% if metric.help_key %}
-              {{ help(help_text[metric.help_key], "dashboard-" ~ metric.key ~ "-help") }}
-            {% endif %}
+          <div class="dashboard-stat-card__main">
+            <div class="dashboard-stat-card__label">
+              {{ metric.label }}
+              {% if metric.help_key %}
+                {{ help(help_text[metric.help_key], "dashboard-" ~ metric.key ~ "-help") }}
+              {% endif %}
+            </div>
+            <div class="dashboard-stat-card__value">{{ metric.value }}</div>
           </div>
-          <div class="dashboard-stat-card__value">{{ metric.value }}</div>
-          <div class="dashboard-stat-card__hint">{{ metric.hint }}</div>
+          {% if metric.hint %}
+            <div class="dashboard-stat-card__hint">{{ metric.hint }}</div>
+          {% endif %}
         </article>
       {% endfor %}
     </section>
 
-    <section class="frame">
-      <div class="frame-header dashboard-overview-frame__header">
-        <div>
-          <span>Overview Activity{{ help(help_text.dashboard_overview_activity, "dashboard-overview-activity-help") }}</span>
-          <p class="muted dashboard-frame-subtitle">{{ dashboard.period_label }}, scoped to this workspace only.</p>
-        </div>
+    <section class="dashboard-overview-toolbar" aria-label="Activity overview controls">
+      <div class="dashboard-overview-toolbar__title">
+        <h2>
+          Activity Overview{{ help(help_text.dashboard_overview_activity, "dashboard-overview-activity-help") }}
+        </h2>
+      </div>
+      <div class="dashboard-overview-toolbar__controls">
+        <span class="dashboard-overview-toolbar__status muted">Updated just now</span>
         <div class="dashboard-period-filter" role="tablist" aria-label="Dashboard overview period">
           {% for option in dashboard.period_options %}
             <a
@@ -68,28 +74,26 @@
           {% endfor %}
         </div>
       </div>
-      <div class="frame-body">
-        {% if dashboard.empty_state %}
-          <section class="dashboard-empty-state" data-dashboard-empty-state="1">
-            <h2>No operational activity yet</h2>
-            <p>
-              This workspace has no tickets or invoices yet. Start with the core records below, then create the first ticket when vehicles arrive on site.
-            </p>
-            <div class="actions btn-group">
-              <a class="btn" href="{{ tenant_path('/tickets/new') }}">Create Ticket</a>
-              <a class="btn btn--secondary" href="{{ tenant_path('/customers/new') }}">Add Customer</a>
-              <a class="btn btn--secondary" href="{{ tenant_path('/vehicles/new') }}">Add Vehicle</a>
-            </div>
-          </section>
-        {% endif %}
-      </div>
     </section>
+
+    {% if dashboard.empty_state %}
+      <section class="dashboard-empty-state" data-dashboard-empty-state="1">
+        <h2>No operational activity yet</h2>
+        <p>
+          This workspace has no tickets or invoices yet. Start with the core records below, then create the first ticket when vehicles arrive on site.
+        </p>
+        <div class="actions btn-group">
+          <a class="btn" href="{{ tenant_path('/tickets/new') }}">Create Ticket</a>
+          <a class="btn btn--secondary" href="{{ tenant_path('/customers/new') }}">Add Customer</a>
+          <a class="btn btn--secondary" href="{{ tenant_path('/vehicles/new') }}">Add Vehicle</a>
+        </div>
+      </section>
+    {% endif %}
 
     <div class="dashboard-chart-grid">
       <section class="frame">
         <div class="frame-header">{{ dashboard.chart_title }}{{ help(help_text.dashboard_ticket_activity, "dashboard-ticket-activity-help") }}</div>
         <div class="frame-body">
-          <p class="muted dashboard-section-copy">{{ dashboard.period_label }}, scoped to this workspace only.</p>
           {% if dashboard.chart_has_data %}
             <div class="dashboard-chart-wrap">
               <div
@@ -184,7 +188,7 @@
             </table>
           </div>
         {% else %}
-          <div class="dashboard-inline-empty">No completed tickets have been recorded today.</div>
+          <div class="dashboard-inline-empty">No completed tickets yet today.</div>
         {% endif %}
       </div>
     </section>
@@ -193,7 +197,6 @@
       <section class="frame dashboard-panel" data-dashboard-panel="recent-tickets">
         <div class="frame-header">Recent Tickets{{ help(help_text.dashboard_recent_tickets, "dashboard-recent-tickets-help") }}</div>
         <div class="frame-body">
-          <p class="muted dashboard-section-copy">{{ dashboard.period_label }} activity window.</p>
           {% if dashboard.recent_tickets %}
             <div class="table-wrap">
               <table class="data-table dashboard-table">
@@ -232,7 +235,6 @@
       <section class="frame dashboard-panel" data-dashboard-panel="open-tickets">
         <div class="frame-header">Open Tickets Awaiting Completion{{ help(help_text.dashboard_open_ticket_queue, "dashboard-open-ticket-queue-help") }}</div>
         <div class="frame-body">
-          <p class="muted dashboard-section-copy">Open tickets currently awaiting completion.</p>
           {% if dashboard.open_tickets %}
             <div class="table-wrap">
               <table class="data-table dashboard-table">
@@ -267,7 +269,6 @@
       <section class="frame dashboard-panel" data-dashboard-panel="invoice-activity">
         <div class="frame-header">Invoice Activity{{ help(help_text.dashboard_invoice_activity, "dashboard-invoice-activity-help") }}</div>
         <div class="frame-body">
-          <p class="muted dashboard-section-copy">{{ dashboard.period_label }} invoice and invoice-ready activity.</p>
           <div class="dashboard-mini-stats">
             <div class="dashboard-mini-stat">
               <span class="dashboard-mini-stat__label">Recent invoices</span>

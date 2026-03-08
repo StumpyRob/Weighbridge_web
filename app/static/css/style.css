@@ -2494,8 +2494,13 @@ details > summary:focus-visible {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  gap: 0.8rem;
+}
+
+.dashboard-stat-card__main {
+  display: grid;
   gap: 0.45rem;
-  justify-content: space-between;
+  align-content: start;
 }
 
 .dashboard-stat-card__label {
@@ -2513,20 +2518,37 @@ details > summary:focus-visible {
 }
 
 .dashboard-stat-card__hint {
+  margin-top: auto;
   font-size: 0.82rem;
   color: #6b7280;
 }
 
-.dashboard-overview-frame__header {
+.dashboard-overview-toolbar {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.85rem 1rem;
+  margin-top: 0.2rem;
+  margin-bottom: 0.15rem;
 }
 
-.dashboard-frame-subtitle {
-  margin: 0.25rem 0 0;
-  font-size: 0.82rem;
+.dashboard-overview-toolbar__title h2 {
+  margin: 0;
+  font-size: 1.02rem;
+  color: #14213d;
+}
+
+.dashboard-overview-toolbar__controls {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem 0.85rem;
+}
+
+.dashboard-overview-toolbar__status {
+  font-size: 0.8rem;
+  white-space: nowrap;
 }
 
 .dashboard-period-filter {
@@ -2573,6 +2595,7 @@ details > summary:focus-visible {
   border-radius: 12px;
   padding: 1.1rem;
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  margin-top: var(--section-gap);
 }
 
 .dashboard-empty-state h2 {
@@ -2599,7 +2622,7 @@ details > summary:focus-visible {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--section-gap);
-  margin-top: calc(var(--section-gap) + 0.5rem);
+  margin-top: var(--section-gap);
 }
 
 .dashboard-chart {
@@ -2609,6 +2632,11 @@ details > summary:focus-visible {
   gap: 0.85rem;
   align-items: end;
   min-width: max-content;
+}
+
+.dashboard-chart:not(.dashboard-chart--throughput) {
+  grid-auto-columns: minmax(46px, 1fr);
+  gap: 0.65rem;
 }
 
 .dashboard-chart__column {
@@ -2635,6 +2663,11 @@ details > summary:focus-visible {
   border-radius: 14px;
   background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
   border: 1px solid #e5e7eb;
+}
+
+.dashboard-chart:not(.dashboard-chart--throughput) .dashboard-chart__bar-shell {
+  max-width: 58px;
+  padding: 0.35rem;
 }
 
 .dashboard-chart__bar {
@@ -3984,8 +4017,13 @@ details > summary:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .dashboard-overview-frame__header {
+  .dashboard-overview-toolbar {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dashboard-overview-toolbar__controls {
+    justify-content: space-between;
   }
 
   .dashboard-period-filter {
@@ -4007,9 +4045,18 @@ details > summary:focus-visible {
     grid-auto-columns: minmax(48px, 1fr);
   }
 
+  .dashboard-chart:not(.dashboard-chart--throughput) {
+    grid-auto-columns: minmax(40px, 1fr);
+  }
+
   .dashboard-chart__bar-shell {
     height: 132px;
     padding: 0.35rem;
+  }
+
+  .dashboard-chart:not(.dashboard-chart--throughput) .dashboard-chart__bar-shell {
+    max-width: 52px;
+    padding: 0.28rem;
   }
 
   .dashboard-chart__label,
@@ -4020,6 +4067,14 @@ details > summary:focus-visible {
   .dashboard-period-filter__option {
     min-height: 28px;
     padding: 0.24rem 0.65rem;
+  }
+
+  .dashboard-overview-toolbar__controls {
+    gap: 0.45rem 0.65rem;
+  }
+
+  .dashboard-overview-toolbar__status {
+    width: 100%;
   }
 }
 
