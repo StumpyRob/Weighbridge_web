@@ -119,17 +119,18 @@ def _require_platform_superadmin(request: Request, db: Session) -> User:
     return user
 
 
-def _seed_number_sequences(db: Session) -> None:
+def _seed_number_sequences(db: Session, tenant_id: int) -> None:
     now = utcnow()
     year = int(now.year)
     dialect = str(getattr(getattr(db.get_bind(), "dialect", None), "name", "") or "").lower()
     if dialect == "postgresql":
         db.execute(
             text(
-                "INSERT INTO ticket_sequences (year, last_number, updated_at) "
-                "VALUES (:year, 0, :updated_at) ON CONFLICT (year) DO NOTHING"
+                "INSERT INTO ticket_sequences (tenant_id, year, last_number, updated_at) "
+                "VALUES (:tenant_id, :year, 0, :updated_at) "
+                "ON CONFLICT (tenant_id, year) DO NOTHING"
             ),
-            {"year": year, "updated_at": now},
+            {"tenant_id": int(tenant_id), "year": year, "updated_at": now},
         )
         db.execute(
             text(
@@ -142,10 +143,10 @@ def _seed_number_sequences(db: Session) -> None:
 
     db.execute(
         text(
-            "INSERT OR IGNORE INTO ticket_sequences (year, last_number, updated_at) "
-            "VALUES (:year, 0, :updated_at)"
+            "INSERT OR IGNORE INTO ticket_sequences (tenant_id, year, last_number, updated_at) "
+            "VALUES (:tenant_id, :year, 0, :updated_at)"
         ),
-        {"year": year, "updated_at": now},
+        {"tenant_id": int(tenant_id), "year": year, "updated_at": now},
     )
     db.execute(
         text(
@@ -166,7 +167,7 @@ def _seed_tenant_baseline(db: Session, tenant_id: int) -> None:
         seed_print_templates(db)
         seed_print_destinations(db)
         company.is_initialized = True
-    _seed_number_sequences(db)
+    _seed_number_sequences(db, tenant_id)
 
 
 def _user_identity(user: User | None) -> str:

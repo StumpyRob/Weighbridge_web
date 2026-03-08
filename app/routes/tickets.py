@@ -737,49 +737,46 @@ def tickets_vehicle_suggest(
 
 def _generate_ticket_no(db: Session, now: datetime | None = None) -> str:
     current_time = now or utcnow()
+    tenant_id = db.info.get("tenant_id")
+    if tenant_id is None:
+        raise RuntimeError("Ticket number generation requires tenant scope.")
+    tenant_id = int(tenant_id)
     year = current_time.year
-    bind = db.get_bind()
-    dialect_name = (bind.dialect.name if bind is not None else "").lower()
+    year_prefix = f"{str(year)[2:]}"
+    year_start = datetime(year, 1, 1)
+    next_year_start = datetime(year + 1, 1, 1)
+    highest_existing_ticket_no = db.execute(
+        select(Ticket.ticket_no)
+        .where(
+            Ticket.tenant_id == tenant_id,
+            Ticket.datetime >= year_start,
+            Ticket.datetime < next_year_start,
+            Ticket.ticket_no.like(f"{year_prefix}-%"),
+        )
+        .order_by(Ticket.ticket_no.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    starting_number = 1
+    if highest_existing_ticket_no:
+        match = re.fullmatch(r"(\d{2})-(\d{5})", str(highest_existing_ticket_no).strip())
+        if match and match.group(1) == year_prefix:
+            starting_number = int(match.group(2)) + 1
 
-    if dialect_name == "postgresql":
-        db.execute(
-            text(
-                "INSERT INTO ticket_sequences (year, last_number, updated_at) "
-                "VALUES (:year, 0, :updated_at) "
-                "ON CONFLICT (year) DO NOTHING"
-            ),
-            {"year": year, "updated_at": current_time},
-        )
-        # Use RETURNING for atomic increment/read to avoid duplicate numbers under concurrency.
-        next_number = db.execute(
-            text(
-                "UPDATE ticket_sequences "
-                "SET last_number = last_number + 1, updated_at = :updated_at "
-                "WHERE year = :year "
-                "RETURNING last_number"
-            ),
-            {"year": year, "updated_at": current_time},
-        ).scalar_one()
-    else:
-        db.execute(
-            text(
-                "INSERT OR IGNORE INTO ticket_sequences (year, last_number, updated_at) "
-                "VALUES (:year, 0, :updated_at)"
-            ),
-            {"year": year, "updated_at": current_time},
-        )
-        db.execute(
-            text(
-                "UPDATE ticket_sequences "
-                "SET last_number = last_number + 1, updated_at = :updated_at "
-                "WHERE year = :year"
-            ),
-            {"year": year, "updated_at": current_time},
-        )
-        next_number = db.execute(
-            text("SELECT last_number FROM ticket_sequences WHERE year = :year"),
-            {"year": year},
-        ).scalar_one()
+    next_number = db.execute(
+        text(
+            "INSERT INTO ticket_sequences (tenant_id, year, last_number, updated_at) "
+            "VALUES (:tenant_id, :year, :starting_number, :updated_at) "
+            "ON CONFLICT (tenant_id, year) DO UPDATE "
+            "SET last_number = ticket_sequences.last_number + 1, updated_at = :updated_at "
+            "RETURNING last_number"
+        ),
+        {
+            "tenant_id": tenant_id,
+            "year": year,
+            "starting_number": starting_number,
+            "updated_at": current_time,
+        },
+    ).scalar_one()
 
     return f"{str(year)[2:]}-{next_number:05d}"
 

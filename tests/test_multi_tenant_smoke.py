@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 import re
+import threading
 from urllib.parse import urlencode, urlsplit
 
 from fastapi import FastAPI
@@ -34,6 +36,7 @@ from app.models import (
     Vehicle,
 )
 from app.models.base import utcnow
+from app.routes.tickets import _generate_ticket_no
 from app.seed import seed_print_destinations, seed_print_templates
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD
 from app.services.system_setup import (
@@ -216,6 +219,35 @@ def _seed_tenant(
         return int(tenant.id)
 
 
+def _create_ticket_with_generated_number(
+    SessionLocal: sessionmaker,
+    *,
+    tenant_id: int,
+    when: datetime,
+    barrier: threading.Barrier | None = None,
+) -> str:
+    with SessionLocal() as db:
+        db.info["tenant_id"] = int(tenant_id)
+        db.info["platform_mode"] = False
+        if barrier is not None:
+            barrier.wait(timeout=5)
+        ticket_no = _generate_ticket_no(db, now=when)
+        db.add(
+            Ticket(
+                tenant_id=int(tenant_id),
+                ticket_no=ticket_no,
+                datetime=when,
+                status=TicketStatusEnum.OPEN.value,
+                direction=DirectionEnum.INWARD.value,
+                transaction_type=TransactionTypeEnum.SALE.value,
+                dont_invoice=False,
+                paid=False,
+            )
+        )
+        db.commit()
+        return str(ticket_no)
+
+
 def test_tenant_resolution_middleware(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(tmp_path, db_name="tenant-mw.db", monkeypatch=monkeypatch)
     active_id = _seed_tenant(SessionLocal, name="Company One", subdomain="company1", is_active=True)
@@ -323,6 +355,86 @@ def test_software_subdomain_serves_marketing_page_and_other_subdomains_still_rou
         response = unknown_client.get("/health")
         assert response.status_code == 404
         assert "Unknown tenant" in response.text
+
+
+def test_ticket_numbers_are_scoped_per_tenant_year_and_concurrency_safe(
+    tmp_path,
+    monkeypatch,
+):
+    _app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ticket-numbering.db", monkeypatch=monkeypatch
+    )
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="tenant-a")
+    tenant_b = _seed_tenant(SessionLocal, name="Tenant B", subdomain="tenant-b")
+
+    tenant_a_numbers = [
+        _create_ticket_with_generated_number(
+            SessionLocal,
+            tenant_id=tenant_a,
+            when=datetime(2026, 3, 8, 9, minute_offset, 0),
+        )
+        for minute_offset in range(3)
+    ]
+    tenant_b_numbers = [
+        _create_ticket_with_generated_number(
+            SessionLocal,
+            tenant_id=tenant_b,
+            when=datetime(2026, 3, 8, 10, minute_offset, 0),
+        )
+        for minute_offset in range(2)
+    ]
+    tenant_a_next_year = _create_ticket_with_generated_number(
+        SessionLocal,
+        tenant_id=tenant_a,
+        when=datetime(2027, 1, 2, 8, 0, 0),
+    )
+
+    assert tenant_a_numbers == ["26-00001", "26-00002", "26-00003"]
+    assert tenant_b_numbers == ["26-00001", "26-00002"]
+    assert tenant_a_next_year == "27-00001"
+
+    barrier = threading.Barrier(4)
+    concurrent_when = datetime(2026, 3, 8, 11, 0, 0)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [
+            pool.submit(
+                _create_ticket_with_generated_number,
+                SessionLocal,
+                tenant_id=tenant_b,
+                when=concurrent_when + timedelta(minutes=index),
+                barrier=barrier,
+            )
+            for index in range(4)
+        ]
+    concurrent_numbers = sorted(future.result() for future in futures)
+
+    assert concurrent_numbers == ["26-00003", "26-00004", "26-00005", "26-00006"]
+
+    with SessionLocal() as db:
+        tenant_a_tickets = list(
+            db.execute(
+                select(Ticket.ticket_no)
+                .where(Ticket.tenant_id == tenant_a)
+                .order_by(Ticket.datetime.asc(), Ticket.id.asc())
+            ).scalars()
+        )
+        tenant_b_tickets = list(
+            db.execute(
+                select(Ticket.ticket_no)
+                .where(Ticket.tenant_id == tenant_b)
+                .order_by(Ticket.datetime.asc(), Ticket.id.asc())
+            ).scalars()
+        )
+
+    assert tenant_a_tickets == ["26-00001", "26-00002", "26-00003", "27-00001"]
+    assert sorted(tenant_b_tickets) == [
+        "26-00001",
+        "26-00002",
+        "26-00003",
+        "26-00004",
+        "26-00005",
+        "26-00006",
+    ]
 
 
 def test_platform_bootstrap_on_admin_subdomain_creates_first_superadmin_without_breaking_tenant_access(
