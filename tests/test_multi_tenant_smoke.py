@@ -21,11 +21,13 @@ from app.db import TenantSession, get_db
 from app.main import create_app
 from app.models import (
     AuditEvent,
+    Area,
     Base,
     CompanySetting,
     Customer,
     DirectionEnum,
     EwcCode,
+    Haulier,
     Invoice,
     Product,
     Tenant,
@@ -34,6 +36,8 @@ from app.models import (
     TransactionTypeEnum,
     User,
     Vehicle,
+    VehicleType,
+    Yard,
 )
 from app.models.base import utcnow
 from app.routes.tickets import _generate_ticket_no
@@ -316,16 +320,14 @@ def test_software_subdomain_serves_marketing_page_and_other_subdomains_still_rou
         landing = marketing_client.get("/")
         assert landing.status_code == 200
         assert "Weighbridge Web" in landing.text
-        assert "Cloud Weighbridge Operations" in landing.text
-        assert "Operational software for weighbridges, waste, recycling, and aggregates." in landing.text
-        assert "[INSERT HERO SCREENSHOT HERE]" in landing.text
-        assert "[INSERT TICKET SCREENSHOT HERE]" in landing.text
-        assert "[INSERT INVOICE SCREENSHOT HERE]" in landing.text
-        assert "[INSERT ADMIN SCREENSHOT HERE]" in landing.text
+        assert "Cloud software for weighbridge operations." in landing.text
+        assert "Site in progress" in landing.text
+        assert "Public landing page in development" in landing.text
         assert 'name="description"' in landing.text
         assert 'property="og:title"' in landing.text
         assert 'property="og:description"' in landing.text
-        assert "your-company.example.test" in landing.text
+        assert "/static/css/marketing.css" in landing.text
+        assert "https://software.example.test/" in landing.text
 
         blocked_tickets = marketing_client.get("/tickets")
         assert blocked_tickets.status_code == 404
@@ -842,6 +844,292 @@ def test_cross_tenant_guardrails_and_stamping(tmp_path, monkeypatch):
         ).scalars().first()
         assert created is not None
         assert int(created.tenant_id) == tenant_a
+
+
+def test_customer_account_codes_and_vehicle_registrations_are_tenant_scoped(
+    tmp_path,
+    monkeypatch,
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-lookup-unique.db", monkeypatch=monkeypatch
+    )
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a")
+    tenant_b = _seed_tenant(SessionLocal, name="Tenant B", subdomain="b")
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#AA2200",
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_b,
+        company_name="Tenant B Co",
+        primary_color="#0044AA",
+    )
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+    _seed_user(
+        SessionLocal,
+        email="b-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_b,
+    )
+
+    with SessionLocal() as db:
+        vehicle_type = db.execute(select(VehicleType).limit(1)).scalars().first()
+        assert vehicle_type is not None
+        vehicle_type_id = int(vehicle_type.id)
+
+    with _client(app, base_url="https://a.localhost") as tenant_a_client:
+        assert _login(
+            tenant_a_client,
+            email="a-admin@example.com",
+            password="TestPass123!",
+        ) == 303
+        csrf = _prime_csrf(tenant_a_client)
+        create_customer = tenant_a_client.post(
+            "/customers/new",
+            data={
+                "account_code": "SHARED-001",
+                "name": "Tenant A Shared Customer",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert create_customer.status_code in {302, 303}
+        create_vehicle = tenant_a_client.post(
+            "/vehicles/new",
+            data={
+                "registration": "SHARED-VEH",
+                "vehicle_type_id": str(vehicle_type_id),
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert create_vehicle.status_code in {302, 303}
+        duplicate_customer = tenant_a_client.post(
+            "/customers/new",
+            data={
+                "account_code": "SHARED-001",
+                "name": "Tenant A Duplicate Customer",
+                CSRF_FORM_FIELD: csrf,
+            },
+        )
+        assert duplicate_customer.status_code == 400
+        assert "Account code already exists." in duplicate_customer.text
+        duplicate_vehicle = tenant_a_client.post(
+            "/vehicles/new",
+            data={
+                "registration": "SHARED-VEH",
+                "vehicle_type_id": str(vehicle_type_id),
+                CSRF_FORM_FIELD: csrf,
+            },
+        )
+        assert duplicate_vehicle.status_code == 400
+        assert "Registration already exists." in duplicate_vehicle.text
+
+    with _client(app, base_url="https://b.localhost") as tenant_b_client:
+        assert _login(
+            tenant_b_client,
+            email="b-admin@example.com",
+            password="TestPass123!",
+        ) == 303
+        csrf = _prime_csrf(tenant_b_client)
+        create_customer = tenant_b_client.post(
+            "/customers/new",
+            data={
+                "account_code": "SHARED-001",
+                "name": "Tenant B Shared Customer",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert create_customer.status_code in {302, 303}
+        create_vehicle = tenant_b_client.post(
+            "/vehicles/new",
+            data={
+                "registration": "SHARED-VEH",
+                "vehicle_type_id": str(vehicle_type_id),
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert create_vehicle.status_code in {302, 303}
+
+    with SessionLocal() as db:
+        shared_customers = list(
+            db.execute(
+                select(Customer)
+                .where(Customer.account_code == "SHARED-001")
+                .order_by(Customer.tenant_id.asc(), Customer.id.asc())
+            ).scalars()
+        )
+        shared_vehicles = list(
+            db.execute(
+                select(Vehicle)
+                .where(Vehicle.registration == "SHAREDVEH")
+                .order_by(Vehicle.tenant_id.asc(), Vehicle.id.asc())
+            ).scalars()
+        )
+        assert [int(row.tenant_id) for row in shared_customers] == [tenant_a, tenant_b]
+        assert [int(row.tenant_id) for row in shared_vehicles] == [tenant_a, tenant_b]
+
+
+def test_lookup_routes_and_ticket_reference_writes_are_tenant_isolated(
+    tmp_path,
+    monkeypatch,
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-lookup-isolation.db", monkeypatch=monkeypatch
+    )
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a")
+    tenant_b = _seed_tenant(SessionLocal, name="Tenant B", subdomain="b")
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#992200",
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_b,
+        company_name="Tenant B Co",
+        primary_color="#003399",
+    )
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+    _seed_user(
+        SessionLocal,
+        email="b-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_b,
+    )
+
+    with SessionLocal() as db:
+        customer_b = Customer(
+            account_code="B-CUST-1",
+            name="Tenant B Customer",
+            tenant_id=tenant_b,
+        )
+        vehicle_b = Vehicle(
+            tenant_id=tenant_b,
+            registration="B-ONLY-VEH",
+        )
+        haulier_b = Haulier(
+            tenant_id=tenant_b,
+            name="Tenant B Haulier",
+            is_active=True,
+        )
+        area_b = Area(
+            tenant_id=tenant_b,
+            code="AREA-B",
+            description="Tenant B Area",
+            is_active=True,
+        )
+        db.add_all([customer_b, vehicle_b, haulier_b, area_b])
+        db.flush()
+
+        yard_b = db.execute(
+            select(Yard).where(Yard.tenant_id == tenant_b).limit(1)
+        ).scalars().first()
+        assert yard_b is not None
+
+        ticket_a = Ticket(
+            tenant_id=tenant_a,
+            ticket_no="A-GUARD-1",
+            datetime=utcnow(),
+            status=TicketStatusEnum.OPEN.value,
+            direction=DirectionEnum.INWARD.value,
+            transaction_type=TransactionTypeEnum.WASTEIN.value,
+            dont_invoice=False,
+            paid=False,
+        )
+        db.add(ticket_a)
+        db.commit()
+        db.refresh(customer_b)
+        db.refresh(vehicle_b)
+        db.refresh(haulier_b)
+        db.refresh(area_b)
+        db.refresh(ticket_a)
+        customer_b_id = int(customer_b.id)
+        vehicle_b_id = int(vehicle_b.id)
+        haulier_b_id = int(haulier_b.id)
+        area_b_id = int(area_b.id)
+        yard_b_id = int(yard_b.id)
+        ticket_a_id = int(ticket_a.id)
+
+    with _client(app, base_url="https://a.localhost") as tenant_a_client:
+        assert _login(
+            tenant_a_client,
+            email="a-admin@example.com",
+            password="TestPass123!",
+        ) == 303
+        lookup_list = tenant_a_client.get("/lookups/hauliers")
+        assert lookup_list.status_code == 200
+        assert "Tenant B Haulier" not in lookup_list.text
+
+        lookup_search = tenant_a_client.get("/lookups/hauliers?q=Tenant+B")
+        assert lookup_search.status_code == 200
+        assert "Tenant B Haulier" not in lookup_search.text
+
+        lookup_edit = tenant_a_client.get(f"/lookups/hauliers/{haulier_b_id}/edit")
+        assert lookup_edit.status_code == 404
+
+        csrf = _prime_csrf(tenant_a_client)
+        lookup_deactivate = tenant_a_client.post(
+            f"/lookups/hauliers/{haulier_b_id}/deactivate",
+            data={CSRF_FORM_FIELD: csrf},
+            follow_redirects=False,
+        )
+        assert lookup_deactivate.status_code == 404
+
+        vehicle_suggest = tenant_a_client.get(
+            f"/tickets/vehicle-suggest?ticket_id={ticket_a_id}&reg=B-ONLY-VEH"
+        )
+        assert vehicle_suggest.status_code == 204
+
+        ticket_update = tenant_a_client.post(
+            f"/tickets/{ticket_a_id}",
+            data={
+                "action": "save",
+                "datetime": "2026-03-08T10:30",
+                "status": "OPEN",
+                "direction": "INWARD",
+                "transaction_type": "WASTEIN",
+                "customer_id": str(customer_b_id),
+                "vehicle_id": str(vehicle_b_id),
+                "yard_id": str(yard_b_id),
+                "area_id": str(area_b_id),
+                "po_number": "",
+                CSRF_FORM_FIELD: csrf,
+            },
+        )
+        assert ticket_update.status_code == 400
+        assert "Customer not found." in ticket_update.text
+        assert "Vehicle not found." in ticket_update.text
+        assert "Yard not found." in ticket_update.text
+        assert "Area not found." in ticket_update.text
+
+    with SessionLocal() as db:
+        ticket_a = db.get(Ticket, ticket_a_id)
+        assert ticket_a is not None
+        assert ticket_a.customer_id is None
+        assert ticket_a.vehicle_id is None
+        assert ticket_a.yard_id is None
+        assert ticket_a.area_id is None
 
 
 def test_missing_csrf_is_rejected_on_tenant_and_admin_hosts(tmp_path, monkeypatch):
@@ -1402,6 +1690,7 @@ def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypa
 def test_tenant_settings_hides_platform_tools_and_keeps_platform_routes_separate(
     tmp_path, monkeypatch
 ):
+    monkeypatch.setattr(settings, "uploads_dir", str((tmp_path / "uploads").resolve()))
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-settings-cleanup.db", monkeypatch=monkeypatch
     )
@@ -2296,7 +2585,7 @@ def test_all_tenant_subdomains_use_dashboard_on_root_and_non_tenant_hosts_do_not
     with _client(app, base_url="https://software.example.test") as marketing_client:
         marketing = marketing_client.get("/")
         assert marketing.status_code == 200
-        assert "Cloud Weighbridge Operations" in marketing.text
+        assert "Cloud software for weighbridge operations." in marketing.text
         assert "Operations Dashboard" not in marketing.text
 
     with _client(app, base_url="https://admin.example.test") as admin_client:

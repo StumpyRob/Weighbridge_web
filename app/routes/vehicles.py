@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
@@ -20,6 +22,7 @@ from ..models import (
 from ..templating import templates
 
 router = APIRouter()
+REGISTRATION_SANITIZE_RE = re.compile(r"[^A-Z0-9]+")
 
 
 @router.get("/vehicles", response_class=HTMLResponse)
@@ -76,6 +79,7 @@ async def vehicles_create(
 ) -> HTMLResponse:
     form = await request.form()
     payload = _parse_vehicle_form(form)
+    payload["errors"].extend(_validate_vehicle_reference_selections(db, payload))
     if payload["errors"]:
         return templates.TemplateResponse(request, 
             "vehicles/new.html",
@@ -160,6 +164,9 @@ async def vehicles_update(
         )
     form = await request.form()
     payload = _parse_vehicle_form(form)
+    payload["errors"].extend(
+        _validate_vehicle_reference_selections(db, payload, vehicle=vehicle)
+    )
     if payload["errors"]:
         tares = db.execute(
             select(VehicleTare, Container)
@@ -232,6 +239,9 @@ async def vehicle_tares_add(
     tare_kg = _parse_float(str(form.get("tare_kg", "")).strip())
 
     if container_id and tare_kg is not None:
+        container = db.get(Container, container_id)
+        if not container or not container.is_active:
+            return RedirectResponse(url=f"/vehicles/{vehicle.id}", status_code=303)
         existing = db.execute(
             select(VehicleTare)
             .where(VehicleTare.vehicle_id == vehicle.id)
@@ -307,7 +317,7 @@ def _parse_vehicle_form(form) -> dict:
         return str(form.get(key, "")).strip()
 
     errors: list[str] = []
-    registration = value("registration").upper()
+    registration = REGISTRATION_SANITIZE_RE.sub("", value("registration").upper())
     vehicle_type_id = _parse_int(value("vehicle_type_id"))
 
     validate_no_html_fields(
@@ -344,6 +354,60 @@ def _parse_vehicle_form(form) -> dict:
         "default_haulier_id": _parse_int(value("default_haulier_id")),
         "default_driver_id": _parse_int(value("default_driver_id")),
     }
+
+
+def _validate_vehicle_reference_selections(
+    db: Session,
+    payload: dict,
+    *,
+    vehicle: Vehicle | None = None,
+) -> list[str]:
+    errors: list[str] = []
+    form_data = payload.get("form") if isinstance(payload.get("form"), dict) else {}
+
+    for field, label in (
+        ("owner_customer_id", "Owner customer"),
+        ("default_customer_id", "Default customer"),
+    ):
+        record_id = payload.get(field)
+        if not record_id:
+            payload[field] = None
+            form_data[field] = ""
+            continue
+        customer = db.get(Customer, int(record_id))
+        if customer is None:
+            errors.append(f"{label} not found.")
+            payload[field] = None
+            form_data[field] = ""
+
+    for field, model, label in (
+        ("default_haulier_id", Haulier, "Default haulier"),
+        ("default_driver_id", Driver, "Default driver"),
+    ):
+        record_id = payload.get(field)
+        if not record_id:
+            payload[field] = None
+            form_data[field] = ""
+            continue
+        record = db.get(model, int(record_id))
+        current_value = getattr(vehicle, field, None) if vehicle is not None else None
+        if record is None:
+            errors.append(f"{label} not found.")
+            payload[field] = None
+            form_data[field] = ""
+            continue
+        if not record.is_active and int(record.id) != int(current_value or 0):
+            errors.append(f"{label} is inactive.")
+
+    vehicle_type_id = payload.get("vehicle_type_id")
+    if vehicle_type_id:
+        vehicle_type = db.get(VehicleType, int(vehicle_type_id))
+        if vehicle_type is None:
+            errors.append("Vehicle type not found.")
+            payload["vehicle_type_id"] = None
+            form_data["vehicle_type_id"] = ""
+
+    return errors
 
 
 def _empty_form() -> dict:

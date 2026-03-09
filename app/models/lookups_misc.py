@@ -20,9 +20,16 @@ from .base import Base, utcnow
 
 class Yard(Base):
     __tablename__ = "yards"
+    __table_args__ = (
+        sa.UniqueConstraint("tenant_id", "code", name="uq_yards_tenant_code"),
+        sa.Index("ix_yards_tenant_id", "tenant_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    code: Mapped[str] = mapped_column(String(CODE_MAX), unique=True, nullable=False)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, default=1
+    )
+    code: Mapped[str] = mapped_column(String(CODE_MAX), nullable=False)
     description: Mapped[str | None] = mapped_column(String(DESC_MAX))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -33,9 +40,16 @@ class Yard(Base):
 
 class Area(Base):
     __tablename__ = "areas"
+    __table_args__ = (
+        sa.UniqueConstraint("tenant_id", "code", name="uq_areas_tenant_code"),
+        sa.Index("ix_areas_tenant_id", "tenant_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    code: Mapped[str] = mapped_column(String(CODE_MAX), unique=True, nullable=False)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, default=1
+    )
+    code: Mapped[str] = mapped_column(String(CODE_MAX), nullable=False)
     description: Mapped[str | None] = mapped_column(String(DESC_MAX))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -151,12 +165,16 @@ class Contractor(Base):
 class Unit(Base):
     __tablename__ = "units"
     __table_args__ = (
-        sa.UniqueConstraint("name", name="uq_units_name"),
+        sa.UniqueConstraint("tenant_id", "name", name="uq_units_tenant_name"),
+        sa.Index("ix_units_tenant_id", "tenant_id"),
         sa.Index("ix_units_name", "name"),
         sa.Index("ix_units_is_active", "is_active"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, default=1
+    )
     name: Mapped[str] = mapped_column(String(NAME_MAX), nullable=False)
     unit_type: Mapped[str] = mapped_column(
         String(10), nullable=False, server_default="COUNT"
@@ -276,10 +294,18 @@ class VehicleType(Base):
 
 class ProductGroup(Base):
     __tablename__ = "product_groups"
+    __table_args__ = (
+        sa.UniqueConstraint("tenant_id", "code", name="uq_product_groups_tenant_code"),
+        sa.UniqueConstraint("tenant_id", "name", name="uq_product_groups_tenant_name"),
+        sa.Index("ix_product_groups_tenant_id", "tenant_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    code: Mapped[str] = mapped_column(String(CODE_MAX), unique=True, nullable=False)
-    name: Mapped[str] = mapped_column(String(NAME_MAX), unique=True, nullable=False)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, default=1
+    )
+    code: Mapped[str] = mapped_column(String(CODE_MAX), nullable=False)
+    name: Mapped[str] = mapped_column(String(NAME_MAX), nullable=False)
     description: Mapped[str | None] = mapped_column(String(DESC_MAX))
     nominal_code_default: Mapped[str | None] = mapped_column(String(NOMINAL_CODE_MAX))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

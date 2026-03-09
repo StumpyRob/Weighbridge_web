@@ -135,6 +135,13 @@ async def products_create(
         )
         if group_error:
             payload["errors"].append(group_error)
+    if not payload["errors"]:
+        destination_error = _validate_default_destination_selection(
+            db,
+            payload.get("default_destination_id"),
+        )
+        if destination_error:
+            payload["errors"].append(destination_error)
     if payload["errors"]:
         _hydrate_effective_nominal_code_form(db, payload["form"])
         return templates.TemplateResponse(request, 
@@ -834,6 +841,14 @@ async def products_update(
         )
         if group_error:
             payload["errors"].append(group_error)
+    if not payload["errors"]:
+        destination_error = _validate_default_destination_selection(
+            db,
+            payload.get("default_destination_id"),
+            current_default_destination_id=product.default_destination_id,
+        )
+        if destination_error:
+            payload["errors"].append(destination_error)
     if payload["errors"]:
         _hydrate_effective_nominal_code_form(db, payload["form"])
         return templates.TemplateResponse(request, 
@@ -1749,6 +1764,26 @@ def _validate_product_group_selection(
         return "Product group not found."
     if not group.is_active and group_id != current_group_id:
         return "Product group is inactive."
+    return None
+
+
+def _validate_default_destination_selection(
+    db: Session,
+    destination_id: int | None,
+    current_default_destination_id: int | None = None,
+    *,
+    required: bool = False,
+) -> str | None:
+    if destination_id is None:
+        return "Default destination is required." if required else None
+    destination = db.get(Destination, destination_id)
+    if not destination:
+        return "Default destination not found."
+    if (
+        not destination.is_active
+        and destination_id != current_default_destination_id
+    ):
+        return "Default destination is inactive."
     return None
 
 

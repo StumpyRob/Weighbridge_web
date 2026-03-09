@@ -6,10 +6,15 @@ from sqlalchemy.orm import Session, sessionmaker, with_loader_criteria
 
 from .config import settings
 from .models import (
+    Area,
     CompanySetting,
+    Container,
     Customer,
     CustomerAdjustment,
     CustomerProductPrice,
+    Destination,
+    Driver,
+    Haulier,
     Invoice,
     InvoiceLine,
     InvoiceVoid,
@@ -18,19 +23,27 @@ from .models import (
     PrintTemplate,
     PrintTemplateVersion,
     Product,
+    ProductGroup,
     Ticket,
     TicketVoid,
+    Unit,
     User,
     Vehicle,
     VehicleTare,
+    Yard,
 )
 from .tenancy import current_platform_mode, current_tenant_id, is_tenant_scoped_entity
 
 TENANT_FILTER_MODELS = (
+    Area,
     CompanySetting,
+    Container,
     Customer,
     CustomerAdjustment,
     CustomerProductPrice,
+    Destination,
+    Driver,
+    Haulier,
     Invoice,
     InvoiceLine,
     InvoiceVoid,
@@ -39,11 +52,14 @@ TENANT_FILTER_MODELS = (
     PrintTemplate,
     PrintTemplateVersion,
     Product,
+    ProductGroup,
     Ticket,
     TicketVoid,
+    Unit,
     User,
     Vehicle,
     VehicleTare,
+    Yard,
 )
 
 

@@ -5,7 +5,19 @@
   <div class="form-grid">
     <div class="field">
       <label for="registration">Registration</label>
-      <input type="text" id="registration" name="registration" value="{{ form.registration }}" maxlength="{{ limits.REG_MAX }}" required />
+      <input
+        type="text"
+        id="registration"
+        name="registration"
+        value="{{ form.registration }}"
+        maxlength="{{ limits.REG_MAX }}"
+        inputmode="text"
+        autocapitalize="characters"
+        autocomplete="off"
+        spellcheck="false"
+        oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '')"
+        required
+      />
     </div>
     <div class="field">
       <label for="vehicle_type_id">Vehicle type</label>

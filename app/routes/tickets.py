@@ -49,6 +49,7 @@ from ..models import (
     TransactionTypeEnum,
     Unit,
     Vehicle,
+    WasteCode,
     WasteProducerSourceEnum,
     VoidReason,
     Yard,
@@ -1392,6 +1393,52 @@ def _validate_lookup_fields(
     return errors
 
 
+def _validate_ticket_entity_references(
+    ticket: Ticket,
+    payload: dict,
+    db: Session,
+) -> list[str]:
+    errors: list[str] = []
+    form_data = payload.get("form") if isinstance(payload.get("form"), dict) else {}
+    checks = (
+        ("customer_id", Customer, "Customer"),
+        ("vehicle_id", Vehicle, "Vehicle"),
+        ("yard_id", Yard, "Yard"),
+        ("area_id", Area, "Area"),
+        ("unit_id", Unit, "Unit"),
+        ("waste_code_id", WasteCode, "Waste code"),
+    )
+    for field, model, label in checks:
+        raw_value = payload.get(field)
+        if raw_value in (None, ""):
+            payload[field] = None
+            form_data[field] = ""
+            continue
+        try:
+            record_id = int(raw_value)
+        except (TypeError, ValueError):
+            errors.append(f"{label} not found.")
+            payload[field] = None
+            form_data[field] = ""
+            continue
+
+        record = db.get(model, record_id)
+        if not record:
+            errors.append(f"{label} not found.")
+            payload[field] = None
+            form_data[field] = ""
+            continue
+
+        if (
+            hasattr(record, "is_active")
+            and not bool(getattr(record, "is_active", False))
+            and int(record_id) != int(getattr(ticket, field, 0) or 0)
+        ):
+            errors.append(f"{label} is inactive.")
+
+    return errors
+
+
 def _request_expects_json(request: Request) -> bool:
     content_type = request.headers.get("content-type", "").lower()
     accept = request.headers.get("accept", "").lower()
@@ -2557,6 +2604,7 @@ async def tickets_update(
     if payload["vehicle_id"] is None and ticket.vehicle_id is not None:
         payload["vehicle_id"] = ticket.vehicle_id
         payload["form"]["vehicle_id"] = str(ticket.vehicle_id)
+    payload["errors"].extend(_validate_ticket_entity_references(ticket, payload, db))
 
     if action == "complete":
         before_complete_values = _ticket_audit_values(ticket)
@@ -2807,6 +2855,7 @@ async def tickets_update(
         payload["direction"], payload["transaction_type"]
     )
     weight_warning = _net_negative_values(payload["gross_kg"], payload["tare_kg"])
+    payload["errors"].extend(_validate_ticket_entity_references(ticket, payload, db))
     lookup_errors = _validate_lookup_fields(ticket, payload, db)
     payload["errors"].extend(lookup_errors)
     _apply_ticket_defaults(db, payload)
