@@ -1009,15 +1009,16 @@ def _load_options(
             .order_by(Destination.name)
         ).scalars()
     )
-    group_options = [(str(row.id), row.name) for row in groups]
+    group_options = [
+        (str(row.id), _format_product_group_option_label(row)) for row in groups
+    ]
     if current_group_id:
         if not any(str(row.id) == str(current_group_id) for row in groups):
             current_group = db.get(ProductGroup, current_group_id)
             if current_group:
-                label = (
-                    f"{current_group.name} (inactive)"
-                    if not current_group.is_active
-                    else current_group.name
+                label = _format_product_group_option_label(
+                    current_group,
+                    include_inactive_suffix=not current_group.is_active,
                 )
                 group_options = [(str(current_group.id), label)] + group_options
     unit_options = [(str(row.id), row.name) for row in units]
@@ -1615,6 +1616,22 @@ def _normalize_product_group_name(raw: str | None) -> str:
 
 def _normalize_nominal_code(raw: str | None) -> str:
     return str(raw or "").strip()
+
+
+def _format_product_group_option_label(
+    group: ProductGroup,
+    *,
+    include_inactive_suffix: bool = False,
+) -> str:
+    label = str(getattr(group, "name", "") or "").strip()
+    nominal_code = _normalize_nominal_code(
+        getattr(group, "nominal_code_default", None)
+    )
+    if nominal_code:
+        label = f"{label} ({nominal_code})"
+    if include_inactive_suffix:
+        label = f"{label} (inactive)"
+    return label
 
 
 def _empty_product_group_form() -> dict[str, str]:

@@ -106,7 +106,7 @@ body.marketing-landing-page::before {
   letter-spacing: -0.03em;
   color: var(--marketing-text);
   max-width: 14ch;
-  margin: 0 auto 1.5rem;
+  margin: 0 auto 2.35rem;
   animation: marketing-fade-up 0.6s 0.2s ease both;
   opacity: 0;
 }
@@ -116,17 +116,6 @@ body.marketing-landing-page::before {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-}
-
-.marketing-hero__lead {
-  font-size: clamp(1rem, 2vw, 1.25rem);
-  font-weight: 300;
-  line-height: 1.6;
-  color: var(--marketing-muted);
-  max-width: 52ch;
-  margin: 0 auto 3.5rem;
-  animation: marketing-fade-up 0.6s 0.3s ease both;
-  opacity: 0;
 }
 
 .marketing-chips {
@@ -208,7 +197,15 @@ body.marketing-landing-page::before {
   box-shadow: 0 0 6px #f5a623;
 }
 
-.marketing-card h2 {
+.marketing-card__panel {
+  padding: 1.35rem 1.4rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.marketing-card__panel h2 {
   font-size: 1.45rem;
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -217,33 +214,12 @@ body.marketing-landing-page::before {
   line-height: 1.2;
 }
 
-.marketing-card p {
+.marketing-card__panel p {
   font-size: 0.9rem;
   font-weight: 300;
   line-height: 1.7;
   color: var(--marketing-muted);
-  margin-bottom: 1.8rem;
-}
-
-.marketing-card__divider {
-  border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-  margin-bottom: 1.5rem;
-}
-
-.marketing-card__note {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.3);
-  line-height: 1.55;
-}
-
-.marketing-card__note-icon {
-  flex-shrink: 0;
-  margin-top: 1px;
-  opacity: 0.5;
+  margin-bottom: 0;
 }
 
 .marketing-footer {
@@ -317,7 +293,6 @@ body.marketing-landing-page::before {
   .marketing-nav,
   .marketing-hero__eyebrow,
   .marketing-hero__title,
-  .marketing-hero__lead,
   .marketing-chips,
   .marketing-card-wrap,
   .marketing-footer {
