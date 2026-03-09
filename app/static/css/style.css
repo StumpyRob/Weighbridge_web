@@ -1076,6 +1076,41 @@ body.js-help-tooltips .help-tooltip {
   max-width: 0;
 }
 
+.products-table .product-description-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.products-table .product-description-cell .table-cell-truncate {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.product-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0.12rem 0.48rem;
+  border-radius: 999px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.product-flag--sale {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
 .products-table .tax-rate-col {
   min-width: 110px;
   text-align: right;

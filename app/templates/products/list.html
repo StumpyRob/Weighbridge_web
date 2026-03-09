@@ -70,9 +70,14 @@
             <a href="/products/{{ product.id }}" class="truncate truncate--sm" title="{{ product.code }}">{{ product.code }}</a>
           </td>
           <td class="description-col truncate-col" title="{{ product_description }}">
-            <span class="table-cell-truncate">
-              {{ product_description[:28] ~ ('...' if product_description|length > 28 else '') }}
-            </span>
+            <div class="product-description-cell">
+              <span class="table-cell-truncate">
+                {{ product_description[:28] ~ ('...' if product_description|length > 28 else '') }}
+              </span>
+              {% if product.sales_only %}
+                <span class="product-flag product-flag--sale">Sales only</span>
+              {% endif %}
+            </div>
           </td>
           <td class="unit-col">
             {% if unit_name %}
