@@ -40,6 +40,9 @@ from ..templating import templates
 router = APIRouter()
 ACCOUNT_CODE_MAX_LEN = CODE_MAX
 ACCOUNT_CODE_RE = re.compile(r"^[A-Z0-9-]+$")
+ACCOUNT_CODE_SANITIZE_RE = re.compile(r"[^A-Z0-9-]+")
+PHONE_SANITIZE_RE = re.compile(r"[^0-9]+")
+POSTCODE_SANITIZE_RE = re.compile(r"[^A-Z0-9]+")
 INVOICE_FREQUENCIES = ("WEEKLY", "MONTHLY", "ADHOC")
 INVOICE_FREQUENCY_LABELS = {
     "WEEKLY": "Weekly",
@@ -60,6 +63,18 @@ CREDIT_AVAILABLE_LOW_RATIO = Decimal("0.20")
 
 def _forbidden_response() -> HTMLResponse:
     return HTMLResponse("Forbidden", status_code=403)
+
+
+def _normalize_account_code(value: str) -> str:
+    return ACCOUNT_CODE_SANITIZE_RE.sub("", str(value or "").upper())
+
+
+def _normalize_phone(value: str) -> str:
+    return PHONE_SANITIZE_RE.sub("", str(value or ""))
+
+
+def _normalize_postcode(value: str) -> str:
+    return POSTCODE_SANITIZE_RE.sub("", str(value or "").upper())
 
 
 def _current_user_is_admin(request: Request, db: Session) -> bool:
@@ -913,14 +928,14 @@ def _parse_customer_form(form) -> dict:
         return str(form.get(key, "")).strip()
 
     errors: list[str] = []
-    account_code = value("account_code").upper()
+    account_code = _normalize_account_code(value("account_code"))
     name = value("name")
     invoice_email = value("invoice_email")
-    phone = value("phone")
+    phone = _normalize_phone(value("phone"))
     address_line1 = value("address_line1")
     address_line2 = value("address_line2")
     city = value("city")
-    postcode = value("postcode")
+    postcode = _normalize_postcode(value("postcode"))
     country = value("country")
     vat_number = value("vat_number")
     payment_terms_provided = "payment_terms" in form
@@ -1071,14 +1086,14 @@ def _empty_form() -> dict:
 
 def _customer_to_form(customer: Customer) -> dict:
     return {
-        "account_code": (customer.account_code or "").upper(),
+        "account_code": _normalize_account_code(customer.account_code or ""),
         "name": customer.name or "",
         "invoice_email": customer.invoice_email or "",
-        "phone": customer.phone or "",
+        "phone": _normalize_phone(customer.phone or ""),
         "address_line1": customer.address_line1 or "",
         "address_line2": customer.address_line2 or "",
         "city": customer.city or "",
-        "postcode": customer.postcode or "",
+        "postcode": _normalize_postcode(customer.postcode or ""),
         "country": customer.country or "",
         "vat_number": customer.vat_number or "",
         "payment_terms": customer.payment_terms or "",

@@ -167,6 +167,8 @@
     </footer>
     <script>
       (function () {
+        let flashToastHeaderObserver = null;
+
         function csrfToken() {
           const meta = document.querySelector("meta[name='csrf-token']");
           return meta ? meta.getAttribute("content") || "" : "";
@@ -200,9 +202,30 @@
           forms.forEach(applyCsrfToForm);
         }
 
+        function syncFlashToastOffset() {
+          const header = document.querySelector(".site-header");
+          if (!header) {
+            return;
+          }
+          const offset = Math.ceil(header.getBoundingClientRect().height) + 12;
+          document.documentElement.style.setProperty(
+            "--flash-toast-top",
+            offset + "px"
+          );
+        }
+
         document.addEventListener("DOMContentLoaded", function () {
           applyCsrfToAllForms(document);
+          syncFlashToastOffset();
+
+          const header = document.querySelector(".site-header");
+          if (header && typeof ResizeObserver === "function") {
+            flashToastHeaderObserver = new ResizeObserver(syncFlashToastOffset);
+            flashToastHeaderObserver.observe(header);
+          }
         });
+
+        window.addEventListener("resize", syncFlashToastOffset);
 
         document.addEventListener(
           "submit",

@@ -17,7 +17,7 @@
   --dashboard-throughput-bar-end: var(--theme-primary-dark);
   --theme-nav-logo-height: 34px;
   --section-gap: 1rem;
-  --flash-toast-top: 72px;
+  --flash-toast-top: 88px;
 }
 
 body {
@@ -3353,7 +3353,7 @@ details > summary:focus-visible {
 
 @media (max-width: 900px) {
   :root {
-    --flash-toast-top: 96px;
+    --flash-toast-top: 112px;
   }
 
   .invoice-summary-grid,

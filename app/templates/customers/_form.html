@@ -15,6 +15,9 @@
         pattern="[A-Z0-9-]+"
         title="Use A-Z, 0-9, and - only (max {{ limits.CODE_MAX }} characters)."
         class="account-code"
+        autocapitalize="characters"
+        autocomplete="off"
+        spellcheck="false"
         required
       />
     </div>
@@ -28,31 +31,25 @@
     </div>
     <div class="field">
       <label for="phone">Phone</label>
-      <input type="text" id="phone" name="phone" value="{{ form.phone }}" maxlength="{{ limits.CODE_MAX }}" />
+      <input
+        type="text"
+        id="phone"
+        name="phone"
+        value="{{ form.phone }}"
+        maxlength="{{ limits.CODE_MAX }}"
+        inputmode="numeric"
+        autocomplete="tel"
+        spellcheck="false"
+      />
     </div>
   </div>
 </section>
-
-<script>
-  (function () {
-    const input = document.getElementById("account_code");
-    if (!input || input.dataset.upperBound === "true") {
-      return;
-    }
-    input.dataset.upperBound = "true";
-    function sync() {
-      input.value = input.value.toUpperCase();
-    }
-    input.addEventListener("input", sync);
-    sync();
-  })();
-</script>
 
 <section class="card">
   <h2>Address</h2>
   <div class="form-grid">
     <div class="field">
-      <label for="address_line1">Address line 1</label>
+      <label for="address_line1">Line 1 / Number</label>
       <input type="text" id="address_line1" name="address_line1" value="{{ form.address_line1 }}" maxlength="{{ limits.ADDRESS_LINE_MAX }}" />
     </div>
     <div class="field">
@@ -65,7 +62,16 @@
     </div>
     <div class="field">
       <label for="postcode">Postcode</label>
-      <input type="text" id="postcode" name="postcode" value="{{ form.postcode }}" maxlength="{{ limits.POSTCODE_MAX }}" />
+      <input
+        type="text"
+        id="postcode"
+        name="postcode"
+        value="{{ form.postcode }}"
+        maxlength="{{ limits.POSTCODE_MAX }}"
+        autocapitalize="characters"
+        autocomplete="postal-code"
+        spellcheck="false"
+      />
     </div>
     <div class="field">
       <label for="country">Country</label>
@@ -73,6 +79,50 @@
     </div>
   </div>
 </section>
+
+<script>
+  (function () {
+    const bindings = [
+      {
+        id: "account_code",
+        sanitize(value) {
+          return value.toUpperCase().replace(/[^A-Z0-9-]+/g, "");
+        },
+      },
+      {
+        id: "phone",
+        sanitize(value) {
+          return value.replace(/[^0-9]+/g, "");
+        },
+      },
+      {
+        id: "postcode",
+        sanitize(value) {
+          return value.toUpperCase().replace(/[^A-Z0-9]+/g, "");
+        },
+      },
+    ];
+
+    bindings.forEach(function (binding) {
+      const input = document.getElementById(binding.id);
+      if (!input || input.dataset.sanitized === "true") {
+        return;
+      }
+      input.dataset.sanitized = "true";
+
+      function sync() {
+        const sanitized = binding.sanitize(input.value || "");
+        if (input.value !== sanitized) {
+          input.value = sanitized;
+        }
+      }
+
+      input.addEventListener("input", sync);
+      input.addEventListener("blur", sync);
+      sync();
+    });
+  })();
+</script>
 
 <section class="card">
   <h2>Billing</h2>
