@@ -15,6 +15,7 @@ from ..audit import diff as audit_diff
 from ..audit import log as audit_log
 from ..audit import user_snapshot
 from ..auth import (
+    ROLE_USER,
     ROLE_TENANT_ADMIN,
     hash_password,
     is_superadmin_user,
@@ -481,8 +482,13 @@ def tenant_detail(
             "delete_error": request.query_params.get("delete_error", ""),
             "demo_reset": request.query_params.get("demo_reset") == "1",
             "demo_reset_error": request.query_params.get("demo_reset_error", ""),
+            "user_saved": request.query_params.get("user_saved") == "1",
+            "created_user_email": request.query_params.get("created_user", ""),
+            "user_error": request.query_params.get("user_error", ""),
             "email_saved": request.query_params.get("email_saved") == "1",
             "email_error": request.query_params.get("email_error", ""),
+            "password_saved": request.query_params.get("password_saved") == "1",
+            "password_error": request.query_params.get("password_error", ""),
         },
     )
 
@@ -713,6 +719,207 @@ async def tenant_update_admin_email(
 
     return RedirectResponse(
         url=f"/platform/tenants/{tenant.id}?email_saved=1",
+        status_code=303,
+    )
+
+
+@router.post("/platform/tenants/{tenant_id:int}/users")
+@router.post("/admin/tenants/{tenant_id:int}/users")
+async def tenant_create_user(
+    tenant_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None:
+        return RedirectResponse(url="/platform/tenants?error=Tenant+not+found", status_code=303)
+
+    users = list(
+        db.execute(
+            select(User)
+            .where(User.tenant_id == int(tenant.id))
+            .order_by(User.created_at.asc(), User.username.asc(), User.id.asc())
+        ).scalars()
+    )
+
+    form = await request.form()
+    user_email = normalize_email(form.get("user_email"))
+    user_password = str(form.get("user_password", "")).strip()
+    confirm_password = str(form.get("confirm_password", "")).strip()
+    user_role = str(form.get("user_role", "") or "").strip().lower()
+
+    if not validate_email(user_email):
+        return RedirectResponse(
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'user_error': 'A valid tenant user email is required.'})}",
+            status_code=303,
+        )
+    if user_role not in {ROLE_TENANT_ADMIN, ROLE_USER}:
+        return RedirectResponse(
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'user_error': 'Select a valid tenant user role.'})}",
+            status_code=303,
+        )
+    if len(user_password) < 8:
+        return RedirectResponse(
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'user_error': 'Tenant user password must be at least 8 characters.'})}",
+            status_code=303,
+        )
+    if user_password != confirm_password:
+        return RedirectResponse(
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'user_error': 'Passwords do not match.'})}",
+            status_code=303,
+        )
+
+    has_tenant_admin = any(
+        _normalize_role(getattr(user, "role", "")) == ROLE_TENANT_ADMIN
+        for user in users
+    )
+    if not has_tenant_admin and user_role != ROLE_TENANT_ADMIN:
+        return RedirectResponse(
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'user_error': 'The first tenant user must be a Tenant Admin.'})}",
+            status_code=303,
+        )
+
+    existing_user = (
+        db.execute(
+            select(User.id)
+            .where(
+                User.tenant_id == int(tenant.id),
+                func.lower(_user_identity_column()) == user_email,
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+    )
+    if existing_user is not None:
+        return RedirectResponse(
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'user_error': 'That email is already in use for this tenant.'})}",
+            status_code=303,
+        )
+
+    tenant_user = User(
+        **user_identity_kwargs(email=user_email, role=user_role),
+        password_hash=hash_password(user_password),
+        is_active=True,
+        tenant_id=int(tenant.id),
+    )
+    db.add(tenant_user)
+    try:
+        db.flush()
+        audit_log(
+            db,
+            request,
+            action="USER_CREATE",
+            entity_type="user",
+            entity_id=tenant_user.id,
+            summary=f"Created tenant user for {tenant.name}",
+            details={
+                "email": user_email,
+                "role": user_role,
+            },
+            user=current_user,
+            tenant_id=tenant.id,
+        )
+        audit_log(
+            db,
+            request,
+            action="TENANT_UPDATE",
+            entity_type="tenant",
+            entity_id=tenant.id,
+            summary=f"Added tenant user to tenant {tenant.name}",
+            details={
+                "created_user_email": user_email,
+                "created_user_role": user_role,
+            },
+            user=current_user,
+            tenant_id=tenant.id,
+        )
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return RedirectResponse(
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'user_error': 'That email is already in use for this tenant.'})}",
+            status_code=303,
+        )
+
+    return RedirectResponse(
+        url=(
+            f"/platform/tenants/{tenant.id}?"
+            f"{urlencode({'user_saved': '1', 'created_user': user_email})}"
+        ),
+        status_code=303,
+    )
+
+
+@router.post("/platform/tenants/{tenant_id:int}/admin-password")
+@router.post("/admin/tenants/{tenant_id:int}/admin-password")
+async def tenant_update_admin_password(
+    tenant_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None:
+        return RedirectResponse(url="/platform/tenants?error=Tenant+not+found", status_code=303)
+
+    users = list(
+        db.execute(
+            select(User)
+            .where(User.tenant_id == int(tenant.id))
+            .order_by(User.created_at.asc(), User.username.asc(), User.id.asc())
+        ).scalars()
+    )
+    primary_admin = _tenant_primary_admin(users)
+    if primary_admin is None:
+        return RedirectResponse(
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'password_error': 'This tenant has no user account to update yet.'})}",
+            status_code=303,
+        )
+
+    form = await request.form()
+    admin_password = str(form.get("admin_password", "")).strip()
+    confirm_password = str(form.get("confirm_password", "")).strip()
+
+    if len(admin_password) < 8:
+        return RedirectResponse(
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'password_error': 'Tenant admin password must be at least 8 characters.'})}",
+            status_code=303,
+        )
+    if admin_password != confirm_password:
+        return RedirectResponse(
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'password_error': 'Passwords do not match.'})}",
+            status_code=303,
+        )
+
+    primary_admin.password_hash = hash_password(admin_password)
+    audit_log(
+        db,
+        request,
+        action="USER_UPDATE",
+        entity_type="user",
+        entity_id=primary_admin.id,
+        summary=f"Updated tenant admin password for {tenant.name}",
+        details={"changed": {"password": {"reset": True}}},
+        user=current_user,
+        tenant_id=tenant.id,
+    )
+    audit_log(
+        db,
+        request,
+        action="TENANT_UPDATE",
+        entity_type="tenant",
+        entity_id=tenant.id,
+        summary=f"Updated initial admin password for tenant {tenant.name}",
+        details={"changed": {"initial_admin_password": {"reset": True}}},
+        user=current_user,
+        tenant_id=tenant.id,
+    )
+    db.commit()
+
+    return RedirectResponse(
+        url=f"/platform/tenants/{tenant.id}?password_saved=1",
         status_code=303,
     )
 

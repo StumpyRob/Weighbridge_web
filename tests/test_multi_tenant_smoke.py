@@ -15,7 +15,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
-from app.auth import ROLE_SUPERADMIN, ROLE_TENANT_ADMIN, hash_password, user_identity_kwargs
+from app.auth import ROLE_SUPERADMIN, ROLE_TENANT_ADMIN, ROLE_USER, hash_password, user_identity_kwargs
 from app.config import settings
 from app.db import TenantSession, get_db
 from app.main import create_app
@@ -1593,6 +1593,9 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert 'id="platform-tenant-users-help"' in tenant_detail.text
         assert "tenant-admin@example.com" in tenant_detail.text
         assert 'href="/t/a/login"' in tenant_detail.text
+        assert f'action="/platform/tenants/{tenant_a}/users"' in tenant_detail.text
+        assert f'action="/platform/tenants/{tenant_a}/admin-email"' in tenant_detail.text
+        assert f'action="/platform/tenants/{tenant_a}/admin-password"' in tenant_detail.text
         assert f'action="/platform/tenants/{tenant_a}/delete"' in tenant_detail.text
 
         disable = admin_client.post(
@@ -1659,6 +1662,28 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
             follow_redirects=False,
         )
         assert forbidden_tenant_host.status_code == 404
+        forbidden_password_tenant_host = tenant_client.post(
+            f"/platform/tenants/{tenant_a}/admin-password",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "admin_password": "ResetPass123!",
+                "confirm_password": "ResetPass123!",
+            },
+            follow_redirects=False,
+        )
+        assert forbidden_password_tenant_host.status_code == 404
+        forbidden_create_user_tenant_host = tenant_client.post(
+            f"/platform/tenants/{tenant_a}/users",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "user_email": "new-user@example.com",
+                "user_role": ROLE_USER,
+                "user_password": "ResetPass123!",
+                "confirm_password": "ResetPass123!",
+            },
+            follow_redirects=False,
+        )
+        assert forbidden_create_user_tenant_host.status_code == 404
 
     with _client(app, base_url="https://admin.localhost") as admin_host_client:
         csrf = _prime_csrf(admin_host_client)
@@ -1669,6 +1694,28 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
             follow_redirects=False,
         )
         assert forbidden_non_superadmin.status_code in {302, 403}
+        forbidden_password_non_superadmin = admin_host_client.post(
+            f"/platform/tenants/{tenant_a}/admin-password",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "admin_password": "ResetPass123!",
+                "confirm_password": "ResetPass123!",
+            },
+            follow_redirects=False,
+        )
+        assert forbidden_password_non_superadmin.status_code in {302, 403}
+        forbidden_create_user_non_superadmin = admin_host_client.post(
+            f"/platform/tenants/{tenant_a}/users",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "user_email": "new-user@example.com",
+                "user_role": ROLE_USER,
+                "user_password": "ResetPass123!",
+                "confirm_password": "ResetPass123!",
+            },
+            follow_redirects=False,
+        )
+        assert forbidden_create_user_non_superadmin.status_code in {302, 403}
 
     with SessionLocal() as db:
         tenant = db.get(Tenant, tenant_a)
@@ -1811,6 +1858,260 @@ def test_superadmin_can_delete_empty_tenant_and_delete_blocks_linked_data(tmp_pa
         assert db.get(Tenant, busy_tenant) is not None
 
     assert not (uploads_root / "tenants" / str(empty_tenant)).exists()
+
+
+def test_platform_superadmin_can_update_demo_tenant_admin_email_and_password(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-demo-admin-credentials.db", monkeypatch=monkeypatch
+    )
+    demo_tenant = _seed_tenant(
+        SessionLocal,
+        name="Demo",
+        subdomain=settings.effective_demo_tenant_subdomain,
+        is_active=True,
+        is_demo=True,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=demo_tenant,
+        company_name="Demo Co",
+        primary_color="#6a3d34",
+    )
+    demo_admin_id = _seed_user(
+        SessionLocal,
+        email="demo-admin@example.com",
+        password="DemoPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=demo_tenant,
+    )
+    superadmin_id = _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+
+        detail = admin_client.get(f"/platform/tenants/{demo_tenant}")
+        assert detail.status_code == 200
+        assert "Tenant Admin Email" in detail.text
+        assert "Tenant Admin Password" in detail.text
+        assert "This also applies to the demo tenant." in detail.text
+
+        csrf = _prime_csrf(admin_client)
+        updated_email = admin_client.post(
+            f"/platform/tenants/{demo_tenant}/admin-email",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "admin_email": "demo-updated@example.com",
+            },
+            follow_redirects=False,
+        )
+        assert updated_email.status_code in {302, 303}
+        assert updated_email.headers.get("location") == f"/platform/tenants/{demo_tenant}?email_saved=1"
+
+        email_page = admin_client.get(updated_email.headers["location"])
+        assert email_page.status_code == 200
+        assert "Tenant admin email updated." in email_page.text
+
+    with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.localhost") as demo_client:
+        assert _login(demo_client, email="demo-admin@example.com", password="DemoPass123!") == 401
+        assert _login(demo_client, email="demo-updated@example.com", password="DemoPass123!") == 303
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+        csrf = _prime_csrf(admin_client)
+        bad_password = admin_client.post(
+            f"/platform/tenants/{demo_tenant}/admin-password",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "admin_password": "NewDemoPass123!",
+                "confirm_password": "MismatchPass123!",
+            },
+            follow_redirects=False,
+        )
+        assert bad_password.status_code in {302, 303}
+        assert bad_password.headers.get("location", "").startswith(f"/platform/tenants/{demo_tenant}?")
+
+        bad_password_page = admin_client.get(bad_password.headers["location"])
+        assert bad_password_page.status_code == 200
+        assert "Passwords do not match." in bad_password_page.text
+
+        csrf = _prime_csrf(admin_client)
+        updated_password = admin_client.post(
+            f"/platform/tenants/{demo_tenant}/admin-password",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "admin_password": "NewDemoPass123!",
+                "confirm_password": "NewDemoPass123!",
+            },
+            follow_redirects=False,
+        )
+        assert updated_password.status_code in {302, 303}
+        assert updated_password.headers.get("location") == f"/platform/tenants/{demo_tenant}?password_saved=1"
+
+        password_page = admin_client.get(updated_password.headers["location"])
+        assert password_page.status_code == 200
+        assert "Tenant admin password updated." in password_page.text
+
+    with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.localhost") as demo_client:
+        assert _login(demo_client, email="demo-admin@example.com", password="DemoPass123!") == 401
+        assert _login(demo_client, email="demo-updated@example.com", password="DemoPass123!") == 401
+        assert _login(demo_client, email="demo-updated@example.com", password="NewDemoPass123!") == 303
+
+    with SessionLocal() as db:
+        demo_admin = db.get(User, demo_admin_id)
+        assert demo_admin is not None
+        assert demo_admin.username == "demo-updated@example.com"
+
+        password_user_event = db.execute(
+            select(AuditEvent)
+            .where(
+                AuditEvent.action == "USER_UPDATE",
+                AuditEvent.entity_id == str(demo_admin_id),
+            )
+            .order_by(AuditEvent.id.desc())
+            .limit(1)
+        ).scalars().first()
+        assert password_user_event is not None
+        assert password_user_event.user_id == superadmin_id
+        assert "password" in str(password_user_event.summary or "").lower()
+
+        password_tenant_event = db.execute(
+            select(AuditEvent)
+            .where(
+                AuditEvent.action == "TENANT_UPDATE",
+                AuditEvent.entity_id == str(demo_tenant),
+            )
+            .order_by(AuditEvent.id.desc())
+            .limit(1)
+        ).scalars().first()
+        assert password_tenant_event is not None
+        assert password_tenant_event.user_id == superadmin_id
+        assert isinstance(password_tenant_event.details_json, dict)
+        assert "password" in str(password_tenant_event.summary or "").lower()
+        assert "initial_admin_password" in password_tenant_event.details_json.get("changed", {})
+
+
+def test_platform_superadmin_can_create_demo_user_and_add_more_tenant_users(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-demo-user-create.db", monkeypatch=monkeypatch
+    )
+    demo_tenant = _seed_tenant(
+        SessionLocal,
+        name="Demo",
+        subdomain=settings.effective_demo_tenant_subdomain,
+        is_active=True,
+        is_demo=True,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=demo_tenant,
+        company_name="Demo Co",
+        primary_color="#72443c",
+    )
+    superadmin_id = _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+
+        detail = admin_client.get(f"/platform/tenants/{demo_tenant}")
+        assert detail.status_code == 200
+        assert "No tenant users." in detail.text
+        assert f'action="/platform/tenants/{demo_tenant}/users"' in detail.text
+        assert "Create the initial demo login after a reset" in detail.text
+        assert "Create one above first." in detail.text
+
+        csrf = _prime_csrf(admin_client)
+        created_admin = admin_client.post(
+            f"/platform/tenants/{demo_tenant}/users",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "user_email": "demo-admin@example.com",
+                "user_role": ROLE_TENANT_ADMIN,
+                "user_password": "DemoPass123!",
+                "confirm_password": "DemoPass123!",
+            },
+            follow_redirects=False,
+        )
+        assert created_admin.status_code in {302, 303}
+        assert created_admin.headers.get("location", "").startswith(f"/platform/tenants/{demo_tenant}?")
+
+        created_admin_page = admin_client.get(created_admin.headers["location"])
+        assert created_admin_page.status_code == 200
+        assert "Tenant user created: demo-admin@example.com." in created_admin_page.text
+        assert "demo-admin@example.com" in created_admin_page.text
+        assert "Tenant Admin Email" in created_admin_page.text
+        assert "Tenant Admin Password" in created_admin_page.text
+
+        csrf = _prime_csrf(admin_client)
+        created_operator = admin_client.post(
+            f"/platform/tenants/{demo_tenant}/users",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "user_email": "demo-ops@example.com",
+                "user_role": ROLE_USER,
+                "user_password": "OperatorPass123!",
+                "confirm_password": "OperatorPass123!",
+            },
+            follow_redirects=False,
+        )
+        assert created_operator.status_code in {302, 303}
+        assert created_operator.headers.get("location", "").startswith(f"/platform/tenants/{demo_tenant}?")
+
+        created_operator_page = admin_client.get(created_operator.headers["location"])
+        assert created_operator_page.status_code == 200
+        assert "Tenant user created: demo-ops@example.com." in created_operator_page.text
+        assert "demo-admin@example.com" in created_operator_page.text
+        assert "demo-ops@example.com" in created_operator_page.text
+
+    with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.localhost") as demo_client:
+        assert _login(demo_client, email="demo-admin@example.com", password="DemoPass123!") == 303
+        assert _login(demo_client, email="demo-ops@example.com", password="OperatorPass123!") == 303
+
+    with SessionLocal() as db:
+        demo_users = list(
+            db.execute(
+                select(User)
+                .where(User.tenant_id == demo_tenant)
+                .order_by(User.username.asc())
+            ).scalars()
+        )
+        assert [user.username for user in demo_users] == [
+            "demo-admin@example.com",
+            "demo-ops@example.com",
+        ]
+        assert [user.role for user in demo_users] == [
+            ROLE_TENANT_ADMIN,
+            ROLE_USER,
+        ]
+
+        created_events = list(
+            db.execute(
+                select(AuditEvent)
+                .where(
+                    AuditEvent.action == "USER_CREATE",
+                    AuditEvent.user_id == superadmin_id,
+                )
+                .order_by(AuditEvent.id.asc())
+            ).scalars()
+        )
+        assert len(created_events) >= 2
+        created_emails = {
+            str((event.details_json or {}).get("email") or "")
+            for event in created_events
+        }
+        assert "demo-admin@example.com" in created_emails
+        assert "demo-ops@example.com" in created_emails
 
 
 def test_legacy_default_tenant_is_renamed_to_demo_and_hidden_from_platform_ui(tmp_path, monkeypatch):

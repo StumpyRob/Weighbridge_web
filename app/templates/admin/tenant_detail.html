@@ -48,6 +48,18 @@
     </div>
   {% endif %}
 
+  {% if user_saved %}
+    <div class="notice">
+      Tenant user created{% if created_user_email %}: {{ created_user_email }}{% endif %}.
+    </div>
+  {% endif %}
+
+  {% if user_error %}
+    <div class="alert alert--danger">
+      {{ user_error }}
+    </div>
+  {% endif %}
+
   {% if email_saved %}
     <div class="notice">
       Tenant admin email updated.
@@ -57,6 +69,18 @@
   {% if email_error %}
     <div class="alert alert--danger">
       {{ email_error }}
+    </div>
+  {% endif %}
+
+  {% if password_saved %}
+    <div class="notice">
+      Tenant admin password updated.
+    </div>
+  {% endif %}
+
+  {% if password_error %}
+    <div class="alert alert--danger">
+      {{ password_error }}
     </div>
   {% endif %}
 
@@ -117,6 +141,63 @@
 
   <section class="frame">
     <div class="frame-header">
+      <h2>Add Tenant User</h2>
+    </div>
+    <div class="frame-body">
+      <p class="muted platform-tenant-detail-users-copy">
+        Create the initial demo login after a reset or add another tenant-scoped user to this workspace.
+      </p>
+      <form method="post" action="/platform/tenants/{{ tenant.id }}/users" class="ticket-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+        <div class="field">
+          <label for="user_email">Tenant user email</label>
+          <input
+            type="email"
+            id="user_email"
+            name="user_email"
+            required
+            autocomplete="email"
+          />
+        </div>
+        <div class="field">
+          <label for="user_role">Tenant user role</label>
+          <select id="user_role" name="user_role" required>
+            <option value="tenant_admin">Tenant Admin</option>
+            <option value="user">User</option>
+          </select>
+          <p class="help">If this workspace has no tenant admins yet, the first user must be a Tenant Admin.</p>
+        </div>
+        <div class="field">
+          <label for="user_password">Temporary password</label>
+          <input
+            type="password"
+            id="user_password"
+            name="user_password"
+            required
+            minlength="8"
+            autocomplete="new-password"
+          />
+        </div>
+        <div class="field">
+          <label for="user_confirm_password">Confirm temporary password</label>
+          <input
+            type="password"
+            id="user_confirm_password"
+            name="confirm_password"
+            required
+            minlength="8"
+            autocomplete="new-password"
+          />
+        </div>
+        <div class="actions btn-group">
+          <button type="submit" class="btn btn--primary">Create Tenant User</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="frame-header">
       <h2>Tenant Admin Email</h2>
     </div>
     <div class="frame-body">
@@ -142,7 +223,7 @@
         </form>
       {% else %}
         <div class="alert alert--warning">
-          This tenant does not currently have a tenant user account to update.
+          This tenant does not currently have a tenant user account to update. Create one above first.
         </div>
       {% endif %}
     </div>
@@ -186,6 +267,51 @@
           </tbody>
         </table>
       </div>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="frame-header">
+      <h2>Tenant Admin Password</h2>
+    </div>
+    <div class="frame-body">
+      {% if primary_admin_email %}
+        <p class="muted platform-tenant-detail-users-copy">
+          Set a new password for the primary tenant admin sign-in account. This also applies to the demo tenant.
+        </p>
+        <form method="post" action="/platform/tenants/{{ tenant.id }}/admin-password" class="ticket-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+          <div class="field">
+            <label for="admin_password">New tenant admin password</label>
+            <input
+              type="password"
+              id="admin_password"
+              name="admin_password"
+              required
+              minlength="8"
+              autocomplete="new-password"
+            />
+          </div>
+          <div class="field">
+            <label for="confirm_password">Confirm new password</label>
+            <input
+              type="password"
+              id="confirm_password"
+              name="confirm_password"
+              required
+              minlength="8"
+              autocomplete="new-password"
+            />
+          </div>
+          <div class="actions btn-group">
+            <button type="submit" class="btn btn--primary">Update Password</button>
+          </div>
+        </form>
+      {% else %}
+        <div class="alert alert--warning">
+          This tenant does not currently have a tenant user account to update. Create one above first.
+        </div>
+      {% endif %}
     </div>
   </section>
 
