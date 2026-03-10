@@ -27,7 +27,7 @@
     {% if access_uses_subdomain_url %}
       Tenant sign-in will use the custom-domain host <code>{{ access_url }}</code>.
     {% else %}
-      Tenant sign-in will use the fallback path <code>{{ access_url }}</code> when wildcard subdomains are unavailable.
+      Tenant sign-in will use the compatibility URL <code>{{ access_url }}</code> when wildcard subdomains are unavailable.
     {% endif %}
   </div>
 
@@ -63,7 +63,7 @@
         {% if access_uses_subdomain_url %}
           <p class="hint">Used for the tenant subdomain in production sign-in URLs.</p>
         {% else %}
-          <p class="hint">Used for tenant subdomains and the `/t/&lt;subdomain&gt;` fallback path.</p>
+          <p class="hint">Used for tenant sign-in and the `/t/&lt;subdomain&gt;` compatibility URL.</p>
         {% endif %}
         {% if field_errors.get("subdomain") %}
           <p class="tenant-form__error">{{ field_errors["subdomain"] }}</p>

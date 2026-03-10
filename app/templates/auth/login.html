@@ -13,14 +13,16 @@
 
     {% if no_users_configured %}
       <div class="alert alert--warning">
-        No user accounts exist yet. Create the first superadmin at <a href="{{ bootstrap_path }}">{{ bootstrap_path }}</a>
-        or run <code>python -m app.cli create-superadmin</code>.
+        {{ no_users_message }}
+        {% if bootstrap_url %}
+          <a href="{{ bootstrap_url }}">Open platform setup</a>.
+        {% endif %}
       </div>
     {% endif %}
 
     {% if bootstrapped %}
       <div class="alert alert--success">
-        Superadmin created. You can now sign in.
+        Platform administrator created. You can now sign in.
       </div>
     {% endif %}
 

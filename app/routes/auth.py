@@ -28,7 +28,7 @@ from ..auth import (
 )
 from ..db import get_db
 from ..models import User
-from ..tenancy import request_platform_mode
+from ..tenancy import platform_route_url, request_platform_mode
 from ..templating import templates
 
 router = APIRouter()
@@ -61,6 +61,8 @@ def _login_context(
     email: str = "",
     next_path: str = "/tickets",
     no_users_configured: bool = False,
+    no_users_message: str = "",
+    bootstrap_url: str = "",
 ) -> dict[str, object]:
     return {
         "request": request,
@@ -68,9 +70,11 @@ def _login_context(
         "email": email,
         "next": next_path,
         "bootstrap_path": _bootstrap_path(request),
+        "bootstrap_url": bootstrap_url,
         "logged_out": request.query_params.get("logged_out") == "1",
         "bootstrapped": request.query_params.get("bootstrap") == "1",
         "no_users_configured": no_users_configured,
+        "no_users_message": no_users_message,
     }
 
 
@@ -167,37 +171,53 @@ def _login_scope_user_count(db: Session, request: Request) -> int:
     )
 
 
+def _platform_superadmin_count(db: Session) -> int:
+    return int(
+        db.execute(
+            select(func.count(User.id))
+            .execution_options(skip_tenant_scope=True)
+            .where(
+                func.lower(func.trim(User.role)) == ROLE_SUPERADMIN,
+                User.tenant_id.is_(None),
+            )
+        ).scalar_one_or_none()
+        or 0
+    )
+
+
 def _bootstrap_enabled(db: Session, request: Request) -> bool:
     if request_platform_mode(request):
-        return (
-            int(
-                db.execute(
-                    select(func.count(User.id))
-                    .execution_options(skip_tenant_scope=True)
-                    .where(
-                        func.lower(func.trim(User.role)) == ROLE_SUPERADMIN,
-                        User.tenant_id.is_(None),
-                    )
-                ).scalar_one_or_none()
-                or 0
-            )
-            == 0
-        )
+        return _platform_superadmin_count(db) == 0
     if not _legacy_single_host_mode(request):
         return False
-    return (
-        int(
-            db.execute(
-                select(func.count(User.id))
-                .execution_options(skip_tenant_scope=True)
-                .where(
-                    func.lower(func.trim(User.role)) == ROLE_SUPERADMIN,
-                    User.tenant_id.is_(None),
-                )
-            ).scalar_one_or_none()
-            or 0
+    return _platform_superadmin_count(db) == 0
+
+
+def _bootstrap_entry_url(db: Session, request: Request) -> str:
+    if _platform_superadmin_count(db) != 0:
+        return ""
+    if request_platform_mode(request) or _legacy_single_host_mode(request):
+        return _bootstrap_path(request)
+    return platform_route_url(request, path="/platform/bootstrap")
+
+
+def _no_users_message(db: Session, request: Request) -> tuple[str, str]:
+    bootstrap_url = _bootstrap_entry_url(db, request)
+    if request_platform_mode(request) or _legacy_single_host_mode(request):
+        return (
+            "No user accounts exist yet. Create the first platform administrator to finish setup.",
+            bootstrap_url,
         )
-        == 0
+
+    if bootstrap_url:
+        return (
+            "No user accounts exist yet. Create the first platform administrator to finish setup.",
+            bootstrap_url,
+        )
+
+    return (
+        "No user accounts exist for this workspace yet. Ask a platform administrator to create the first workspace admin.",
+        "",
     )
 
 
@@ -251,6 +271,9 @@ def login_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     user_count = _login_scope_user_count(db, request)
     next_raw = request.query_params.get("next")
     next_path = _safe_next_path(next_raw) if next_raw else _default_next_path(request)
+    no_users_message, bootstrap_url = (
+        _no_users_message(db, request) if user_count == 0 else ("", "")
+    )
     return templates.TemplateResponse(
         request,
         "auth/login.html",
@@ -258,6 +281,8 @@ def login_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
             request,
             next_path=next_path,
             no_users_configured=user_count == 0,
+            no_users_message=no_users_message,
+            bootstrap_url=bootstrap_url,
         ),
     )
 
@@ -273,6 +298,10 @@ async def login_submit(request: Request, db: Session = Depends(get_db)) -> HTMLR
     password = str(form.get("password", ""))
     next_raw = form.get("next")
     next_path = _safe_next_path(next_raw) if next_raw else _default_next_path(request)
+    scope_user_count = _login_scope_user_count(db, request)
+    no_users_message, bootstrap_url = (
+        _no_users_message(db, request) if scope_user_count == 0 else ("", "")
+    )
 
     errors: list[str] = []
     if not validate_email(email):
@@ -284,7 +313,15 @@ async def login_submit(request: Request, db: Session = Depends(get_db)) -> HTMLR
         return templates.TemplateResponse(
             request,
             "auth/login.html",
-            _login_context(request, errors=errors, email=email, next_path=next_path),
+            _login_context(
+                request,
+                errors=errors,
+                email=email,
+                next_path=next_path,
+                no_users_configured=scope_user_count == 0,
+                no_users_message=no_users_message,
+                bootstrap_url=bootstrap_url,
+            ),
             status_code=400,
         )
 
@@ -315,6 +352,9 @@ async def login_submit(request: Request, db: Session = Depends(get_db)) -> HTMLR
                 errors=["Invalid email or password."],
                 email=email,
                 next_path=next_path,
+                no_users_configured=scope_user_count == 0,
+                no_users_message=no_users_message,
+                bootstrap_url=bootstrap_url,
             ),
             status_code=401,
         )

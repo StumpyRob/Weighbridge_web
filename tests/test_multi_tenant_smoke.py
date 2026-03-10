@@ -43,6 +43,8 @@ from app.models.base import utcnow
 from app.routes.tickets import _generate_ticket_no
 from app.seed import seed_print_destinations, seed_print_templates
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD
+from app.services.print_context import build_print_base_context
+from app.services.print_payload import _company_logo_src
 from app.services.system_setup import (
     DEFAULT_YARD_NAME,
     ensure_company_settings_row_exists,
@@ -321,8 +323,8 @@ def test_software_subdomain_serves_marketing_page_and_other_subdomains_still_rou
         assert landing.status_code == 200
         assert "Weighbridge Web" in landing.text
         assert "Cloud software for weighbridge operations." in landing.text
-        assert "Site in progress" in landing.text
-        assert "Public landing page in development" in landing.text
+        assert "Built for day-to-day weighbridge work" in landing.text
+        assert "Cloud software for ticketing, compliance, and invoicing." in landing.text
         assert 'name="description"' in landing.text
         assert 'property="og:title"' in landing.text
         assert 'property="og:description"' in landing.text
@@ -603,6 +605,80 @@ def test_platform_bootstrap_on_admin_subdomain_creates_first_superadmin_without_
         )
         assert tenant_client.get("/admin/company").status_code == 200
         assert tenant_client.get("/tickets").status_code == 200
+
+
+def test_tenant_login_points_first_run_to_platform_bootstrap_host_when_needed(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "base_domain", "example.test")
+    app, SessionLocal = _build_app_and_session(
+        tmp_path,
+        db_name="tenant-login-bootstrap-link.db",
+        monkeypatch=monkeypatch,
+    )
+    demo_tenant = _seed_tenant(
+        SessionLocal,
+        name="Demo",
+        subdomain=settings.effective_demo_tenant_subdomain,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=demo_tenant,
+        company_name="Demo Co",
+        primary_color="#225577",
+    )
+
+    with _client(
+        app,
+        base_url=f"https://{settings.effective_demo_tenant_subdomain}.example.test",
+    ) as tenant_client:
+        login_page = tenant_client.get("/login")
+        assert login_page.status_code == 200
+        assert "Create the first platform administrator" in login_page.text
+        assert 'href="https://admin.example.test/platform/bootstrap"' in login_page.text
+
+
+def test_tenant_login_asks_platform_admin_when_workspace_has_no_users_but_platform_is_bootstrapped(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "base_domain", "example.test")
+    app, SessionLocal = _build_app_and_session(
+        tmp_path,
+        db_name="tenant-login-platform-owner.db",
+        monkeypatch=monkeypatch,
+    )
+    demo_tenant = _seed_tenant(
+        SessionLocal,
+        name="Demo",
+        subdomain=settings.effective_demo_tenant_subdomain,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=demo_tenant,
+        company_name="Demo Co",
+        primary_color="#225577",
+    )
+    _seed_user(
+        SessionLocal,
+        email="platform-owner@example.com",
+        password="PlatformPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with _client(
+        app,
+        base_url=f"https://{settings.effective_demo_tenant_subdomain}.example.test",
+    ) as tenant_client:
+        login_page = tenant_client.get("/login")
+        assert login_page.status_code == 200
+        assert (
+            "Ask a platform administrator to create the first workspace admin."
+            in login_page.text
+        )
+        assert "/platform/bootstrap" not in login_page.text
 
 
 def test_tenant_scoped_auth_rules(tmp_path, monkeypatch):
@@ -3040,6 +3116,76 @@ def test_tenant_scoped_logo_upload_and_file_access_isolation(tmp_path, monkeypat
         own_collision = tenant_b_client.get(collision_url)
         assert own_collision.status_code == 200
         assert own_collision.content == b"\x89PNG\r\n\x1a\ncollision-b"
+
+
+def test_print_logo_helpers_stay_tenant_scoped_when_filenames_collide(
+    tmp_path,
+    monkeypatch,
+):
+    _app, SessionLocal = _build_app_and_session(
+        tmp_path,
+        db_name="tenant-print-logo-collision.db",
+        monkeypatch=monkeypatch,
+    )
+    uploads_root = (tmp_path / "uploads").resolve()
+    monkeypatch.setattr(settings, "uploads_dir", str(uploads_root))
+
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a")
+    tenant_b = _seed_tenant(SessionLocal, name="Tenant B", subdomain="b")
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_b,
+        company_name="Tenant B Co",
+        primary_color="#225577",
+    )
+
+    collision_name = "shared-print-logo.png"
+    collision_url = f"/static/uploads/company/{collision_name}"
+    logo_a = uploads_root / "tenants" / str(tenant_a) / "company" / collision_name
+    logo_b = uploads_root / "tenants" / str(tenant_b) / "company" / collision_name
+    logo_a.parent.mkdir(parents=True, exist_ok=True)
+    logo_b.parent.mkdir(parents=True, exist_ok=True)
+    logo_a.write_bytes(b"\x89PNG\r\n\x1a\ntenant-a-print-logo")
+    logo_b.write_bytes(b"\x89PNG\r\n\x1a\ntenant-b-print-logo")
+
+    with SessionLocal() as db:
+        company_a = db.execute(
+            select(CompanySetting).where(CompanySetting.tenant_id == tenant_a).limit(1)
+        ).scalars().first()
+        company_b = db.execute(
+            select(CompanySetting).where(CompanySetting.tenant_id == tenant_b).limit(1)
+        ).scalars().first()
+        assert company_a is not None and company_b is not None
+        company_a.company_logo_path = collision_url
+        company_b.company_logo_path = collision_url
+        db.commit()
+
+    with SessionLocal() as db:
+        db.info["tenant_id"] = tenant_a
+        db.info["platform_mode"] = False
+        context_a = build_print_base_context(db)
+        payload_logo_a = _company_logo_src(db)
+
+    with SessionLocal() as db:
+        db.info["tenant_id"] = tenant_b
+        db.info["platform_mode"] = False
+        context_b = build_print_base_context(db)
+        payload_logo_b = _company_logo_src(db)
+
+    context_logo_a = str(context_a.get("company_logo_url") or "")
+    context_logo_b = str(context_b.get("company_logo_url") or "")
+    assert context_logo_a.startswith("data:image/png;base64,")
+    assert context_logo_b.startswith("data:image/png;base64,")
+    assert context_logo_a != context_logo_b
+    assert payload_logo_a.startswith("data:image/png;base64,")
+    assert payload_logo_b.startswith("data:image/png;base64,")
+    assert payload_logo_a != payload_logo_b
 
 
 def test_tenant_hosts_use_uploaded_logo_for_html_favicon_and_favicon_route(

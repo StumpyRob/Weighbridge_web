@@ -168,7 +168,10 @@ def check_logo(db: Session) -> HealthCheckResult:
             },
         )
 
-    resolved = _resolve_logo_file_path(logo_path)
+    resolved = _resolve_logo_file_path(
+        logo_path,
+        tenant_id=getattr(company, "tenant_id", None) if company is not None else None,
+    )
     if resolved is None or not resolved.is_file():
         return HealthCheckResult(
             status="error",
@@ -345,12 +348,16 @@ def _sqlite_db_size(database_url: URL) -> dict[str, Any]:
     }
 
 
-def _resolve_logo_file_path(logo_path: str) -> Path | None:
+def _resolve_logo_file_path(
+    logo_path: str,
+    *,
+    tenant_id: int | None = None,
+) -> Path | None:
     normalized = str(logo_path or "").strip()
     if not normalized:
         return None
     if normalized.startswith("/static/uploads/company/"):
-        return logo_file_from_web_path(normalized)
+        return logo_file_from_web_path(normalized, tenant_id=tenant_id)
     if normalized.startswith("/media/"):
         media_root = Path(str(settings.media_root or "").strip() or "app/media").resolve()
         relative = normalized.removeprefix("/media/").strip().lstrip("/\\")

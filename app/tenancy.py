@@ -123,6 +123,38 @@ def tenant_external_url_template(*, path: str = "/login") -> str:
     return f"/t/<subdomain>{normalized_path}"
 
 
+def platform_route_url(request: Request | None = None, *, path: str = "/platform/tenants") -> str:
+    normalized_path = str(path or "").strip() or "/"
+    if not normalized_path.startswith("/"):
+        normalized_path = f"/{normalized_path}"
+
+    scheme = "https"
+    host_name = ""
+    if request is not None:
+        scheme = str(request.url.scheme or "").strip() or "https"
+        host_name = host_without_port(
+            str(request.headers.get("host", "") or request.url.hostname or "")
+        )
+
+    if host_name in {"localhost", "127.0.0.1", "testserver"}:
+        return normalized_path
+
+    if host_name.endswith(".localhost"):
+        return f"{scheme}://{settings.effective_platform_subdomain}.localhost{normalized_path}"
+
+    nip_match = _NIP_IO_RE.fullmatch(host_name)
+    if nip_match:
+        suffix = host_name.split(".", 1)[1]
+        return f"{scheme}://{settings.effective_platform_subdomain}.{suffix}{normalized_path}"
+
+    base_domain = settings.effective_base_domain
+    if base_domain:
+        resolved_scheme = scheme if request is not None else "https"
+        return f"{resolved_scheme}://{settings.effective_platform_subdomain}.{base_domain}{normalized_path}"
+
+    return normalized_path
+
+
 def split_tenant_route_path(path: str | None) -> tuple[str, str] | None:
     raw_path = str(path or "").strip()
     if not raw_path:

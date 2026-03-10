@@ -9,7 +9,7 @@ from alembic import command
 from alembic.config import Config
 
 
-VOID_REASON_TYPE_SPLIT_REV = "l2m3n4o5p6q7"
+TENANT_UNIQUENESS_PREV_REV = "29d0e1f2a3b4"
 
 
 def _sqlite_unique_indexes(db_path: Path, table_name: str) -> list[tuple[str, list[str]]]:
@@ -76,50 +76,27 @@ def _assert_head_unique(db_path: Path) -> None:
     )
 
 
-def _assert_prev_unique(db_path: Path) -> None:
+def _assert_pre_repair_unique(db_path: Path) -> None:
     unique_indexes = _sqlite_unique_indexes(db_path, "void_reasons")
     unique_sets = {tuple(cols) for _, cols in unique_indexes}
-    assert ("code",) in unique_sets, (
-        "Expected unique(code) after downgrading before composite unique, got: "
+    assert ("code", "reason_type") in unique_sets, (
+        "Expected unique(code, reason_type) before the tenant-uniqueness repair, got: "
         f"{unique_indexes}"
     )
-    assert ("code", "reason_type") not in unique_sets, (
-        "Unexpected unique(code, reason_type) after downgrading before composite unique, got: "
-        f"{unique_indexes}"
+    customer_unique_sets = {
+        tuple(cols) for _, cols in _sqlite_unique_indexes(db_path, "customers")
+    }
+    assert ("account_code",) in customer_unique_sets, (
+        "Expected legacy global unique(account_code) before the repair, got: "
+        f"{sorted(customer_unique_sets)}"
     )
-
-
-def _insert_legacy_invoice_codes(db_path: Path) -> None:
-    conn = sqlite3.connect(db_path)
-    try:
-        conn.execute(
-            "INSERT INTO void_reasons "
-            "(code, reason_type, description, is_active, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-            ("Invoice entered in error", "INVOICE", "Entered in error", 1),
-        )
-        conn.execute(
-            "INSERT INTO void_reasons "
-            "(code, reason_type, description, is_active, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-            ("Invoice customer cancelled", "INVOICE", "Customer cancelled", 1),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def _assert_no_legacy_invoice_codes(db_path: Path) -> None:
-    conn = sqlite3.connect(db_path)
-    try:
-        rows = conn.execute(
-            "SELECT code FROM void_reasons "
-            "WHERE upper(reason_type) = 'INVOICE' "
-            "AND lower(trim(code)) IN ('invoice entered in error', 'invoice customer cancelled')"
-        ).fetchall()
-        assert not rows, f"Legacy invoice codes still present after upgrade: {rows}"
-    finally:
-        conn.close()
+    vehicle_unique_sets = {
+        tuple(cols) for _, cols in _sqlite_unique_indexes(db_path, "vehicles")
+    }
+    assert ("registration",) in vehicle_unique_sets, (
+        "Expected legacy global unique(registration) before the repair, got: "
+        f"{sorted(vehicle_unique_sets)}"
+    )
 
 
 def main() -> None:
@@ -138,15 +115,13 @@ def main() -> None:
         command.upgrade(cfg, "head")
         _assert_head_unique(db_path)
 
-        print(f"STEP: alembic downgrade {VOID_REASON_TYPE_SPLIT_REV}")
-        command.downgrade(cfg, VOID_REASON_TYPE_SPLIT_REV)
-        _assert_prev_unique(db_path)
-        _insert_legacy_invoice_codes(db_path)
+        print(f"STEP: alembic downgrade {TENANT_UNIQUENESS_PREV_REV}")
+        command.downgrade(cfg, TENANT_UNIQUENESS_PREV_REV)
+        _assert_pre_repair_unique(db_path)
 
         print("STEP: alembic upgrade head")
         command.upgrade(cfg, "head")
         _assert_head_unique(db_path)
-        _assert_no_legacy_invoice_codes(db_path)
 
     print("Migration smoke test passed.")
 

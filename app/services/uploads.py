@@ -80,7 +80,11 @@ def logo_file_from_web_path(path: str | None, tenant_id: int | None = None) -> P
         return None
 
 
-def resolve_company_logo_web_path(path: str | None) -> str:
+def resolve_company_logo_web_path(
+    path: str | None,
+    *,
+    tenant_id: int | None = None,
+) -> str:
     normalized = str(path or "").strip()
     if not normalized:
         return ""
@@ -101,7 +105,7 @@ def resolve_company_logo_web_path(path: str | None) -> str:
             resolved = source.resolve()
         except OSError:
             resolved = source
-        for root in _logo_upload_root_candidates():
+        for root in _logo_upload_root_candidates(tenant_id=tenant_id):
             if _is_within(resolved, root):
                 return f"{LOGO_WEB_PATH_PREFIX}{filename}"
         return f"{LOGO_WEB_PATH_PREFIX}{filename}"

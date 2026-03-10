@@ -66,12 +66,15 @@ def _company_logo_path(company: CompanySetting | None) -> str:
         return ""
     current = str(company.company_logo_path or "").strip()
     if current:
-        return resolve_company_logo_web_path(current)
+        return resolve_company_logo_web_path(
+            current,
+            tenant_id=getattr(company, "tenant_id", None),
+        )
     return ""
 
 
-def _company_logo_data_uri(logo_path: str) -> str:
-    source = _logo_file_from_logo_path(logo_path)
+def _company_logo_data_uri(logo_path: str, *, tenant_id: int | None = None) -> str:
+    source = _logo_file_from_logo_path(logo_path, tenant_id=tenant_id)
     if source is None or not source.is_file():
         return ""
     try:
@@ -85,13 +88,17 @@ def _company_logo_data_uri(logo_path: str) -> str:
     return f"data:{mime};base64,{encoded}"
 
 
-def _logo_file_from_logo_path(logo_path: str) -> Path | None:
+def _logo_file_from_logo_path(
+    logo_path: str,
+    *,
+    tenant_id: int | None = None,
+) -> Path | None:
     normalized = str(logo_path or "").strip()
     if not normalized:
         return None
 
     if normalized.startswith("/static/uploads/company/"):
-        return logo_file_from_web_path(normalized)
+        return logo_file_from_web_path(normalized, tenant_id=tenant_id)
 
     if normalized.startswith("/media/"):
         media_root = Path(str(settings.media_root or "").strip() or "app/media")
@@ -114,7 +121,10 @@ def _company_logo_url(company: CompanySetting | None) -> str:
     if logo_path.startswith("data:"):
         return logo_path
 
-    data_uri = _company_logo_data_uri(logo_path)
+    data_uri = _company_logo_data_uri(
+        logo_path,
+        tenant_id=getattr(company, "tenant_id", None) if company is not None else None,
+    )
     if data_uri:
         return data_uri
 

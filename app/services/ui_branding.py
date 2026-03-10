@@ -27,11 +27,15 @@ _MEDIA_PREFIX = "/media/"
 _HEX_COLOR_RE = re.compile(r"^#?[0-9A-Fa-f]{6}$")
 
 
-def _upload_logo_file_from_web_path(path: str | None) -> Path | None:
+def _upload_logo_file_from_web_path(
+    path: str | None,
+    *,
+    tenant_id: int | None = None,
+) -> Path | None:
     normalized = str(path or "").strip()
     if not normalized.startswith(_UPLOAD_LOGO_PREFIX):
         return None
-    return logo_file_from_web_path(normalized)
+    return logo_file_from_web_path(normalized, tenant_id=tenant_id)
 
 
 def _strip_query(url: str | None) -> str:
@@ -41,7 +45,11 @@ def _strip_query(url: str | None) -> str:
     return str(urlsplit(raw).path or "").strip()
 
 
-def logo_file_exists_on_disk(path: str | None) -> bool:
+def logo_file_exists_on_disk(
+    path: str | None,
+    *,
+    tenant_id: int | None = None,
+) -> bool:
     normalized = str(path or "").strip()
     if not normalized:
         return False
@@ -49,7 +57,7 @@ def logo_file_exists_on_disk(path: str | None) -> bool:
     if not clean_path:
         return False
     if clean_path.startswith(_UPLOAD_LOGO_PREFIX):
-        candidate = _upload_logo_file_from_web_path(clean_path)
+        candidate = _upload_logo_file_from_web_path(clean_path, tenant_id=tenant_id)
         return bool(candidate and candidate.is_file())
     if clean_path.startswith(_STATIC_PREFIX):
         static_root = (Path(__file__).resolve().parents[1] / "static").resolve()
@@ -91,10 +99,11 @@ def company_logo_url(company: CompanySetting | None) -> str:
     if not current:
         return DEFAULT_COMPANY_LOGO_WEB_PATH
 
-    resolved = resolve_company_logo_web_path(current)
+    tenant_id = getattr(company, "tenant_id", None)
+    resolved = resolve_company_logo_web_path(current, tenant_id=tenant_id)
     if resolved.startswith(("http://", "https://", "data:")):
         return resolved
-    if not logo_file_exists_on_disk(resolved):
+    if not logo_file_exists_on_disk(resolved, tenant_id=tenant_id):
         return DEFAULT_COMPANY_LOGO_WEB_PATH
     return resolved
 
@@ -187,7 +196,8 @@ def _logo_version(company: CompanySetting | None, logo_url: str) -> int:
                 return int(updated_at.timestamp())
             except (OSError, OverflowError, ValueError):
                 pass
-    candidate = _upload_logo_file_from_web_path(_strip_query(logo_url))
+    tenant_id = getattr(company, "tenant_id", None) if company is not None else None
+    candidate = _upload_logo_file_from_web_path(_strip_query(logo_url), tenant_id=tenant_id)
     if candidate is None or not candidate.is_file():
         return 0
     try:
@@ -237,6 +247,7 @@ def build_ui_branding(company: CompanySetting | None) -> dict[str, object]:
         nav_logo_resolved = company_logo_url(company)
         logo_version = _logo_version(company, nav_logo_resolved)
         logo_url = logo_url_with_version(nav_logo_resolved, logo_version)
+        tenant_id = getattr(company, "tenant_id", None)
         navbar_color = normalize_hex_color(
             getattr(company, "navbar_color_hex", None),
             default=DEFAULT_NAVBAR_COLOR_HEX,
@@ -257,7 +268,7 @@ def build_ui_branding(company: CompanySetting | None) -> dict[str, object]:
             "brand_name": brand_name,
             "logo_url": logo_url,
             "logo_version": logo_version,
-            "logo_exists": logo_file_exists_on_disk(nav_logo_resolved),
+            "logo_exists": logo_file_exists_on_disk(nav_logo_resolved, tenant_id=tenant_id),
             "nav_logo_url": logo_url,
             "favicon_url": logo_url,
             "favicon_mime_type": _favicon_mime_type(logo_url),

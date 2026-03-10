@@ -352,14 +352,16 @@
 
     {% if show_first_time_setup %}
       <div class="frame">
-        <div class="frame-header">First-time Setup</div>
+        <div class="frame-header">Getting Started</div>
         <div class="frame-body">
-          <p class="muted">Complete these steps before using operational pages.</p>
+          <p class="muted">Complete these steps before using live operational pages.</p>
           <ol>
             <li>
-              Step 1: Create first user account
-              {% if needs_first_admin %}
-                -> <a href="/bootstrap">/bootstrap</a>
+              Step 1: Enable platform access
+              {% if needs_platform_bootstrap %}
+                -> <a href="{{ bootstrap_url }}">Create platform admin</a>
+              {% elif needs_workspace_admin %}
+                -> Ask a platform administrator to create the first workspace admin
               {% else %}
                 -> Done
               {% endif %}
@@ -367,13 +369,13 @@
             <li>
               Step 2: Complete Company Setup
               {% if not setup_initialized %}
-                -> <a href="/setup">/setup</a>
+                -> <a href="/setup">Open Company Setup</a>
               {% else %}
                 -> Done
               {% endif %}
             </li>
-            <li>Step 3: Load EWC Codes -> <a href="/admin/ewc-codes">/admin/ewc-codes</a></li>
-            <li>Step 4: Configure Printing -> <a href="/admin/printing">/admin/printing</a></li>
+            <li>Step 3: Load EWC Codes -> <a href="/admin/ewc-codes">Open EWC Codes</a></li>
+            <li>Step 4: Configure Printing -> <a href="/admin/printing">Open Printing Settings</a></li>
           </ol>
           {% if missing_required_lookups %}
             <div class="alert alert--warning">
@@ -383,7 +385,7 @@
         </div>
       </div>
     {% else %}
-      <div class="notice">Setup complete. System initialization checks are green.</div>
+      <div class="notice">Setup complete. This workspace is ready for day-to-day use.</div>
     {% endif %}
   {% endif %}
 {% endblock %}

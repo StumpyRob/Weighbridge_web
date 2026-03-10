@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.auth import ROLE_USER, hash_password, user_identity_kwargs
 from app.config import settings
-from app.db import get_db
+from app.db import TenantSession, get_db
 from app.main import create_app
 from app.models import (
     Base,
@@ -25,6 +25,7 @@ from app.models import (
     Yard,
 )
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD
+from app.tenancy import current_platform_mode, current_tenant_id
 
 
 def _client_for_app(*, app: FastAPI, db_path: Path) -> tuple[TestClient, sessionmaker]:
@@ -32,10 +33,17 @@ def _client_for_app(*, app: FastAPI, db_path: Path) -> tuple[TestClient, session
         f"sqlite+pysqlite:///{db_path}", connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
-    SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    SessionLocal = sessionmaker(
+        bind=engine,
+        autocommit=False,
+        autoflush=False,
+        class_=TenantSession,
+    )
 
     def override_get_db():
         db = SessionLocal()
+        db.info["tenant_id"] = current_tenant_id()
+        db.info["platform_mode"] = current_platform_mode()
         try:
             yield db
         finally:
@@ -468,7 +476,7 @@ def test_home_first_time_setup_panel_visibility(tmp_path, monkeypatch):
     try:
         initial = client.get("/")
         assert initial.status_code == 200
-        assert "First-time Setup" in initial.text
+        assert "Getting Started" in initial.text
 
         with SessionLocal() as db:
             db.add(
@@ -496,9 +504,9 @@ def test_home_first_time_setup_panel_visibility(tmp_path, monkeypatch):
 
         ready = client.get("/")
         assert ready.status_code == 200
-        assert "First-time Setup" not in ready.text
+        assert "Getting Started" not in ready.text
         assert "Operations Dashboard" in ready.text
-        assert "Setup complete. System initialization checks are green." not in ready.text
+        assert "Setup complete. This workspace is ready for day-to-day use." not in ready.text
     finally:
         client.close()
 
@@ -517,7 +525,7 @@ def test_home_shows_setup_panel_when_initialized_but_required_lookups_missing(
 
         response = client.get("/")
         assert response.status_code == 200
-        assert "First-time Setup" in response.text
+        assert "Getting Started" in response.text
         assert "Required reference data is incomplete." in response.text
     finally:
         client.close()

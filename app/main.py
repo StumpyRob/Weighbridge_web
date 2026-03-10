@@ -64,6 +64,7 @@ from .services.ui_branding import (
 )
 from .tenancy import (
     host_without_port,
+    platform_route_url,
     prefix_tenant_route_target,
     reset_request_tenant_context,
     resolve_subdomain,
@@ -1289,9 +1290,22 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         initialized = bool(company and getattr(company, "is_initialized", False))
         missing_required = missing_required_lookup_messages(db) if initialized else []
         user_count = int(db.execute(select(func.count(User.id))).scalar_one_or_none() or 0)
+        platform_superadmin_count = int(
+            db.execute(
+                select(func.count(User.id))
+                .execution_options(skip_tenant_scope=True)
+                .where(
+                    func.lower(func.trim(User.role)) == ROLE_SUPERADMIN,
+                    User.tenant_id.is_(None),
+                )
+            ).scalar_one_or_none()
+            or 0
+        )
         setup_ready = initialized and len(missing_required) == 0
         current_user = getattr(request.state, "current_user", None)
         show_dashboard = current_user is not None
+        needs_platform_bootstrap = user_count == 0 and platform_superadmin_count == 0
+        needs_workspace_admin = user_count == 0 and platform_superadmin_count > 0
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -1308,6 +1322,13 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 "setup_initialized": initialized,
                 "missing_required_lookups": missing_required,
                 "needs_first_admin": user_count == 0,
+                "needs_platform_bootstrap": needs_platform_bootstrap,
+                "needs_workspace_admin": needs_workspace_admin,
+                "bootstrap_url": (
+                    platform_route_url(request, path="/platform/bootstrap")
+                    if needs_platform_bootstrap
+                    else ""
+                ),
             },
         )
 

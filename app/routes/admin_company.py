@@ -44,8 +44,12 @@ def _logo_upload_dir() -> Path:
     return company_logo_upload_dir()
 
 
-def _logo_file_from_web_path(path: str | None) -> Path | None:
-    return logo_file_from_web_path(path)
+def _logo_file_from_web_path(
+    path: str | None,
+    *,
+    tenant_id: int | None = None,
+) -> Path | None:
+    return logo_file_from_web_path(path, tenant_id=tenant_id)
 
 
 def _safe_unlink(path: Path | None) -> None:
@@ -312,7 +316,10 @@ async def admin_company_settings_save(
                 ),
             )
 
-    old_logo_file = _logo_file_from_web_path(setting.company_logo_path)
+    old_logo_file = _logo_file_from_web_path(
+        setting.company_logo_path,
+        tenant_id=getattr(setting, "tenant_id", None),
+    )
 
     setting.name = name or None
     setting.address_line1 = address_line1 or None
