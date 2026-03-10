@@ -11,7 +11,7 @@ from urllib.parse import urlencode, urlsplit
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -24,11 +24,15 @@ from app.models import (
     Area,
     Base,
     CompanySetting,
+    Container,
     Customer,
+    Destination,
     DirectionEnum,
+    Driver,
     EwcCode,
     Haulier,
     Invoice,
+    InvoiceLine,
     PrintDestination,
     PrintTemplate,
     Product,
@@ -212,6 +216,15 @@ def _seed_tenant_baseline(
         seed_print_templates(db)
         seed_print_destinations(db)
         db.commit()
+
+
+def _tenant_row_count(db, model, tenant_id: int) -> int:
+    return int(
+        db.execute(
+            select(func.count(model.id)).where(model.tenant_id == int(tenant_id))
+        ).scalar_one()
+        or 0
+    )
 
 
 def _seed_tenant(
@@ -2332,6 +2345,57 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         tenant_id=None,
     )
 
+    def assert_demo_dataset_counts(db) -> None:
+        assert _tenant_row_count(db, Customer, demo_tenant) == 20
+        assert _tenant_row_count(db, Vehicle, demo_tenant) == 16
+        assert _tenant_row_count(db, Product, demo_tenant) == 12
+        assert _tenant_row_count(db, Container, demo_tenant) == 4
+        assert _tenant_row_count(db, Driver, demo_tenant) == 4
+        assert _tenant_row_count(db, Haulier, demo_tenant) == 3
+        assert _tenant_row_count(db, Destination, demo_tenant) == 4
+        assert _tenant_row_count(db, Ticket, demo_tenant) == 14
+        assert _tenant_row_count(db, Invoice, demo_tenant) == 3
+        assert _tenant_row_count(db, InvoiceLine, demo_tenant) == 6
+        assert (
+            db.execute(
+                select(func.count(Ticket.id)).where(
+                    Ticket.tenant_id == demo_tenant,
+                    Ticket.status == TicketStatusEnum.OPEN.value,
+                )
+            ).scalar_one()
+            == 4
+        )
+        assert (
+            db.execute(
+                select(func.count(Ticket.id)).where(
+                    Ticket.tenant_id == demo_tenant,
+                    Ticket.status == TicketStatusEnum.COMPLETE.value,
+                )
+            ).scalar_one()
+            == 10
+        )
+        assert (
+            db.execute(
+                select(func.count(Ticket.id)).where(
+                    Ticket.tenant_id == demo_tenant,
+                    Ticket.transaction_type.in_(
+                        [
+                            TransactionTypeEnum.WASTEIN.value,
+                            TransactionTypeEnum.WASTEOUT.value,
+                        ]
+                    ),
+                )
+            ).scalar_one()
+            == 4
+        )
+        assert list(
+            db.execute(
+                select(Invoice.invoice_no)
+                .where(Invoice.tenant_id == demo_tenant)
+                .order_by(Invoice.invoice_no.asc())
+            ).scalars()
+        ) == ["INV-DEMO-001", "INV-DEMO-002", "INV-DEMO-003"]
+
     with SessionLocal() as db:
         db.add(Customer(tenant_id=demo_tenant, account_code="DEMO-001", name="Demo Customer"))
         db.add(Vehicle(tenant_id=demo_tenant, registration="DEMO123"))
@@ -2393,8 +2457,7 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert bool(demo.is_demo) is True
 
         assert db.execute(select(User).where(User.tenant_id == demo_tenant)).scalars().first() is None
-        assert db.execute(select(Customer).where(Customer.tenant_id == demo_tenant)).scalars().first() is None
-        assert db.execute(select(Vehicle).where(Vehicle.tenant_id == demo_tenant)).scalars().first() is None
+        assert_demo_dataset_counts(db)
 
         assert (
             db.execute(select(CompanySetting).where(CompanySetting.tenant_id == demo_tenant))
@@ -2450,8 +2513,82 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert reset_event is not None
         assert reset_event.user_id == superadmin_id
         assert reset_event.tenant_id is None
+        assert isinstance(reset_event.details_json, dict)
+        assert reset_event.details_json.get("dataset", {}).get("customers") == 20
+        assert reset_event.details_json.get("dataset", {}).get("tickets_open") == 4
+        assert reset_event.details_json.get("dataset", {}).get("tickets_complete") == 10
+        assert reset_event.details_json.get("dataset", {}).get("tickets_waste") == 4
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+        csrf = _prime_csrf(admin_client)
+        created_user = admin_client.post(
+            f"/platform/tenants/{demo_tenant}/users",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "user_email": "demo-admin@example.com",
+                "user_role": ROLE_TENANT_ADMIN,
+                "user_password": "DemoPass123!",
+                "confirm_password": "DemoPass123!",
+            },
+            follow_redirects=False,
+        )
+        assert created_user.status_code in {302, 303}
+
+    with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.localhost") as demo_client:
+        assert _login(demo_client, email="demo-admin@example.com", password="DemoPass123!") == 303
+
+        dashboard = demo_client.get("/")
+        assert dashboard.status_code == 200
+        assert "dashboard-empty-state" not in dashboard.text
+        assert _dashboard_metric_value(dashboard.text, "open_tickets") == "4"
+        assert _dashboard_metric_value(dashboard.text, "invoices_pending") == "2"
+        assert "DMO-00007" in dashboard.text
+        assert "INV-DEMO-001" in dashboard.text
+
+        tickets_page = demo_client.get("/tickets")
+        assert tickets_page.status_code == 200
+        assert "DMO-00001" in tickets_page.text
+        assert "DMO-00014" in tickets_page.text
+
+        customers_page = demo_client.get("/customers")
+        assert customers_page.status_code == 200
+        assert "Beacon Aggregates Ltd" in customers_page.text
+        assert "Meadow Industrial Park" in customers_page.text
+
+        vehicles_page = demo_client.get("/vehicles")
+        assert vehicles_page.status_code == 200
+        assert "BX24AAA" in vehicles_page.text
+        assert "BX24AAQ" in vehicles_page.text
+
+        products_page = demo_client.get("/products")
+        assert products_page.status_code == 200
+        assert "Recycled Aggregate 20mm" in products_page.text
+        assert "Compacted Bale Removal" in products_page.text
+
+        invoices_page = demo_client.get("/invoices")
+        assert invoices_page.status_code == 200
+        assert "INV-DEMO-001" in invoices_page.text
+        assert "INV-DEMO-003" in invoices_page.text
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+        csrf = _prime_csrf(admin_client)
+        second_reset = admin_client.post(
+            f"/platform/tenants/{demo_tenant}/reset-demo",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "confirmation_text": "DEMO",
+            },
+            follow_redirects=False,
+        )
+        assert second_reset.status_code in {302, 303}
 
     assert not (uploads_root / "tenants" / str(demo_tenant)).exists()
+
+    with SessionLocal() as db:
+        assert db.execute(select(User).where(User.tenant_id == demo_tenant)).scalars().first() is None
+        assert_demo_dataset_counts(db)
 
 
 def test_non_superadmin_cannot_delete_tenant(tmp_path, monkeypatch):

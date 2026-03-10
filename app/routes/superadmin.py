@@ -58,6 +58,7 @@ from ..models import (
 )
 from ..models.base import utcnow
 from ..seed import seed_print_destinations, seed_print_templates, seed_units
+from ..services.demo_dataset import seed_demo_dataset
 from ..services.system_setup import (
     DEFAULT_YARD_NAME,
     ensure_company_settings_row_exists,
@@ -338,6 +339,7 @@ def _reset_demo_tenant_data(
         company_name=str(tenant.name or "").strip(),
         include_shared_reference_data=False,
     )
+    dataset_counts = seed_demo_dataset(db, tenant_id)
     audit_log(
         db,
         request,
@@ -349,6 +351,7 @@ def _reset_demo_tenant_data(
             "subdomain": tenant.subdomain,
             "deleted_user_count": len(users),
             "reseeded": True,
+            "dataset": dataset_counts,
         },
         user=current_user,
         tenant_id=None,
