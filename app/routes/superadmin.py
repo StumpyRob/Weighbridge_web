@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import logging
 import shutil
 from urllib.parse import urlencode
 
@@ -46,6 +47,7 @@ from ..models import (
     ProductGroup,
     Tenant,
     Ticket,
+    TicketSequence,
     TicketVoid,
     Unit,
     User,
@@ -54,14 +56,14 @@ from ..models import (
     VehicleTare,
 )
 from ..models.base import utcnow
-from ..seed import seed_print_destinations, seed_print_templates
+from ..seed import seed_print_destinations, seed_print_templates, seed_units
 from ..services.system_setup import (
     DEFAULT_YARD_NAME,
     ensure_company_settings_row_exists,
     seed_required_reference_data,
     upsert_default_yard,
 )
-from ..services.tenants import normalize_subdomain, validate_subdomain
+from ..services.tenants import is_demo_tenant, normalize_subdomain, validate_subdomain
 from ..services.uploads import company_logo_upload_dir
 from ..tenancy import (
     base_domain_supports_direct_tenant_hosts,
@@ -72,6 +74,7 @@ from ..tenancy import (
 from ..templating import templates
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 _DELETE_BLOCKING_MODELS = (
     ("customer records", Customer),
     ("customer adjustments", CustomerAdjustment),
@@ -95,6 +98,7 @@ _DELETE_CASCADE_MODELS = (
     TicketVoid,
     InvoiceLine,
     Ticket,
+    TicketSequence,
     Invoice,
     Vehicle,
     Product,
@@ -176,13 +180,25 @@ def _seed_number_sequences(db: Session, tenant_id: int) -> None:
     )
 
 
-def _seed_tenant_baseline(db: Session, tenant_id: int) -> None:
+def _seed_tenant_baseline(
+    db: Session,
+    tenant_id: int,
+    *,
+    company_name: str | None = None,
+    include_shared_reference_data: bool = True,
+) -> None:
     with _tenant_scope(db, tenant_id):
         company = ensure_company_settings_row_exists(db)
-        if not str(company.name or "").strip():
+        resolved_company_name = str(company_name or "").strip()
+        if resolved_company_name:
+            company.name = resolved_company_name
+        elif not str(company.name or "").strip():
             company.name = "Your Company Name"
         upsert_default_yard(db, yard_name=DEFAULT_YARD_NAME)
-        seed_required_reference_data(db)
+        if include_shared_reference_data:
+            seed_required_reference_data(db)
+        else:
+            seed_units(db)
         seed_print_templates(db)
         seed_print_destinations(db)
         company.is_initialized = True
@@ -261,8 +277,7 @@ def _tenant_delete_block_reason(
     *,
     user_count_hint: int | None = None,
 ) -> str:
-    subdomain = normalize_subdomain(getattr(tenant, "subdomain", None))
-    if subdomain and subdomain == settings.effective_demo_tenant_subdomain:
+    if is_demo_tenant(tenant):
         return "Delete is blocked for the demo tenant because it is reserved for internal demo/testing use."
 
     user_count = user_count_hint
@@ -283,6 +298,62 @@ def _tenant_delete_block_reason(
         if existing is not None:
             return f"Delete is blocked because this tenant still has {label}."
     return ""
+
+
+def _reset_demo_tenant_data(
+    db: Session,
+    request: Request,
+    *,
+    tenant: Tenant,
+    current_user: User,
+) -> None:
+    tenant_id = int(tenant.id)
+    tenant_upload_dir = company_logo_upload_dir(tenant_id, create=False).parent
+    users = list(
+        db.execute(
+            select(User)
+            .where(User.tenant_id == tenant_id)
+            .order_by(User.id.asc())
+        ).scalars()
+    )
+    user_ids = [int(user.id) for user in users if getattr(user, "id", None) is not None]
+
+    if user_ids:
+        db.execute(
+            update(AuditEvent)
+            .where(AuditEvent.user_id.in_(user_ids))
+            .values(user_id=None)
+        )
+
+    db.execute(delete(AuditEvent).where(AuditEvent.tenant_id == str(tenant_id)))
+    for model in _DELETE_CASCADE_MODELS:
+        db.execute(delete(model).where(model.tenant_id == tenant_id))
+    db.execute(delete(User).where(User.tenant_id == tenant_id))
+
+    tenant.is_active = True
+    _seed_tenant_baseline(
+        db,
+        tenant_id,
+        company_name=str(tenant.name or "").strip(),
+        include_shared_reference_data=False,
+    )
+    audit_log(
+        db,
+        request,
+        action="TENANT_RESET_DEMO",
+        entity_type="tenant",
+        entity_id=tenant.id,
+        summary=f"Reset demo tenant {tenant.name}",
+        details={
+            "subdomain": tenant.subdomain,
+            "deleted_user_count": len(users),
+            "reseeded": True,
+        },
+        user=current_user,
+        tenant_id=None,
+    )
+    db.commit()
+    shutil.rmtree(tenant_upload_dir, ignore_errors=True)
 
 
 def _tenant_form_context(
@@ -400,6 +471,7 @@ def tenant_detail(
         {
             "request": request,
             "tenant": tenant,
+            "tenant_is_demo": is_demo_tenant(tenant),
             "users": users,
             "summary": summary,
             "primary_admin_email": _user_identity(primary_admin),
@@ -407,6 +479,8 @@ def tenant_detail(
             "delete_allowed": not bool(delete_block_reason),
             "delete_block_reason": delete_block_reason,
             "delete_error": request.query_params.get("delete_error", ""),
+            "demo_reset": request.query_params.get("demo_reset") == "1",
+            "demo_reset_error": request.query_params.get("demo_reset_error", ""),
             "email_saved": request.query_params.get("email_saved") == "1",
             "email_error": request.query_params.get("email_error", ""),
         },
@@ -639,6 +713,62 @@ async def tenant_update_admin_email(
 
     return RedirectResponse(
         url=f"/platform/tenants/{tenant.id}?email_saved=1",
+        status_code=303,
+    )
+
+
+@router.post("/platform/tenants/{tenant_id:int}/reset-demo")
+@router.post("/admin/tenants/{tenant_id:int}/reset-demo")
+async def tenant_reset_demo(
+    tenant_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None:
+        return RedirectResponse(url="/platform/tenants?error=Tenant+not+found", status_code=303)
+    if not is_demo_tenant(tenant):
+        return RedirectResponse(
+            url=(
+                f"/platform/tenants/{tenant.id}?"
+                f"{urlencode({'demo_reset_error': 'Reset Demo Tenant is only available for workspaces marked as demo.'})}"
+            ),
+            status_code=303,
+        )
+
+    form = await request.form()
+    confirmation_text = str(form.get("confirmation_text", "")).strip()
+    if confirmation_text != "DEMO":
+        return RedirectResponse(
+            url=(
+                f"/platform/tenants/{tenant.id}?"
+                f"{urlencode({'demo_reset_error': 'Type DEMO to confirm the reset.'})}"
+            ),
+            status_code=303,
+        )
+
+    try:
+        _reset_demo_tenant_data(
+            db,
+            request,
+            tenant=tenant,
+            current_user=current_user,
+        )
+    except Exception:
+        db.rollback()
+        logger.exception("Reset demo tenant failed for tenant_id=%s", tenant_id)
+        return RedirectResponse(
+            url=(
+                f"/platform/tenants/{tenant.id}?"
+                f"{urlencode({'demo_reset_error': 'Reset Demo Tenant failed. Review the server logs and try again.'})}"
+            ),
+            status_code=303,
+        )
+
+    return RedirectResponse(
+        url=f"/platform/tenants/{tenant.id}?demo_reset=1",
         status_code=303,
     )
 

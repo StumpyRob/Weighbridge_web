@@ -32,6 +32,15 @@ def _sqlite_unique_indexes(db_path: Path, table_name: str) -> list[tuple[str, li
         conn.close()
 
 
+def _sqlite_table_columns(db_path: Path, table_name: str) -> set[str]:
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
+        return {str(row[1]) for row in rows}
+    finally:
+        conn.close()
+
+
 def _assert_table_unique_sets(
     db_path: Path,
     table_name: str,
@@ -52,6 +61,11 @@ def _assert_table_unique_sets(
 
 
 def _assert_head_unique(db_path: Path) -> None:
+    tenant_columns = _sqlite_table_columns(db_path, "tenants")
+    assert "is_demo" in tenant_columns, (
+        "Expected tenants.is_demo at head, got columns: "
+        f"{sorted(tenant_columns)}"
+    )
     unique_indexes = _sqlite_unique_indexes(db_path, "void_reasons")
     unique_sets = {tuple(cols) for _, cols in unique_indexes}
     assert ("code", "reason_type") in unique_sets, (

@@ -29,6 +29,15 @@ def _sqlite_unique_sets(db_path: Path, table_name: str) -> set[tuple[str, ...]]:
         conn.close()
 
 
+def _sqlite_columns(db_path: Path, table_name: str) -> set[str]:
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(f"PRAGMA table_info('{table_name}')").fetchall()
+        return {str(row[1]) for row in rows}
+    finally:
+        conn.close()
+
+
 def test_head_migration_removes_global_customer_and_vehicle_uniques(monkeypatch) -> None:
     root = Path(__file__).resolve().parents[1]
     cfg = Config(str(root / "alembic.ini"))
@@ -44,6 +53,9 @@ def test_head_migration_removes_global_customer_and_vehicle_uniques(monkeypatch)
         )
 
         command.upgrade(cfg, "head")
+
+        tenant_columns = _sqlite_columns(db_path, "tenants")
+        assert "is_demo" in tenant_columns
 
         customer_uniques = _sqlite_unique_sets(db_path, "customers")
         assert ("tenant_id", "account_code") in customer_uniques

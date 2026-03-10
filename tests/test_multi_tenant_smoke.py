@@ -29,11 +29,15 @@ from app.models import (
     EwcCode,
     Haulier,
     Invoice,
+    PrintDestination,
+    PrintTemplate,
     Product,
     Tenant,
     Ticket,
+    TicketSequence,
     TicketStatusEnum,
     TransactionTypeEnum,
+    Unit,
     User,
     Vehicle,
     VehicleType,
@@ -216,9 +220,15 @@ def _seed_tenant(
     name: str,
     subdomain: str,
     is_active: bool = True,
+    is_demo: bool = False,
 ) -> int:
     with SessionLocal() as db:
-        tenant = Tenant(name=name, subdomain=subdomain, is_active=is_active)
+        tenant = Tenant(
+            name=name,
+            subdomain=subdomain,
+            is_active=is_active,
+            is_demo=is_demo,
+        )
         db.add(tenant)
         db.commit()
         db.refresh(tenant)
@@ -1859,6 +1869,290 @@ def test_legacy_default_tenant_is_renamed_to_demo_and_hidden_from_platform_ui(tm
             select(Tenant).where(Tenant.subdomain == "default")
         ).scalars().first()
         assert legacy_lookup is None
+
+
+def test_demo_tenant_reset_action_is_only_available_for_demo_tenants(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-demo-reset-ui.db", monkeypatch=monkeypatch
+    )
+    demo_tenant = _seed_tenant(
+        SessionLocal,
+        name="Demo",
+        subdomain=settings.effective_demo_tenant_subdomain,
+        is_active=True,
+        is_demo=True,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=demo_tenant,
+        company_name="Demo Co",
+        primary_color="#7a3b2e",
+    )
+    marked_demo_tenant = _seed_tenant(
+        SessionLocal,
+        name="Showroom Demo",
+        subdomain="showroom",
+        is_active=True,
+        is_demo=True,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=marked_demo_tenant,
+        company_name="Showroom Demo",
+        primary_color="#2d556d",
+    )
+    non_demo_tenant = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", is_active=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=non_demo_tenant,
+        company_name="Tenant A",
+        primary_color="#245577",
+    )
+    _seed_user(
+        SessionLocal,
+        email="demo-admin@example.com",
+        password="DemoPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=demo_tenant,
+    )
+    _seed_user(
+        SessionLocal,
+        email="tenant-admin@example.com",
+        password="TenantPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=non_demo_tenant,
+    )
+    _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+
+        demo_detail = admin_client.get(f"/platform/tenants/{demo_tenant}")
+        assert demo_detail.status_code == 200
+        assert "Maintenance" in demo_detail.text
+        assert "Reset Demo Tenant" in demo_detail.text
+        assert "Type DEMO to enable confirmation" in demo_detail.text
+        assert f'action="/platform/tenants/{demo_tenant}/reset-demo"' in demo_detail.text
+
+        marked_demo_detail = admin_client.get(f"/platform/tenants/{marked_demo_tenant}")
+        assert marked_demo_detail.status_code == 200
+        assert f'action="/platform/tenants/{marked_demo_tenant}/reset-demo"' in marked_demo_detail.text
+        assert (
+            "Delete is blocked for the demo tenant because it is reserved for internal demo/testing use."
+            in marked_demo_detail.text
+        )
+
+        non_demo_detail = admin_client.get(f"/platform/tenants/{non_demo_tenant}")
+        assert non_demo_detail.status_code == 200
+        assert f'action="/platform/tenants/{non_demo_tenant}/reset-demo"' not in non_demo_detail.text
+        assert "Reset Demo Tenant is only available for workspaces marked as demo." in non_demo_detail.text
+
+        csrf = _prime_csrf(admin_client)
+        blocked = admin_client.post(
+            f"/platform/tenants/{non_demo_tenant}/reset-demo",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "confirmation_text": "DEMO",
+            },
+            follow_redirects=False,
+        )
+        assert blocked.status_code in {302, 303}
+        assert blocked.headers.get("location", "").startswith(f"/platform/tenants/{non_demo_tenant}?")
+
+        blocked_detail = admin_client.get(blocked.headers["location"])
+        assert blocked_detail.status_code == 200
+        assert "Reset Demo Tenant is only available for workspaces marked as demo." in blocked_detail.text
+
+    with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.localhost") as tenant_client:
+        assert _login(tenant_client, email="demo-admin@example.com", password="DemoPass123!") == 303
+        csrf = _prime_csrf(tenant_client)
+        forbidden = tenant_client.post(
+            f"/platform/tenants/{demo_tenant}/reset-demo",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "confirmation_text": "DEMO",
+            },
+            follow_redirects=False,
+        )
+        assert forbidden.status_code == 404
+
+
+def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-demo-reset-flow.db", monkeypatch=monkeypatch
+    )
+    uploads_root = (tmp_path / "uploads").resolve()
+    monkeypatch.setattr(settings, "uploads_dir", str(uploads_root))
+
+    demo_tenant = _seed_tenant(
+        SessionLocal,
+        name="Demo",
+        subdomain=settings.effective_demo_tenant_subdomain,
+        is_active=True,
+        is_demo=True,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=demo_tenant,
+        company_name="Demo Co",
+        primary_color="#6b2d2d",
+    )
+    other_tenant = _seed_tenant(SessionLocal, name="Tenant B", subdomain="b", is_active=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=other_tenant,
+        company_name="Tenant B",
+        primary_color="#2a4f74",
+    )
+
+    _seed_user(
+        SessionLocal,
+        email="demo-admin@example.com",
+        password="DemoPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=demo_tenant,
+    )
+    other_admin_id = _seed_user(
+        SessionLocal,
+        email="tenant-b-admin@example.com",
+        password="TenantBPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=other_tenant,
+    )
+    superadmin_id = _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with SessionLocal() as db:
+        db.add(Customer(tenant_id=demo_tenant, account_code="DEMO-001", name="Demo Customer"))
+        db.add(Vehicle(tenant_id=demo_tenant, registration="DEMO123"))
+        db.add(Customer(tenant_id=other_tenant, account_code="OTHER-001", name="Other Customer"))
+        db.add(Vehicle(tenant_id=other_tenant, registration="OTHER123"))
+        db.commit()
+
+    demo_logo_dir = uploads_root / "tenants" / str(demo_tenant) / "company"
+    demo_logo_dir.mkdir(parents=True, exist_ok=True)
+    (demo_logo_dir / "logo.png").write_bytes(b"demo-logo")
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+
+        csrf = _prime_csrf(admin_client)
+        invalid = admin_client.post(
+            f"/platform/tenants/{demo_tenant}/reset-demo",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "confirmation_text": "WRONG",
+            },
+            follow_redirects=False,
+        )
+        assert invalid.status_code in {302, 303}
+        assert invalid.headers.get("location", "").startswith(f"/platform/tenants/{demo_tenant}?")
+
+        invalid_page = admin_client.get(invalid.headers["location"])
+        assert invalid_page.status_code == 200
+        assert "Type DEMO to confirm the reset." in invalid_page.text
+
+    with SessionLocal() as db:
+        assert db.execute(select(Customer).where(Customer.tenant_id == demo_tenant)).scalars().first() is not None
+        assert db.execute(select(Vehicle).where(Vehicle.tenant_id == demo_tenant)).scalars().first() is not None
+        assert db.execute(select(User).where(User.tenant_id == demo_tenant)).scalars().first() is not None
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+        csrf = _prime_csrf(admin_client)
+        reset = admin_client.post(
+            f"/platform/tenants/{demo_tenant}/reset-demo",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "confirmation_text": "DEMO",
+            },
+            follow_redirects=False,
+        )
+        assert reset.status_code in {302, 303}
+        assert reset.headers.get("location") == f"/platform/tenants/{demo_tenant}?demo_reset=1"
+
+        reset_page = admin_client.get(reset.headers["location"])
+        assert reset_page.status_code == 200
+        assert "Demo tenant data deleted and recreated." in reset_page.text
+        assert "No tenant users." in reset_page.text
+
+    with SessionLocal() as db:
+        demo = db.get(Tenant, demo_tenant)
+        assert demo is not None
+        assert bool(demo.is_active) is True
+        assert bool(demo.is_demo) is True
+
+        assert db.execute(select(User).where(User.tenant_id == demo_tenant)).scalars().first() is None
+        assert db.execute(select(Customer).where(Customer.tenant_id == demo_tenant)).scalars().first() is None
+        assert db.execute(select(Vehicle).where(Vehicle.tenant_id == demo_tenant)).scalars().first() is None
+
+        assert (
+            db.execute(select(CompanySetting).where(CompanySetting.tenant_id == demo_tenant))
+            .scalars()
+            .first()
+            is not None
+        )
+        assert db.execute(select(Yard).where(Yard.tenant_id == demo_tenant)).scalars().first() is not None
+        assert db.execute(select(Unit).where(Unit.tenant_id == demo_tenant)).scalars().first() is not None
+        assert (
+            db.execute(select(PrintTemplate).where(PrintTemplate.tenant_id == demo_tenant))
+            .scalars()
+            .first()
+            is not None
+        )
+        assert (
+            db.execute(select(PrintDestination).where(PrintDestination.tenant_id == demo_tenant))
+            .scalars()
+            .first()
+            is not None
+        )
+        assert (
+            db.execute(
+                select(TicketSequence).where(
+                    TicketSequence.tenant_id == demo_tenant,
+                    TicketSequence.year == int(utcnow().year),
+                )
+            )
+            .scalars()
+            .first()
+            is not None
+        )
+
+        assert db.execute(select(Customer).where(Customer.tenant_id == other_tenant)).scalars().first() is not None
+        assert db.execute(select(Vehicle).where(Vehicle.tenant_id == other_tenant)).scalars().first() is not None
+        other_admin = db.get(User, other_admin_id)
+        assert other_admin is not None
+        assert other_admin.tenant_id == other_tenant
+
+        superadmin = db.get(User, superadmin_id)
+        assert superadmin is not None
+        assert superadmin.tenant_id is None
+
+        reset_event = db.execute(
+            select(AuditEvent)
+            .where(
+                AuditEvent.action == "TENANT_RESET_DEMO",
+                AuditEvent.entity_id == str(demo_tenant),
+            )
+            .order_by(AuditEvent.id.desc())
+            .limit(1)
+        ).scalars().first()
+        assert reset_event is not None
+        assert reset_event.user_id == superadmin_id
+        assert reset_event.tenant_id is None
+
+    assert not (uploads_root / "tenants" / str(demo_tenant)).exists()
 
 
 def test_non_superadmin_cannot_delete_tenant(tmp_path, monkeypatch):

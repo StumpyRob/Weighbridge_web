@@ -49,6 +49,18 @@ def _should_rename_to_demo(name: str | None) -> bool:
     return str(name or "").strip().lower() in _LEGACY_DEFAULT_TENANT_NAMES
 
 
+def is_demo_tenant(tenant: Tenant | None) -> bool:
+    if tenant is None:
+        return False
+    if bool(getattr(tenant, "is_demo", False)):
+        return True
+    subdomain = normalize_subdomain(getattr(tenant, "subdomain", None))
+    demo_subdomain = normalize_subdomain(
+        settings.effective_demo_tenant_subdomain or DEMO_TENANT_SUBDOMAIN
+    )
+    return subdomain in {demo_subdomain, LEGACY_DEFAULT_TENANT_SUBDOMAIN}
+
+
 def ensure_demo_tenant(db: Session, *, create_missing: bool = True) -> Tenant | None:
     demo_subdomain = settings.effective_demo_tenant_subdomain or DEMO_TENANT_SUBDOMAIN
     tenant = get_tenant_by_subdomain(db, demo_subdomain)
@@ -57,6 +69,8 @@ def ensure_demo_tenant(db: Session, *, create_missing: bool = True) -> Tenant | 
             tenant.name = DEMO_TENANT_NAME
         if not bool(tenant.is_active):
             tenant.is_active = True
+        if not bool(getattr(tenant, "is_demo", False)):
+            tenant.is_demo = True
         return tenant
 
     legacy_tenant = get_tenant_by_subdomain(db, LEGACY_DEFAULT_TENANT_SUBDOMAIN)
@@ -66,6 +80,8 @@ def ensure_demo_tenant(db: Session, *, create_missing: bool = True) -> Tenant | 
             legacy_tenant.name = DEMO_TENANT_NAME
         if not bool(legacy_tenant.is_active):
             legacy_tenant.is_active = True
+        if not bool(getattr(legacy_tenant, "is_demo", False)):
+            legacy_tenant.is_demo = True
         return legacy_tenant
 
     if not create_missing:
@@ -75,6 +91,7 @@ def ensure_demo_tenant(db: Session, *, create_missing: bool = True) -> Tenant | 
         name=DEMO_TENANT_NAME,
         subdomain=demo_subdomain,
         is_active=True,
+        is_demo=True,
         created_at=datetime.now(timezone.utc).replace(tzinfo=None),
     )
     db.add(tenant)

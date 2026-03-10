@@ -13,6 +13,7 @@ class Tenant(Base):
     __tablename__ = "tenants"
     __table_args__ = (
         sa.UniqueConstraint("subdomain", name="uq_tenants_subdomain"),
+        sa.Index("ix_tenants_is_demo", "is_demo"),
         sa.Index("ix_tenants_is_active", "is_active"),
     )
 
@@ -20,4 +21,10 @@ class Tenant(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     subdomain: Mapped[str] = mapped_column(String(63), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_demo: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=sa.false(),
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)

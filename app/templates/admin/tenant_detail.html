@@ -60,6 +60,18 @@
     </div>
   {% endif %}
 
+  {% if demo_reset %}
+    <div class="notice">
+      Demo tenant data deleted and recreated.
+    </div>
+  {% endif %}
+
+  {% if demo_reset_error %}
+    <div class="alert alert--danger">
+      {{ demo_reset_error }}
+    </div>
+  {% endif %}
+
   <section class="card">
     <div class="invoice-summary-grid">
       <div class="summary-item">
@@ -176,4 +188,63 @@
       </div>
     </div>
   </section>
+
+  <section class="frame">
+    <div class="frame-header">
+      <h2>Maintenance</h2>
+    </div>
+    <div class="frame-body">
+      {% if tenant_is_demo %}
+        <div class="platform-maintenance-card" data-demo-reset>
+          <p class="muted">
+            Delete and recreate demo workspace data, then reseed the default baseline for this demo tenant.
+          </p>
+          <div class="actions btn-group">
+            <button type="button" class="btn btn--danger" data-demo-reset-open>Reset Demo Tenant</button>
+          </div>
+          <dialog
+            class="platform-confirmation-dialog"
+            data-demo-reset-dialog
+            aria-labelledby="demo-reset-title-{{ tenant.id }}"
+          >
+            <form method="post" action="/platform/tenants/{{ tenant.id }}/reset-demo" class="ticket-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+              <div class="platform-confirmation-dialog__header">
+                <h3 id="demo-reset-title-{{ tenant.id }}">Reset Demo Tenant?</h3>
+              </div>
+              <div class="platform-confirmation-copy">
+                <p>This will delete and recreate all data for the demo tenant.</p>
+                <p>This action is intended for development/testing only.</p>
+                <p>It will not affect other tenants or platform admin data.</p>
+              </div>
+              <div class="field platform-confirmation-field">
+                <label for="demo-reset-confirmation-{{ tenant.id }}">Type DEMO to enable confirmation</label>
+                <input
+                  type="text"
+                  id="demo-reset-confirmation-{{ tenant.id }}"
+                  name="confirmation_text"
+                  value=""
+                  autocomplete="off"
+                  spellcheck="false"
+                  data-demo-reset-input
+                />
+              </div>
+              <div class="actions btn-group">
+                <button type="button" class="btn btn--ghost" data-demo-reset-cancel>Cancel</button>
+                <button type="submit" class="btn btn--danger" data-demo-reset-submit disabled>Reset Demo Tenant</button>
+              </div>
+            </form>
+          </dialog>
+        </div>
+      {% else %}
+        <div class="notice">
+          Reset Demo Tenant is only available for workspaces marked as demo.
+        </div>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if tenant_is_demo %}
+    <script src="/static/js/platform_demo_reset.js?v={{ BUILD_STAMP }}" defer></script>
+  {% endif %}
 {% endblock %}

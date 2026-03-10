@@ -2004,6 +2004,66 @@ details.frame:not([open]) .frame-header {
   padding: 1rem;
 }
 
+.platform-maintenance-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+}
+
+.platform-maintenance-card .actions {
+  margin-top: 0;
+}
+
+.platform-confirmation-dialog {
+  width: min(calc(100vw - 2rem), 34rem);
+  padding: 0;
+  border: 1px solid #d1d5db;
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+}
+
+.platform-confirmation-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.platform-confirmation-dialog__header {
+  padding: 1rem 1rem 0;
+}
+
+.platform-confirmation-dialog__header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.platform-confirmation-copy {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0 1rem;
+  color: #374151;
+}
+
+.platform-confirmation-copy p {
+  margin: 0;
+}
+
+.platform-confirmation-field {
+  padding: 0 1rem;
+}
+
+.platform-confirmation-field input {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+}
+
+.platform-confirmation-dialog .actions {
+  justify-content: flex-end;
+  padding: 0 1rem 1rem;
+}
+
 .template-vars-table {
   table-layout: fixed;
   width: 100%;
