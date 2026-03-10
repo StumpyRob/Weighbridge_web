@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import importlib.util
 import sqlite3
 import tempfile
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from sqlalchemy.dialects import postgresql
 
 from app.config import settings
 
@@ -38,6 +40,16 @@ def _sqlite_columns(db_path: Path, table_name: str) -> set[str]:
         conn.close()
 
 
+def _load_demo_flag_migration():
+    root = Path(__file__).resolve().parents[1]
+    path = root / "alembic" / "versions" / "4a8b9c0d1e2f_add_tenant_demo_flag.py"
+    spec = importlib.util.spec_from_file_location("tenant_demo_flag_migration", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_head_migration_removes_global_customer_and_vehicle_uniques(monkeypatch) -> None:
     root = Path(__file__).resolve().parents[1]
     cfg = Config(str(root / "alembic.ini"))
@@ -64,3 +76,17 @@ def test_head_migration_removes_global_customer_and_vehicle_uniques(monkeypatch)
         vehicle_uniques = _sqlite_unique_sets(db_path, "vehicles")
         assert ("tenant_id", "registration") in vehicle_uniques
         assert ("registration",) not in vehicle_uniques
+
+
+def test_demo_tenant_backfill_compiles_to_postgresql_boolean_true() -> None:
+    module = _load_demo_flag_migration()
+    statement = module._demo_backfill_statement()
+    compiled = str(
+        statement.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    ).lower()
+
+    assert "set is_demo=true" in compiled
+    assert "set is_demo=1" not in compiled

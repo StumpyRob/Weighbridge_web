@@ -16,6 +16,25 @@ down_revision = "3f1c2a4b5d6e"
 branch_labels = None
 depends_on = None
 
+_TENANTS = sa.table(
+    "tenants",
+    sa.column("subdomain", sa.String()),
+    sa.column("is_demo", sa.Boolean()),
+)
+
+
+def _demo_backfill_statement():
+    normalized_subdomain = sa.func.lower(
+        sa.func.trim(
+            sa.func.coalesce(_TENANTS.c.subdomain, "")
+        )
+    )
+    return (
+        _TENANTS.update()
+        .where(normalized_subdomain.in_(("demo", "default")))
+        .values(is_demo=sa.true())
+    )
+
 
 def upgrade() -> None:
     with op.batch_alter_table("tenants", schema=None) as batch_op:
@@ -29,13 +48,7 @@ def upgrade() -> None:
         )
         batch_op.create_index("ix_tenants_is_demo", ["is_demo"], unique=False)
 
-    op.execute(
-        sa.text(
-            "UPDATE tenants "
-            "SET is_demo = 1 "
-            "WHERE lower(trim(coalesce(subdomain, ''))) IN ('demo', 'default')"
-        )
-    )
+    op.execute(_demo_backfill_statement())
 
     with op.batch_alter_table("tenants", schema=None) as batch_op:
         batch_op.alter_column("is_demo", server_default=None)
