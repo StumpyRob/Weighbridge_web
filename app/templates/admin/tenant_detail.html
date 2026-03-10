@@ -48,6 +48,12 @@
     </div>
   {% endif %}
 
+  {% if tenant_created %}
+    <div class="notice">
+      Tenant created. Add the first tenant user below before anyone can sign in to this workspace.
+    </div>
+  {% endif %}
+
   {% if user_saved %}
     <div class="notice">
       Tenant user created{% if created_user_email %}: {{ created_user_email }}{% endif %}.
@@ -145,7 +151,7 @@
     </div>
     <div class="frame-body">
       <p class="muted platform-tenant-detail-users-copy">
-        Create the initial demo login after a reset or add another tenant-scoped user to this workspace.
+        Create the first tenant login for this workspace, recover the demo tenant after a reset, or add another tenant-scoped user.
       </p>
       <form method="post" action="/platform/tenants/{{ tenant.id }}/users" class="ticket-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />

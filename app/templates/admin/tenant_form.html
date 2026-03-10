@@ -6,7 +6,7 @@
   <div class="page-header">
     <div>
       <h1>Create Tenant</h1>
-      <p class="muted">Provision a tenant workspace and its first tenant admin in one step.</p>
+      <p class="muted">Provision a tenant workspace, then add the first tenant admin from tenant management.</p>
     </div>
     <div class="actions btn-group">
       <a class="btn btn--ghost" href="/platform/tenants">Back to Tenants</a>
@@ -69,37 +69,11 @@
           <p class="tenant-form__error">{{ field_errors["subdomain"] }}</p>
         {% endif %}
       </div>
-
-      <div class="field">
-        <label for="admin_email">Initial tenant admin email</label>
-        <input
-          type="email"
-          id="admin_email"
-          name="admin_email"
-          value="{{ form.admin_email }}"
-          required
-          aria-invalid="{{ 'true' if field_errors.get('admin_email') else 'false' }}"
-        />
-        {% if field_errors.get("admin_email") %}
-          <p class="tenant-form__error">{{ field_errors["admin_email"] }}</p>
-        {% endif %}
-      </div>
-
-      <div class="field">
-        <label for="admin_password">Initial tenant admin password</label>
-        <input
-          type="password"
-          id="admin_password"
-          name="admin_password"
-          value="{{ form.admin_password }}"
-          required
-          aria-invalid="{{ 'true' if field_errors.get('admin_password') else 'false' }}"
-        />
-        {% if field_errors.get("admin_password") %}
-          <p class="tenant-form__error">{{ field_errors["admin_password"] }}</p>
-        {% endif %}
-      </div>
     </section>
+
+    <div class="notice">
+      After creation, open tenant management to create the first tenant login for this workspace.
+    </div>
 
     <div class="actions btn-group">
       <button type="submit" class="btn btn--primary">Create Tenant</button>

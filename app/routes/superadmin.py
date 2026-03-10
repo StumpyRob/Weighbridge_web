@@ -393,8 +393,6 @@ def tenants_list(
         )
     tenants = list(db.execute(query).scalars())
     tenant_users = _tenant_users_map(db, [int(tenant.id) for tenant in tenants])
-    created_subdomain = str(request.query_params.get("created_tenant", "") or "").strip()
-    created_open_url = _tenant_open_url(created_subdomain)
     rows: list[dict[str, object]] = []
     active_count = 0
     disabled_count = 0
@@ -428,9 +426,6 @@ def tenants_list(
             "rows": rows,
             "q": q or "",
             "error": request.query_params.get("error", ""),
-            "created_subdomain": created_subdomain,
-            "created_open_url": created_open_url,
-            "created_uses_subdomain_url": bool(created_open_url) and base_domain_supports_direct_tenant_hosts(),
             "updated_subdomain": request.query_params.get("updated_tenant", ""),
             "updated_status": request.query_params.get("status", ""),
             "deleted_subdomain": request.query_params.get("deleted_tenant", ""),
@@ -480,6 +475,7 @@ def tenant_detail(
             "delete_allowed": not bool(delete_block_reason),
             "delete_block_reason": delete_block_reason,
             "delete_error": request.query_params.get("delete_error", ""),
+            "tenant_created": request.query_params.get("tenant_created") == "1",
             "demo_reset": request.query_params.get("demo_reset") == "1",
             "demo_reset_error": request.query_params.get("demo_reset_error", ""),
             "user_saved": request.query_params.get("user_saved") == "1",
@@ -506,8 +502,6 @@ def tenants_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse
             form={
                 "name": "",
                 "subdomain": "",
-                "admin_email": "",
-                "admin_password": "",
             },
         ),
     )
@@ -521,8 +515,6 @@ async def tenants_create(request: Request, db: Session = Depends(get_db)) -> HTM
     form = await request.form()
     name = str(form.get("name", "")).strip()
     subdomain = normalize_subdomain(form.get("subdomain"))
-    admin_email = normalize_email(form.get("admin_email"))
-    admin_password = str(form.get("admin_password", "")).strip()
 
     errors: list[str] = []
     field_errors: dict[str, str] = {}
@@ -533,12 +525,6 @@ async def tenants_create(request: Request, db: Session = Depends(get_db)) -> HTM
     if subdomain_error:
         field_errors["subdomain"] = subdomain_error
         errors.append(subdomain_error)
-    if not validate_email(admin_email):
-        field_errors["admin_email"] = "A valid tenant admin email is required."
-        errors.append(field_errors["admin_email"])
-    if len(admin_password) < 8:
-        field_errors["admin_password"] = "Tenant admin password must be at least 8 characters."
-        errors.append(field_errors["admin_password"])
 
     existing = (
         db.execute(
@@ -562,8 +548,6 @@ async def tenants_create(request: Request, db: Session = Depends(get_db)) -> HTM
                 form={
                     "name": name,
                     "subdomain": subdomain,
-                    "admin_email": admin_email,
-                    "admin_password": "",
                 },
             ),
             status_code=400,
@@ -572,14 +556,6 @@ async def tenants_create(request: Request, db: Session = Depends(get_db)) -> HTM
     tenant = Tenant(name=name, subdomain=validated_subdomain, is_active=True)
     db.add(tenant)
     try:
-        db.flush()
-        tenant_admin = User(
-            **user_identity_kwargs(email=admin_email, role=ROLE_TENANT_ADMIN),
-            password_hash=hash_password(admin_password),
-            is_active=True,
-            tenant_id=int(tenant.id),
-        )
-        db.add(tenant_admin)
         db.flush()
         _seed_tenant_baseline(db, int(tenant.id))
 
@@ -592,7 +568,6 @@ async def tenants_create(request: Request, db: Session = Depends(get_db)) -> HTM
             summary=f"Created tenant {tenant.name}",
             details={
                 "subdomain": tenant.subdomain,
-                "tenant_admin_email": admin_email,
             },
             user=current_user,
             tenant_id=tenant.id,
@@ -600,7 +575,7 @@ async def tenants_create(request: Request, db: Session = Depends(get_db)) -> HTM
         db.commit()
     except IntegrityError:
         db.rollback()
-        field_errors["subdomain"] = "Subdomain or tenant admin identity already exists for this tenant."
+        field_errors["subdomain"] = "Subdomain already exists."
         return templates.TemplateResponse(
             request,
             "admin/tenant_form.html",
@@ -611,15 +586,13 @@ async def tenants_create(request: Request, db: Session = Depends(get_db)) -> HTM
                 form={
                     "name": name,
                     "subdomain": subdomain,
-                    "admin_email": admin_email,
-                    "admin_password": "",
                 },
             ),
             status_code=400,
         )
 
     return RedirectResponse(
-        url=f"/platform/tenants?{urlencode({'created_tenant': tenant.subdomain})}",
+        url=f"/platform/tenants/{tenant.id}?tenant_created=1",
         status_code=303,
     )
 

@@ -1452,8 +1452,6 @@ def test_missing_csrf_is_rejected_on_tenant_and_admin_hosts(tmp_path, monkeypatc
             data={
                 "name": "New Tenant",
                 "subdomain": "newtenant",
-                "admin_email": "new-admin@example.com",
-                "admin_password": "NewTenant123!",
             },
             follow_redirects=False,
         )
@@ -2028,7 +2026,7 @@ def test_platform_superadmin_can_create_demo_user_and_add_more_tenant_users(tmp_
         assert detail.status_code == 200
         assert "No tenant users." in detail.text
         assert f'action="/platform/tenants/{demo_tenant}/users"' in detail.text
-        assert "Create the initial demo login after a reset" in detail.text
+        assert "Create the first tenant login for this workspace" in detail.text
         assert "Create one above first." in detail.text
 
         csrf = _prime_csrf(admin_client)
@@ -2650,6 +2648,11 @@ def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tm
 
     with _client(app, base_url="https://admin.localhost") as admin_client:
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+        new_tenant_form = admin_client.get("/platform/tenants/new")
+        assert new_tenant_form.status_code == 200
+        assert "Initial tenant admin email" not in new_tenant_form.text
+        assert "Initial tenant admin password" not in new_tenant_form.text
+        assert "add the first tenant admin from tenant management" in new_tenant_form.text
         csrf = _prime_csrf(admin_client)
 
         missing_name = admin_client.post(
@@ -2657,8 +2660,6 @@ def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tm
             data={
                 "name": "",
                 "subdomain": "missing-name",
-                "admin_email": "missing-name@example.com",
-                "admin_password": "Reserved123!",
                 CSRF_FORM_FIELD: csrf,
             },
             follow_redirects=False,
@@ -2672,8 +2673,6 @@ def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tm
             data={
                 "name": "Reserved Admin",
                 "subdomain": "admin",
-                "admin_email": "reserved-admin@example.com",
-                "admin_password": "Reserved123!",
                 CSRF_FORM_FIELD: csrf,
             },
             follow_redirects=False,
@@ -2686,8 +2685,6 @@ def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tm
             data={
                 "name": "Reserved Ops",
                 "subdomain": "ops",
-                "admin_email": "reserved-ops@example.com",
-                "admin_password": "Reserved123!",
                 CSRF_FORM_FIELD: csrf,
             },
             follow_redirects=False,
@@ -2700,8 +2697,6 @@ def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tm
             data={
                 "name": "Reserved Software",
                 "subdomain": "software",
-                "admin_email": "reserved-software@example.com",
-                "admin_password": "Reserved123!",
                 CSRF_FORM_FIELD: csrf,
             },
             follow_redirects=False,
@@ -2714,8 +2709,6 @@ def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tm
             data={
                 "name": "Invalid Label",
                 "subdomain": "bad_label",
-                "admin_email": "invalid-label@example.com",
-                "admin_password": "Reserved123!",
                 CSRF_FORM_FIELD: csrf,
             },
             follow_redirects=False,
@@ -2728,27 +2721,26 @@ def test_superadmin_tenant_create_validates_reserved_and_normalizes_subdomain(tm
             data={
                 "name": "Normalized Tenant",
                 "subdomain": "MyTenant",
-                "admin_email": "normalized-admin@example.com",
-                "admin_password": "Reserved123!",
                 CSRF_FORM_FIELD: csrf,
             },
             follow_redirects=False,
         )
         assert created.status_code in {302, 303}
-        assert created.headers.get("location") == "/platform/tenants?created_tenant=mytenant"
+        assert created.headers.get("location", "").startswith("/platform/tenants/")
+        assert created.headers.get("location", "").endswith("?tenant_created=1")
 
-        created_list = admin_client.get(created.headers["location"])
-        assert created_list.status_code == 200
-        assert "Tenant mytenant created." in created_list.text
-        assert "Fallback sign-in is available at" in created_list.text
-        assert 'href="/t/mytenant/login"' in created_list.text
-        assert "https://mytenant.example.test/login" not in created_list.text
-        assert "normalized-admin@example.com" in created_list.text
+        created_detail = admin_client.get(created.headers["location"])
+        assert created_detail.status_code == 200
+        assert "Tenant created. Add the first tenant user below before anyone can sign in to this workspace." in created_detail.text
+        assert 'href="/t/mytenant/login"' in created_detail.text
+        assert "https://mytenant.example.test/login" not in created_detail.text
+        assert "No tenant users." in created_detail.text
 
     with SessionLocal() as db:
         tenant = db.execute(select(Tenant).where(Tenant.name == "Normalized Tenant")).scalars().first()
         assert tenant is not None
         assert tenant.subdomain == "mytenant"
+        assert db.execute(select(User).where(User.tenant_id == int(tenant.id))).scalars().first() is None
 
 
 def test_path_based_tenant_access_mode_on_base_domain(tmp_path, monkeypatch):
@@ -2861,21 +2853,19 @@ def test_path_based_tenant_access_mode_on_base_domain(tmp_path, monkeypatch):
             data={
                 "name": "Custom Domain Tenant",
                 "subdomain": "customdomain",
-                "admin_email": "customdomain-admin@example.com",
-                "admin_password": "CustomDomain123!",
                 CSRF_FORM_FIELD: csrf,
             },
             follow_redirects=False,
         )
         assert created.status_code in {302, 303}
-        assert created.headers.get("location") == "/platform/tenants?created_tenant=customdomain"
+        assert created.headers.get("location", "").startswith("/platform/tenants/")
+        assert created.headers.get("location", "").endswith("?tenant_created=1")
 
-        created_list = platform_client.get(created.headers["location"])
-        assert created_list.status_code == 200
-        assert "Tenant customdomain created." in created_list.text
-        assert "Sign in at" in created_list.text
-        assert 'href="https://customdomain.example.test/login"' in created_list.text
-        assert "/t/customdomain/login" not in created_list.text
+        created_detail = platform_client.get(created.headers["location"])
+        assert created_detail.status_code == 200
+        assert "Tenant created. Add the first tenant user below before anyone can sign in to this workspace." in created_detail.text
+        assert 'href="https://customdomain.example.test/login"' in created_detail.text
+        assert "/t/customdomain/login" not in created_detail.text
 
     with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.example.test") as demo_client:
         assert (
@@ -3461,7 +3451,10 @@ def test_all_tenant_subdomains_use_dashboard_on_root_and_non_tenant_hosts_do_not
         assert admin_root.headers.get("location") == "/platform/tenants"
 
 
-def test_new_tenant_creation_flow_seeds_usable_baseline(tmp_path, monkeypatch):
+def test_new_tenant_creation_flow_seeds_usable_baseline_and_requires_user_creation_from_detail(
+    tmp_path,
+    monkeypatch,
+):
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-create-seed.db", monkeypatch=monkeypatch
     )
@@ -3482,13 +3475,31 @@ def test_new_tenant_creation_flow_seeds_usable_baseline(tmp_path, monkeypatch):
             data={
                 "name": "Tenant Seeded",
                 "subdomain": "seeded",
-                "admin_email": "seeded-admin@example.com",
-                "admin_password": "SeededPass123!",
                 CSRF_FORM_FIELD: csrf,
             },
             follow_redirects=False,
         )
         assert create_tenant.status_code in {302, 303}
+        assert create_tenant.headers.get("location", "").startswith("/platform/tenants/")
+
+        created_detail = admin_client.get(create_tenant.headers["location"])
+        assert created_detail.status_code == 200
+        assert "Tenant created. Add the first tenant user below before anyone can sign in to this workspace." in created_detail.text
+        assert "No tenant users." in created_detail.text
+
+        csrf = _prime_csrf(admin_client)
+        create_user = admin_client.post(
+            create_tenant.headers["location"].split("?", 1)[0] + "/users",
+            data={
+                "user_email": "seeded-admin@example.com",
+                "user_role": ROLE_TENANT_ADMIN,
+                "user_password": "SeededPass123!",
+                "confirm_password": "SeededPass123!",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert create_user.status_code in {302, 303}
 
     with _client(app, base_url="https://seeded.localhost") as tenant_client:
         assert _login(tenant_client, email="seeded-admin@example.com", password="SeededPass123!") == 303
