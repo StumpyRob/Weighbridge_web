@@ -25,6 +25,39 @@ router = APIRouter()
 REGISTRATION_SANITIZE_RE = re.compile(r"[^A-Z0-9]+")
 
 
+def _resolved_tenant_id(
+    request: Request,
+    db: Session,
+    *,
+    fallback_tenant_id: int | None = None,
+) -> int | None:
+    tenant_id = getattr(getattr(request, "state", None), "tenant_id", None)
+    if tenant_id is None:
+        tenant_id = db.info.get("tenant_id")
+    if tenant_id is None:
+        tenant_id = fallback_tenant_id
+    return int(tenant_id) if tenant_id is not None else None
+
+
+def _vehicle_registration_exists(
+    db: Session,
+    registration: str,
+    *,
+    tenant_id: int | None,
+    exclude_vehicle_id: int | None = None,
+) -> bool:
+    query = (
+        select(Vehicle.id)
+        .execution_options(skip_tenant_scope=True)
+        .where(Vehicle.registration == registration)
+    )
+    if tenant_id is not None:
+        query = query.where(Vehicle.tenant_id == int(tenant_id))
+    if exclude_vehicle_id is not None:
+        query = query.where(Vehicle.id != int(exclude_vehicle_id))
+    return db.execute(query.limit(1)).scalar_one_or_none() is not None
+
+
 @router.get("/vehicles", response_class=HTMLResponse)
 def vehicles_list(
     request: Request,
@@ -79,9 +112,27 @@ async def vehicles_create(
 ) -> HTMLResponse:
     form = await request.form()
     payload = _parse_vehicle_form(form)
+    tenant_id = _resolved_tenant_id(request, db)
     payload["errors"].extend(_validate_vehicle_reference_selections(db, payload))
     if payload["errors"]:
         return templates.TemplateResponse(request, 
+            "vehicles/new.html",
+            {
+                "request": request,
+                "errors": payload["errors"],
+                "form": payload["form"],
+                "options": _load_options(db),
+            },
+            status_code=400,
+        )
+    if _vehicle_registration_exists(
+        db,
+        payload["registration"],
+        tenant_id=tenant_id,
+    ):
+        payload["errors"].append("Registration already exists.")
+        return templates.TemplateResponse(
+            request,
             "vehicles/new.html",
             {
                 "request": request,
@@ -164,6 +215,11 @@ async def vehicles_update(
         )
     form = await request.form()
     payload = _parse_vehicle_form(form)
+    tenant_id = _resolved_tenant_id(
+        request,
+        db,
+        fallback_tenant_id=int(vehicle.tenant_id or 0) or None,
+    )
     payload["errors"].extend(
         _validate_vehicle_reference_selections(db, payload, vehicle=vehicle)
     )
@@ -175,6 +231,32 @@ async def vehicles_update(
             .order_by(Container.name)
         ).all()
         return templates.TemplateResponse(request, 
+            "vehicles/edit.html",
+            {
+                "request": request,
+                "errors": payload["errors"],
+                "vehicle": vehicle,
+                "form": payload["form"],
+                "options": _load_options(db),
+                "tares": tares,
+            },
+            status_code=400,
+        )
+    if _vehicle_registration_exists(
+        db,
+        payload["registration"],
+        tenant_id=tenant_id,
+        exclude_vehicle_id=vehicle.id,
+    ):
+        payload["errors"].append("Registration already exists.")
+        tares = db.execute(
+            select(VehicleTare, Container)
+            .join(Container, VehicleTare.container_id == Container.id)
+            .where(VehicleTare.vehicle_id == vehicle.id)
+            .order_by(Container.name)
+        ).all()
+        return templates.TemplateResponse(
+            request,
             "vehicles/edit.html",
             {
                 "request": request,

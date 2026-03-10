@@ -982,6 +982,202 @@ def test_customer_account_codes_and_vehicle_registrations_are_tenant_scoped(
         assert [int(row.tenant_id) for row in shared_vehicles] == [tenant_a, tenant_b]
 
 
+def test_customer_and_vehicle_uniqueness_updates_remain_tenant_scoped(
+    tmp_path,
+    monkeypatch,
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-lookup-update-unique.db", monkeypatch=monkeypatch
+    )
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a")
+    tenant_b = _seed_tenant(SessionLocal, name="Tenant B", subdomain="b")
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#AA2200",
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_b,
+        company_name="Tenant B Co",
+        primary_color="#0044AA",
+    )
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+    _seed_user(
+        SessionLocal,
+        email="b-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_b,
+    )
+
+    with SessionLocal() as db:
+        vehicle_type = db.execute(select(VehicleType).limit(1)).scalars().first()
+        assert vehicle_type is not None
+        vehicle_type_id = int(vehicle_type.id)
+
+        customer_a = Customer(
+            tenant_id=tenant_a,
+            account_code="ABC001",
+            name="Tenant A Primary",
+        )
+        customer_a_other = Customer(
+            tenant_id=tenant_a,
+            account_code="ABC002",
+            name="Tenant A Secondary",
+        )
+        customer_b = Customer(
+            tenant_id=tenant_b,
+            account_code="ABC001",
+            name="Tenant B Primary",
+        )
+        vehicle_a = Vehicle(
+            tenant_id=tenant_a,
+            registration="AB12CDE",
+            vehicle_type_id=vehicle_type_id,
+        )
+        vehicle_a_other = Vehicle(
+            tenant_id=tenant_a,
+            registration="ZZ99ZZZ",
+            vehicle_type_id=vehicle_type_id,
+        )
+        vehicle_b = Vehicle(
+            tenant_id=tenant_b,
+            registration="AB12CDE",
+            vehicle_type_id=vehicle_type_id,
+        )
+        db.add_all(
+            [
+                customer_a,
+                customer_a_other,
+                customer_b,
+                vehicle_a,
+                vehicle_a_other,
+                vehicle_b,
+            ]
+        )
+        db.commit()
+        customer_a_id = int(customer_a.id)
+        customer_a_other_id = int(customer_a_other.id)
+        customer_b_id = int(customer_b.id)
+        vehicle_a_id = int(vehicle_a.id)
+        vehicle_a_other_id = int(vehicle_a_other.id)
+        vehicle_b_id = int(vehicle_b.id)
+
+    with _client(app, base_url="https://a.localhost") as tenant_a_client:
+        assert _login(
+            tenant_a_client,
+            email="a-admin@example.com",
+            password="TestPass123!",
+        ) == 303
+        csrf = _prime_csrf(tenant_a_client)
+
+        customer_self_update = tenant_a_client.post(
+            f"/customers/{customer_a_id}",
+            data={
+                "account_code": " abc001 ",
+                "name": "Tenant A Updated",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert customer_self_update.status_code in {302, 303}
+
+        customer_duplicate_update = tenant_a_client.post(
+            f"/customers/{customer_a_other_id}",
+            data={
+                "account_code": "ABC001",
+                "name": "Tenant A Duplicate",
+                CSRF_FORM_FIELD: csrf,
+            },
+        )
+        assert customer_duplicate_update.status_code == 400
+        assert "Account code already exists." in customer_duplicate_update.text
+
+        vehicle_self_update = tenant_a_client.post(
+            f"/vehicles/{vehicle_a_id}",
+            data={
+                "registration": " ab12 cde ",
+                "vehicle_type_id": str(vehicle_type_id),
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert vehicle_self_update.status_code in {302, 303}
+
+        vehicle_duplicate_update = tenant_a_client.post(
+            f"/vehicles/{vehicle_a_other_id}",
+            data={
+                "registration": "AB12 CDE",
+                "vehicle_type_id": str(vehicle_type_id),
+                CSRF_FORM_FIELD: csrf,
+            },
+        )
+        assert vehicle_duplicate_update.status_code == 400
+        assert "Registration already exists." in vehicle_duplicate_update.text
+
+    with _client(app, base_url="https://b.localhost") as tenant_b_client:
+        assert _login(
+            tenant_b_client,
+            email="b-admin@example.com",
+            password="TestPass123!",
+        ) == 303
+        csrf = _prime_csrf(tenant_b_client)
+
+        customer_self_update = tenant_b_client.post(
+            f"/customers/{customer_b_id}",
+            data={
+                "account_code": "ABC001",
+                "name": "Tenant B Updated",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert customer_self_update.status_code in {302, 303}
+
+        vehicle_self_update = tenant_b_client.post(
+            f"/vehicles/{vehicle_b_id}",
+            data={
+                "registration": "AB12-CDE",
+                "vehicle_type_id": str(vehicle_type_id),
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert vehicle_self_update.status_code in {302, 303}
+
+    with SessionLocal() as db:
+        refreshed_customer_a = db.get(Customer, customer_a_id)
+        refreshed_customer_a_other = db.get(Customer, customer_a_other_id)
+        refreshed_customer_b = db.get(Customer, customer_b_id)
+        refreshed_vehicle_a = db.get(Vehicle, vehicle_a_id)
+        refreshed_vehicle_a_other = db.get(Vehicle, vehicle_a_other_id)
+        refreshed_vehicle_b = db.get(Vehicle, vehicle_b_id)
+
+        assert refreshed_customer_a is not None
+        assert refreshed_customer_a_other is not None
+        assert refreshed_customer_b is not None
+        assert refreshed_vehicle_a is not None
+        assert refreshed_vehicle_a_other is not None
+        assert refreshed_vehicle_b is not None
+
+        assert refreshed_customer_a.account_code == "ABC001"
+        assert refreshed_customer_a.name == "Tenant A Updated"
+        assert refreshed_customer_a_other.account_code == "ABC002"
+        assert refreshed_customer_b.account_code == "ABC001"
+        assert refreshed_customer_b.name == "Tenant B Updated"
+        assert refreshed_vehicle_a.registration == "AB12CDE"
+        assert refreshed_vehicle_a_other.registration == "ZZ99ZZZ"
+        assert refreshed_vehicle_b.registration == "AB12CDE"
+
+
 def test_lookup_routes_and_ticket_reference_writes_are_tenant_isolated(
     tmp_path,
     monkeypatch,

@@ -32,6 +32,25 @@ def _sqlite_unique_indexes(db_path: Path, table_name: str) -> list[tuple[str, li
         conn.close()
 
 
+def _assert_table_unique_sets(
+    db_path: Path,
+    table_name: str,
+    *,
+    expected_unique: tuple[str, ...],
+    forbidden_unique: tuple[str, ...],
+) -> None:
+    unique_indexes = _sqlite_unique_indexes(db_path, table_name)
+    unique_sets = {tuple(cols) for _, cols in unique_indexes}
+    assert expected_unique in unique_sets, (
+        f"Expected unique{expected_unique} at head for {table_name}, got: "
+        f"{unique_indexes}"
+    )
+    assert forbidden_unique not in unique_sets, (
+        f"Unexpected legacy unique{forbidden_unique} at head for {table_name}, got: "
+        f"{unique_indexes}"
+    )
+
+
 def _assert_head_unique(db_path: Path) -> None:
     unique_indexes = _sqlite_unique_indexes(db_path, "void_reasons")
     unique_sets = {tuple(cols) for _, cols in unique_indexes}
@@ -42,6 +61,18 @@ def _assert_head_unique(db_path: Path) -> None:
     assert ("code",) not in unique_sets, (
         "Unexpected unique(code) at head, got: "
         f"{unique_indexes}"
+    )
+    _assert_table_unique_sets(
+        db_path,
+        "customers",
+        expected_unique=("tenant_id", "account_code"),
+        forbidden_unique=("account_code",),
+    )
+    _assert_table_unique_sets(
+        db_path,
+        "vehicles",
+        expected_unique=("tenant_id", "registration"),
+        forbidden_unique=("registration",),
     )
 
 

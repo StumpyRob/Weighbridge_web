@@ -77,6 +77,39 @@ def _normalize_postcode(value: str) -> str:
     return POSTCODE_SANITIZE_RE.sub("", str(value or "").upper())
 
 
+def _resolved_tenant_id(
+    request: Request,
+    db: Session,
+    *,
+    fallback_tenant_id: int | None = None,
+) -> int | None:
+    tenant_id = getattr(getattr(request, "state", None), "tenant_id", None)
+    if tenant_id is None:
+        tenant_id = db.info.get("tenant_id")
+    if tenant_id is None:
+        tenant_id = fallback_tenant_id
+    return int(tenant_id) if tenant_id is not None else None
+
+
+def _customer_account_code_exists(
+    db: Session,
+    account_code: str,
+    *,
+    tenant_id: int | None,
+    exclude_customer_id: int | None = None,
+) -> bool:
+    query = (
+        select(Customer.id)
+        .execution_options(skip_tenant_scope=True)
+        .where(Customer.account_code == account_code)
+    )
+    if tenant_id is not None:
+        query = query.where(Customer.tenant_id == int(tenant_id))
+    if exclude_customer_id is not None:
+        query = query.where(Customer.id != int(exclude_customer_id))
+    return db.execute(query.limit(1)).scalar_one_or_none() is not None
+
+
 def _current_user_is_admin(request: Request, db: Session) -> bool:
     return is_admin_user(db, getattr(request.state, "current_user", None))
 
@@ -152,10 +185,28 @@ async def customers_create(
 ) -> HTMLResponse:
     form = await request.form()
     payload = _parse_customer_form(form)
+    tenant_id = _resolved_tenant_id(request, db)
     if _customer_admin_controls_requested(payload) and not _current_user_is_admin(request, db):
         return _forbidden_response()
     if payload["errors"]:
         return templates.TemplateResponse(request, 
+            "customers/new.html",
+            {
+                "request": request,
+                "errors": payload["errors"],
+                "form": payload["form"],
+                "options": _load_options(db),
+            },
+            status_code=400,
+        )
+    if _customer_account_code_exists(
+        db,
+        payload["account_code"],
+        tenant_id=tenant_id,
+    ):
+        payload["errors"].append("Account code already exists.")
+        return templates.TemplateResponse(
+            request,
             "customers/new.html",
             {
                 "request": request,
@@ -254,6 +305,11 @@ async def customers_update(
 
     form = await request.form()
     payload = _parse_customer_form(form)
+    tenant_id = _resolved_tenant_id(
+        request,
+        db,
+        fallback_tenant_id=int(customer.tenant_id or 0) or None,
+    )
     before_audit = {
         "on_stop": bool(customer.on_stop),
         "dont_invoice": bool(customer.do_not_invoice),
@@ -271,6 +327,21 @@ async def customers_update(
     if admin_control_change and not _current_user_is_admin(request, db):
         return _forbidden_response()
     if payload["errors"]:
+        return _render_customer_edit_with_overrides(
+            request,
+            db,
+            customer,
+            errors=payload["errors"],
+            form=payload["form"],
+            status_code=400,
+        )
+    if _customer_account_code_exists(
+        db,
+        payload["account_code"],
+        tenant_id=tenant_id,
+        exclude_customer_id=customer.id,
+    ):
+        payload["errors"].append("Account code already exists.")
         return _render_customer_edit_with_overrides(
             request,
             db,
