@@ -10,8 +10,10 @@ from ..models import (
     Container,
     Customer,
     CustomerAdjustment,
+    CustomerProductPrice,
     Destination,
     Driver,
+    EwcCode,
     Haulier,
     Invoice,
     InvoiceLine,
@@ -33,17 +35,44 @@ from .wip_snapshots import product_wip_snapshot, ticket_wip_snapshot
 MONEY_PLACES = Decimal("0.01")
 WEIGHT_PLACES = Decimal("0.001")
 WASTE_TYPES = {"WASTEIN", "WASTEOUT"}
+DEMO_EWC_SOURCE_FILE = "demo-reset-seed"
 
 CUSTOMER_NAMES = (
     "Beacon Aggregates Ltd", "Greenway Construction Ltd", "Riverside Civils Ltd",
-    "Northside Recycling Ltd", "Oakfield Estates", "Premier Groundworks Ltd",
+    "Northside Recycling Ltd", "David Gregson", "Premier Groundworks Ltd",
     "Silverline Waste Ltd", "Hilltop Builders Merchants", "Metro Surfacing Ltd",
     "Delta Skip Hire", "Urban Paving Contractors", "Cedar Landscaping Ltd",
-    "Bluewater Demolition Ltd", "Westgate Farms", "Stonebrook Developments",
-    "Apex Utilities Ltd", "Kingswell Homes", "Redbridge Plant Hire",
-    "Falcon Site Services", "Meadow Industrial Park", "Oliver Reed Groundworks",
-    "Amelia Clarke Landscaping", "George Bennett Fencing",
-    "Charlotte Mason Interiors", "Harry Whitfield Joinery",
+    "Bluewater Demolition Ltd", "Emma Whitaker", "Stonebrook Developments",
+    "Simon Fletcher", "Kingswell Homes", "Redbridge Plant Hire",
+    "Falcon Site Services", "Meadow Industrial Park", "Claire Bennett",
+    "Oliver Mason", "Lucy Pritchard", "James Cartwright", "Sophie Ellwood",
+)
+DEMO_CUSTOMER_ACCOUNT_CODES = (
+    "BCN-AGG",
+    "GRN-CIV",
+    "RIV-SITE",
+    "NS-REC",
+    "DGREGSON",
+    "PRM-GW",
+    "SLV-WASTE",
+    "HILLTOP-BM",
+    "MTSURF",
+    "DSKIP-10",
+    "URBAN-PV",
+    "CEDAR-LS",
+    "BLUE-DMO",
+    "EWHIT",
+    "STONE-DEV",
+    "SFLETCH",
+    "KINGS-HM",
+    "RED-PLANT",
+    "FALCON-SS",
+    "MEADOW-IP",
+    "CBENNETT",
+    "OMASON",
+    "LPRITCH",
+    "JCARTWR",
+    "SELLWOOD",
 )
 CUSTOMER_CITIES = ("Leeds", "Wakefield", "Bradford", "York", "Huddersfield", "Doncaster")
 DEMO_CUSTOMER_INVOICE_FREQUENCIES = (
@@ -105,7 +134,7 @@ DEMO_CUSTOMER_EMAILS = (
     "finance@greenwayconstruction.co.uk",
     "invoices@riversidecivils.co.uk",
     "accounts@northsiderecycling.co.uk",
-    "office@oakfieldestates.co.uk",
+    "david.gregson@customer-mail.test",
     "accounts@premiergroundworks.co.uk",
     "billing@silverlinewaste.co.uk",
     "accounts@hilltopbuilders.co.uk",
@@ -114,40 +143,62 @@ DEMO_CUSTOMER_EMAILS = (
     "finance@urbanpaving.co.uk",
     "accounts@cedarlandscaping.co.uk",
     "billing@bluewaterdemo.co.uk",
-    "office@westgatefarms.co.uk",
+    "emma.whitaker@customer-mail.test",
     "accounts@stonebrookdev.co.uk",
-    "finance@apexutilities.co.uk",
+    "simon.fletcher@customer-mail.test",
     "accounts@kingswellhomes.co.uk",
     "billing@redbridgeplant.co.uk",
     "accounts@falconsiteservices.co.uk",
     "finance@meadowindustrial.co.uk",
-    "accounts@oliverreedgroundworks.co.uk",
-    "billing@ameliaclarkelandscaping.co.uk",
-    "accounts@georgebennettfencing.co.uk",
-    "finance@charlottemasoninteriors.co.uk",
-    "accounts@harrywhitfieldjoinery.co.uk",
+    "claire.bennett@customer-mail.test",
+    "oliver.mason@customer-mail.test",
+    "lucy.pritchard@customer-mail.test",
+    "james.cartwright@customer-mail.test",
+    "sophie.ellwood@customer-mail.test",
 )
 DEMO_CUSTOMER_ON_STOP_INDEXES = frozenset({4, 17})
-DEMO_CUSTOMER_DO_NOT_INVOICE_INDEXES = frozenset({3, 8, 15, 20})
-DEMO_CUSTOMER_MUST_HAVE_PO_INDEXES = frozenset({1, 6, 9, 13, 19})
+DEMO_CUSTOMER_DO_NOT_INVOICE_INDEXES = frozenset({3, 8, 15, 20, 21, 22})
+DEMO_CUSTOMER_MUST_HAVE_PO_INDEXES = frozenset({1, 6, 9, 13, 19, 21, 22})
 DEMO_CUSTOMER_CASH_ACCOUNT_INDEXES = frozenset({10, 14, 18})
 DEMO_CUSTOMER_OWED_ADJUSTMENTS = (
     ("CUST005", "486.20", "Opening balance carried forward from prior month."),
     ("CUST017", "8425.00", "Account on hold while overdue balance is cleared."),
     ("CUST022", "1295.80", "Retained balance awaiting remittance advice."),
 )
-HAULIERS = (
-    ("Atlas Haulage", "OB1234567"),
-    ("Pennine Bulk Logistics", "OB2234567"),
-    ("Swift Transport Services", "OB3234567"),
+DEMO_CUSTOMER_PRICE_OVERRIDES = (
+    ("CUST001", "AGG20", "13.75"),
+    ("CUST006", "TOPSOIL", "16.80"),
+    ("CUST011", "PALLET", "19.50"),
+    ("CUST021", "EARDEF", "7.95"),
+    ("CUST024", "HIVIS", "4.60"),
 )
-DRIVERS = ("Liam Carter", "Jade Foster", "Ryan Patel", "Sophie Briggs")
+HAULIERS = (
+    ("Atlas Haulage", "CBDU482761"),
+    ("Pennine Bulk Logistics", "CBDU173954"),
+    ("Swift Transport Services", "CBDU628315"),
+    ("Northgate Bulk Carriers", "CBDU751842"),
+    ("West Riding Logistics", "CBDU294637"),
+    ("Mason Freight Services", "CBDU836429"),
+)
+DRIVERS = (
+    "Liam Carter",
+    "Jade Foster",
+    "Ben Thornton",
+    "Sophie Briggs",
+    "Daniel Mercer",
+    "Connor Willis",
+    "Oliver Hayes",
+    "Nathan Cooper",
+    "Thomas Kirby",
+)
 CONTAINERS = ("Skip 8 Yard - A", "Skip 12 Yard - B", "RORO 20 Yard - C", "RORO 35 Yard - D")
 DESTINATIONS = (
-    "North Yard Stockpile",
+    "Inert Waste Bay 1",
+    "Inert Waste Bay 2",
     "Riverside Landfill",
-    "Polymer Recovery Plant",
-    "Greenfield Batching Plant",
+    "Hazardous Bay 1",
+    "Hazardous Bay 2",
+    "Wood/Timber Bay 1",
 )
 PRODUCT_GROUPS = (
     ("AGG", "Aggregate Sales", "Bulk sale materials", "4000"),
@@ -157,37 +208,44 @@ PRODUCT_GROUPS = (
     ("GNS", "General Sales", "Retail counter and sundry sales", "4400"),
 )
 PRODUCTS = (
-    ("AGG20", "Recycled Aggregate 20mm", True, "AGG", "Tonnes", "14.50", "North Yard Stockpile", False),
-    ("TOPSOIL", "Screened Topsoil", True, "REC", "Tonnes", "18.00", "Greenfield Batching Plant", False),
-    ("TOPM3", "Screened Topsoil (m3)", True, "REC", "m3", "32.00", "Greenfield Batching Plant", False),
-    ("BUILDSAND", "Building Sand", True, "AGG", "Tonnes", "12.25", "Greenfield Batching Plant", False),
-    ("TYPE1", "MOT Type 1", True, "AGG", "Tonnes", "11.80", "North Yard Stockpile", False),
+    ("AGG20", "Recycled Aggregate 20mm", True, "AGG", "Tonnes", "14.50", "Inert Waste Bay 1", False),
+    ("TOPSOIL", "Screened Topsoil", True, "REC", "Tonnes", "18.00", "Inert Waste Bay 2", False),
+    ("TOPM3", "Screened Topsoil (m3)", True, "REC", "m3", "32.00", "Inert Waste Bay 2", False),
+    ("BUILDSAND", "Building Sand", True, "AGG", "Tonnes", "12.25", "Inert Waste Bay 2", False),
+    ("TYPE1", "MOT Type 1", True, "AGG", "Tonnes", "11.80", "Inert Waste Bay 1", False),
     ("MIXEDW", "Mixed Builders Waste", False, "WST", "Tonnes", "102.00", "Riverside Landfill", True),
-    ("CLAYSOIL", "Clay and Soil Disposal", False, "WST", "Tonnes", "76.00", "Riverside Landfill", True),
-    ("WOODW", "Wood Waste Disposal", False, "WST", "Tonnes", "88.00", "Polymer Recovery Plant", False),
-    ("BAG50", "50kg Bagged Aggregate", True, "HRE", "Each", "4.75", "North Yard Stockpile", False),
-    ("PALLET", "Pallet Collection", True, "HRE", "Each", "22.00", "Greenfield Batching Plant", False),
-    ("EARDEF", "Ear Defenders", True, "GNS", "Each", "8.95", "North Yard Stockpile", False),
-    ("HIVIS", "High Vis Vest", True, "GNS", "Each", "5.50", "North Yard Stockpile", False),
-    ("LOADDEL", "Loose Load Delivery", True, "HRE", "Load", "68.50", "Greenfield Batching Plant", False),
+    ("CLAYSOIL", "Clay and Soil Disposal", False, "WST", "Tonnes", "76.00", "Hazardous Bay 1", True),
+    ("WOODW", "Wood Waste Disposal", False, "WST", "Tonnes", "88.00", "Wood/Timber Bay 1", False),
+    ("BAG50", "50kg Bagged Aggregate", True, "HRE", "Each", "4.75", "Inert Waste Bay 1", False),
+    ("PALLET", "Pallet Collection", True, "HRE", "Each", "22.00", "Inert Waste Bay 2", False),
+    ("EARDEF", "Ear Defenders", True, "GNS", "Each", "8.95", "Inert Waste Bay 1", False),
+    ("HIVIS", "High Vis Vest", True, "GNS", "Each", "5.50", "Inert Waste Bay 1", False),
+    ("LOADDEL", "Loose Load Delivery", True, "HRE", "Load", "68.50", "Inert Waste Bay 2", False),
     ("SKIP8", "8 Yard Skip Exchange", False, "HRE", "Each", "265.00", "Riverside Landfill", True),
-    ("BALES", "Compacted Bale Removal", False, "WST", "Load", "38.00", "Polymer Recovery Plant", False),
+    ("BALES", "Compacted Bale Removal", False, "WST", "Load", "38.00", "Wood/Timber Bay 1", False),
 )
+DEMO_WASTE_PRODUCT_EWC = {
+    "MIXEDW": ("170904", "Mixed construction and demolition waste", False),
+    "CLAYSOIL": ("170503", "Soil and stones containing hazardous substances", True),
+    "WOODW": ("170201", "Wood", False),
+    "SKIP8": ("150106", "Mixed packaging", False),
+    "BALES": ("150106", "Mixed packaging", False),
+}
 TICKETS = (
-    (1, "today", "08:05", "OPEN", "OUTWARD", "SALE", "CUST002", "YX24LNF", "AGG20", "Atlas Haulage", "Liam Carter", "North Yard Stockpile", "18120", None, None, None, None),
-    (2, "today", "09:20", "OPEN", "OUTWARD", "SALE", "CUST005", "YA24RVO", "BAG50", "Pennine Bulk Logistics", "Jade Foster", "Greenfield Batching Plant", None, None, "12", None, None),
-    (3, "yesterday", "15:10", "OPEN", "INWARD", "WASTEIN", "CUST003", "YC24HSL", "MIXEDW", "Swift Transport Services", "Ryan Patel", "Riverside Landfill", "16540", None, None, "RORO 20 Yard - C", ("170904", "17 09 04", "Mixed construction and demolition waste")),
-    (4, "earlier", "07:55", "OPEN", "OUTWARD", "WASTEOUT", "CUST004", "YG73TWN", "SKIP8", "Atlas Haulage", "Sophie Briggs", "Riverside Landfill", None, None, "1", "Skip 8 Yard - A", ("150106", "15 01 06", "Mixed packaging")),
-    (5, "today", "10:15", "COMPLETE", "OUTWARD", "SALE", "CUST001", "YN21KPX", "AGG20", "Atlas Haulage", "Liam Carter", "North Yard Stockpile", "31120", "13280", None, None, None),
-    (6, "today", "11:05", "COMPLETE", "OUTWARD", "SALE", "CUST001", "YJ68MVT", "TOPSOIL", "Pennine Bulk Logistics", "Jade Foster", "Greenfield Batching Plant", "28840", "14620", None, None, None),
-    (7, "today", "13:20", "COMPLETE", "OUTWARD", "SALE", "CUST006", "YD24BXR", "BAG50", "Swift Transport Services", "Ryan Patel", "North Yard Stockpile", None, None, "24", None, None),
-    (8, "yesterday", "08:40", "COMPLETE", "INWARD", "WASTEIN", "CUST007", "YS22FLD", "MIXEDW", "Atlas Haulage", "Sophie Briggs", "Riverside Landfill", "26920", "14260", None, "RORO 35 Yard - D", ("170904", "17 09 04", "Mixed construction and demolition waste")),
-    (9, "yesterday", "09:25", "COMPLETE", "OUTWARD", "SALE", "CUST008", "YH70CGE", "LOADDEL", "Pennine Bulk Logistics", "Liam Carter", "Greenfield Batching Plant", None, None, "1", None, None),
-    (10, "yesterday", "14:15", "COMPLETE", "OUTWARD", "SALE", "CUST009", "YY24NKO", "BUILDSAND", "Swift Transport Services", "Jade Foster", "Greenfield Batching Plant", "29480", "13880", None, None, None),
-    (11, "earlier", "10:10", "COMPLETE", "OUTWARD", "WASTEOUT", "CUST007", "YK19VLP", "BALES", "Atlas Haulage", "Ryan Patel", "Polymer Recovery Plant", None, None, "6", "Skip 12 Yard - B", ("150106", "15 01 06", "Mixed packaging")),
-    (12, "earlier", "11:45", "COMPLETE", "OUTWARD", "SALE", "CUST011", "YO24TFS", "PALLET", "Pennine Bulk Logistics", "Sophie Briggs", "Greenfield Batching Plant", None, None, "8", None, None),
-    (13, "earlier", "14:20", "COMPLETE", "OUTWARD", "SALE", "CUST009", "YE23MJN", "TYPE1", "Swift Transport Services", "Liam Carter", "North Yard Stockpile", "34160", "14280", None, None, None),
-    (14, "earlier", "16:05", "COMPLETE", "OUTWARD", "SALE", "CUST013", "YR24WDX", "LOADDEL", "Atlas Haulage", "Jade Foster", "Greenfield Batching Plant", None, None, "3", None, None),
+    (1, "today", "08:05", "OPEN", "OUTWARD", "SALE", "CUST002", "YX24LNF", "AGG20", "Atlas Haulage", "Liam Carter", "Inert Waste Bay 1", "18120", None, None, None, None),
+    (2, "today", "09:20", "OPEN", "OUTWARD", "SALE", "CUST005", "YA24RVO", "BAG50", "Pennine Bulk Logistics", "Jade Foster", "Inert Waste Bay 2", None, None, "12", None, None),
+    (3, "yesterday", "15:10", "OPEN", "INWARD", "WASTEIN", "CUST003", "YC24HSL", "MIXEDW", "Swift Transport Services", "Ben Thornton", "Riverside Landfill", "16540", None, None, "RORO 20 Yard - C", None),
+    (4, "earlier", "07:55", "OPEN", "OUTWARD", "WASTEOUT", "CUST004", "YG73TWN", "SKIP8", "Atlas Haulage", "Sophie Briggs", "Riverside Landfill", None, None, "1", "Skip 8 Yard - A", None),
+    (5, "today", "10:15", "COMPLETE", "OUTWARD", "SALE", "CUST001", "YN21KPX", "AGG20", "Atlas Haulage", "Liam Carter", "Inert Waste Bay 1", "31120", "13280", None, None, None),
+    (6, "today", "11:05", "COMPLETE", "OUTWARD", "SALE", "CUST001", "YJ68MVT", "TOPSOIL", "Pennine Bulk Logistics", "Jade Foster", "Inert Waste Bay 2", "28840", "14620", None, None, None),
+    (7, "today", "13:20", "COMPLETE", "OUTWARD", "SALE", "CUST006", "YD24BXR", "BAG50", "Swift Transport Services", "Ben Thornton", "Inert Waste Bay 1", None, None, "24", None, None),
+    (8, "yesterday", "08:40", "COMPLETE", "INWARD", "WASTEIN", "CUST007", "YS22FLD", "MIXEDW", "Atlas Haulage", "Sophie Briggs", "Riverside Landfill", "26920", "14260", None, "RORO 35 Yard - D", None),
+    (9, "yesterday", "09:25", "COMPLETE", "OUTWARD", "SALE", "CUST008", "YH70CGE", "LOADDEL", "Pennine Bulk Logistics", "Liam Carter", "Inert Waste Bay 2", None, None, "1", None, None),
+    (10, "yesterday", "14:15", "COMPLETE", "OUTWARD", "SALE", "CUST009", "YY24NKO", "BUILDSAND", "Swift Transport Services", "Jade Foster", "Inert Waste Bay 2", "29480", "13880", None, None, None),
+    (11, "earlier", "10:10", "COMPLETE", "OUTWARD", "WASTEOUT", "CUST007", "YK19VLP", "BALES", "Atlas Haulage", "Ben Thornton", "Wood/Timber Bay 1", None, None, "6", "Skip 12 Yard - B", None),
+    (12, "earlier", "11:45", "COMPLETE", "OUTWARD", "SALE", "CUST011", "YO24TFS", "PALLET", "Pennine Bulk Logistics", "Sophie Briggs", "Inert Waste Bay 2", None, None, "8", None, None),
+    (13, "earlier", "14:20", "COMPLETE", "OUTWARD", "SALE", "CUST009", "YE23MJN", "TYPE1", "Swift Transport Services", "Liam Carter", "Inert Waste Bay 1", "34160", "14280", None, None, None),
+    (14, "earlier", "16:05", "COMPLETE", "OUTWARD", "SALE", "CUST013", "YR24WDX", "LOADDEL", "Atlas Haulage", "Jade Foster", "Inert Waste Bay 2", None, None, "3", None, None),
 )
 INVOICES = (
     ("INV-DEMO-001", "CUST001", (5, 6), "today", "OPEN"),
@@ -217,6 +275,63 @@ VEHICLE_TYPE_CYCLE = ("8 Wheeler", "Artic", "6 Wheeler", "Van", "Tractor & Trail
 
 def _money(value: object) -> Decimal:
     return Decimal(str(value)).quantize(MONEY_PLACES, rounding=ROUND_HALF_UP)
+
+
+def _format_ewc_code_display(code_6: str) -> str:
+    return f"{code_6[0:2]} {code_6[2:4]} {code_6[4:6]}"
+
+
+def _ensure_demo_ewc_subset(db: Session) -> dict[str, EwcCode]:
+    code_values = sorted({code_6 for code_6, _, _ in DEMO_WASTE_PRODUCT_EWC.values()})
+    existing = {
+        row.code_6: row
+        for row in db.execute(select(EwcCode).where(EwcCode.code_6.in_(code_values))).scalars()
+    }
+    seeded_rows = {
+        code_6: (description, hazardous)
+        for code_6, description, hazardous in DEMO_WASTE_PRODUCT_EWC.values()
+    }
+    now = utcnow()
+    ensured: dict[str, EwcCode] = {}
+
+    for code_6 in code_values:
+        description, hazardous = seeded_rows[code_6]
+        code_display = _format_ewc_code_display(code_6)
+        row = existing.get(code_6)
+        if row is None:
+            row = EwcCode(
+                code_6=code_6,
+                code_display=code_display,
+                description=description,
+                hazardous=hazardous,
+                active=True,
+                source_file=DEMO_EWC_SOURCE_FILE,
+                imported_at=now,
+            )
+            db.add(row)
+        else:
+            changed = False
+            if str(row.code_display or "") != code_display:
+                row.code_display = code_display
+                changed = True
+            if str(row.description or "") != description:
+                row.description = description
+                changed = True
+            if bool(row.hazardous) != bool(hazardous):
+                row.hazardous = bool(hazardous)
+                changed = True
+            if not bool(row.active):
+                row.active = True
+                changed = True
+            if str(row.source_file or "") != DEMO_EWC_SOURCE_FILE:
+                row.source_file = DEMO_EWC_SOURCE_FILE
+                changed = True
+            if changed:
+                row.imported_at = now
+        ensured[code_6] = row
+
+    db.flush()
+    return ensured
 
 
 def _demo_ticket_no(number: int, *, year: int) -> str:
@@ -257,6 +372,7 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
     if payment_method is None or tax_rate is None:
         raise RuntimeError("Demo dataset seed requires standard VAT and BACS reference data.")
 
+    demo_ewc_codes = _ensure_demo_ewc_subset(db)
     hauliers = {name: Haulier(tenant_id=tenant_id, name=name, carrier_licence_number=licence, is_active=True) for name, licence in HAULIERS}
     drivers = {name: Driver(tenant_id=tenant_id, name=name, is_active=True) for name in DRIVERS}
     containers = {name: Container(tenant_id=tenant_id, name=name, is_active=True) for name in CONTAINERS}
@@ -276,6 +392,8 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
 
     customers: dict[str, Customer] = {}
     for index, name in enumerate(CUSTOMER_NAMES, start=1):
+        customer_key = f"CUST{index:03d}"
+        account_code = DEMO_CUSTOMER_ACCOUNT_CODES[index - 1]
         credit_limit = _money(Decimal("2500.00") + (Decimal(index) * Decimal("250.00")))
         invoice_frequency = DEMO_CUSTOMER_INVOICE_FREQUENCIES[index - 1]
         payment_days = 14 if index % 5 == 0 else 30
@@ -285,10 +403,9 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
         do_not_invoice = index in DEMO_CUSTOMER_DO_NOT_INVOICE_INDEXES
         cash_account = index in DEMO_CUSTOMER_CASH_ACCOUNT_INDEXES
         must_have_po = index in DEMO_CUSTOMER_MUST_HAVE_PO_INDEXES
-        code = f"CUST{index:03d}"
-        customers[code] = Customer(
+        customers[customer_key] = Customer(
             tenant_id=tenant_id,
-            account_code=code,
+            account_code=account_code,
             name=name,
             invoice_email=invoice_email,
             phone=f"0113 555 {1000 + index:04d}",
@@ -315,6 +432,9 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
     products: dict[str, tuple[Product, Unit]] = {}
     for code, description, sales_only, group_code, unit_name, price, destination_name, final_disposal in PRODUCTS:
         unit = units[unit_name]
+        product_ewc = None
+        if code in DEMO_WASTE_PRODUCT_EWC:
+            product_ewc = demo_ewc_codes[DEMO_WASTE_PRODUCT_EWC[code][0]]
         product = Product(
             tenant_id=tenant_id,
             code=code,
@@ -328,12 +448,26 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
             cash_price=_money(price),
             min_price=_money(price),
             max_price=_money(price),
+            is_hazardous=bool(product_ewc.hazardous) if product_ewc else False,
             final_disposal=bool(final_disposal),
             final_disposal_wip=bool(final_disposal),
+            ewc_code=product_ewc,
             default_destination_id=destinations[destination_name].id,
         )
         products[code] = (product, unit)
     db.add_all(product for product, _ in products.values())
+    db.flush()
+
+    db.add_all(
+        CustomerProductPrice(
+            tenant_id=tenant_id,
+            customer_id=customers[customer_code].id,
+            product_id=products[product_code][0].id,
+            unit_price=_money(unit_price),
+            is_active=True,
+        )
+        for customer_code, product_code, unit_price in DEMO_CUSTOMER_PRICE_OVERRIDES
+    )
     db.flush()
 
     vehicles: dict[str, Vehicle] = {}
@@ -409,13 +543,21 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
                     "waste_producer_address": " ".join(part for part in (customer.address_line1, customer.city, customer.postcode) if str(part or "").strip()),
                 }
             )
-            if ewc_data:
+            ticket_ewc = ewc_data
+            if ticket_ewc is None and product.ewc_code is not None:
+                ticket_ewc = (
+                    product.ewc_code.code_6,
+                    product.ewc_code.code_display,
+                    product.ewc_code.description,
+                    bool(product.ewc_code.hazardous),
+                )
+            if ticket_ewc:
                 ticket_kwargs.update(
                     {
-                        "ewc_code_6": ewc_data[0],
-                        "ewc_code_display": ewc_data[1],
-                        "ewc_description": ewc_data[2],
-                        "ewc_hazardous": False,
+                        "ewc_code_6": ticket_ewc[0],
+                        "ewc_code_display": ticket_ewc[1],
+                        "ewc_description": ticket_ewc[2],
+                        "ewc_hazardous": bool(ticket_ewc[3]) if len(ticket_ewc) > 3 else False,
                     }
                 )
 
@@ -551,4 +693,5 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
         "tickets_complete": sum(1 for row in TICKETS if row[3] == "COMPLETE"),
         "tickets_waste": sum(1 for row in TICKETS if row[5] in WASTE_TYPES),
         "invoices": len(INVOICES),
+        "ewc_codes": len(demo_ewc_codes),
     }

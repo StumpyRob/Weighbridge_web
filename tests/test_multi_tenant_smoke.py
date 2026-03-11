@@ -26,6 +26,7 @@ from app.models import (
     CompanySetting,
     Container,
     Customer,
+    CustomerProductPrice,
     Destination,
     DirectionEnum,
     Driver,
@@ -2347,16 +2348,75 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
     )
 
     def assert_demo_dataset_counts(db) -> None:
+        expected_demo_product_ewc = {
+            "MIXEDW": ("170904", False, "Riverside Landfill"),
+            "CLAYSOIL": ("170503", True, "Hazardous Bay 1"),
+            "WOODW": ("170201", False, "Wood/Timber Bay 1"),
+            "SKIP8": ("150106", False, "Riverside Landfill"),
+            "BALES": ("150106", False, "Wood/Timber Bay 1"),
+        }
+        expected_demo_ewc_rows = {
+            "150106": ("Mixed packaging", False),
+            "170201": ("Wood", False),
+            "170503": ("Soil and stones containing hazardous substances", True),
+            "170904": ("Mixed construction and demolition waste", False),
+        }
         assert _tenant_row_count(db, Customer, demo_tenant) == 25
         assert _tenant_row_count(db, Vehicle, demo_tenant) == 16
         assert _tenant_row_count(db, Product, demo_tenant) == 15
         assert _tenant_row_count(db, Container, demo_tenant) == 4
-        assert _tenant_row_count(db, Driver, demo_tenant) == 4
-        assert _tenant_row_count(db, Haulier, demo_tenant) == 3
-        assert _tenant_row_count(db, Destination, demo_tenant) == 4
+        assert _tenant_row_count(db, Driver, demo_tenant) == 9
+        assert _tenant_row_count(db, Haulier, demo_tenant) == 6
+        assert _tenant_row_count(db, Destination, demo_tenant) == 6
         assert _tenant_row_count(db, Ticket, demo_tenant) == 14
         assert _tenant_row_count(db, Invoice, demo_tenant) == 3
         assert _tenant_row_count(db, InvoiceLine, demo_tenant) == 6
+        assert {
+            value
+            for value in db.execute(
+                select(Destination.name).where(Destination.tenant_id == demo_tenant)
+            ).scalars()
+        } == {
+            "Hazardous Bay 1",
+            "Hazardous Bay 2",
+            "Inert Waste Bay 1",
+            "Inert Waste Bay 2",
+            "Riverside Landfill",
+            "Wood/Timber Bay 1",
+        }
+        assert db.execute(select(func.count(EwcCode.id))).scalar_one() == 4
+        demo_ewc_rows = {
+            row.code_6: row
+            for row in db.execute(
+                select(EwcCode).where(EwcCode.code_6.in_(expected_demo_ewc_rows))
+            ).scalars()
+        }
+        assert set(demo_ewc_rows) == set(expected_demo_ewc_rows)
+        for code_6, (description, hazardous) in expected_demo_ewc_rows.items():
+            row = demo_ewc_rows[code_6]
+            assert row.code_display == f"{code_6[0:2]} {code_6[2:4]} {code_6[4:6]}"
+            assert row.description == description
+            assert bool(row.hazardous) is hazardous
+            assert bool(row.active) is True
+
+        demo_waste_products = {
+            row.code: row
+            for row in db.execute(
+                select(Product).where(
+                    Product.tenant_id == demo_tenant,
+                    Product.code.in_(expected_demo_product_ewc),
+                )
+            ).scalars()
+        }
+        assert set(demo_waste_products) == set(expected_demo_product_ewc)
+        for code, (ewc_code_6, hazardous, destination_name) in expected_demo_product_ewc.items():
+            product = demo_waste_products[code]
+            assert product.ewc_code is not None
+            assert product.ewc_code.code_6 == ewc_code_6
+            assert bool(product.is_hazardous) is hazardous
+            destination = db.get(Destination, product.default_destination_id)
+            assert destination is not None
+            assert destination.name == destination_name
         assert {
             value
             for value in db.execute(
@@ -2390,6 +2450,43 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
                 Customer.is_cash_account.is_(True),
             )
         ).scalar_one() > 0
+        assert (
+            db.execute(
+                select(func.count(Customer.id)).where(
+                    Customer.tenant_id == demo_tenant,
+                    Customer.do_not_invoice.is_(True),
+                    Customer.must_have_po.is_(True),
+                )
+            ).scalar_one()
+            == 2
+        )
+        assert (
+            db.execute(
+                select(func.count(Customer.id)).where(
+                    Customer.tenant_id == demo_tenant,
+                    Customer.account_code.like("CUST%"),
+                )
+            ).scalar_one()
+            == 0
+        )
+        assert (
+            db.execute(
+                select(func.count(CustomerProductPrice.id)).where(
+                    CustomerProductPrice.tenant_id == demo_tenant,
+                    CustomerProductPrice.is_active.is_(True),
+                )
+            ).scalar_one()
+            == 5
+        )
+        assert (
+            db.execute(
+                select(func.count(func.distinct(CustomerProductPrice.customer_id))).where(
+                    CustomerProductPrice.tenant_id == demo_tenant,
+                    CustomerProductPrice.is_active.is_(True),
+                )
+            ).scalar_one()
+            == 5
+        )
         demo_customers = db.execute(
             select(Customer).where(Customer.tenant_id == demo_tenant)
         ).scalars().all()
@@ -2450,6 +2547,9 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         db.add(Customer(tenant_id=other_tenant, account_code="OTHER-001", name="Other Customer"))
         db.add(Vehicle(tenant_id=other_tenant, registration="OTHER123"))
         db.commit()
+
+    with SessionLocal() as db:
+        assert db.execute(select(func.count(EwcCode.id))).scalar_one() == 0
 
     demo_logo_dir = uploads_root / "tenants" / str(demo_tenant) / "company"
     demo_logo_dir.mkdir(parents=True, exist_ok=True)
@@ -2566,6 +2666,7 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert reset_event.details_json.get("dataset", {}).get("tickets_open") == 4
         assert reset_event.details_json.get("dataset", {}).get("tickets_complete") == 10
         assert reset_event.details_json.get("dataset", {}).get("tickets_waste") == 4
+        assert reset_event.details_json.get("dataset", {}).get("ewc_codes") == 4
 
     with _client(app, base_url="https://admin.localhost") as admin_client:
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
@@ -2604,7 +2705,11 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert customers_page.status_code == 200
         assert "Beacon Aggregates Ltd" in customers_page.text
         assert "Meadow Industrial Park" in customers_page.text
-        assert "Oliver Reed Groundworks" in customers_page.text
+        assert "David Gregson" in customers_page.text
+        assert "Claire Bennett" in customers_page.text
+        assert "DGREGSON" in customers_page.text
+        assert "CBENNETT" in customers_page.text
+        assert customers_page.text.count('class="pricing-indicator"') == 5
 
         vehicles_page = demo_client.get("/vehicles")
         assert vehicles_page.status_code == 200
@@ -2618,6 +2723,11 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert "Ear Defenders" in products_page.text
         assert "High Vis Vest" in products_page.text
         assert "Compacted Bale Removal" in products_page.text
+
+        products_new = demo_client.get("/products/new")
+        assert products_new.status_code == 200
+        assert "17 09 04" in products_new.text
+        assert "17 05 03" in products_new.text
 
         product_groups_page = demo_client.get("/products/groups")
         assert product_groups_page.status_code == 200
