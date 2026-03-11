@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import select
@@ -16,12 +16,14 @@ from ..models import (
     EwcCode,
     Haulier,
     Invoice,
+    InvoiceSequence,
     InvoiceLine,
     PaymentMethod,
     Product,
     ProductGroup,
     TaxRate,
     Ticket,
+    TicketSequence,
     TicketStatusEnum,
     Unit,
     Vehicle,
@@ -102,6 +104,33 @@ DEMO_CUSTOMER_INVOICE_FREQUENCIES = (
     "ADHOC",
     "MONTHLY",
 )
+DEMO_CUSTOMER_PAYMENT_TERMS = (
+    ("30 Days", 30),
+    (None, None),
+    ("7 Days", 7),
+    ("Ad Hoc", None),
+    (None, None),
+    ("14 Days", 14),
+    (None, None),
+    ("Ad Hoc", None),
+    ("30 Days", 30),
+    ("Ad Hoc", None),
+    ("14 Days", 14),
+    (None, None),
+    ("30 Days", 30),
+    ("Ad Hoc", None),
+    ("7 Days", 7),
+    (None, None),
+    ("30 Days", 30),
+    ("Ad Hoc", None),
+    ("14 Days", 14),
+    (None, None),
+    ("Ad Hoc", None),
+    ("7 Days", 7),
+    (None, None),
+    ("Ad Hoc", None),
+    ("30 Days", 30),
+)
 DEMO_CUSTOMER_VAT_NUMBERS = (
     "GB213478965",
     "GB384920157",
@@ -172,6 +201,7 @@ DEMO_CUSTOMER_PRICE_OVERRIDES = (
     ("CUST021", "EARDEF", "7.95"),
     ("CUST024", "HIVIS", "4.60"),
 )
+DEMO_ZERO_RATED_PRODUCT_CODES = frozenset({"EARDEF", "HIVIS"})
 HAULIERS = (
     ("Atlas Haulage", "CBDU482761"),
     ("Pennine Bulk Logistics", "CBDU173954"),
@@ -232,25 +262,47 @@ DEMO_WASTE_PRODUCT_EWC = {
     "BALES": ("150106", "Mixed packaging", False),
 }
 TICKETS = (
-    (1, "today", "08:05", "OPEN", "OUTWARD", "SALE", "CUST002", "YX24LNF", "AGG20", "Atlas Haulage", "Liam Carter", "Inert Waste Bay 1", "18120", None, None, None, None),
-    (2, "today", "09:20", "OPEN", "OUTWARD", "SALE", "CUST005", "YA24RVO", "BAG50", "Pennine Bulk Logistics", "Jade Foster", "Inert Waste Bay 2", None, None, "12", None, None),
-    (3, "yesterday", "15:10", "OPEN", "INWARD", "WASTEIN", "CUST003", "YC24HSL", "MIXEDW", "Swift Transport Services", "Ben Thornton", "Riverside Landfill", "16540", None, None, "RORO 20 Yard - C", None),
-    (4, "earlier", "07:55", "OPEN", "OUTWARD", "WASTEOUT", "CUST004", "YG73TWN", "SKIP8", "Atlas Haulage", "Sophie Briggs", "Riverside Landfill", None, None, "1", "Skip 8 Yard - A", None),
-    (5, "today", "10:15", "COMPLETE", "OUTWARD", "SALE", "CUST001", "YN21KPX", "AGG20", "Atlas Haulage", "Liam Carter", "Inert Waste Bay 1", "31120", "13280", None, None, None),
-    (6, "today", "11:05", "COMPLETE", "OUTWARD", "SALE", "CUST001", "YJ68MVT", "TOPSOIL", "Pennine Bulk Logistics", "Jade Foster", "Inert Waste Bay 2", "28840", "14620", None, None, None),
-    (7, "today", "13:20", "COMPLETE", "OUTWARD", "SALE", "CUST006", "YD24BXR", "BAG50", "Swift Transport Services", "Ben Thornton", "Inert Waste Bay 1", None, None, "24", None, None),
-    (8, "yesterday", "08:40", "COMPLETE", "INWARD", "WASTEIN", "CUST007", "YS22FLD", "MIXEDW", "Atlas Haulage", "Sophie Briggs", "Riverside Landfill", "26920", "14260", None, "RORO 35 Yard - D", None),
-    (9, "yesterday", "09:25", "COMPLETE", "OUTWARD", "SALE", "CUST008", "YH70CGE", "LOADDEL", "Pennine Bulk Logistics", "Liam Carter", "Inert Waste Bay 2", None, None, "1", None, None),
-    (10, "yesterday", "14:15", "COMPLETE", "OUTWARD", "SALE", "CUST009", "YY24NKO", "BUILDSAND", "Swift Transport Services", "Jade Foster", "Inert Waste Bay 2", "29480", "13880", None, None, None),
-    (11, "earlier", "10:10", "COMPLETE", "OUTWARD", "WASTEOUT", "CUST007", "YK19VLP", "BALES", "Atlas Haulage", "Ben Thornton", "Wood/Timber Bay 1", None, None, "6", "Skip 12 Yard - B", None),
-    (12, "earlier", "11:45", "COMPLETE", "OUTWARD", "SALE", "CUST011", "YO24TFS", "PALLET", "Pennine Bulk Logistics", "Sophie Briggs", "Inert Waste Bay 2", None, None, "8", None, None),
-    (13, "earlier", "14:20", "COMPLETE", "OUTWARD", "SALE", "CUST009", "YE23MJN", "TYPE1", "Swift Transport Services", "Liam Carter", "Inert Waste Bay 1", "34160", "14280", None, None, None),
-    (14, "earlier", "16:05", "COMPLETE", "OUTWARD", "SALE", "CUST013", "YR24WDX", "LOADDEL", "Atlas Haulage", "Jade Foster", "Inert Waste Bay 2", None, None, "3", None, None),
+    (1, 5, "07:35", "COMPLETE", "OUTWARD", "SALE", "CUST001", "YP24KDM", "AGG20", "Atlas Haulage", "Liam Carter", "Inert Waste Bay 1", "30800", "13420", None, None, None),
+    (2, 5, "08:20", "COMPLETE", "OUTWARD", "SALE", "CUST006", "YN21KPX", "TYPE1", "Pennine Bulk Logistics", "Jade Foster", "Inert Waste Bay 1", "32240", "13860", None, None, None),
+    (3, 5, "10:05", "COMPLETE", "OUTWARD", "SALE", "CUST002", "YX24LNF", "TOPSOIL", "Atlas Haulage", "Liam Carter", "Inert Waste Bay 2", "29620", "13620", None, None, None),
+    (4, 5, "14:10", "COMPLETE", "INWARD", "WASTEIN", "CUST013", "YO24TFS", "MIXEDW", "Swift Transport Services", "Ben Thornton", "Riverside Landfill", "27140", "14160", None, "RORO 20 Yard - C", None),
+    (5, 4, "07:50", "COMPLETE", "OUTWARD", "SALE", "CUST001", "YP24KDM", "AGG20", "Atlas Haulage", "Liam Carter", "Inert Waste Bay 1", "31540", "13380", None, None, None),
+    (6, 4, "08:45", "COMPLETE", "OUTWARD", "SALE", "CUST009", "YS22FLD", "TYPE1", "Pennine Bulk Logistics", "Connor Willis", "Inert Waste Bay 1", "33420", "13980", None, None, None),
+    (7, 4, "10:30", "COMPLETE", "OUTWARD", "SALE", "CUST011", "YY24NKO", "PALLET", "West Riding Logistics", "Sophie Briggs", "Inert Waste Bay 2", None, None, "6", None, None),
+    (8, 4, "13:15", "COMPLETE", "OUTWARD", "SALE", "CUST016", "NX72KLU", "LOADDEL", "Mason Freight Services", "Thomas Kirby", "Inert Waste Bay 2", None, None, "1", None, None),
+    (9, 4, "15:05", "COMPLETE", "OUTWARD", "WASTEOUT", "CUST010", "YH70CGE", "SKIP8", "Atlas Haulage", "Daniel Mercer", "Riverside Landfill", None, None, "1", "Skip 8 Yard - A", None),
+    (10, 3, "07:40", "COMPLETE", "OUTWARD", "SALE", "CUST002", "YX24LNF", "BUILDSAND", "Atlas Haulage", "Liam Carter", "Inert Waste Bay 2", "28440", "13620", None, None, None),
+    (11, 3, "08:55", "COMPLETE", "OUTWARD", "SALE", "CUST006", "YN21KPX", "AGG20", "Pennine Bulk Logistics", "Jade Foster", "Inert Waste Bay 1", "30120", "13280", None, None, None),
+    (12, 3, "10:20", "COMPLETE", "OUTWARD", "SALE", "CUST009", "YS22FLD", "TOPM3", "Pennine Bulk Logistics", "Connor Willis", "Inert Waste Bay 2", None, None, "9.5", None, None),
+    (13, 3, "12:40", "COMPLETE", "INWARD", "WASTEIN", "CUST013", "YO24TFS", "WOODW", "Swift Transport Services", "Ben Thornton", "Wood/Timber Bay 1", "22480", "14220", None, "RORO 35 Yard - D", None),
+    (14, 3, "15:25", "COMPLETE", "OUTWARD", "SALE", "CUST001", "YP24KDM", "BAG50", "Atlas Haulage", "Liam Carter", "Inert Waste Bay 1", None, None, "18", None, None),
+    (15, 2, "07:30", "COMPLETE", "OUTWARD", "SALE", "CUST011", "YY24NKO", "PALLET", "West Riding Logistics", "Sophie Briggs", "Inert Waste Bay 2", None, None, "4", None, None),
+    (16, 2, "08:35", "COMPLETE", "OUTWARD", "SALE", "CUST016", "NX72KLU", "TOPSOIL", "Mason Freight Services", "Thomas Kirby", "Inert Waste Bay 2", "28680", "13640", None, None, None),
+    (17, 2, "10:10", "COMPLETE", "INWARD", "WASTEIN", "CUST004", "YC24HSL", "CLAYSOIL", "Northgate Bulk Carriers", "Nathan Cooper", "Hazardous Bay 1", "30220", "14120", None, "RORO 20 Yard - C", None),
+    (18, 2, "11:20", "COMPLETE", "OUTWARD", "SALE", "CUST009", "YS22FLD", "TYPE1", "Pennine Bulk Logistics", "Connor Willis", "Inert Waste Bay 1", "32760", "14020", None, None, None),
+    (19, 2, "14:05", "COMPLETE", "OUTWARD", "SALE", "CUST006", "YN21KPX", "LOADDEL", "Pennine Bulk Logistics", "Jade Foster", "Inert Waste Bay 2", None, None, "2", None, None),
+    (20, 2, "15:30", "COMPLETE", "OUTWARD", "WASTEOUT", "CUST010", "YH70CGE", "BALES", "Atlas Haulage", "Daniel Mercer", "Wood/Timber Bay 1", None, None, "6", "Skip 12 Yard - B", None),
+    (21, 1, "07:45", "COMPLETE", "OUTWARD", "SALE", "CUST002", "YX24LNF", "AGG20", "Atlas Haulage", "Liam Carter", "Inert Waste Bay 1", "30980", "13360", None, None, None),
+    (22, 1, "09:15", "COMPLETE", "OUTWARD", "SALE", "CUST001", "YP24KDM", "TOPSOIL", "Atlas Haulage", "Liam Carter", "Inert Waste Bay 2", "28940", "13740", None, None, None),
+    (23, 1, "11:10", "COMPLETE", "OUTWARD", "SALE", "CUST011", "YY24NKO", "EARDEF", "West Riding Logistics", "Sophie Briggs", "Inert Waste Bay 1", None, None, "4", None, None),
+    (24, 1, "14:20", "COMPLETE", "INWARD", "WASTEIN", "CUST007", "YJ68MVT", "MIXEDW", "Swift Transport Services", "Ben Thornton", "Riverside Landfill", "26420", "14320", None, "RORO 35 Yard - D", None),
+    (25, 1, "16:00", "OPEN", "OUTWARD", "SALE", "CUST017", "NX72KLU", "TYPE1", "Mason Freight Services", "Thomas Kirby", "Inert Waste Bay 1", "30920", None, None, None, None),
+    (26, 0, "07:25", "OPEN", "OUTWARD", "SALE", "CUST006", "YN21KPX", "AGG20", "Pennine Bulk Logistics", "Jade Foster", "Inert Waste Bay 1", "31240", None, None, None, None),
+    (27, 0, "08:50", "OPEN", "OUTWARD", "SALE", "CUST009", "YS22FLD", "TOPM3", "Pennine Bulk Logistics", "Connor Willis", "Inert Waste Bay 2", None, None, "7.5", None, None),
+    (28, 0, "09:40", "OPEN", "INWARD", "WASTEIN", "CUST003", "YA24RVO", "MIXEDW", "Swift Transport Services", "Ben Thornton", "Riverside Landfill", "25840", None, None, "RORO 20 Yard - C", None),
+    (29, 0, "11:05", "OPEN", "OUTWARD", "SALE", "CUST021", "YP24KDM", "HIVIS", "Atlas Haulage", "Liam Carter", "Inert Waste Bay 1", None, None, "5", None, None),
+    (30, 0, "13:10", "OPEN", "OUTWARD", "SALE", "CUST001", "YP24KDM", "BAG50", "Atlas Haulage", "Liam Carter", "Inert Waste Bay 1", None, None, "20", None, None),
+    (31, 0, "14:35", "OPEN", "OUTWARD", "WASTEOUT", "CUST010", "YH70CGE", "SKIP8", "Atlas Haulage", "Daniel Mercer", "Riverside Landfill", None, None, "1", "Skip 8 Yard - A", None),
+    (32, 0, "15:50", "COMPLETE", "OUTWARD", "SALE", "CUST009", "YS22FLD", "AGG20", "Pennine Bulk Logistics", "Connor Willis", "Inert Waste Bay 1", "31860", "13440", None, None, None),
 )
 INVOICES = (
-    ("INV-DEMO-001", "CUST001", (5, 6), "today", "OPEN"),
-    ("INV-DEMO-002", "CUST007", (8, 11), "yesterday", "OPEN"),
-    ("INV-DEMO-003", "CUST009", (10, 13), "earlier", "PAID"),
+    (1, "CUST001", (1, 5, 14), 2, "PAID"),
+    (2, "CUST006", (2, 11, 19), 1, "PAID"),
+    (3, "CUST009", (6, 12, 18), 1, "PAID"),
+    (4, "CUST013", (4, 13), 2, "PAID"),
+    (5, "CUST016", (8, 16), 1, "PAID"),
+    (6, "CUST002", (3, 10, 21), 0, "OPEN"),
+    (7, "CUST011", (7, 15, 23), 1, "OPEN"),
 )
 VEHICLE_REGISTRATIONS = (
     "YP24KDM",
@@ -271,6 +323,34 @@ VEHICLE_REGISTRATIONS = (
     "NX72KLU",
 )
 VEHICLE_TYPE_CYCLE = ("8 Wheeler", "Artic", "6 Wheeler", "Van", "Tractor & Trailer")
+DEMO_VEHICLE_TYPE_MASS_PROFILES = {
+    "8 Wheeler": (
+        ("14980", "32000"),
+        ("15240", "32000"),
+        ("15560", "32000"),
+        ("15120", "32000"),
+    ),
+    "Artic": (
+        ("14620", "44000"),
+        ("14940", "44000"),
+        ("15180", "40000"),
+    ),
+    "6 Wheeler": (
+        ("11840", "26000"),
+        ("12160", "26000"),
+        ("11680", "24000"),
+    ),
+    "Van": (
+        ("1980", "3000"),
+        ("2240", "3500"),
+        ("2160", "3500"),
+    ),
+    "Tractor & Trailer": (
+        ("15980", "38000"),
+        ("16340", "38000"),
+        ("16820", "40000"),
+    ),
+}
 
 
 def _money(value: object) -> Decimal:
@@ -334,6 +414,71 @@ def _ensure_demo_ewc_subset(db: Session) -> dict[str, EwcCode]:
     return ensured
 
 
+def _demo_invoice_no(number: int, *, year: int) -> str:
+    return f"INV-{str(year)[2:]}-{int(number):05d}"
+
+
+def _resolve_demo_seed_date(day_spec: object, *, today: date, days: dict[str, date]) -> date:
+    if isinstance(day_spec, date):
+        return day_spec
+    if isinstance(day_spec, int):
+        return today - timedelta(days=max(int(day_spec), 0))
+    if isinstance(day_spec, str) and day_spec in days:
+        return days[day_spec]
+    raise RuntimeError(f"Unsupported demo seed date: {day_spec!r}")
+
+
+def _demo_vehicle_mass_profile(vehicle_type_code: str, occurrence: int) -> tuple[Decimal, Decimal]:
+    profiles = DEMO_VEHICLE_TYPE_MASS_PROFILES[vehicle_type_code]
+    tare_text, threshold_text = profiles[occurrence % len(profiles)]
+    return Decimal(tare_text), Decimal(threshold_text)
+
+
+def _sync_demo_sequences(
+    db: Session,
+    *,
+    tenant_id: int,
+    ticket_numbers_by_year: dict[int, int],
+    invoice_numbers_by_year: dict[int, int],
+) -> None:
+    now = utcnow()
+    for year, last_number in ticket_numbers_by_year.items():
+        sequence = db.execute(
+            select(TicketSequence).where(
+                TicketSequence.tenant_id == tenant_id,
+                TicketSequence.year == int(year),
+            )
+        ).scalars().first()
+        if sequence is None:
+            sequence = TicketSequence(
+                tenant_id=tenant_id,
+                year=int(year),
+                last_number=int(last_number),
+                updated_at=now,
+            )
+            db.add(sequence)
+            continue
+        if int(sequence.last_number or 0) < int(last_number):
+            sequence.last_number = int(last_number)
+        sequence.updated_at = now
+
+    for year, last_number in invoice_numbers_by_year.items():
+        sequence = db.execute(
+            select(InvoiceSequence).where(InvoiceSequence.year == int(year))
+        ).scalars().first()
+        if sequence is None:
+            sequence = InvoiceSequence(
+                year=int(year),
+                last_number=int(last_number),
+                updated_at=now,
+            )
+            db.add(sequence)
+            continue
+        if int(sequence.last_number or 0) < int(last_number):
+            sequence.last_number = int(last_number)
+        sequence.updated_at = now
+
+
 def _demo_ticket_no(number: int, *, year: int) -> str:
     return f"{str(year)[2:]}-{int(number):05d}"
 
@@ -341,7 +486,6 @@ def _demo_ticket_no(number: int, *, year: int) -> str:
 def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
     tenant_id = int(tenant_id)
     today = utcnow().replace(second=0, microsecond=0).date()
-    ticket_year = today.year
     yesterday = today - timedelta(days=1)
     start_of_week = today - timedelta(days=today.weekday())
     days = {
@@ -365,11 +509,15 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
         raise RuntimeError(f"Demo dataset seed requires vehicle types: {', '.join(missing_vehicle_types)}.")
 
     payment_method = db.execute(select(PaymentMethod).where(PaymentMethod.code == "BACS").limit(1)).scalars().first()
-    tax_rate = next(
+    standard_tax_rate = next(
         (row for row in db.execute(select(TaxRate)).scalars() if str(row.code or "").strip().lower().startswith("standard (20%)")),
         None,
     )
-    if payment_method is None or tax_rate is None:
+    zero_tax_rate = next(
+        (row for row in db.execute(select(TaxRate)).scalars() if str(row.code or "").strip().lower().startswith("zero (0%)")),
+        None,
+    )
+    if payment_method is None or standard_tax_rate is None or zero_tax_rate is None:
         raise RuntimeError("Demo dataset seed requires standard VAT and BACS reference data.")
 
     demo_ewc_codes = _ensure_demo_ewc_subset(db)
@@ -396,7 +544,7 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
         account_code = DEMO_CUSTOMER_ACCOUNT_CODES[index - 1]
         credit_limit = _money(Decimal("2500.00") + (Decimal(index) * Decimal("250.00")))
         invoice_frequency = DEMO_CUSTOMER_INVOICE_FREQUENCIES[index - 1]
-        payment_days = 14 if index % 5 == 0 else 30
+        payment_terms, payment_days = DEMO_CUSTOMER_PAYMENT_TERMS[index - 1]
         vat_number = DEMO_CUSTOMER_VAT_NUMBERS[index - 1]
         invoice_email = DEMO_CUSTOMER_EMAILS[index - 1]
         on_stop = index in DEMO_CUSTOMER_ON_STOP_INDEXES
@@ -422,17 +570,22 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
             is_cash_account=cash_account,
             cash_account=cash_account,
             invoice_frequency=invoice_frequency,
-            payment_terms=f"{payment_days} Days",
+            payment_terms=payment_terms,
             payment_terms_days=payment_days,
             must_have_po=must_have_po,
         )
     db.add_all(customers.values())
     db.flush()
+    customer_price_overrides = {
+        (customer_code, product_code): _money(unit_price)
+        for customer_code, product_code, unit_price in DEMO_CUSTOMER_PRICE_OVERRIDES
+    }
 
     products: dict[str, tuple[Product, Unit]] = {}
     for code, description, sales_only, group_code, unit_name, price, destination_name, final_disposal in PRODUCTS:
         unit = units[unit_name]
         product_ewc = None
+        product_tax_rate = zero_tax_rate if code in DEMO_ZERO_RATED_PRODUCT_CODES else standard_tax_rate
         if code in DEMO_WASTE_PRODUCT_EWC:
             product_ewc = demo_ewc_codes[DEMO_WASTE_PRODUCT_EWC[code][0]]
         product = Product(
@@ -442,7 +595,7 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
             sales_only=bool(sales_only),
             group_id=product_groups[group_code].id,
             unit_id=unit.id,
-            tax_rate_id=tax_rate.id,
+            tax_rate_id=product_tax_rate.id,
             unit_price=_money(price),
             account_price=_money(price),
             cash_price=_money(price),
@@ -471,19 +624,24 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
     db.flush()
 
     vehicles: dict[str, Vehicle] = {}
+    vehicle_type_occurrences: dict[str, int] = {}
     for index, registration in enumerate(VEHICLE_REGISTRATIONS, start=1):
         customer = customers[f"CUST{index:03d}"]
         haulier_name = HAULIERS[(index - 1) % len(HAULIERS)][0]
         driver_name = DRIVERS[(index - 1) % len(DRIVERS)]
-        vehicle_type = vehicle_types[VEHICLE_TYPE_CYCLE[(index - 1) % len(VEHICLE_TYPE_CYCLE)]]
+        vehicle_type_code = VEHICLE_TYPE_CYCLE[(index - 1) % len(VEHICLE_TYPE_CYCLE)]
+        vehicle_type = vehicle_types[vehicle_type_code]
+        occurrence = vehicle_type_occurrences.get(vehicle_type_code, 0)
+        vehicle_type_occurrences[vehicle_type_code] = occurrence + 1
+        default_tare_kg, overweight_threshold_kg = _demo_vehicle_mass_profile(vehicle_type_code, occurrence)
         vehicles[registration] = Vehicle(
             tenant_id=tenant_id,
             registration=registration,
             owner_customer_id=customer.id,
             default_customer_id=customer.id,
             vehicle_type_id=vehicle_type.id,
-            default_tare_kg=Decimal("12000") + Decimal(index * 180),
-            overweight_threshold_kg=Decimal("28000"),
+            default_tare_kg=default_tare_kg,
+            overweight_threshold_kg=overweight_threshold_kg,
             haulier_id=hauliers[haulier_name].id,
             default_haulier_id=hauliers[haulier_name].id,
             driver_id=drivers[driver_name].id,
@@ -492,7 +650,9 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
     db.add_all(vehicles.values())
     db.flush()
 
-    ticket_rows: dict[str, tuple[Ticket, Product, Vehicle]] = {}
+    all_ticket_specs = list(TICKETS)
+    ticket_rows: dict[int, tuple[Ticket, Product, Vehicle]] = {}
+    ticket_numbers_by_year: dict[int, int] = {}
     for (
         ticket_number,
         day_key,
@@ -511,16 +671,25 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
         qty_text,
         container_name,
         ewc_data,
-    ) in TICKETS:
+    ) in all_ticket_specs:
         customer = customers[customer_code]
         vehicle = vehicles[registration]
         product, unit = products[product_code]
-        ticket_no = _demo_ticket_no(ticket_number, year=ticket_year)
-        gross_kg = Decimal(gross_text) if gross_text else None
-        tare_kg = Decimal(tare_text) if tare_text else None
-        qty = Decimal(qty_text) if qty_text else None
+        ticket_date = _resolve_demo_seed_date(day_key, today=today, days=days)
+        ticket_no = _demo_ticket_no(ticket_number, year=ticket_date.year)
+        ticket_numbers_by_year[ticket_date.year] = max(
+            ticket_numbers_by_year.get(ticket_date.year, 0),
+            int(ticket_no.split("-", 1)[1]),
+        )
+        gross_kg = Decimal(str(gross_text)) if gross_text is not None else None
+        tare_kg = Decimal(str(tare_text)) if tare_text is not None else None
+        qty = Decimal(str(qty_text)) if qty_text is not None else None
         net_kg = billable_qty = total = None
         pricing_basis = None
+        ticket_unit_price = customer_price_overrides.get(
+            (customer_code, product_code),
+            _money(product.unit_price or 0),
+        )
         if status == TicketStatusEnum.COMPLETE.value:
             if unit.unit_type == "WEIGHT":
                 net_kg = Decimal(gross_kg or 0) - Decimal(tare_kg or 0)
@@ -529,9 +698,9 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
             else:
                 billable_qty = Decimal(qty or 0)
                 pricing_basis = "QTY"
-            total = _money(billable_qty * Decimal(product.unit_price or 0))
+            total = _money(billable_qty * ticket_unit_price)
         elif qty is not None:
-            total = _money(qty * Decimal(product.unit_price or 0))
+            total = _money(qty * ticket_unit_price)
 
         ticket_kwargs: dict[str, object] = {}
         if transaction_type in WASTE_TYPES:
@@ -565,7 +734,7 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
         ticket = Ticket(
             tenant_id=tenant_id,
             ticket_no=ticket_no,
-            datetime=datetime.combine(days[day_key], time(hour=hour, minute=minute)),
+            datetime=datetime.combine(ticket_date, time(hour=hour, minute=minute)),
             status=status,
             direction=direction,
             transaction_type=transaction_type,
@@ -585,31 +754,43 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
             net_kg=net_kg,
             qty=qty,
             unit_id=unit.id,
-            unit_price=_money(product.unit_price or 0),
+            unit_price=ticket_unit_price,
             total=total,
             pricing_basis=pricing_basis,
             pricing_unit_name=unit.name,
             pricing_unit_type=unit.unit_type,
-            pricing_unit_price=_money(product.unit_price or 0),
+            pricing_unit_price=ticket_unit_price,
             pricing_qty_snapshot=qty if pricing_basis == "QTY" else None,
             pricing_net_kg_snapshot=net_kg if pricing_basis == "WEIGHT" else None,
             pricing_billable_qty_snapshot=billable_qty,
-            dont_invoice=False,
-            paid=False,
+            po_number=(
+                f"PO-{ticket_date.strftime('%y%m')}-{ticket_number:04d}"
+                if bool(customer.must_have_po)
+                else None
+            ),
+            dont_invoice=bool(customer.do_not_invoice or customer.is_cash_account),
+            paid=bool(customer.is_cash_account and status == TicketStatusEnum.COMPLETE.value),
             wip_snapshot_json=ticket_wip_snapshot(customer=customer, product=product),
             **ticket_kwargs,
         )
         db.add(ticket)
-        ticket_rows[ticket_no] = (ticket, product, vehicle)
+        ticket_rows[ticket_number] = (ticket, product, vehicle)
     db.flush()
 
-    tax_fraction = Decimal(str(tax_rate.rate_percent or 0))
+    tax_fraction = Decimal(str(standard_tax_rate.rate_percent or 0))
     if tax_fraction > 1:
         tax_fraction /= Decimal("100")
 
-    for invoice_no, customer_code, ticket_numbers, day_key, status in INVOICES:
+    all_invoice_specs = list(INVOICES)
+    invoice_numbers_by_year: dict[int, int] = {}
+    for invoice_number, customer_code, ticket_numbers, day_key, status in all_invoice_specs:
         customer = customers[customer_code]
-        invoice_date = days[day_key]
+        invoice_date = _resolve_demo_seed_date(day_key, today=today, days=days)
+        invoice_no = _demo_invoice_no(invoice_number, year=invoice_date.year)
+        invoice_numbers_by_year[invoice_date.year] = max(
+            invoice_numbers_by_year.get(invoice_date.year, 0),
+            int(invoice_no.rsplit("-", 1)[1]),
+        )
         invoice = Invoice(
             tenant_id=tenant_id,
             invoice_no=invoice_no,
@@ -640,8 +821,7 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
 
         net_total = vat_total = Decimal("0.00")
         for ticket_number in ticket_numbers:
-            ticket_no = _demo_ticket_no(ticket_number, year=ticket_year)
-            ticket, product, vehicle = ticket_rows[ticket_no]
+            ticket, product, vehicle = ticket_rows[ticket_number]
             line_net = _money(ticket.total or 0)
             line_vat = _money(line_net * tax_fraction)
             db.add(
@@ -666,6 +846,13 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
         invoice.vat_total = _money(vat_total)
         invoice.gross_total = _money(net_total + vat_total)
 
+    _sync_demo_sequences(
+        db,
+        tenant_id=tenant_id,
+        ticket_numbers_by_year=ticket_numbers_by_year,
+        invoice_numbers_by_year=invoice_numbers_by_year,
+    )
+
     for offset, (customer_code, amount_text, note) in enumerate(DEMO_CUSTOMER_OWED_ADJUSTMENTS, start=1):
         customer = customers[customer_code]
         db.add(
@@ -688,10 +875,10 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
         "drivers": len(DRIVERS),
         "hauliers": len(HAULIERS),
         "destinations": len(DESTINATIONS),
-        "tickets": len(TICKETS),
-        "tickets_open": sum(1 for row in TICKETS if row[3] == "OPEN"),
-        "tickets_complete": sum(1 for row in TICKETS if row[3] == "COMPLETE"),
-        "tickets_waste": sum(1 for row in TICKETS if row[5] in WASTE_TYPES),
-        "invoices": len(INVOICES),
+        "tickets": len(all_ticket_specs),
+        "tickets_open": sum(1 for row in all_ticket_specs if row[3] == "OPEN"),
+        "tickets_complete": sum(1 for row in all_ticket_specs if row[3] == "COMPLETE"),
+        "tickets_waste": sum(1 for row in all_ticket_specs if row[5] in WASTE_TYPES),
+        "invoices": len(all_invoice_specs),
         "ewc_codes": len(demo_ewc_codes),
     }

@@ -56,6 +56,8 @@
           <td class="terms-col">
             {% if customer.payment_terms_days is not none %}
               <span class="customer-terms customer-terms--value">NET {{ customer.payment_terms_days }}</span>
+            {% elif customer.payment_terms %}
+              <span class="customer-terms customer-terms--value">{{ customer.payment_terms }}</span>
             {% else %}
               <span class="customer-terms customer-terms--empty">&mdash;</span>
             {% endif %}
@@ -70,7 +72,7 @@
           <td class="flags-col">
             <div class="status-stack">
               {% if customer.on_stop %}
-                <span class="status-pill status-void">ON STOP</span>
+                <span class="status-pill status-stop">ON STOP</span>
               {% endif %}
               {% if customer.do_not_invoice %}
                 <span class="status-pill status-info">NO INVOICE</span>

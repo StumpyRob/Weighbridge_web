@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import logging
+from pathlib import Path
 import shutil
 from urllib.parse import urlencode
 
@@ -77,6 +78,18 @@ from ..templating import templates
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+DEMO_COMPANY_NAME = "Demo Ltd."
+DEMO_COMPANY_ADDRESS_LINE_1 = "1 Chapter House Street"
+DEMO_COMPANY_CITY = "York"
+DEMO_COMPANY_POSTCODE = "YO1 7JH"
+DEMO_COMPANY_COUNTRY = "United Kingdom"
+DEMO_PRIMARY_COLOR_HEX = "#2596BE"
+DEMO_NAVBAR_COLOR_HEX = "#242B3B"
+DEMO_LOGO_FILENAME = "demo-logo.png"
+DEMO_LOGO_WEB_PATH = f"/static/uploads/company/{DEMO_LOGO_FILENAME}"
+DEMO_LOGO_SOURCE = (
+    Path(__file__).resolve().parents[1] / "static" / "uploads" / "company" / DEMO_LOGO_FILENAME
+)
 _DELETE_BLOCKING_MODELS = (
     ("customer records", Customer),
     ("customer adjustments", CustomerAdjustment),
@@ -207,6 +220,29 @@ def _seed_tenant_baseline(
     _seed_number_sequences(db, tenant_id)
 
 
+def _apply_demo_company_branding(db: Session, tenant_id: int) -> None:
+    with _tenant_scope(db, tenant_id):
+        company = ensure_company_settings_row_exists(db)
+        company.name = DEMO_COMPANY_NAME
+        company.address_line1 = DEMO_COMPANY_ADDRESS_LINE_1
+        company.address_line2 = None
+        company.city = DEMO_COMPANY_CITY
+        company.postcode = DEMO_COMPANY_POSTCODE
+        company.country = DEMO_COMPANY_COUNTRY
+        company.navbar_color_hex = DEMO_NAVBAR_COLOR_HEX
+        company.primary_color_hex = DEMO_PRIMARY_COLOR_HEX
+        company.nav_logo_height_px = 34
+        company.show_nav_logo = True
+        company.show_nav_title = True
+
+        if DEMO_LOGO_SOURCE.is_file():
+            logo_dir = company_logo_upload_dir(tenant_id, create=True)
+            logo_target = logo_dir / DEMO_LOGO_FILENAME
+            shutil.copyfile(DEMO_LOGO_SOURCE, logo_target)
+            company.company_logo_path = DEMO_LOGO_WEB_PATH
+            company.company_logo_updated_at = utcnow()
+
+
 def _user_identity(user: User | None) -> str:
     if user is None:
         return ""
@@ -327,6 +363,8 @@ def _reset_demo_tenant_data(
             .values(user_id=None)
         )
 
+    shutil.rmtree(tenant_upload_dir, ignore_errors=True)
+
     db.execute(delete(AuditEvent).where(AuditEvent.tenant_id == str(tenant_id)))
     for model in _DELETE_CASCADE_MODELS:
         db.execute(delete(model).where(model.tenant_id == tenant_id))
@@ -339,6 +377,7 @@ def _reset_demo_tenant_data(
         company_name=str(tenant.name or "").strip(),
         include_shared_reference_data=False,
     )
+    _apply_demo_company_branding(db, tenant_id)
     dataset_counts = seed_demo_dataset(db, tenant_id)
     audit_log(
         db,
@@ -357,7 +396,6 @@ def _reset_demo_tenant_data(
         tenant_id=None,
     )
     db.commit()
-    shutil.rmtree(tenant_upload_dir, ignore_errors=True)
 
 
 def _tenant_form_context(

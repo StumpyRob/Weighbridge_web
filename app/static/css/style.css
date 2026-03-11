@@ -1052,11 +1052,19 @@ body.js-help-tooltips .help-tooltip {
 }
 
 .products-table .products-col-description {
-  width: 300px;
+  width: 270px;
+}
+
+.products-table .products-col-sales-only {
+  width: 120px;
+}
+
+.products-table .products-col-basis {
+  width: 90px;
 }
 
 .products-table .products-col-unit {
-  width: 140px;
+  width: 120px;
 }
 
 .products-table .products-col-unit-price {
@@ -1074,19 +1082,6 @@ body.js-help-tooltips .help-tooltip {
 .products-table td.description-col,
 .products-table td.unit-col {
   max-width: 0;
-}
-
-.products-table .product-description-cell {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  max-width: 100%;
-  min-width: 0;
-}
-
-.products-table .product-description-cell .table-cell-truncate {
-  flex: 1 1 auto;
-  min-width: 0;
 }
 
 .product-flag {
@@ -1109,6 +1104,13 @@ body.js-help-tooltips .help-tooltip {
   background: #eff6ff;
   border-color: #bfdbfe;
   color: #1d4ed8;
+}
+
+.product-flag--empty {
+  border-color: transparent;
+  background: transparent;
+  color: #64748b;
+  padding-inline: 0;
 }
 
 .products-table .tax-rate-col {
@@ -1536,6 +1538,12 @@ body.js-help-tooltips .help-tooltip {
   color: #92400e;
 }
 
+.status-pill.status-active {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
+}
+
 .status-pill.status-complete {
   background: #dcfce7;
   border-color: #bbf7d0;
@@ -1552,6 +1560,12 @@ body.js-help-tooltips .help-tooltip {
   background: #fef3c7;
   border-color: #fcd34d;
   color: #92400e;
+}
+
+.status-pill.status-stop {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #991b1b;
 }
 
 .status-pill.status-void {

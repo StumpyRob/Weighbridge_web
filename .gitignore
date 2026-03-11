@@ -17,6 +17,7 @@ audit_field_usage_report.md
 audit_field_usage_report.csv
 app/static/uploads/company/*
 !app/static/uploads/company/.gitkeep
+!app/static/uploads/company/demo-logo.png
 uploads/*
 !uploads/.gitkeep
 uploads/company/*

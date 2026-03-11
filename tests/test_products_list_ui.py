@@ -28,6 +28,7 @@ def test_products_list_renders_unit_and_tax_labels_not_raw_ids(client, db_sessio
         unit=unit,
         tax_rate=tax_rate,
         unit_price=Decimal("12.50"),
+        sales_only=True,
     )
     db_session.add_all([unit, tax_rate, product])
     db_session.commit()
@@ -37,6 +38,8 @@ def test_products_list_renders_unit_and_tax_labels_not_raw_ids(client, db_sessio
     assert response.status_code == 200
     assert "unit_id" not in response.text
     assert "tax_rate_id" not in response.text
+    assert "<th class=\"sales-only-col\">Sales only</th>" in response.text
+    assert "<th class=\"basis-col\">Basis</th>" in response.text
 
     row_match = re.search(
         rf'<tr[^>]*data-row-link="/products/{product.id}".*?</tr>',
@@ -47,9 +50,44 @@ def test_products_list_renders_unit_and_tax_labels_not_raw_ids(client, db_sessio
     row_html = row_match.group(0)
 
     assert unit.name in row_html
+    assert "Sales only" in row_html
+    assert "Count" in row_html
     assert "20%" in row_html
     assert f">{unit.id}<" not in row_html
     assert f">{tax_rate.id}<" not in row_html
+
+
+def test_products_list_shows_weight_and_count_basis_values(client, db_session):
+    count_unit = Unit(name="Each UI Basis", unit_type="COUNT", is_active=True)
+    weight_unit = Unit(name="Tonnes", unit_type="WEIGHT", is_active=True)
+    tax_rate = TaxRate(
+        code="UI BASIS VAT",
+        description="UI basis VAT",
+        rate_percent=Decimal("0.20"),
+        is_active=True,
+    )
+    count_product = Product(
+        code="P-UI-BASIS-C",
+        description="Count basis product",
+        unit=count_unit,
+        tax_rate=tax_rate,
+        unit_price=Decimal("7.50"),
+    )
+    weight_product = Product(
+        code="P-UI-BASIS-W",
+        description="Weight basis product",
+        unit=weight_unit,
+        tax_rate=tax_rate,
+        unit_price=Decimal("18.00"),
+    )
+    db_session.add_all([count_unit, weight_unit, tax_rate, count_product, weight_product])
+    db_session.commit()
+
+    response = client.get("/products")
+
+    assert response.status_code == 200
+    assert "Count" in response.text
+    assert "Weight" in response.text
 
 
 def test_units_list_actions_use_small_button_class(client, db_session):

@@ -46,6 +46,8 @@
     <colgroup>
       <col class="products-col-code" />
       <col class="products-col-description" />
+      <col class="products-col-sales-only" />
+      <col class="products-col-basis" />
       <col class="products-col-unit" />
       <col class="products-col-unit-price" />
       <col class="products-col-tax-rate" />
@@ -55,6 +57,8 @@
       <tr>
         <th class="code-col">Code</th>
         <th class="description-col truncate-col">Description</th>
+        <th class="sales-only-col">Sales only</th>
+        <th class="basis-col">Basis</th>
         <th class="unit-col">Unit</th>
         <th class="unit-price-col numeric-col num">Unit price</th>
         <th class="tax-rate-col numeric-col num">Tax rate</th>
@@ -65,19 +69,31 @@
       {% for product in products %}
         {% set product_description = product.description or "" %}
         {% set unit_name = product.unit.name if product.unit and product.unit.name else "" %}
+        {% set unit_type = (product.unit.unit_type if product.unit and product.unit.unit_type else "")|upper %}
         <tr data-row-link="/products/{{ product.id }}">
           <td>
             <a href="/products/{{ product.id }}" class="truncate truncate--sm" title="{{ product.code }}">{{ product.code }}</a>
           </td>
           <td class="description-col truncate-col" title="{{ product_description }}">
-            <div class="product-description-cell">
-              <span class="table-cell-truncate">
-                {{ product_description[:28] ~ ('...' if product_description|length > 28 else '') }}
-              </span>
-              {% if product.sales_only %}
-                <span class="product-flag product-flag--sale">Sales only</span>
-              {% endif %}
-            </div>
+            <span class="table-cell-truncate">
+              {{ product_description[:28] ~ ('...' if product_description|length > 28 else '') }}
+            </span>
+          </td>
+          <td class="sales-only-col">
+            {% if product.sales_only %}
+              <span class="product-flag product-flag--sale">Sales only</span>
+            {% else %}
+              <span class="product-flag product-flag--empty">&mdash;</span>
+            {% endif %}
+          </td>
+          <td class="basis-col">
+            {% if unit_type == "WEIGHT" %}
+              Weight
+            {% elif unit_type == "COUNT" %}
+              Count
+            {% else %}
+              &mdash;
+            {% endif %}
           </td>
           <td class="unit-col">
             {% if unit_name %}
@@ -117,7 +133,7 @@
         </tr>
       {% else %}
         <tr>
-          <td colspan="6" class="empty">No products found.</td>
+          <td colspan="8" class="empty">No products found.</td>
         </tr>
       {% endfor %}
     </tbody>

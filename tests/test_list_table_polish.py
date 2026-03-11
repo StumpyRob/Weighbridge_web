@@ -118,6 +118,7 @@ def test_customers_list_hides_contact_columns_and_shows_operational_badges(
     assert "Flags" in response.text
     assert 'id="customer-flags-help"' in response.text
     assert "ON STOP" in response.text
+    assert 'class="status-pill status-stop"' in response.text
     assert "NO INVOICE" in response.text
     assert "PO REQUIRED" in response.text
     assert "status-open\">Active" not in response.text

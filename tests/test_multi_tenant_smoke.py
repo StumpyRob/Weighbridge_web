@@ -33,10 +33,12 @@ from app.models import (
     EwcCode,
     Haulier,
     Invoice,
+    InvoiceSequence,
     InvoiceLine,
     PrintDestination,
     PrintTemplate,
     Product,
+    TaxRate,
     Tenant,
     Ticket,
     TicketSequence,
@@ -2368,9 +2370,9 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert _tenant_row_count(db, Driver, demo_tenant) == 9
         assert _tenant_row_count(db, Haulier, demo_tenant) == 6
         assert _tenant_row_count(db, Destination, demo_tenant) == 6
-        assert _tenant_row_count(db, Ticket, demo_tenant) == 14
-        assert _tenant_row_count(db, Invoice, demo_tenant) == 3
-        assert _tenant_row_count(db, InvoiceLine, demo_tenant) == 6
+        assert _tenant_row_count(db, Ticket, demo_tenant) == 32
+        assert _tenant_row_count(db, Invoice, demo_tenant) == 7
+        assert _tenant_row_count(db, InvoiceLine, demo_tenant) == 19
         assert {
             value
             for value in db.execute(
@@ -2385,6 +2387,30 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
             "Wood/Timber Bay 1",
         }
         assert db.execute(select(func.count(EwcCode.id))).scalar_one() == 4
+        demo_vehicle_profiles = db.execute(
+            select(
+                Vehicle.registration,
+                Vehicle.default_tare_kg,
+                Vehicle.overweight_threshold_kg,
+                VehicleType.code,
+            )
+            .join(VehicleType, Vehicle.vehicle_type_id == VehicleType.id)
+            .where(Vehicle.tenant_id == demo_tenant)
+        ).all()
+        assert len(demo_vehicle_profiles) == 16
+        thresholds_by_type: dict[str, set[int]] = {}
+        for _, tare_kg, threshold_kg, vehicle_type_code in demo_vehicle_profiles:
+            assert tare_kg is not None
+            assert threshold_kg is not None
+            assert Decimal(str(threshold_kg)) > Decimal(str(tare_kg))
+            thresholds_by_type.setdefault(str(vehicle_type_code), set()).add(int(Decimal(str(threshold_kg))))
+        assert all(28000 not in values for values in thresholds_by_type.values())
+        assert thresholds_by_type["Van"] == {3000, 3500}
+        assert thresholds_by_type["6 Wheeler"] == {24000, 26000}
+        assert thresholds_by_type["8 Wheeler"] == {32000}
+        assert thresholds_by_type["Artic"] == {40000, 44000}
+        assert thresholds_by_type["Tractor & Trailer"] == {38000, 40000}
+
         demo_ewc_rows = {
             row.code_6: row
             for row in db.execute(
@@ -2409,6 +2435,21 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
             ).scalars()
         }
         assert set(demo_waste_products) == set(expected_demo_product_ewc)
+        zero_rated_demo_products = {
+            code: rate_percent
+            for code, rate_percent in db.execute(
+                select(Product.code, TaxRate.rate_percent)
+                .join(TaxRate, Product.tax_rate_id == TaxRate.id)
+                .where(
+                    Product.tenant_id == demo_tenant,
+                    Product.code.in_(("EARDEF", "HIVIS")),
+                )
+            ).all()
+        }
+        assert zero_rated_demo_products == {
+            "EARDEF": Decimal("0.00"),
+            "HIVIS": Decimal("0.00"),
+        }
         for code, (ewc_code_6, hazardous, destination_name) in expected_demo_product_ewc.items():
             product = demo_waste_products[code]
             assert product.ewc_code is not None
@@ -2423,6 +2464,24 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
                 select(Customer.invoice_frequency).where(Customer.tenant_id == demo_tenant)
             ).scalars()
         } == {None, "WEEKLY", "MONTHLY", "ADHOC"}
+        assert {
+            value
+            for value in db.execute(
+                select(Customer.payment_terms_days).where(Customer.tenant_id == demo_tenant)
+            ).scalars()
+        } == {None, 7, 14, 30}
+        assert db.execute(
+            select(func.count(Customer.id)).where(
+                Customer.tenant_id == demo_tenant,
+                Customer.payment_terms_days.is_(None),
+            )
+        ).scalar_one() > 0
+        assert db.execute(
+            select(func.count(Customer.id)).where(
+                Customer.tenant_id == demo_tenant,
+                Customer.payment_terms == "Ad Hoc",
+            )
+        ).scalar_one() > 0
         assert (
             db.execute(
                 select(func.count(Customer.id)).where(
@@ -2508,7 +2567,7 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
                     Ticket.status == TicketStatusEnum.OPEN.value,
                 )
             ).scalar_one()
-            == 4
+            == 7
         )
         assert (
             db.execute(
@@ -2517,7 +2576,7 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
                     Ticket.status == TicketStatusEnum.COMPLETE.value,
                 )
             ).scalar_one()
-            == 10
+            == 25
         )
         assert (
             db.execute(
@@ -2531,15 +2590,25 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
                     ),
                 )
             ).scalar_one()
-            == 4
+            == 8
         )
+        demo_invoice_prefix = f"INV-{str(utcnow().year)[2:]}"
         assert list(
             db.execute(
                 select(Invoice.invoice_no)
                 .where(Invoice.tenant_id == demo_tenant)
                 .order_by(Invoice.invoice_no.asc())
             ).scalars()
-        ) == ["INV-DEMO-001", "INV-DEMO-002", "INV-DEMO-003"]
+        ) == [
+            f"{demo_invoice_prefix}-{number:05d}"
+            for number in range(1, 8)
+        ]
+        invoice_line_counts = db.execute(
+            select(InvoiceLine.invoice_id, func.count(InvoiceLine.id))
+            .where(InvoiceLine.tenant_id == demo_tenant)
+            .group_by(InvoiceLine.invoice_id)
+        ).all()
+        assert any(int(line_count) > 1 for _, line_count in invoice_line_counts)
 
     with SessionLocal() as db:
         db.add(Customer(tenant_id=demo_tenant, account_code="DEMO-001", name="Demo Customer"))
@@ -2552,8 +2621,10 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert db.execute(select(func.count(EwcCode.id))).scalar_one() == 0
 
     demo_logo_dir = uploads_root / "tenants" / str(demo_tenant) / "company"
+    demo_logo_file = demo_logo_dir / "demo-logo.png"
+    stale_logo_file = demo_logo_dir / "logo.png"
     demo_logo_dir.mkdir(parents=True, exist_ok=True)
-    (demo_logo_dir / "logo.png").write_bytes(b"demo-logo")
+    stale_logo_file.write_bytes(b"demo-logo")
 
     with _client(app, base_url="https://admin.localhost") as admin_client:
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
@@ -2607,12 +2678,21 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert db.execute(select(User).where(User.tenant_id == demo_tenant)).scalars().first() is None
         assert_demo_dataset_counts(db)
 
-        assert (
+        company = (
             db.execute(select(CompanySetting).where(CompanySetting.tenant_id == demo_tenant))
             .scalars()
             .first()
-            is not None
         )
+        assert company is not None
+        assert company.name == "Demo Ltd."
+        assert company.address_line1 == "1 Chapter House Street"
+        assert company.city == "York"
+        assert company.postcode == "YO1 7JH"
+        assert company.country == "United Kingdom"
+        assert company.navbar_color_hex == "#242B3B"
+        assert company.primary_color_hex == "#2596BE"
+        assert company.company_logo_path == "/static/uploads/company/demo-logo.png"
+        assert company.company_logo_updated_at is not None
         assert db.execute(select(Yard).where(Yard.tenant_id == demo_tenant)).scalars().first() is not None
         assert db.execute(select(Unit).where(Unit.tenant_id == demo_tenant)).scalars().first() is not None
         assert (
@@ -2638,6 +2718,19 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
             .first()
             is not None
         )
+        ticket_sequence = db.execute(
+            select(TicketSequence).where(
+                TicketSequence.tenant_id == demo_tenant,
+                TicketSequence.year == int(utcnow().year),
+            )
+        ).scalars().first()
+        assert ticket_sequence is not None
+        assert ticket_sequence.last_number == 32
+        invoice_sequence = db.execute(
+            select(InvoiceSequence).where(InvoiceSequence.year == int(utcnow().year))
+        ).scalars().first()
+        assert invoice_sequence is not None
+        assert invoice_sequence.last_number == 7
 
         assert db.execute(select(Customer).where(Customer.tenant_id == other_tenant)).scalars().first() is not None
         assert db.execute(select(Vehicle).where(Vehicle.tenant_id == other_tenant)).scalars().first() is not None
@@ -2663,10 +2756,15 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert reset_event.tenant_id is None
         assert isinstance(reset_event.details_json, dict)
         assert reset_event.details_json.get("dataset", {}).get("customers") == 25
-        assert reset_event.details_json.get("dataset", {}).get("tickets_open") == 4
-        assert reset_event.details_json.get("dataset", {}).get("tickets_complete") == 10
-        assert reset_event.details_json.get("dataset", {}).get("tickets_waste") == 4
+        assert reset_event.details_json.get("dataset", {}).get("tickets") == 32
+        assert reset_event.details_json.get("dataset", {}).get("tickets_open") == 7
+        assert reset_event.details_json.get("dataset", {}).get("tickets_complete") == 25
+        assert reset_event.details_json.get("dataset", {}).get("tickets_waste") == 8
+        assert reset_event.details_json.get("dataset", {}).get("invoices") == 7
         assert reset_event.details_json.get("dataset", {}).get("ewc_codes") == 4
+
+    assert demo_logo_file.is_file()
+    assert stale_logo_file.exists() is False
 
     with _client(app, base_url="https://admin.localhost") as admin_client:
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
@@ -2687,19 +2785,29 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
     with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.localhost") as demo_client:
         assert _login(demo_client, email="demo-admin@example.com", password="DemoPass123!") == 303
         demo_ticket_prefix = str(utcnow().year)[2:]
+        demo_invoice_prefix = f"INV-{demo_ticket_prefix}"
 
         dashboard = demo_client.get("/")
         assert dashboard.status_code == 200
         assert "dashboard-empty-state" not in dashboard.text
-        assert _dashboard_metric_value(dashboard.text, "open_tickets") == "4"
+        assert "Demo Ltd." in dashboard.text
+        assert "/static/uploads/company/demo-logo.png?v=" in dashboard.text
+        assert _dashboard_metric_value(dashboard.text, "open_tickets") == "7"
         assert _dashboard_metric_value(dashboard.text, "invoices_pending") == "2"
-        assert f"{demo_ticket_prefix}-00007" in dashboard.text
-        assert "INV-DEMO-001" in dashboard.text
+        assert "INV-DEMO" not in dashboard.text
+
+        branding_css = demo_client.get("/branding.css")
+        assert branding_css.status_code == 200
+        assert "--nav-bg: #242B3B;" in branding_css.text
+        assert "--primary: #2596BE;" in branding_css.text
+
+        logo_response = demo_client.get("/static/uploads/company/demo-logo.png")
+        assert logo_response.status_code == 200
+        assert logo_response.content
 
         tickets_page = demo_client.get("/tickets")
         assert tickets_page.status_code == 200
-        assert f"{demo_ticket_prefix}-00001" in tickets_page.text
-        assert f"{demo_ticket_prefix}-00014" in tickets_page.text
+        assert f"{demo_ticket_prefix}-00032" in tickets_page.text
 
         customers_page = demo_client.get("/customers")
         assert customers_page.status_code == 200
@@ -2709,20 +2817,32 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert "Claire Bennett" in customers_page.text
         assert "DGREGSON" in customers_page.text
         assert "CBENNETT" in customers_page.text
+        assert "NET 7" in customers_page.text
+        assert "NET 14" in customers_page.text
+        assert "NET 30" in customers_page.text
+        assert "Ad Hoc" in customers_page.text
         assert customers_page.text.count('class="pricing-indicator"') == 5
 
         vehicles_page = demo_client.get("/vehicles")
         assert vehicles_page.status_code == 200
         assert "YP24KDM" in vehicles_page.text
         assert "NX72KLU" in vehicles_page.text
+        assert "3,500 kg" in vehicles_page.text
+        assert "44,000 kg" in vehicles_page.text
+        assert "28,000 kg" not in vehicles_page.text
 
         products_page = demo_client.get("/products")
         assert products_page.status_code == 200
+        assert "Sales only" in products_page.text
+        assert "Basis" in products_page.text
         assert "Recycled Aggregate 20mm" in products_page.text
         assert "Screened Topsoil (m3)" in products_page.text
         assert "Ear Defenders" in products_page.text
         assert "High Vis Vest" in products_page.text
         assert "Compacted Bale Removal" in products_page.text
+        assert "Weight" in products_page.text
+        assert "Count" in products_page.text
+        assert "0%" in products_page.text
 
         products_new = demo_client.get("/products/new")
         assert products_new.status_code == 200
@@ -2737,8 +2857,8 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
 
         invoices_page = demo_client.get("/invoices")
         assert invoices_page.status_code == 200
-        assert "INV-DEMO-001" in invoices_page.text
-        assert "INV-DEMO-003" in invoices_page.text
+        assert f"{demo_invoice_prefix}-00007" in invoices_page.text
+        assert "INV-DEMO" not in invoices_page.text
 
     with _client(app, base_url="https://admin.localhost") as admin_client:
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
@@ -2753,7 +2873,7 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         )
         assert second_reset.status_code in {302, 303}
 
-    assert not (uploads_root / "tenants" / str(demo_tenant)).exists()
+    assert demo_logo_file.is_file()
 
     with SessionLocal() as db:
         assert db.execute(select(User).where(User.tenant_id == demo_tenant)).scalars().first() is None
