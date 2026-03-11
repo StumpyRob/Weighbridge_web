@@ -1175,13 +1175,13 @@ def _invoice_print_actions_context(
             "preview_url": f"/invoices/{invoice_id}/preview",
             "send_enabled": send_enabled,
             "send_label": "Print",
-            "send_button_variant": "secondary",
+            "send_button_variant": "primary",
             "preview_label": "Preview",
             "preview_button_variant": "secondary",
             "preview_button_id": "",
             "download_url": f"/invoices/{invoice_id}/pdf",
             "download_label": "Download PDF",
-            "download_button_variant": "primary",
+            "download_button_variant": "secondary",
             "no_default_message": "Printing is not configured. Contact admin.",
         }
     }

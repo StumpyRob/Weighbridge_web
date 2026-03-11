@@ -1,30 +1,22 @@
 {% set groups = document_groups | default([]) %}
 {% if groups %}
-  {% set panel_kind = documents_kind | default("frame") %}
   {% set panel_title = documents_title | default("Documents") %}
-  <section class="{{ panel_kind }} documents-panel documents-panel--{{ panel_kind }}">
-    {% if panel_kind == "card" %}
-      <header class="card-header">{{ panel_title }}</header>
-      <div class="card-body documents-panel__body">
-    {% else %}
-      <div class="frame-header"><h2>{{ panel_title }}</h2></div>
-      <div class="frame-body documents-panel__body">
-    {% endif %}
-        <div class="documents-panel__groups">
-          {% for group in groups %}
-            <section class="documents-group">
-              <div class="documents-group__label">{{ group.label }}</div>
-              <div class="documents-group__actions">
-                {% with print_actions = group.actions %}
-                  {% include "printing/_print_actions.html" %}
-                {% endwith %}
-              </div>
-              {% if group.hint %}
-                <p class="documents-group__hint muted">{{ group.hint }}</p>
-              {% endif %}
-            </section>
-          {% endfor %}
-        </div>
-      </div>
+  <section class="documents-panel documents-strip" aria-label="{{ panel_title }}">
+    <div class="documents-panel__title">{{ panel_title }}</div>
+    <div class="documents-panel__groups">
+      {% for group in groups %}
+        <section class="documents-group">
+          <div class="documents-group__label">{{ group.label }}</div>
+          <div class="documents-group__actions">
+            {% with print_actions = group.actions %}
+              {% include "printing/_print_actions.html" %}
+            {% endwith %}
+          </div>
+          {% if group.hint %}
+            <p class="documents-group__hint muted">{{ group.hint }}</p>
+          {% endif %}
+        </section>
+      {% endfor %}
+    </div>
   </section>
 {% endif %}

@@ -626,30 +626,41 @@ body.js-help-tooltips .help-tooltip {
 }
 
 .documents-panel {
+  margin: 0 0 1rem;
+  padding: 0.55rem 0.9rem 0.65rem;
+  border-top: 1px solid #d7dee7;
+  border-bottom: 1px solid #d7dee7;
+  background: #f8fafc;
+}
+
+.documents-panel__title {
+  margin-bottom: 0.45rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #475569;
+}
+
+.documents-strip {
   margin-bottom: 1rem;
 }
 
 .documents-panel__groups {
   display: grid;
-  gap: 0.15rem;
+  gap: 0.4rem;
 }
 
 .documents-group {
   display: grid;
-  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 12.5rem) minmax(0, 1fr);
   align-items: center;
   gap: 0.5rem 1rem;
-  padding: 0.25rem 0;
-}
-
-.documents-group + .documents-group {
-  margin-top: 0.35rem;
-  padding-top: 0.95rem;
-  border-top: 1px solid #e5e7eb;
+  padding: 0.1rem 0;
 }
 
 .documents-group__label {
-  font-size: 0.92rem;
+  font-size: 0.9rem;
   font-weight: 600;
   color: #111827;
 }
@@ -665,12 +676,13 @@ body.js-help-tooltips .help-tooltip {
 .documents-group .print-actions__form {
   display: flex;
   justify-content: flex-start;
+  gap: 0.45rem;
 }
 
 .documents-group__hint {
   grid-column: 2;
   margin: 0;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
 }
 
 .ticket-header-actions {
@@ -741,10 +753,15 @@ body.js-help-tooltips .help-tooltip {
 
   .documents-group {
     grid-template-columns: 1fr;
+    gap: 0.35rem;
   }
 
   .documents-group__hint {
     grid-column: auto;
+  }
+
+  .documents-panel {
+    padding-inline: 0.75rem;
   }
 
   .ticket-header-actions {

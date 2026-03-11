@@ -87,6 +87,13 @@
   {% endif %}
 </div>
 
+{% if is_complete and (print_status or printed) and print_job_id %}
+  <div class="ticket-print-status-inline" role="status">
+    Last action: Printed ticket to <strong>{{ printed_to or print_primary_destination_name or "Configured output" }}</strong>
+    (Job #<code>{{ print_job_id }}</code>)
+    {% if print_sent_at %}at {{ print_sent_at }}{% endif %}.
+  </div>
+{% endif %}
 {% if is_complete %}
   {% set document_groups = [
     {
@@ -104,16 +111,7 @@
       }
     ] %}
   {% endif %}
-  {% set documents_kind = "frame" %}
   {% include "printing/_documents_panel.html" %}
-{% endif %}
-
-{% if is_complete and (print_status or printed) and print_job_id %}
-  <div class="ticket-print-status-inline" role="status">
-    Last action: Printed ticket to <strong>{{ printed_to or print_primary_destination_name or "Configured output" }}</strong>
-    (Job #<code>{{ print_job_id }}</code>)
-    {% if print_sent_at %}at {{ print_sent_at }}{% endif %}.
-  </div>
 {% endif %}
 {# WIP_RECEIPTS UI toggle #}
 {% if is_complete and receipts_wip_enabled and (is_admin or DEV_MODE) %}

@@ -115,7 +115,7 @@ def _create_destination(
     return destination
 
 
-def test_invoice_detail_documents_frame_groups_invoice_actions(client, db_session):
+def test_invoice_detail_documents_strip_groups_invoice_actions(client, db_session):
     invoice = _create_invoice_with_line(db_session, invoice_no="INV-UI-1")
     template = _create_template(
         db_session,
@@ -135,6 +135,7 @@ def test_invoice_detail_documents_frame_groups_invoice_actions(client, db_sessio
     assert response.status_code == 200
     assert "Documents" in response.text
     assert "documents-panel" in response.text
+    assert "documents-strip" in response.text
     assert "ticket-header-actions" not in response.text
     assert "Preview" in response.text
     assert "Download PDF" in response.text

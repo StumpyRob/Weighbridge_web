@@ -300,7 +300,7 @@ def test_ticket_print_missing_default_destination_shows_admin_config_error(clien
     assert "Printing is not configured. Contact admin." in send.text
 
 
-def test_ticket_detail_documents_frame_groups_ticket_actions(client, db_session):
+def test_ticket_detail_documents_strip_groups_ticket_actions(client, db_session):
     ticket = _create_ticket(
         db_session,
         ticket_no="T-UI-1",
@@ -328,6 +328,7 @@ def test_ticket_detail_documents_frame_groups_ticket_actions(client, db_session)
     assert response.status_code == 200
     assert "Documents" in response.text
     assert "documents-panel" in response.text
+    assert "documents-strip" in response.text
     assert "ticket-header-actions" not in response.text
     assert "Preview" in response.text
     assert "Print" in response.text
