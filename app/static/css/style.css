@@ -2651,6 +2651,30 @@ details > summary:focus-visible {
   margin-bottom: 1.5rem;
 }
 
+.invoice-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 1rem;
+  margin-top: 0.55rem;
+  font-size: 0.88rem;
+}
+
+.invoice-meta-strip__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #4b5563;
+}
+
+.invoice-meta-strip__label {
+  color: #6b7280;
+}
+
+.invoice-meta-strip__value {
+  color: #1f2937;
+  font-weight: 500;
+}
+
 .invoice-back-link {
   margin-top: 1rem;
   margin-bottom: 0;
@@ -2677,6 +2701,15 @@ details > summary:focus-visible {
   margin-top: 0.35rem;
 }
 
+.invoice-summary-contact {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem 2rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
 .invoice-summary-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -2687,10 +2720,6 @@ details > summary:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-}
-
-.summary-item--wide {
-  grid-column: 1 / -1;
 }
 
 .summary-label {
@@ -3555,6 +3584,7 @@ details > summary:focus-visible {
     --flash-toast-top: 112px;
   }
 
+  .invoice-summary-contact,
   .invoice-summary-grid,
   .invoice-mark-paid-grid,
   .invoice-void-grid {

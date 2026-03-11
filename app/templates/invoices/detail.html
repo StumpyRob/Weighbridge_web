@@ -59,13 +59,23 @@
   <div class="page-header ticket-edit-header invoice-edit-header">
     <div class="page-header__content">
       <h1>Invoice {{ invoice.invoice_no }}</h1>
-      <div class="ticket-meta">
-        <span>
-          Status:
+      <div class="invoice-meta-strip" aria-label="Invoice metadata">
+        <span class="invoice-meta-strip__item">
+          <span class="invoice-meta-strip__label">Status:</span>
           <span class="invoice-status-badge invoice-status-badge--{{ invoice.status | lower }}">{{ invoice.status }}</span>
         </span>
-        <span>Invoice Date: {{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "-" }}</span>
-        <span>Due Date: {{ invoice.due_date.strftime("%d/%m/%Y") if invoice.due_date else "-" }}</span>
+        <span class="invoice-meta-strip__item">
+          <span class="invoice-meta-strip__label">Date:</span>
+          <span class="invoice-meta-strip__value">{{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "-" }}</span>
+        </span>
+        <span class="invoice-meta-strip__item">
+          <span class="invoice-meta-strip__label">Due:</span>
+          <span class="invoice-meta-strip__value">{{ invoice.due_date.strftime("%d/%m/%Y") if invoice.due_date else "-" }}</span>
+        </span>
+        <span class="invoice-meta-strip__item">
+          <span class="invoice-meta-strip__label">Total:</span>
+          <span class="invoice-meta-strip__value">&pound;{{ "{:,.2f}".format(invoice.gross_total or 0) }}</span>
+        </span>
       </div>
     </div>
     <div class="page-header__aside page-header__aside--documents">
@@ -96,23 +106,29 @@
   <section class="card">
     <header class="card-header">Summary</header>
     <div class="card-body">
-      <div class="invoice-summary-grid">
-        <div class="summary-item summary-item--wide">
+      <div class="invoice-summary-contact">
+        <div class="summary-item">
           <span class="summary-label">Customer</span>
           <span class="summary-value">{{ customer.name if customer else "-" }}</span>
-          {% if customer and customer.account_code %}
-            <div class="summary-detail-list">
-              <div>Account: {{ customer.account_code }}</div>
-            </div>
-          {% endif %}
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Account</span>
+          <span class="summary-value">{{ customer.account_code if customer and customer.account_code else "-" }}</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Address</span>
           {% if customer_billing_lines %}
             <div class="summary-detail-list">
               {% for line in customer_billing_lines %}
                 <div>{{ line }}</div>
               {% endfor %}
             </div>
+          {% else %}
+            <span class="summary-value">-</span>
           {% endif %}
         </div>
+      </div>
+      <div class="invoice-summary-grid">
         <div class="summary-item">
           <span class="summary-label">Date</span>
           <span class="summary-value">{{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "-" }}</span>

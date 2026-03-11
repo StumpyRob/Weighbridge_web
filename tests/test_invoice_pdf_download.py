@@ -137,16 +137,26 @@ def test_invoice_detail_documents_frame_groups_invoice_actions(client, db_sessio
     assert "documents-panel" in response.text
     assert "documents-panel--header" in response.text
     assert "page-header__aside--documents" in response.text
+    assert "invoice-meta-strip" in response.text
     assert "ticket-header-actions" not in response.text
     assert "Preview" in response.text
     assert "Download PDF" in response.text
     assert "Print" in response.text
+    assert "Status:" in response.text
+    assert "Date:" in response.text
+    assert "Due:" in response.text
+    assert "Total:" in response.text
+    assert "&pound;60.00" in response.text
     assert (
         "Browser printing may add URL/date/time headers/footers depending on your browser settings."
         not in response.text
     )
+    assert response.text.index("Invoice INV-UI-1") < response.text.index("invoice-meta-strip")
     assert response.text.index("Documents") < response.text.index("Summary")
+    assert "invoice-summary-contact" in response.text
+    assert response.text.index("invoice-summary-contact") < response.text.index("invoice-summary-grid")
     assert response.text.index("Summary") < response.text.index("Customer INV-UI-1")
+    assert response.text.index("Customer INV-UI-1") < response.text.index("1 Test Street")
     assert response.text.index("Summary") < response.text.index("1 Test Street")
     assert response.text.index("Void Invoice") < response.text.index('class="invoice-back-link"')
     assert "Advanced printing" not in response.text
