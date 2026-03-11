@@ -2609,8 +2609,8 @@ details > summary:focus-visible {
 }
 
 .invoice-back-link {
-  margin-top: 0;
-  margin-bottom: 1rem;
+  margin-top: 1rem;
+  margin-bottom: 0;
 }
 
 .invoice-detail .card {

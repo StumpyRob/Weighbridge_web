@@ -146,6 +146,7 @@ def test_invoice_detail_documents_frame_groups_invoice_actions(client, db_sessio
         not in response.text
     )
     assert response.text.index("Documents") < response.text.index("Summary")
+    assert response.text.index("Void Invoice") < response.text.index('class="invoice-back-link"')
     assert "Advanced printing" not in response.text
     assert "Preview Invoice" not in response.text
     assert "Print locally (browser)" not in response.text
