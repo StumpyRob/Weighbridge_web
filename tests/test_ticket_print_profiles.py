@@ -326,14 +326,14 @@ def test_ticket_detail_documents_strip_groups_ticket_actions(client, db_session)
     response = client.get(f"/tickets/{ticket.id}")
 
     assert response.status_code == 200
-    assert "Documents" in response.text
+    assert 'aria-label="Documents"' in response.text
     assert "documents-panel" in response.text
     assert "documents-strip" in response.text
     assert "page-header__aside--documents" in response.text
+    assert "documents-panel__title" not in response.text
     assert "ticket-header-actions" not in response.text
     assert "Preview" in response.text
     assert "Print" in response.text
-    assert response.text.index("Documents") < response.text.index("Ticket Info")
     assert "Preview Ticket" not in response.text
     assert "Print locally (browser)" not in response.text
     assert (

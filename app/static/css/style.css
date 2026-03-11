@@ -296,6 +296,10 @@ body {
 
 .page-header__aside--documents {
   margin-left: auto;
+  display: flex;
+  justify-content: flex-end;
+  flex: 1 1 31rem;
+  max-width: 38rem;
 }
 
 .tickets-list-header {
@@ -641,19 +645,10 @@ body.js-help-tooltips .help-tooltip {
 
 .documents-panel {
   margin: 0 0 1rem;
-  padding: 0.55rem 0.9rem 0.65rem;
-  border-top: 1px solid #d7dee7;
-  border-bottom: 1px solid #d7dee7;
+  padding: 0.7rem 0.95rem 0.75rem 1rem;
+  border: 1px solid #d7dee7;
+  border-radius: 14px 0 0 14px;
   background: #f8fafc;
-}
-
-.documents-panel__title {
-  margin-bottom: 0.45rem;
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #475569;
 }
 
 .documents-strip {
@@ -661,7 +656,7 @@ body.js-help-tooltips .help-tooltip {
 }
 
 .documents-panel--header {
-  width: min(100%, 30rem);
+  width: 100%;
   margin: 0;
 }
 
@@ -800,6 +795,7 @@ body.js-help-tooltips .help-tooltip {
 
   .page-header__aside--documents {
     margin-left: 0;
+    max-width: none;
   }
 
   .documents-panel--header {
