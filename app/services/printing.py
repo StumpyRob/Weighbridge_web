@@ -75,22 +75,6 @@ def _normalize_delivery_type(value: str | None) -> str:
     return mapping.get(normalized, DELIVERY_TYPE_PRINT_LOCAL_BROWSER)
 
 
-def resolve_destination_transport(destination: PrintDestination) -> tuple[PrintMode, dict]:
-    delivery_type = _normalize_delivery_type(destination.delivery_type)
-    delivery_config = (
-        dict(destination.delivery_config)
-        if isinstance(destination.delivery_config, dict)
-        else {}
-    )
-    if delivery_type == DELIVERY_TYPE_PRINT_NETWORK_RAW_9100:
-        return "network", delivery_config
-    if delivery_type == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
-        return "local_browser", delivery_config
-    if delivery_type == DELIVERY_TYPE_PRINT_NODE_HTTP:
-        return "local_node_http", delivery_config
-    raise ValueError(f"Unsupported destination delivery type: {destination.delivery_type}")
-
-
 def resolve_destination_template(
     db: Session,
     destination: PrintDestination,

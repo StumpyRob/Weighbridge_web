@@ -71,7 +71,6 @@ HELP_TEXT.update(
 
 HELP_TEXT.update(
     {
-        "printing_overview": "Printing uses destinations (where/how), templates (layout), and jobs (audit trail).",
         "printing_destination_concept": "A destination links one document type, one template, and one delivery method.",
         "printing_template_concept": "A print template controls what the output looks like and what fields are printed.",
         "printing_job_concept": "A print job is the delivery record created each time output is sent.",

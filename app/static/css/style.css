@@ -843,54 +843,6 @@ body.js-help-tooltips .help-tooltip {
   font-weight: 600;
 }
 
-.printing-overview-note {
-  margin: 0.75rem 0 1rem;
-  border-color: #d6dde7;
-  background: #f8fafc;
-}
-
-.printing-overview-note .frame-header {
-  background: #edf2f7;
-  border-bottom-color: #d6dde7;
-  color: #1f2937;
-}
-
-.printing-overview-note .frame-body {
-  background: #f8fafc;
-}
-
-.printing-overview-note__title {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  min-width: 0;
-}
-
-.printing-overview-note__title .help-inline {
-  margin-left: 0;
-}
-
-.printing-overview-note__body {
-  padding: 0.75rem 1rem;
-}
-
-.printing-overview-note .notice {
-  margin: 0 0 0.5rem;
-  padding: 0.35rem 0.5rem;
-  font-size: 0.84rem;
-}
-
-.printing-overview__list {
-  margin: 0;
-  padding-left: 1.1rem;
-  display: grid;
-  gap: 0.35rem;
-}
-
-.printing-overview__list li {
-  overflow-wrap: anywhere;
-}
-
 .template-vars-disclosure {
   border-color: #d6dde7;
   background: #f8fafc;
@@ -2695,10 +2647,6 @@ details > summary:focus-visible {
 
 .invoice-list-section {
   margin-top: var(--section-gap);
-}
-
-.invoice-billing-address {
-  margin-top: 0.35rem;
 }
 
 .invoice-summary-contact {

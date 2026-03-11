@@ -832,15 +832,6 @@ def _customer_adjustments(
     )
 
 
-def _adjustment_reason_label(reason_code: str | None) -> str:
-    if not reason_code:
-        return ""
-    for code, label in ADJUSTMENT_REASONS:
-        if code == reason_code:
-            return label
-    return reason_code.replace("_", " ").title()
-
-
 def _pence_to_money(value: int | None) -> Decimal | None:
     if value is None:
         return None

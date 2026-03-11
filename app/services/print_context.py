@@ -181,7 +181,3 @@ def build_print_base_context(db: Session | None) -> dict[str, Any]:
         "fmt_money": format_money,
         "fmt_date": format_date,
     }
-
-
-def default_print_base_context() -> dict[str, Any]:
-    return build_print_base_context(db=None)

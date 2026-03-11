@@ -1083,11 +1083,6 @@ def _latest_invoice_print_job_id(db: Session) -> int | None:
     return int(row[0]) if row else None
 
 
-def _invoice_destination_display_name(destination: PrintDestination) -> str:
-    description = str(destination.description or "").strip()
-    return description or str(destination.name or "").strip()
-
-
 def _load_active_invoice_destinations(db: Session) -> list[PrintDestination]:
     return list(
         db.execute(

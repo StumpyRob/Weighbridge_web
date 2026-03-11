@@ -97,7 +97,3 @@ def ensure_demo_tenant(db: Session, *, create_missing: bool = True) -> Tenant | 
     db.add(tenant)
     db.flush()
     return tenant
-
-
-def ensure_default_tenant(db: Session) -> Tenant | None:
-    return ensure_demo_tenant(db)

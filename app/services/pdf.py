@@ -32,13 +32,6 @@ from .print_render import render_template_content
 from .uploads import logo_file_from_web_path, resolve_company_logo_web_path
 
 INVOICE_TEMPLATE_DOCUMENT_TYPE = "INVOICE"
-INVOICE_DEFAULT_TEMPLATE_CODE = "INVOICE_SYSTEM"
-INVOICE_DEFAULT_TEMPLATE_DESCRIPTION = "Invoice (System)"
-INVOICE_LEGACY_TEMPLATE_CODES = (
-    "invoice_default",
-    "invoice_a4_default",
-    "inv_a4_standard",
-)
 _logger = logging.getLogger(__name__)
 _renderer_status_lock = Lock()
 _windows_dll_dir_handles: list[object] = []
@@ -130,10 +123,6 @@ def check_invoice_pdf_renderer(*, force: bool = False) -> PdfRendererStatus:
             _renderer_status = PdfRendererStatus(available=False, detail=detail)
             _logger.exception("WeasyPrint self-check failed; FALLBACK MODE ACTIVE.")
         return _renderer_status
-
-
-def invoice_pdf_renderer_status() -> PdfRendererStatus:
-    return check_invoice_pdf_renderer()
 
 
 def resolve_default_invoice_pdf_template(db: Session) -> PrintTemplate | None:
@@ -304,23 +293,6 @@ def render_invoice_template_content(
     )
 
 
-def render_invoice_template_preview_html(
-    db: Session,
-    *,
-    template_content: str,
-    invoice_id: int | None = None,
-) -> tuple[str, Invoice | None]:
-    context, invoice = build_invoice_pdf_preview_context(db, invoice_id=invoice_id)
-    return (
-        render_invoice_template_content(
-            template_content,
-            context,
-            db=db,
-        ),
-        invoice,
-    )
-
-
 def resolve_default_template_for_document_type(
     db: Session,
     *,
@@ -357,97 +329,6 @@ def resolve_default_template_for_document_type(
         return None
 
     return template
-
-
-def find_seeded_invoice_pdf_template(
-    db: Session,
-    *,
-    require_active: bool = False,
-) -> PrintTemplate | None:
-    candidate_codes = (
-        INVOICE_DEFAULT_TEMPLATE_CODE,
-        *INVOICE_LEGACY_TEMPLATE_CODES,
-    )
-    for code in candidate_codes:
-        template = (
-            db.execute(
-                select(PrintTemplate)
-                .where(
-                    func.lower(PrintTemplate.code) == code.lower(),
-                    PrintTemplate.document_type == INVOICE_TEMPLATE_DOCUMENT_TYPE,
-                )
-                .limit(1)
-            )
-            .scalars()
-            .first()
-        )
-        if template is None:
-            continue
-        if require_active and not bool(template.is_active):
-            continue
-        return template
-    return None
-
-
-def ensure_seed_invoice_pdf_template(db: Session) -> tuple[PrintTemplate, bool]:
-    changed = False
-    template = find_seeded_invoice_pdf_template(db, require_active=False)
-    if template is not None and template.code.lower() != INVOICE_DEFAULT_TEMPLATE_CODE.lower():
-        has_target_code = (
-            db.execute(
-                select(PrintTemplate.id)
-                .where(
-                    func.lower(PrintTemplate.code)
-                    == INVOICE_DEFAULT_TEMPLATE_CODE.lower(),
-                    PrintTemplate.document_type == INVOICE_TEMPLATE_DOCUMENT_TYPE,
-                )
-                .limit(1)
-            ).first()
-            is not None
-        )
-        if not has_target_code:
-            template.code = INVOICE_DEFAULT_TEMPLATE_CODE
-            changed = True
-    if template is None:
-        template = PrintTemplate(
-            code=INVOICE_DEFAULT_TEMPLATE_CODE,
-            description=INVOICE_DEFAULT_TEMPLATE_DESCRIPTION,
-            document_type=INVOICE_TEMPLATE_DOCUMENT_TYPE,
-            format="HTML",
-            content=_read_builtin_invoice_pdf_template_content(),
-            is_system=True,
-            is_active=True,
-        )
-        db.add(template)
-        db.flush()
-        changed = True
-    elif not bool(template.is_active):
-        template.is_active = True
-        changed = True
-    if template.description != INVOICE_DEFAULT_TEMPLATE_DESCRIPTION:
-        template.description = INVOICE_DEFAULT_TEMPLATE_DESCRIPTION
-        changed = True
-    if not bool(template.is_system):
-        template.is_system = True
-        changed = True
-    if not str(template.content or "").strip():
-        template.content = _read_builtin_invoice_pdf_template_content()
-        changed = True
-
-    return template, changed
-
-
-def _read_builtin_invoice_pdf_template_content() -> str:
-    candidate = Path(__file__).resolve().parents[1] / "templates" / "invoices" / "pdf.html"
-    if not candidate.is_file():
-        raise RuntimeError("Built-in invoice PDF template file is missing.")
-    try:
-        content = candidate.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise RuntimeError("Built-in invoice PDF template could not be read.") from exc
-    if not content:
-        raise RuntimeError("Built-in invoice PDF template is empty.")
-    return content
 
 
 def build_invoice_pdf_context(invoice_id: int, db: Session) -> dict[str, object]:
