@@ -1174,17 +1174,14 @@ def _invoice_print_actions_context(
             "send_url": f"/invoices/{invoice_id}/print",
             "preview_url": f"/invoices/{invoice_id}/preview",
             "send_enabled": send_enabled,
-            "send_label": "Print locally (browser)",
+            "send_label": "Print",
             "send_button_variant": "secondary",
-            "preview_label": "Preview Invoice",
+            "preview_label": "Preview",
             "preview_button_variant": "secondary",
             "preview_button_id": "",
             "download_url": f"/invoices/{invoice_id}/pdf",
             "download_label": "Download PDF",
             "download_button_variant": "primary",
-            "browser_print_note": (
-                "Browser printing may add URL/date/time headers/footers depending on your browser settings."
-            ),
             "no_default_message": "Printing is not configured. Contact admin.",
         }
     }

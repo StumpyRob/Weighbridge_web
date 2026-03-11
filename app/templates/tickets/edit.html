@@ -66,24 +66,8 @@
     {% endif %}
   </div>
   {% set is_complete = form.status == "COMPLETE" %}
-  <div class="actions btn-group ticket-header-actions">
-    {% if is_complete %}
-      <div class="ticket-header-actions__primary">
-        <div id="print-actions">
-          {% include "printing/_print_actions.html" %}
-        </div>
-        {% if show_wtn_actions and wtn_actions %}
-          <div id="wtn-actions">
-            {% with print_actions = wtn_actions %}
-              {% include "printing/_print_actions.html" %}
-            {% endwith %}
-          </div>
-        {% endif %}
-      </div>
-      {% if show_wtn_actions and wtn_disabled_hint %}
-        <p class="ticket-print-availability-hint muted">{{ wtn_disabled_hint }}</p>
-      {% endif %}
-    {% elif is_open %}
+  {% if is_open %}
+    <div class="actions btn-group ticket-header-actions">
       <div class="ticket-header-actions__primary">
         <button type="submit" class="btn btn--primary" form="ticket-form" name="action" value="complete">
           Mark Complete
@@ -99,9 +83,30 @@
       {% if allow_dev_preview %}
         <p class="ticket-print-availability-hint muted">DEV mode preview enabled (DRAFT banner shown).</p>
       {% endif %}
-    {% endif %}
-  </div>
+    </div>
+  {% endif %}
 </div>
+
+{% if is_complete %}
+  {% set document_groups = [
+    {
+      "label": "Ticket",
+      "actions": print_actions,
+      "hint": print_actions.no_default_message if not print_actions.send_enabled else "",
+    }
+  ] %}
+  {% if show_wtn_actions and wtn_actions %}
+    {% set document_groups = document_groups + [
+      {
+        "label": "Waste Transfer Note",
+        "actions": wtn_actions,
+        "hint": wtn_disabled_hint or (wtn_actions.no_default_message if not wtn_actions.send_enabled else ""),
+      }
+    ] %}
+  {% endif %}
+  {% set documents_kind = "frame" %}
+  {% include "printing/_documents_panel.html" %}
+{% endif %}
 
 {% if is_complete and (print_status or printed) and print_job_id %}
   <div class="ticket-print-status-inline" role="status">

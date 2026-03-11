@@ -270,20 +270,23 @@ def test_ticket_edit_shows_wtn_buttons_only_for_complete_waste(client, db_sessio
     sale_response = client.get(f"/tickets/{sale_ticket.id}")
 
     assert waste_response.status_code == 200
-    assert "Preview WTN" in waste_response.text
+    assert "Documents" in waste_response.text
+    assert "documents-panel" in waste_response.text
+    assert "ticket-header-actions" not in waste_response.text
+    assert "Waste Transfer Note" in waste_response.text
     assert "Download PDF" in waste_response.text
-    assert "Print locally (browser)" in waste_response.text
+    assert "Preview WTN" not in waste_response.text
+    assert "Print locally (browser)" not in waste_response.text
     assert (
         "Browser printing may add URL/date/time headers/footers depending on your browser settings."
         not in waste_response.text
     )
-    wtn_preview_pos = waste_response.text.index("Preview WTN")
-    wtn_download_pos = waste_response.text.index("Download PDF", wtn_preview_pos)
-    wtn_local_pos = waste_response.text.index("Print locally (browser)", wtn_preview_pos)
-    assert wtn_preview_pos < wtn_download_pos < wtn_local_pos
+    assert waste_response.text.count("Preview") >= 2
+    assert waste_response.text.count("Print") >= 2
 
     assert sale_response.status_code == 200
-    assert "Preview WTN" not in sale_response.text
+    assert "Documents" in sale_response.text
+    assert "Waste Transfer Note" not in sale_response.text
 
 
 def test_wtn_send_succeeds_and_creates_job_when_compliant(client, db_session):

@@ -625,6 +625,54 @@ body.js-help-tooltips .help-tooltip {
   flex-wrap: wrap;
 }
 
+.documents-panel {
+  margin-bottom: 1rem;
+}
+
+.documents-panel__groups {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.documents-group {
+  display: grid;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.25rem 0;
+}
+
+.documents-group + .documents-group {
+  margin-top: 0.35rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.documents-group__label {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.documents-group__actions {
+  min-width: 0;
+}
+
+.documents-group .print-actions {
+  width: 100%;
+}
+
+.documents-group .print-actions__form {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.documents-group__hint {
+  grid-column: 2;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
 .ticket-header-actions {
   display: flex;
   flex-direction: column;
@@ -689,6 +737,14 @@ body.js-help-tooltips .help-tooltip {
 
   .print-actions__form > .btn {
     flex: 1 1 auto;
+  }
+
+  .documents-group {
+    grid-template-columns: 1fr;
+  }
+
+  .documents-group__hint {
+    grid-column: auto;
   }
 
   .ticket-header-actions {
@@ -2541,17 +2597,8 @@ details > summary:focus-visible {
 }
 
 .invoice-back-link {
-  margin-top: -0.9rem;
+  margin-top: 0;
   margin-bottom: 1rem;
-}
-
-.invoice-header-actions {
-  align-items: flex-end;
-}
-
-.invoice-header-actions .ticket-header-actions__primary {
-  align-items: center;
-  justify-content: flex-end;
 }
 
 .invoice-detail .card {

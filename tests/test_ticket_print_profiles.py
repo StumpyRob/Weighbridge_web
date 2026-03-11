@@ -300,7 +300,7 @@ def test_ticket_print_missing_default_destination_shows_admin_config_error(clien
     assert "Printing is not configured. Contact admin." in send.text
 
 
-def test_ticket_header_print_actions_are_operator_simple(client, db_session):
+def test_ticket_detail_documents_frame_groups_ticket_actions(client, db_session):
     ticket = _create_ticket(
         db_session,
         ticket_no="T-UI-1",
@@ -326,12 +326,17 @@ def test_ticket_header_print_actions_are_operator_simple(client, db_session):
     response = client.get(f"/tickets/{ticket.id}")
 
     assert response.status_code == 200
-    assert "Preview Ticket" in response.text
-    assert "Print locally (browser)" in response.text
+    assert "Documents" in response.text
+    assert "documents-panel" in response.text
+    assert "ticket-header-actions" not in response.text
+    assert "Preview" in response.text
+    assert "Print" in response.text
+    assert response.text.index("Documents") < response.text.index("Ticket Info")
+    assert "Preview Ticket" not in response.text
+    assert "Print locally (browser)" not in response.text
     assert (
         "Browser printing may add URL/date/time headers/footers depending on your browser settings."
         not in response.text
     )
-    assert response.text.index("Preview Ticket") < response.text.index("Print locally (browser)")
     assert "Download PDF" not in response.text
     assert "Advanced printing" not in response.text

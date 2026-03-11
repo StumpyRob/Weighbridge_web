@@ -72,19 +72,23 @@
         </div>
       {% endif %}
     </div>
-    <div class="actions btn-group ticket-header-actions invoice-header-actions">
-      <div id="print-actions" class="ticket-header-actions__primary">
-        {% include "printing/_print_actions.html" %}
-      </div>
-    </div>
   </div>
+  {% set document_groups = [
+    {
+      "label": "Invoice",
+      "actions": print_actions,
+      "hint": print_actions.no_default_message if not print_actions.send_enabled else "",
+    }
+  ] %}
+  {% set documents_kind = "card" %}
+  {% include "printing/_documents_panel.html" %}
   <div class="invoice-back-link">
     <a class="btn btn--ghost btn--sm" href="/invoices">Back</a>
   </div>
 
   {% if invoice.status == "VOID" %}
     <div class="alert alert--warning">
-      <strong>Warning:</strong> This invoice is VOID. Download PDF, Preview Invoice, and Print locally (browser) remain available for audit/reference only.
+      <strong>Warning:</strong> This invoice is VOID. Preview, Download PDF, and Print remain available for audit/reference only.
     </div>
   {% endif %}
 
