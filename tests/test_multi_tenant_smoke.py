@@ -51,6 +51,7 @@ from app.models.base import utcnow
 from app.routes.tickets import _generate_ticket_no
 from app.seed import seed_print_destinations, seed_print_templates
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD
+from app.services.credit import customer_outstanding_total
 from app.services.print_context import build_print_base_context
 from app.services.print_payload import _company_logo_src
 from app.services.system_setup import (
@@ -2346,9 +2347,9 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
     )
 
     def assert_demo_dataset_counts(db) -> None:
-        assert _tenant_row_count(db, Customer, demo_tenant) == 20
+        assert _tenant_row_count(db, Customer, demo_tenant) == 25
         assert _tenant_row_count(db, Vehicle, demo_tenant) == 16
-        assert _tenant_row_count(db, Product, demo_tenant) == 12
+        assert _tenant_row_count(db, Product, demo_tenant) == 15
         assert _tenant_row_count(db, Container, demo_tenant) == 4
         assert _tenant_row_count(db, Driver, demo_tenant) == 4
         assert _tenant_row_count(db, Haulier, demo_tenant) == 3
@@ -2356,6 +2357,53 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert _tenant_row_count(db, Ticket, demo_tenant) == 14
         assert _tenant_row_count(db, Invoice, demo_tenant) == 3
         assert _tenant_row_count(db, InvoiceLine, demo_tenant) == 6
+        assert {
+            value
+            for value in db.execute(
+                select(Customer.invoice_frequency).where(Customer.tenant_id == demo_tenant)
+            ).scalars()
+        } == {None, "WEEKLY", "MONTHLY", "ADHOC"}
+        assert (
+            db.execute(
+                select(func.count(Customer.id)).where(
+                    Customer.tenant_id == demo_tenant,
+                    Customer.on_stop.is_(True),
+                )
+            ).scalar_one()
+            == 2
+        )
+        assert db.execute(
+            select(func.count(Customer.id)).where(
+                Customer.tenant_id == demo_tenant,
+                Customer.do_not_invoice.is_(True),
+            )
+        ).scalar_one() > 0
+        assert db.execute(
+            select(func.count(Customer.id)).where(
+                Customer.tenant_id == demo_tenant,
+                Customer.must_have_po.is_(True),
+            )
+        ).scalar_one() > 0
+        assert db.execute(
+            select(func.count(Customer.id)).where(
+                Customer.tenant_id == demo_tenant,
+                Customer.is_cash_account.is_(True),
+            )
+        ).scalar_one() > 0
+        demo_customers = db.execute(
+            select(Customer).where(Customer.tenant_id == demo_tenant)
+        ).scalars().all()
+        customers_with_outstanding = [
+            customer
+            for customer in demo_customers
+            if customer_outstanding_total(db, customer.id) > Decimal("0.00")
+        ]
+        assert len(customers_with_outstanding) == 5
+        assert any(
+            bool(customer.on_stop)
+            and customer_outstanding_total(db, customer.id) > (customer.credit_limit or Decimal("0.00"))
+            for customer in demo_customers
+        )
         assert (
             db.execute(
                 select(func.count(Ticket.id)).where(
@@ -2514,7 +2562,7 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert reset_event.user_id == superadmin_id
         assert reset_event.tenant_id is None
         assert isinstance(reset_event.details_json, dict)
-        assert reset_event.details_json.get("dataset", {}).get("customers") == 20
+        assert reset_event.details_json.get("dataset", {}).get("customers") == 25
         assert reset_event.details_json.get("dataset", {}).get("tickets_open") == 4
         assert reset_event.details_json.get("dataset", {}).get("tickets_complete") == 10
         assert reset_event.details_json.get("dataset", {}).get("tickets_waste") == 4
@@ -2537,34 +2585,45 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
 
     with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.localhost") as demo_client:
         assert _login(demo_client, email="demo-admin@example.com", password="DemoPass123!") == 303
+        demo_ticket_prefix = str(utcnow().year)[2:]
 
         dashboard = demo_client.get("/")
         assert dashboard.status_code == 200
         assert "dashboard-empty-state" not in dashboard.text
         assert _dashboard_metric_value(dashboard.text, "open_tickets") == "4"
         assert _dashboard_metric_value(dashboard.text, "invoices_pending") == "2"
-        assert "DMO-00007" in dashboard.text
+        assert f"{demo_ticket_prefix}-00007" in dashboard.text
         assert "INV-DEMO-001" in dashboard.text
 
         tickets_page = demo_client.get("/tickets")
         assert tickets_page.status_code == 200
-        assert "DMO-00001" in tickets_page.text
-        assert "DMO-00014" in tickets_page.text
+        assert f"{demo_ticket_prefix}-00001" in tickets_page.text
+        assert f"{demo_ticket_prefix}-00014" in tickets_page.text
 
         customers_page = demo_client.get("/customers")
         assert customers_page.status_code == 200
         assert "Beacon Aggregates Ltd" in customers_page.text
         assert "Meadow Industrial Park" in customers_page.text
+        assert "Oliver Reed Groundworks" in customers_page.text
 
         vehicles_page = demo_client.get("/vehicles")
         assert vehicles_page.status_code == 200
-        assert "BX24AAA" in vehicles_page.text
-        assert "BX24AAQ" in vehicles_page.text
+        assert "YP24KDM" in vehicles_page.text
+        assert "NX72KLU" in vehicles_page.text
 
         products_page = demo_client.get("/products")
         assert products_page.status_code == 200
         assert "Recycled Aggregate 20mm" in products_page.text
+        assert "Screened Topsoil (m3)" in products_page.text
+        assert "Ear Defenders" in products_page.text
+        assert "High Vis Vest" in products_page.text
         assert "Compacted Bale Removal" in products_page.text
+
+        product_groups_page = demo_client.get("/products/groups")
+        assert product_groups_page.status_code == 200
+        assert "Aggregate Sales" in product_groups_page.text
+        assert "General Sales" in product_groups_page.text
+        assert "4000" in product_groups_page.text
 
         invoices_page = demo_client.get("/invoices")
         assert invoices_page.status_code == 200

@@ -36,6 +36,7 @@ VOID_REASON_TYPE_INVOICE = "INVOICE"
 SEED_UNITS = [
     {"name": "KG", "unit_type": "WEIGHT"},
     {"name": "Tonnes", "unit_type": "WEIGHT"},
+    {"name": "m3", "unit_type": "COUNT"},
     {"name": "Each", "unit_type": "COUNT"},
     {"name": "Load", "unit_type": "COUNT"},
 ]

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from ..models import (
     Container,
     Customer,
+    CustomerAdjustment,
     Destination,
     Driver,
     Haulier,
@@ -40,9 +41,101 @@ CUSTOMER_NAMES = (
     "Delta Skip Hire", "Urban Paving Contractors", "Cedar Landscaping Ltd",
     "Bluewater Demolition Ltd", "Westgate Farms", "Stonebrook Developments",
     "Apex Utilities Ltd", "Kingswell Homes", "Redbridge Plant Hire",
-    "Falcon Site Services", "Meadow Industrial Park",
+    "Falcon Site Services", "Meadow Industrial Park", "Oliver Reed Groundworks",
+    "Amelia Clarke Landscaping", "George Bennett Fencing",
+    "Charlotte Mason Interiors", "Harry Whitfield Joinery",
 )
 CUSTOMER_CITIES = ("Leeds", "Wakefield", "Bradford", "York", "Huddersfield", "Doncaster")
+DEMO_CUSTOMER_INVOICE_FREQUENCIES = (
+    "MONTHLY",
+    None,
+    "WEEKLY",
+    "ADHOC",
+    "MONTHLY",
+    "WEEKLY",
+    None,
+    "ADHOC",
+    "MONTHLY",
+    "ADHOC",
+    "WEEKLY",
+    None,
+    "MONTHLY",
+    "ADHOC",
+    "WEEKLY",
+    None,
+    "MONTHLY",
+    "ADHOC",
+    "WEEKLY",
+    None,
+    "MONTHLY",
+    "WEEKLY",
+    None,
+    "ADHOC",
+    "MONTHLY",
+)
+DEMO_CUSTOMER_VAT_NUMBERS = (
+    "GB213478965",
+    "GB384920157",
+    "GB512764893",
+    "GB728315409",
+    "GB441982673",
+    "GB693247185",
+    "GB257836914",
+    "GB819463752",
+    "GB364185927",
+    "GB905742618",
+    "GB478219536",
+    "GB632958471",
+    "GB286471359",
+    "GB754193826",
+    "GB391625784",
+    "GB847361295",
+    "GB529184367",
+    "GB618273954",
+    "GB472836159",
+    "GB783519642",
+    "GB245718936",
+    "GB691425378",
+    "GB358962741",
+    "GB874213569",
+    "GB426597183",
+)
+DEMO_CUSTOMER_EMAILS = (
+    "accounts@beaconaggregates.co.uk",
+    "finance@greenwayconstruction.co.uk",
+    "invoices@riversidecivils.co.uk",
+    "accounts@northsiderecycling.co.uk",
+    "office@oakfieldestates.co.uk",
+    "accounts@premiergroundworks.co.uk",
+    "billing@silverlinewaste.co.uk",
+    "accounts@hilltopbuilders.co.uk",
+    "invoices@metrosurfacing.co.uk",
+    "accounts@deltaskiphire.co.uk",
+    "finance@urbanpaving.co.uk",
+    "accounts@cedarlandscaping.co.uk",
+    "billing@bluewaterdemo.co.uk",
+    "office@westgatefarms.co.uk",
+    "accounts@stonebrookdev.co.uk",
+    "finance@apexutilities.co.uk",
+    "accounts@kingswellhomes.co.uk",
+    "billing@redbridgeplant.co.uk",
+    "accounts@falconsiteservices.co.uk",
+    "finance@meadowindustrial.co.uk",
+    "accounts@oliverreedgroundworks.co.uk",
+    "billing@ameliaclarkelandscaping.co.uk",
+    "accounts@georgebennettfencing.co.uk",
+    "finance@charlottemasoninteriors.co.uk",
+    "accounts@harrywhitfieldjoinery.co.uk",
+)
+DEMO_CUSTOMER_ON_STOP_INDEXES = frozenset({4, 17})
+DEMO_CUSTOMER_DO_NOT_INVOICE_INDEXES = frozenset({3, 8, 15, 20})
+DEMO_CUSTOMER_MUST_HAVE_PO_INDEXES = frozenset({1, 6, 9, 13, 19})
+DEMO_CUSTOMER_CASH_ACCOUNT_INDEXES = frozenset({10, 14, 18})
+DEMO_CUSTOMER_OWED_ADJUSTMENTS = (
+    ("CUST005", "486.20", "Opening balance carried forward from prior month."),
+    ("CUST017", "8425.00", "Account on hold while overdue balance is cleared."),
+    ("CUST022", "1295.80", "Retained balance awaiting remittance advice."),
+)
 HAULIERS = (
     ("Atlas Haulage", "OB1234567"),
     ("Pennine Bulk Logistics", "OB2234567"),
@@ -57,14 +150,16 @@ DESTINATIONS = (
     "Greenfield Batching Plant",
 )
 PRODUCT_GROUPS = (
-    ("AGG", "Aggregate Sales", "Bulk sale materials"),
-    ("WST", "Waste Receivals", "Waste intake and disposal"),
-    ("HRE", "Hire and Services", "Count-based services"),
-    ("REC", "Recovered Outputs", "Recovered site materials"),
+    ("AGG", "Aggregate Sales", "Bulk sale materials", "4000"),
+    ("WST", "Waste Receivals", "Waste intake and disposal", "4100"),
+    ("HRE", "Hire and Services", "Count-based services", "4200"),
+    ("REC", "Recovered Outputs", "Recovered site materials", "4300"),
+    ("GNS", "General Sales", "Retail counter and sundry sales", "4400"),
 )
 PRODUCTS = (
     ("AGG20", "Recycled Aggregate 20mm", True, "AGG", "Tonnes", "14.50", "North Yard Stockpile", False),
     ("TOPSOIL", "Screened Topsoil", True, "REC", "Tonnes", "18.00", "Greenfield Batching Plant", False),
+    ("TOPM3", "Screened Topsoil (m3)", True, "REC", "m3", "32.00", "Greenfield Batching Plant", False),
     ("BUILDSAND", "Building Sand", True, "AGG", "Tonnes", "12.25", "Greenfield Batching Plant", False),
     ("TYPE1", "MOT Type 1", True, "AGG", "Tonnes", "11.80", "North Yard Stockpile", False),
     ("MIXEDW", "Mixed Builders Waste", False, "WST", "Tonnes", "102.00", "Riverside Landfill", True),
@@ -72,32 +167,51 @@ PRODUCTS = (
     ("WOODW", "Wood Waste Disposal", False, "WST", "Tonnes", "88.00", "Polymer Recovery Plant", False),
     ("BAG50", "50kg Bagged Aggregate", True, "HRE", "Each", "4.75", "North Yard Stockpile", False),
     ("PALLET", "Pallet Collection", True, "HRE", "Each", "22.00", "Greenfield Batching Plant", False),
+    ("EARDEF", "Ear Defenders", True, "GNS", "Each", "8.95", "North Yard Stockpile", False),
+    ("HIVIS", "High Vis Vest", True, "GNS", "Each", "5.50", "North Yard Stockpile", False),
     ("LOADDEL", "Loose Load Delivery", True, "HRE", "Load", "68.50", "Greenfield Batching Plant", False),
     ("SKIP8", "8 Yard Skip Exchange", False, "HRE", "Each", "265.00", "Riverside Landfill", True),
     ("BALES", "Compacted Bale Removal", False, "WST", "Load", "38.00", "Polymer Recovery Plant", False),
 )
 TICKETS = (
-    ("DMO-00001", "today", "08:05", "OPEN", "OUTWARD", "SALE", "CUST002", "BX24AAB", "AGG20", "Atlas Haulage", "Liam Carter", "North Yard Stockpile", "18120", None, None, None, None),
-    ("DMO-00002", "today", "09:20", "OPEN", "OUTWARD", "SALE", "CUST005", "BX24AAC", "BAG50", "Pennine Bulk Logistics", "Jade Foster", "Greenfield Batching Plant", None, None, "12", None, None),
-    ("DMO-00003", "yesterday", "15:10", "OPEN", "INWARD", "WASTEIN", "CUST003", "BX24AAD", "MIXEDW", "Swift Transport Services", "Ryan Patel", "Riverside Landfill", "16540", None, None, "RORO 20 Yard - C", ("170904", "17 09 04", "Mixed construction and demolition waste")),
-    ("DMO-00004", "earlier", "07:55", "OPEN", "OUTWARD", "WASTEOUT", "CUST004", "BX24AAE", "SKIP8", "Atlas Haulage", "Sophie Briggs", "Riverside Landfill", None, None, "1", "Skip 8 Yard - A", ("150106", "15 01 06", "Mixed packaging")),
-    ("DMO-00005", "today", "10:15", "COMPLETE", "OUTWARD", "SALE", "CUST001", "BX24AAF", "AGG20", "Atlas Haulage", "Liam Carter", "North Yard Stockpile", "31120", "13280", None, None, None),
-    ("DMO-00006", "today", "11:05", "COMPLETE", "OUTWARD", "SALE", "CUST001", "BX24AAG", "TOPSOIL", "Pennine Bulk Logistics", "Jade Foster", "Greenfield Batching Plant", "28840", "14620", None, None, None),
-    ("DMO-00007", "today", "13:20", "COMPLETE", "OUTWARD", "SALE", "CUST006", "BX24AAH", "BAG50", "Swift Transport Services", "Ryan Patel", "North Yard Stockpile", None, None, "24", None, None),
-    ("DMO-00008", "yesterday", "08:40", "COMPLETE", "INWARD", "WASTEIN", "CUST007", "BX24AAI", "MIXEDW", "Atlas Haulage", "Sophie Briggs", "Riverside Landfill", "26920", "14260", None, "RORO 35 Yard - D", ("170904", "17 09 04", "Mixed construction and demolition waste")),
-    ("DMO-00009", "yesterday", "09:25", "COMPLETE", "OUTWARD", "SALE", "CUST008", "BX24AAJ", "LOADDEL", "Pennine Bulk Logistics", "Liam Carter", "Greenfield Batching Plant", None, None, "1", None, None),
-    ("DMO-00010", "yesterday", "14:15", "COMPLETE", "OUTWARD", "SALE", "CUST009", "BX24AAK", "BUILDSAND", "Swift Transport Services", "Jade Foster", "Greenfield Batching Plant", "29480", "13880", None, None, None),
-    ("DMO-00011", "earlier", "10:10", "COMPLETE", "OUTWARD", "WASTEOUT", "CUST007", "BX24AAL", "BALES", "Atlas Haulage", "Ryan Patel", "Polymer Recovery Plant", None, None, "6", "Skip 12 Yard - B", ("150106", "15 01 06", "Mixed packaging")),
-    ("DMO-00012", "earlier", "11:45", "COMPLETE", "OUTWARD", "SALE", "CUST011", "BX24AAM", "PALLET", "Pennine Bulk Logistics", "Sophie Briggs", "Greenfield Batching Plant", None, None, "8", None, None),
-    ("DMO-00013", "earlier", "14:20", "COMPLETE", "OUTWARD", "SALE", "CUST009", "BX24AAN", "TYPE1", "Swift Transport Services", "Liam Carter", "North Yard Stockpile", "34160", "14280", None, None, None),
-    ("DMO-00014", "earlier", "16:05", "COMPLETE", "OUTWARD", "SALE", "CUST013", "BX24AAP", "LOADDEL", "Atlas Haulage", "Jade Foster", "Greenfield Batching Plant", None, None, "3", None, None),
+    (1, "today", "08:05", "OPEN", "OUTWARD", "SALE", "CUST002", "YX24LNF", "AGG20", "Atlas Haulage", "Liam Carter", "North Yard Stockpile", "18120", None, None, None, None),
+    (2, "today", "09:20", "OPEN", "OUTWARD", "SALE", "CUST005", "YA24RVO", "BAG50", "Pennine Bulk Logistics", "Jade Foster", "Greenfield Batching Plant", None, None, "12", None, None),
+    (3, "yesterday", "15:10", "OPEN", "INWARD", "WASTEIN", "CUST003", "YC24HSL", "MIXEDW", "Swift Transport Services", "Ryan Patel", "Riverside Landfill", "16540", None, None, "RORO 20 Yard - C", ("170904", "17 09 04", "Mixed construction and demolition waste")),
+    (4, "earlier", "07:55", "OPEN", "OUTWARD", "WASTEOUT", "CUST004", "YG73TWN", "SKIP8", "Atlas Haulage", "Sophie Briggs", "Riverside Landfill", None, None, "1", "Skip 8 Yard - A", ("150106", "15 01 06", "Mixed packaging")),
+    (5, "today", "10:15", "COMPLETE", "OUTWARD", "SALE", "CUST001", "YN21KPX", "AGG20", "Atlas Haulage", "Liam Carter", "North Yard Stockpile", "31120", "13280", None, None, None),
+    (6, "today", "11:05", "COMPLETE", "OUTWARD", "SALE", "CUST001", "YJ68MVT", "TOPSOIL", "Pennine Bulk Logistics", "Jade Foster", "Greenfield Batching Plant", "28840", "14620", None, None, None),
+    (7, "today", "13:20", "COMPLETE", "OUTWARD", "SALE", "CUST006", "YD24BXR", "BAG50", "Swift Transport Services", "Ryan Patel", "North Yard Stockpile", None, None, "24", None, None),
+    (8, "yesterday", "08:40", "COMPLETE", "INWARD", "WASTEIN", "CUST007", "YS22FLD", "MIXEDW", "Atlas Haulage", "Sophie Briggs", "Riverside Landfill", "26920", "14260", None, "RORO 35 Yard - D", ("170904", "17 09 04", "Mixed construction and demolition waste")),
+    (9, "yesterday", "09:25", "COMPLETE", "OUTWARD", "SALE", "CUST008", "YH70CGE", "LOADDEL", "Pennine Bulk Logistics", "Liam Carter", "Greenfield Batching Plant", None, None, "1", None, None),
+    (10, "yesterday", "14:15", "COMPLETE", "OUTWARD", "SALE", "CUST009", "YY24NKO", "BUILDSAND", "Swift Transport Services", "Jade Foster", "Greenfield Batching Plant", "29480", "13880", None, None, None),
+    (11, "earlier", "10:10", "COMPLETE", "OUTWARD", "WASTEOUT", "CUST007", "YK19VLP", "BALES", "Atlas Haulage", "Ryan Patel", "Polymer Recovery Plant", None, None, "6", "Skip 12 Yard - B", ("150106", "15 01 06", "Mixed packaging")),
+    (12, "earlier", "11:45", "COMPLETE", "OUTWARD", "SALE", "CUST011", "YO24TFS", "PALLET", "Pennine Bulk Logistics", "Sophie Briggs", "Greenfield Batching Plant", None, None, "8", None, None),
+    (13, "earlier", "14:20", "COMPLETE", "OUTWARD", "SALE", "CUST009", "YE23MJN", "TYPE1", "Swift Transport Services", "Liam Carter", "North Yard Stockpile", "34160", "14280", None, None, None),
+    (14, "earlier", "16:05", "COMPLETE", "OUTWARD", "SALE", "CUST013", "YR24WDX", "LOADDEL", "Atlas Haulage", "Jade Foster", "Greenfield Batching Plant", None, None, "3", None, None),
 )
 INVOICES = (
-    ("INV-DEMO-001", "CUST001", ("DMO-00005", "DMO-00006"), "today", "OPEN"),
-    ("INV-DEMO-002", "CUST007", ("DMO-00008", "DMO-00011"), "yesterday", "OPEN"),
-    ("INV-DEMO-003", "CUST009", ("DMO-00010", "DMO-00013"), "earlier", "PAID"),
+    ("INV-DEMO-001", "CUST001", (5, 6), "today", "OPEN"),
+    ("INV-DEMO-002", "CUST007", (8, 11), "yesterday", "OPEN"),
+    ("INV-DEMO-003", "CUST009", (10, 13), "earlier", "PAID"),
 )
-VEHICLE_REGISTRATIONS = tuple(f"BX24AA{suffix}" for suffix in "ABCDEFGHIJKLMNPQ")
+VEHICLE_REGISTRATIONS = (
+    "YP24KDM",
+    "YX24LNF",
+    "YA24RVO",
+    "YC24HSL",
+    "YG73TWN",
+    "YN21KPX",
+    "YJ68MVT",
+    "YD24BXR",
+    "YS22FLD",
+    "YH70CGE",
+    "YY24NKO",
+    "YK19VLP",
+    "YO24TFS",
+    "YE23MJN",
+    "YR24WDX",
+    "NX72KLU",
+)
 VEHICLE_TYPE_CYCLE = ("8 Wheeler", "Artic", "6 Wheeler", "Van", "Tractor & Trailer")
 
 
@@ -105,9 +219,14 @@ def _money(value: object) -> Decimal:
     return Decimal(str(value)).quantize(MONEY_PLACES, rounding=ROUND_HALF_UP)
 
 
+def _demo_ticket_no(number: int, *, year: int) -> str:
+    return f"{str(year)[2:]}-{int(number):05d}"
+
+
 def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
     tenant_id = int(tenant_id)
     today = utcnow().replace(second=0, microsecond=0).date()
+    ticket_year = today.year
     yesterday = today - timedelta(days=1)
     start_of_week = today - timedelta(days=today.weekday())
     days = {
@@ -121,7 +240,7 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
         raise RuntimeError("Demo dataset seed requires an existing tenant yard.")
 
     units = {str(unit.name or "").strip(): unit for unit in db.execute(select(Unit).where(Unit.tenant_id == tenant_id)).scalars()}
-    missing_units = [name for name in ("Tonnes", "Each", "Load") if name not in units]
+    missing_units = [name for name in ("Tonnes", "m3", "Each", "Load") if name not in units]
     if missing_units:
         raise RuntimeError(f"Demo dataset seed requires units: {', '.join(missing_units)}.")
 
@@ -143,35 +262,52 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
     containers = {name: Container(tenant_id=tenant_id, name=name, is_active=True) for name in CONTAINERS}
     destinations = {name: Destination(tenant_id=tenant_id, name=name, is_active=True) for name in DESTINATIONS}
     product_groups = {
-        code: ProductGroup(tenant_id=tenant_id, code=code, name=name, description=description, is_active=True)
-        for code, name, description in PRODUCT_GROUPS
+        code: ProductGroup(
+            tenant_id=tenant_id,
+            code=code,
+            name=name,
+            description=description,
+            nominal_code_default=nominal_code_default,
+            is_active=True,
+        )
+        for code, name, description, nominal_code_default in PRODUCT_GROUPS
     }
     db.add_all([*hauliers.values(), *drivers.values(), *containers.values(), *destinations.values(), *product_groups.values()])
 
     customers: dict[str, Customer] = {}
     for index, name in enumerate(CUSTOMER_NAMES, start=1):
         credit_limit = _money(Decimal("2500.00") + (Decimal(index) * Decimal("250.00")))
+        invoice_frequency = DEMO_CUSTOMER_INVOICE_FREQUENCIES[index - 1]
         payment_days = 14 if index % 5 == 0 else 30
+        vat_number = DEMO_CUSTOMER_VAT_NUMBERS[index - 1]
+        invoice_email = DEMO_CUSTOMER_EMAILS[index - 1]
+        on_stop = index in DEMO_CUSTOMER_ON_STOP_INDEXES
+        do_not_invoice = index in DEMO_CUSTOMER_DO_NOT_INVOICE_INDEXES
+        cash_account = index in DEMO_CUSTOMER_CASH_ACCOUNT_INDEXES
+        must_have_po = index in DEMO_CUSTOMER_MUST_HAVE_PO_INDEXES
         code = f"CUST{index:03d}"
         customers[code] = Customer(
             tenant_id=tenant_id,
             account_code=code,
             name=name,
-            invoice_email=f"accounts{index:02d}@demo-weighbridge.test",
+            invoice_email=invoice_email,
             phone=f"0113 555 {1000 + index:04d}",
             address_line1=f"{20 + index} Meridian Way",
             address_line2="Industrial Estate" if index % 3 == 0 else None,
             city=CUSTOMER_CITIES[(index - 1) % len(CUSTOMER_CITIES)],
             postcode=f"LS{(index % 8) + 1} {10 + index}AB",
             country="United Kingdom",
-            vat_number=f"GB{900000000 + index}",
+            vat_number=vat_number,
             credit_limit=credit_limit,
             credit_limit_pence=int(credit_limit * 100),
-            is_cash_account=index in {10, 18},
-            cash_account=index in {10, 18},
+            on_stop=on_stop,
+            do_not_invoice=do_not_invoice,
+            is_cash_account=cash_account,
+            cash_account=cash_account,
+            invoice_frequency=invoice_frequency,
             payment_terms=f"{payment_days} Days",
             payment_terms_days=payment_days,
-            must_have_po=index in {1, 9, 13},
+            must_have_po=must_have_po,
         )
     db.add_all(customers.values())
     db.flush()
@@ -224,7 +360,7 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
 
     ticket_rows: dict[str, tuple[Ticket, Product, Vehicle]] = {}
     for (
-        ticket_no,
+        ticket_number,
         day_key,
         time_text,
         status,
@@ -245,6 +381,7 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
         customer = customers[customer_code]
         vehicle = vehicles[registration]
         product, unit = products[product_code]
+        ticket_no = _demo_ticket_no(ticket_number, year=ticket_year)
         gross_kg = Decimal(gross_text) if gross_text else None
         tare_kg = Decimal(tare_text) if tare_text else None
         qty = Decimal(qty_text) if qty_text else None
@@ -360,7 +497,8 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
         db.flush()
 
         net_total = vat_total = Decimal("0.00")
-        for ticket_no in ticket_numbers:
+        for ticket_number in ticket_numbers:
+            ticket_no = _demo_ticket_no(ticket_number, year=ticket_year)
             ticket, product, vehicle = ticket_rows[ticket_no]
             line_net = _money(ticket.total or 0)
             line_vat = _money(line_net * tax_fraction)
@@ -385,6 +523,20 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
         invoice.net_total = _money(net_total)
         invoice.vat_total = _money(vat_total)
         invoice.gross_total = _money(net_total + vat_total)
+
+    for offset, (customer_code, amount_text, note) in enumerate(DEMO_CUSTOMER_OWED_ADJUSTMENTS, start=1):
+        customer = customers[customer_code]
+        db.add(
+            CustomerAdjustment(
+                tenant_id=tenant_id,
+                customer_id=customer.id,
+                amount_decimal=_money(amount_text),
+                reason="MANUAL_CORRECTION",
+                note=note,
+                created_by_user_id=None,
+                created_at=datetime.combine(days["earlier"], time(hour=9, minute=offset * 7)),
+            )
+        )
 
     return {
         "customers": len(CUSTOMER_NAMES),
