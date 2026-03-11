@@ -85,12 +85,7 @@
       </div>
     {% endif %}
   </div>
-  {% if is_complete %}
-    <div class="page-header__aside page-header__aside--documents">
-      {% set documents_panel_classes = "documents-panel--header" %}
-      {% include "printing/_documents_panel.html" %}
-    </div>
-  {% elif is_open %}
+  {% if is_open %}
     <div class="actions btn-group ticket-header-actions">
       <div class="ticket-header-actions__primary">
         <button type="submit" class="btn btn--primary" form="ticket-form" name="action" value="complete">
@@ -117,6 +112,10 @@
     (Job #<code>{{ print_job_id }}</code>)
     {% if print_sent_at %}at {{ print_sent_at }}{% endif %}.
   </div>
+{% endif %}
+{% if is_complete %}
+  {% set documents_kind = "frame" %}
+  {% include "printing/_documents_panel.html" %}
 {% endif %}
 {# WIP_RECEIPTS UI toggle #}
 {% if is_complete and receipts_wip_enabled and (is_admin or DEV_MODE) %}

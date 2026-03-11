@@ -289,19 +289,6 @@ body {
   min-width: 0;
 }
 
-.page-header__aside {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
-.page-header__aside--documents {
-  margin-left: auto;
-  display: flex;
-  justify-content: flex-end;
-  flex: 1 1 31rem;
-  max-width: 38rem;
-}
-
 .tickets-list-header {
   margin-bottom: 0;
 }
@@ -644,34 +631,17 @@ body.js-help-tooltips .help-tooltip {
 }
 
 .documents-panel {
-  margin: 0 0 1rem;
-  padding: 0.7rem 0.95rem 0.75rem 1rem;
-  border: 1px solid #d7dee7;
-  border-radius: 14px 0 0 14px;
-  background: #f8fafc;
-}
-
-.documents-strip {
   margin-bottom: 1rem;
 }
 
-.documents-panel--header {
-  width: 100%;
-  margin: 0;
-}
-
-.documents-panel--header .documents-panel__groups {
-  gap: 0.35rem;
-}
-
-.documents-panel--header .documents-group {
-  grid-template-columns: minmax(0, 9.75rem) minmax(0, 1fr);
-  gap: 0.4rem 0.85rem;
+.documents-panel__body {
+  padding-top: 0.9rem;
+  padding-bottom: 0.9rem;
 }
 
 .documents-panel__groups {
   display: grid;
-  gap: 0.4rem;
+  gap: 0.15rem;
 }
 
 .documents-group {
@@ -679,7 +649,13 @@ body.js-help-tooltips .help-tooltip {
   grid-template-columns: minmax(0, 12.5rem) minmax(0, 1fr);
   align-items: center;
   gap: 0.5rem 1rem;
-  padding: 0.1rem 0;
+  padding: 0.25rem 0;
+}
+
+.documents-group + .documents-group {
+  margin-top: 0.35rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid #e5e7eb;
 }
 
 .documents-group__label {
@@ -781,25 +757,6 @@ body.js-help-tooltips .help-tooltip {
 
   .documents-group__hint {
     grid-column: auto;
-  }
-
-  .documents-panel {
-    padding-inline: 0.75rem;
-  }
-
-  .page-header__content,
-  .page-header__aside {
-    flex-basis: 100%;
-    width: 100%;
-  }
-
-  .page-header__aside--documents {
-    margin-left: 0;
-    max-width: none;
-  }
-
-  .documents-panel--header {
-    width: 100%;
   }
 
   .ticket-header-actions {

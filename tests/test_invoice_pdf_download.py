@@ -115,7 +115,7 @@ def _create_destination(
     return destination
 
 
-def test_invoice_detail_documents_strip_groups_invoice_actions(client, db_session):
+def test_invoice_detail_documents_frame_groups_invoice_actions(client, db_session):
     invoice = _create_invoice_with_line(db_session, invoice_no="INV-UI-1")
     template = _create_template(
         db_session,
@@ -133,11 +133,10 @@ def test_invoice_detail_documents_strip_groups_invoice_actions(client, db_sessio
     response = client.get(f"/invoices/{invoice.id}")
 
     assert response.status_code == 200
-    assert 'aria-label="Documents"' in response.text
+    assert "Documents" in response.text
     assert "documents-panel" in response.text
-    assert "documents-strip" in response.text
-    assert "page-header__aside--documents" in response.text
-    assert "documents-panel__title" not in response.text
+    assert "documents-panel--card" in response.text
+    assert "page-header__aside--documents" not in response.text
     assert "ticket-header-actions" not in response.text
     assert "Preview" in response.text
     assert "Download PDF" in response.text
@@ -146,6 +145,7 @@ def test_invoice_detail_documents_strip_groups_invoice_actions(client, db_sessio
         "Browser printing may add URL/date/time headers/footers depending on your browser settings."
         not in response.text
     )
+    assert response.text.index("Documents") < response.text.index("Summary")
     assert "Advanced printing" not in response.text
     assert "Preview Invoice" not in response.text
     assert "Print locally (browser)" not in response.text

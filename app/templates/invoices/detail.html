@@ -79,11 +79,9 @@
         </div>
       {% endif %}
     </div>
-    <div class="page-header__aside page-header__aside--documents">
-      {% set documents_panel_classes = "documents-panel--header" %}
-      {% include "printing/_documents_panel.html" %}
-    </div>
   </div>
+  {% set documents_kind = "card" %}
+  {% include "printing/_documents_panel.html" %}
   <div class="invoice-back-link">
     <a class="btn btn--ghost btn--sm" href="/invoices">Back</a>
   </div>
