@@ -135,8 +135,8 @@ def test_invoice_detail_documents_frame_groups_invoice_actions(client, db_sessio
     assert response.status_code == 200
     assert "Documents" in response.text
     assert "documents-panel" in response.text
-    assert "documents-panel--card" in response.text
-    assert "page-header__aside--documents" not in response.text
+    assert "documents-panel--header" in response.text
+    assert "page-header__aside--documents" in response.text
     assert "ticket-header-actions" not in response.text
     assert "Preview" in response.text
     assert "Download PDF" in response.text
@@ -146,6 +146,8 @@ def test_invoice_detail_documents_frame_groups_invoice_actions(client, db_sessio
         not in response.text
     )
     assert response.text.index("Documents") < response.text.index("Summary")
+    assert response.text.index("Summary") < response.text.index("Customer INV-UI-1")
+    assert response.text.index("Summary") < response.text.index("1 Test Street")
     assert response.text.index("Void Invoice") < response.text.index('class="invoice-back-link"')
     assert "Advanced printing" not in response.text
     assert "Preview Invoice" not in response.text

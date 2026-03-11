@@ -272,8 +272,8 @@ def test_ticket_edit_shows_wtn_buttons_only_for_complete_waste(client, db_sessio
     assert waste_response.status_code == 200
     assert "Documents" in waste_response.text
     assert "documents-panel" in waste_response.text
-    assert "documents-panel--frame" in waste_response.text
-    assert "page-header__aside--documents" not in waste_response.text
+    assert "documents-panel--header" in waste_response.text
+    assert "page-header__aside--documents" in waste_response.text
     assert "ticket-header-actions" not in waste_response.text
     assert "Waste Transfer Note" in waste_response.text
     assert "Download PDF" in waste_response.text
@@ -288,7 +288,7 @@ def test_ticket_edit_shows_wtn_buttons_only_for_complete_waste(client, db_sessio
 
     assert sale_response.status_code == 200
     assert "Documents" in sale_response.text
-    assert "documents-panel--frame" in sale_response.text
+    assert "documents-panel--header" in sale_response.text
     assert "Waste Transfer Note" not in sale_response.text
 
 

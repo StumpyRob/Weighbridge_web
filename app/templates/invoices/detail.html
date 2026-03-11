@@ -67,21 +67,12 @@
         <span>Invoice Date: {{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "-" }}</span>
         <span>Due Date: {{ invoice.due_date.strftime("%d/%m/%Y") if invoice.due_date else "-" }}</span>
       </div>
-      <p class="muted">{{ customer.name if customer else "" }}</p>
-      {% if customer and customer.account_code %}
-        <p class="muted">Account: {{ customer.account_code }}</p>
-      {% endif %}
-      {% if customer_billing_lines %}
-        <div class="muted invoice-billing-address">
-          {% for line in customer_billing_lines %}
-            <div>{{ line }}</div>
-          {% endfor %}
-        </div>
-      {% endif %}
+    </div>
+    <div class="page-header__aside page-header__aside--documents">
+      {% set documents_panel_classes = "documents-panel--header" %}
+      {% include "printing/_documents_panel.html" %}
     </div>
   </div>
-  {% set documents_kind = "card" %}
-  {% include "printing/_documents_panel.html" %}
 
   {% if invoice.status == "VOID" %}
     <div class="alert alert--warning">
@@ -106,6 +97,22 @@
     <header class="card-header">Summary</header>
     <div class="card-body">
       <div class="invoice-summary-grid">
+        <div class="summary-item summary-item--wide">
+          <span class="summary-label">Customer</span>
+          <span class="summary-value">{{ customer.name if customer else "-" }}</span>
+          {% if customer and customer.account_code %}
+            <div class="summary-detail-list">
+              <div>Account: {{ customer.account_code }}</div>
+            </div>
+          {% endif %}
+          {% if customer_billing_lines %}
+            <div class="summary-detail-list">
+              {% for line in customer_billing_lines %}
+                <div>{{ line }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
         <div class="summary-item">
           <span class="summary-label">Date</span>
           <span class="summary-value">{{ invoice.invoice_date.strftime("%d/%m/%Y") if invoice.invoice_date else "-" }}</span>
