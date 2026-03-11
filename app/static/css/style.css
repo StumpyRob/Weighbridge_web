@@ -1106,6 +1106,18 @@ body.js-help-tooltips .help-tooltip {
   color: #1d4ed8;
 }
 
+.product-flag--weight {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.product-flag--count {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
 .product-flag--empty {
   border-color: transparent;
   background: transparent;

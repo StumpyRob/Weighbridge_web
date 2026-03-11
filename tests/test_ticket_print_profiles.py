@@ -330,7 +330,7 @@ def test_ticket_header_print_actions_are_operator_simple(client, db_session):
     assert "Print locally (browser)" in response.text
     assert (
         "Browser printing may add URL/date/time headers/footers depending on your browser settings."
-        in response.text
+        not in response.text
     )
     assert response.text.index("Preview Ticket") < response.text.index("Print locally (browser)")
     assert "Download PDF" not in response.text

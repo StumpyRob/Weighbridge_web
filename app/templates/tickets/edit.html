@@ -96,10 +96,9 @@
           </form>
         {% endif %}
       </div>
-      <p class="ticket-print-availability-hint muted">
-        Printing available once ticket is complete.
-        {% if allow_dev_preview %}DEV mode preview enabled (DRAFT banner shown).{% endif %}
-      </p>
+      {% if allow_dev_preview %}
+        <p class="ticket-print-availability-hint muted">DEV mode preview enabled (DRAFT banner shown).</p>
+      {% endif %}
     {% endif %}
   </div>
 </div>

@@ -4,9 +4,17 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.15.3 - 2026-03-11
+
 ### FIX
+- Expand and polish the demo tenant reset dataset with realistic customers, vehicles, products, EWC links, tickets, invoices, branding defaults, and lookup data so demo environments feel like active live systems after reset.
+- Resolve tenant backend issues across tenant-scoped numbering, uniqueness, setup, branding, migration, and reset flows so tenant admin and demo reseed paths stay consistent.
+- Tidy product and ticket UI regressions by rendering product basis values as colored tags and removing obsolete ticket print notices.
 - Add build stamp in UI footer: `Build v<version> (commit <shortsha>)`.
 - Add release discipline docs (`VERSION`, changelog workflow, contribution guide).
+
+### TEST
+- Re-run demo reset, EWC import, products list, ticket print, and tenant smoke regressions after the demo seed and tenant backend fixes.
 
 ## v0.15.2 - 2026-03-07
 

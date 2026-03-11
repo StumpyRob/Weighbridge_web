@@ -52,6 +52,7 @@ def test_products_list_renders_unit_and_tax_labels_not_raw_ids(client, db_sessio
     assert unit.name in row_html
     assert "Sales only" in row_html
     assert "Count" in row_html
+    assert 'class="product-flag product-flag--count"' in row_html
     assert "20%" in row_html
     assert f">{unit.id}<" not in row_html
     assert f">{tax_rate.id}<" not in row_html
@@ -88,6 +89,8 @@ def test_products_list_shows_weight_and_count_basis_values(client, db_session):
     assert response.status_code == 200
     assert "Count" in response.text
     assert "Weight" in response.text
+    assert 'class="product-flag product-flag--count"' in response.text
+    assert 'class="product-flag product-flag--weight"' in response.text
 
 
 def test_units_list_actions_use_small_button_class(client, db_session):

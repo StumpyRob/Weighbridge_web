@@ -275,7 +275,7 @@ def test_ticket_edit_shows_wtn_buttons_only_for_complete_waste(client, db_sessio
     assert "Print locally (browser)" in waste_response.text
     assert (
         "Browser printing may add URL/date/time headers/footers depending on your browser settings."
-        in waste_response.text
+        not in waste_response.text
     )
     wtn_preview_pos = waste_response.text.index("Preview WTN")
     wtn_download_pos = waste_response.text.index("Download PDF", wtn_preview_pos)

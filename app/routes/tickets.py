@@ -1614,9 +1614,6 @@ def _ticket_print_actions_context(
             "preview_label": "Preview Ticket",
             "preview_button_variant": "secondary",
             "preview_button_id": "preview_browser_print_button",
-            "browser_print_note": (
-                "Browser printing may add URL/date/time headers/footers depending on your browser settings."
-            ),
             "no_default_message": "Printing is not configured. Contact admin.",
         },
     }
@@ -1658,9 +1655,6 @@ def _ticket_wtn_actions_context(
             "download_url": f"/tickets/{ticket.id}/wtn/pdf",
             "download_label": "Download PDF",
             "download_button_variant": "primary",
-            "browser_print_note": (
-                "Browser printing may add URL/date/time headers/footers depending on your browser settings."
-            ),
             "no_default_message": "Sending is not set up yet. Ask an admin.",
         },
         "wtn_disabled_hint": (

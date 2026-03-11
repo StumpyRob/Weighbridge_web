@@ -88,11 +88,11 @@
           </td>
           <td class="basis-col">
             {% if unit_type == "WEIGHT" %}
-              Weight
+              <span class="product-flag product-flag--weight">Weight</span>
             {% elif unit_type == "COUNT" %}
-              Count
+              <span class="product-flag product-flag--count">Count</span>
             {% else %}
-              &mdash;
+              <span class="product-flag product-flag--empty">&mdash;</span>
             {% endif %}
           </td>
           <td class="unit-col">
