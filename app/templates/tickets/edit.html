@@ -47,8 +47,28 @@
 {% endblock %}
 
 {% block content %}
+{% set is_complete = form.status == "COMPLETE" %}
+{% set document_groups = [] %}
+{% if is_complete %}
+  {% set document_groups = [
+    {
+      "label": "Ticket",
+      "actions": print_actions,
+      "hint": print_actions.no_default_message if not print_actions.send_enabled else "",
+    }
+  ] %}
+  {% if show_wtn_actions and wtn_actions %}
+    {% set document_groups = document_groups + [
+      {
+        "label": "Waste Transfer Note",
+        "actions": wtn_actions,
+        "hint": wtn_disabled_hint or (wtn_actions.no_default_message if not wtn_actions.send_enabled else ""),
+      }
+    ] %}
+  {% endif %}
+{% endif %}
 <div class="page-header ticket-edit-header">
-  <div>
+  <div class="page-header__content">
     <h1>Ticket {{ ticket.ticket_no }}</h1>
     <div class="ticket-meta">
       <span class="status-text status-{{ form.status | lower }}">{{ form.status }}</span>
@@ -65,8 +85,12 @@
       </div>
     {% endif %}
   </div>
-  {% set is_complete = form.status == "COMPLETE" %}
-  {% if is_open %}
+  {% if is_complete %}
+    <div class="page-header__aside page-header__aside--documents">
+      {% set documents_panel_classes = "documents-panel--header" %}
+      {% include "printing/_documents_panel.html" %}
+    </div>
+  {% elif is_open %}
     <div class="actions btn-group ticket-header-actions">
       <div class="ticket-header-actions__primary">
         <button type="submit" class="btn btn--primary" form="ticket-form" name="action" value="complete">
@@ -93,25 +117,6 @@
     (Job #<code>{{ print_job_id }}</code>)
     {% if print_sent_at %}at {{ print_sent_at }}{% endif %}.
   </div>
-{% endif %}
-{% if is_complete %}
-  {% set document_groups = [
-    {
-      "label": "Ticket",
-      "actions": print_actions,
-      "hint": print_actions.no_default_message if not print_actions.send_enabled else "",
-    }
-  ] %}
-  {% if show_wtn_actions and wtn_actions %}
-    {% set document_groups = document_groups + [
-      {
-        "label": "Waste Transfer Note",
-        "actions": wtn_actions,
-        "hint": wtn_disabled_hint or (wtn_actions.no_default_message if not wtn_actions.send_enabled else ""),
-      }
-    ] %}
-  {% endif %}
-  {% include "printing/_documents_panel.html" %}
 {% endif %}
 {# WIP_RECEIPTS UI toggle #}
 {% if is_complete and receipts_wip_enabled and (is_admin or DEV_MODE) %}
@@ -617,7 +622,9 @@
           </div>
 
           <div class="field field-estimated-value">
-            <label class="label-muted">Estimated charge</label>
+            <label class="label-muted">
+              Estimated charge{{ help("Final price confirmed on invoice", "ticket-estimated-charge-help") }}
+            </label>
             <div class="readonly readonly-muted estimate-value">
               {% if ticket.total is not none %}
                 {{ "{:.2f}".format(ticket.total) }}
@@ -625,7 +632,6 @@
                 —
               {% endif %}
             </div>
-            <div class="hint">Final price confirmed on invoice</div>
           </div>
 
           <div class="field">
@@ -665,12 +671,13 @@
           </div>
 
           <div class="field field-estimated-value">
-            <label for="total" class="label-muted">Estimated charge</label>
+            <label for="total" class="label-muted">
+              Estimated charge{{ help("Final price confirmed on invoice", "ticket-estimated-charge-help") }}
+            </label>
             <div class="input-prefix">
               <span class="input-prefix__symbol" aria-hidden="true">£</span>
               <input type="text" id="total" name="total" value="{{ form.total }}" placeholder="-" class="input-muted input-with-prefix estimate-value" readonly />
             </div>
-            <div class="hint">Final price confirmed on invoice</div>
           </div>
         </div>
 

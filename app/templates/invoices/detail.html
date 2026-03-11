@@ -49,8 +49,15 @@
 
 {% block content %}
 <div class="invoice-detail">
+  {% set document_groups = [
+    {
+      "label": "Invoice",
+      "actions": print_actions,
+      "hint": print_actions.no_default_message if not print_actions.send_enabled else "",
+    }
+  ] %}
   <div class="page-header ticket-edit-header invoice-edit-header">
-    <div>
+    <div class="page-header__content">
       <h1>Invoice {{ invoice.invoice_no }}</h1>
       <div class="ticket-meta">
         <span>
@@ -72,15 +79,11 @@
         </div>
       {% endif %}
     </div>
+    <div class="page-header__aside page-header__aside--documents">
+      {% set documents_panel_classes = "documents-panel--header" %}
+      {% include "printing/_documents_panel.html" %}
+    </div>
   </div>
-  {% set document_groups = [
-    {
-      "label": "Invoice",
-      "actions": print_actions,
-      "hint": print_actions.no_default_message if not print_actions.send_enabled else "",
-    }
-  ] %}
-  {% include "printing/_documents_panel.html" %}
   <div class="invoice-back-link">
     <a class="btn btn--ghost btn--sm" href="/invoices">Back</a>
   </div>

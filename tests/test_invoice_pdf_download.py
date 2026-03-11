@@ -136,6 +136,7 @@ def test_invoice_detail_documents_strip_groups_invoice_actions(client, db_sessio
     assert "Documents" in response.text
     assert "documents-panel" in response.text
     assert "documents-strip" in response.text
+    assert "page-header__aside--documents" in response.text
     assert "ticket-header-actions" not in response.text
     assert "Preview" in response.text
     assert "Download PDF" in response.text

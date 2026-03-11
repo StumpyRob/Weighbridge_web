@@ -105,8 +105,10 @@ def test_ticket_edit_shows_tooltips_and_no_inline_dont_invoice_hint(client, db_s
     assert 'id="ticket-waste-producer-help"' in response.text
     assert 'id="ticket-ewc-code-help"' in response.text
     assert 'id="ticket-ewc-hazard-help"' in response.text
+    assert 'id="ticket-estimated-charge-help"' in response.text
     assert 'id="ticket-void-reason-help"' in response.text
     assert "Use for cash/card counter sales. No customer invoice generated." in response.text
+    assert '<div class="hint">Final price confirmed on invoice</div>' not in response.text
     assert "Locked on for walk-in sale." not in response.text
 
 

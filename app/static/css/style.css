@@ -284,6 +284,20 @@ body {
   margin: 0;
 }
 
+.page-header__content {
+  flex: 1 1 22rem;
+  min-width: 0;
+}
+
+.page-header__aside {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.page-header__aside--documents {
+  margin-left: auto;
+}
+
 .tickets-list-header {
   margin-bottom: 0;
 }
@@ -646,6 +660,20 @@ body.js-help-tooltips .help-tooltip {
   margin-bottom: 1rem;
 }
 
+.documents-panel--header {
+  width: min(100%, 30rem);
+  margin: 0;
+}
+
+.documents-panel--header .documents-panel__groups {
+  gap: 0.35rem;
+}
+
+.documents-panel--header .documents-group {
+  grid-template-columns: minmax(0, 9.75rem) minmax(0, 1fr);
+  gap: 0.4rem 0.85rem;
+}
+
 .documents-panel__groups {
   display: grid;
   gap: 0.4rem;
@@ -762,6 +790,20 @@ body.js-help-tooltips .help-tooltip {
 
   .documents-panel {
     padding-inline: 0.75rem;
+  }
+
+  .page-header__content,
+  .page-header__aside {
+    flex-basis: 100%;
+    width: 100%;
+  }
+
+  .page-header__aside--documents {
+    margin-left: 0;
+  }
+
+  .documents-panel--header {
+    width: 100%;
   }
 
   .ticket-header-actions {

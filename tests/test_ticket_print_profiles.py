@@ -329,6 +329,7 @@ def test_ticket_detail_documents_strip_groups_ticket_actions(client, db_session)
     assert "Documents" in response.text
     assert "documents-panel" in response.text
     assert "documents-strip" in response.text
+    assert "page-header__aside--documents" in response.text
     assert "ticket-header-actions" not in response.text
     assert "Preview" in response.text
     assert "Print" in response.text

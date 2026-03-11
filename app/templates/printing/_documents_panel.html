@@ -1,7 +1,8 @@
 {% set groups = document_groups | default([]) %}
 {% if groups %}
   {% set panel_title = documents_title | default("Documents") %}
-  <section class="documents-panel documents-strip" aria-label="{{ panel_title }}">
+  {% set panel_classes = documents_panel_classes | default("") %}
+  <section class="documents-panel documents-strip{% if panel_classes %} {{ panel_classes }}{% endif %}" aria-label="{{ panel_title }}">
     <div class="documents-panel__title">{{ panel_title }}</div>
     <div class="documents-panel__groups">
       {% for group in groups %}
