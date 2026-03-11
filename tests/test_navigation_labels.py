@@ -62,4 +62,4 @@ def test_paid_invoice_shows_back_to_invoices(client, db_session):
     response = client.get(f"/invoices/{invoice.id}")
 
     assert response.status_code == 200
-    assert 'href="/invoices">Back' in response.text
+    assert 'class="btn btn--secondary" href="/invoices">Back' in response.text

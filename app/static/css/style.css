@@ -3751,12 +3751,16 @@ details > summary:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem 0.7rem;
-  font-size: 0.85rem;
+  margin-top: auto;
 }
 
-.admin-hub-links a {
+.admin-hub-links a:not(.btn) {
   color: #1f2a44;
   text-decoration: underline;
+}
+
+.admin-hub-links .btn {
+  text-decoration: none;
 }
 
 @media (min-width: 720px) {

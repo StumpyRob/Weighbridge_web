@@ -31,9 +31,9 @@ def test_admin_printing_nav_shows_destinations_templates_jobs(client):
     response = client.get("/admin/printing/destinations")
 
     assert response.status_code == 200
-    assert ">Destinations<" in response.text
-    assert ">Templates<" in response.text
-    assert ">Jobs<" in response.text
+    assert 'class="btn btn--secondary is-active" href="/admin/printing/destinations">Destinations' in response.text
+    assert 'class="btn btn--secondary" href="/admin/printing/templates">Templates' in response.text
+    assert 'class="btn btn--secondary" href="/admin/printing/jobs">Jobs' in response.text
     assert ">Printers<" not in response.text
 
 
