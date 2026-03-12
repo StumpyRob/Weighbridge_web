@@ -4,9 +4,9 @@ FastAPI starter with SQLAlchemy, Alembic, and Postgres.
 
 ## Latest release
 
-`v0.16` is the current release baseline. Multi-tenant support is now in place, the recent backlog of fixes has been cleared, and the latest work has focused on tenant isolation, audit coverage, dashboard/reporting improvements, and a broad UI polish pass.
+`v0.16.1` is the current release baseline. This release adds the first tenant-aware AI assistant implementation with platform-managed OpenAI configuration, tenant-level AI controls in platform admin, and the migration-chain fix required for clean deployment upgrades.
 
-From this point onward, planned work is expected to be additional features and enhancements rather than core remediation of the current tenant and UI rollout.
+Multi-tenant support remains in place, the recent backlog of tenant/UI fixes is closed out, and follow-up work from here is expected to focus on AI expansion and additional product features rather than core rollout remediation.
 
 ## Local setup
 

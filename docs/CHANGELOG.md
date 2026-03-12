@@ -4,6 +4,23 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.16.1 - 2026-03-12
+
+### RELEASE
+- `v0.16.1` delivers the first platform-managed AI assistant release for tenant workspaces, with tenant-level enable/disable controls, per-tenant model selection, and a read-only assistant path designed for operational queries.
+- This release also corrects the Alembic migration chain so production deployments resolve to a single head and `alembic upgrade head` runs cleanly.
+
+### ADD
+- Add OpenAI-backed assistant backend using `gpt-5-mini` as the platform default, with tenant-scoped operational context for open tickets, uninvoiced work, today’s weight total, unpaid invoices, and recent activity.
+- Add platform admin tenant controls for `AI Assistant Enabled` and tenant model selection, including safe default guidance and runtime enforcement of tenant-level AI availability.
+
+### FIX
+- Repair the AI settings migration parent revision so the Alembic graph is linear again and Railway-style deploys no longer fail on multiple heads.
+
+### TEST
+- Verify tenant AI assistant runtime, tenant model selection, disabled-tenant rejection, read-only guardrails, and platform admin tenant AI settings.
+- Verify `python -m alembic heads`, `python -m alembic history`, and `python -m alembic upgrade head` against a clean smoke database.
+
 ## v0.16 - 2026-03-12
 
 ### RELEASE
