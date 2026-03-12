@@ -72,7 +72,7 @@ body.marketing-landing-page::before {
   letter-spacing: -0.03em;
   color: var(--marketing-text);
   max-width: 14ch;
-  margin: 0 auto 4rem;
+  margin: 0 auto;
   animation: marketing-fade-up 0.6s 0.2s ease both;
   opacity: 0;
 }
@@ -82,6 +82,18 @@ body.marketing-landing-page::before {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+.marketing-hero__spacer {
+  display: block;
+  width: 100%;
+  height: 2rem;
+  line-height: 2rem;
+}
+
+.marketing-hero__spacer--tight {
+  height: 1.6rem;
+  line-height: 1.6rem;
 }
 
 .marketing-chips {
@@ -117,8 +129,8 @@ body.marketing-landing-page::before {
   align-items: center;
   justify-content: center;
   width: 100%;
-  margin-top: 2.5rem;
-  margin-bottom: 5rem;
+  margin-top: 0;
+  margin-bottom: 0;
   animation: marketing-fade-up 0.6s 0.55s ease both;
   opacity: 0;
 }
@@ -157,21 +169,6 @@ body.marketing-landing-page::before {
   outline-offset: 3px;
 }
 
-.marketing-footer {
-  position: relative;
-  z-index: 1;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-  padding: 1.5rem 2rem;
-  text-align: center;
-  animation: marketing-fade-up 0.5s 0.7s ease both;
-  opacity: 0;
-}
-
-.marketing-footer__note {
-  font-size: 0.78rem;
-  color: rgba(255, 255, 255, 0.2);
-}
-
 @keyframes marketing-fade-up {
   from {
     opacity: 0;
@@ -189,13 +186,18 @@ body.marketing-landing-page::before {
     padding: 5rem 1.25rem 4rem;
   }
 
-  .marketing-demo-cta {
-    margin-top: 2rem;
-    margin-bottom: 4rem;
+  .marketing-hero__spacer {
+    height: 1.5rem;
+    line-height: 1.5rem;
   }
 
-  .marketing-footer {
-    padding: 1.5rem 1.25rem;
+  .marketing-hero__spacer--tight {
+    height: 1.25rem;
+    line-height: 1.25rem;
+  }
+
+  .marketing-demo-cta {
+    margin-bottom: 0;
   }
 }
 
@@ -203,8 +205,7 @@ body.marketing-landing-page::before {
   .marketing-hero__eyebrow,
   .marketing-hero__title,
   .marketing-chips,
-  .marketing-demo-cta,
-  .marketing-footer {
+  .marketing-demo-cta {
     animation: none !important;
     opacity: 1 !important;
   }

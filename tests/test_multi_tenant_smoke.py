@@ -351,9 +351,8 @@ def test_software_subdomain_serves_marketing_page_and_other_subdomains_still_rou
         assert landing.status_code == 200
         assert "Weighbridge Web" in landing.text
         assert "Cloud software for weighbridge operations." in landing.text
-        assert "Cloud software for ticketing, compliance, and invoicing." in landing.text
-        assert "Want to test it?" in landing.text
         assert "Try the demo" in landing.text
+        assert "Cloud software for ticketing, compliance, and invoicing." not in landing.text
         assert 'name="description"' in landing.text
         assert 'property="og:title"' in landing.text
         assert 'property="og:description"' in landing.text
