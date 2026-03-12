@@ -66,6 +66,26 @@ def test_tickets_list_uses_net_header_and_compact_badges(client, db_session):
     assert 'class="btn btn--outline" href="/tickets">Reset</a>' in response.text
 
 
+def test_tickets_list_shows_ad_hoc_vehicle_registration_text(client, db_session):
+    ticket = Ticket(
+        ticket_no="T-LIST-ADHOC-1",
+        datetime=datetime(2026, 2, 18, 9, 45, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        vehicle_reg_text="ABC123",
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    response = client.get("/tickets")
+
+    assert response.status_code == 200
+    assert 'title="ABC123">ABC123</span>' in response.text
+
+
 def test_tickets_list_pagination_links_render_as_buttons(client, db_session):
     for index in range(3):
         db_session.add(

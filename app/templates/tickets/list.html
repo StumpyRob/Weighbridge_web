@@ -113,6 +113,8 @@
           <td>
             {% if row.Vehicle and row.Vehicle.registration %}
               <span class="truncate truncate--sm" title="{{ row.Vehicle.registration }}">{{ row.Vehicle.registration }}</span>
+            {% elif row.Ticket.vehicle_reg_text %}
+              <span class="truncate truncate--sm" title="{{ row.Ticket.vehicle_reg_text }}">{{ row.Ticket.vehicle_reg_text }}</span>
             {% else %}
               &mdash;
             {% endif %}

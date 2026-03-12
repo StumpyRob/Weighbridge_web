@@ -3843,8 +3843,9 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert response_today.status_code == 200
     assert 'data-dashboard-period="today"' in response_today.text
     assert 'data-dashboard-period-active="1"' in response_today.text
+    assert "Total processed this period: 2 tickets" in response_today.text
     assert "Total processed this period: 1.5 tonnes" in response_today.text
-    assert response_today.text.count("Total processed this period:") == 1
+    assert response_today.text.count("Total processed this period:") == 2
     assert 'data-dashboard-throughput-kg="1500"' in response_today.text
     assert 'data-dashboard-throughput-kg="1750"' not in response_today.text
     assert 'data-dashboard-throughput-kg="2200"' not in response_today.text

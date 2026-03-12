@@ -2,6 +2,12 @@
 
 FastAPI starter with SQLAlchemy, Alembic, and Postgres.
 
+## Latest release
+
+`v0.16` is the current release baseline. Multi-tenant support is now in place, the recent backlog of fixes has been cleared, and the latest work has focused on tenant isolation, audit coverage, dashboard/reporting improvements, and a broad UI polish pass.
+
+From this point onward, planned work is expected to be additional features and enhancements rather than core remediation of the current tenant and UI rollout.
+
 ## Local setup
 
 ```bash

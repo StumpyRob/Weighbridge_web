@@ -692,8 +692,6 @@ def _build_monthly_weight_throughput_chart(
 
 
 def _ticket_period_summary(points: list[dict[str, object]], *, period: str) -> str | None:
-    if period == "today":
-        return None
     total_count = sum(int(point.get("count", 0) or 0) for point in points)
     ticket_label = "ticket" if total_count == 1 else "tickets"
     return f"Total processed this period: {total_count} {ticket_label}"

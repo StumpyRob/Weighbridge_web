@@ -4,6 +4,23 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.16 - 2026-03-12
+
+### RELEASE
+- `v0.16` is the latest release baseline. Multi-tenant workspace support is now implemented, the current issue-fix backlog has been cleared, and follow-up work from this point is expected to focus on additional features and enhancements.
+- This release closes out the tenant rollout chapter with tenant isolation, tenant-aware audit coverage, and a broad UI cleanup pass across the operational dashboard and core list/detail screens.
+
+### FIX
+- Complete tenant rollout across host-based workspace routing, tenant admin management, tenant-scoped branding/uploads, tenant-aware numbering/uniqueness rules, and audit-log isolation.
+- Expand tenant audit coverage so company settings, lookups, products, vehicles, customer price overrides, and printing administration all write tenant-scoped audit events.
+- Replace the legacy `30 Days` dashboard mode with a clearer `12 Months` monthly view and add period totals to both ticket activity and weight throughput charts.
+- Fix dashboard chart presentation issues including throughput edge clipping and add clearer operational summaries for today, 7-day, and 12-month views.
+- Resolve ticket/list UX bugs including ad-hoc vehicle registration visibility, ticket action placement, reset/pager button styling, invoice filter consistency, and lookup search layout alignment.
+- Apply a wider UI polish pass across invoices, tickets, lookups, customers, products, and vehicles to standardize filters, buttons, chart spacing, and navigation controls.
+
+### TEST
+- Re-run tenant dashboard, tenant audit, lookup, product/pricing override, printing admin, vehicle, and list-table regression slices after the release polish.
+
 ## v0.15.3 - 2026-03-11
 
 ### FIX
