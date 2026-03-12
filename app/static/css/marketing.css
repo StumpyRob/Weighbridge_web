@@ -72,7 +72,7 @@ body.marketing-landing-page::before {
   letter-spacing: -0.03em;
   color: var(--marketing-text);
   max-width: 14ch;
-  margin: 0 auto 2.35rem;
+  margin: 0 auto 3rem;
   animation: marketing-fade-up 0.6s 0.2s ease both;
   opacity: 0;
 }
@@ -89,7 +89,7 @@ body.marketing-landing-page::before {
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.6rem;
-  margin-bottom: 1.5rem;
+  margin-bottom: 2.75rem;
   animation: marketing-fade-up 0.6s 0.4s ease both;
   opacity: 0;
 }
@@ -132,15 +132,15 @@ body.marketing-landing-page::before {
   justify-content: center;
   min-height: 2.75rem;
   padding: 0.7rem 1.2rem;
-  border: 1px solid rgba(41, 151, 255, 0.35);
-  border-radius: 999px;
-  background: linear-gradient(180deg, rgba(41, 151, 255, 0.22), rgba(41, 151, 255, 0.12));
+  border: 1px solid var(--marketing-accent);
+  border-radius: 0.55rem;
+  background: var(--marketing-accent);
   color: #f5f5f7;
   font-size: 0.9rem;
   font-weight: 500;
   letter-spacing: -0.01em;
   text-decoration: none;
-  box-shadow: 0 14px 30px rgba(41, 151, 255, 0.14);
+  box-shadow: 0 12px 28px rgba(41, 151, 255, 0.28);
   transition:
     transform 0.2s ease,
     box-shadow 0.2s ease,
@@ -150,9 +150,9 @@ body.marketing-landing-page::before {
 
 .marketing-demo-cta__button:hover {
   transform: translateY(-1px);
-  border-color: rgba(41, 151, 255, 0.55);
-  background: linear-gradient(180deg, rgba(41, 151, 255, 0.3), rgba(41, 151, 255, 0.16));
-  box-shadow: 0 18px 36px rgba(41, 151, 255, 0.18);
+  border-color: #4da8ff;
+  background: #1b8cf4;
+  box-shadow: 0 16px 34px rgba(41, 151, 255, 0.34);
 }
 
 .marketing-demo-cta__button:focus-visible {
