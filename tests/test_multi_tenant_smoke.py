@@ -17,6 +17,7 @@ from sqlalchemy.orm import sessionmaker
 
 import app.main as main_module
 import app.services.ai_assistant as ai_assistant_module
+import app.services.ai_assistant_data as ai_assistant_data_module
 from app.auth import ROLE_SUPERADMIN, ROLE_TENANT_ADMIN, ROLE_USER, hash_password, user_identity_kwargs
 from app.config import settings
 from app.db import TenantSession, get_db
@@ -5089,6 +5090,79 @@ def test_ai_assistant_context_supports_open_waste_and_top_customer_queries(tmp_p
     assert context["overdue_invoices"]["count"] == 1
     assert context["overdue_invoices"]["invoices"][0]["invoice_no"] == "INV-A-OVERDUE"
     assert context["top_customer_today"]["customer"] == "Tenant A Customer"
+
+
+def test_ai_assistant_topic_precedence_prefers_specific_queries():
+    assert ai_assistant_data_module.detect_question_topics("Which tickets are still open?") == [
+        "open_tickets"
+    ]
+    assert ai_assistant_data_module.detect_question_topics("Which waste tickets are still open?") == [
+        "open_waste_tickets"
+    ]
+    assert ai_assistant_data_module.detect_question_topics("Which invoices are overdue?") == [
+        "overdue_invoices"
+    ]
+    assert ai_assistant_data_module.detect_question_topics("Who is the top customer today?") == [
+        "top_customer_today"
+    ]
+    assert ai_assistant_data_module.detect_question_topics(
+        "Which waste tickets are still open and which invoices are overdue?"
+    ) == ["open_waste_tickets", "overdue_invoices"]
+
+
+def test_ai_assistant_specific_topic_selection_keeps_summary_and_cards_aligned(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ai-assistant-topic-alignment.db", monkeypatch=monkeypatch
+    )
+    _ = app
+    fixed_now = datetime(2026, 3, 12, 10, 0, 0)
+    monkeypatch.setattr(ai_assistant_module, "utcnow", lambda: fixed_now)
+
+    tenant_id = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", ai_enabled=True)
+    with SessionLocal() as db:
+        customer = Customer(tenant_id=tenant_id, account_code="CUST-A", name="Tenant A Customer")
+        vehicle = Vehicle(tenant_id=tenant_id, registration="A123 TEST")
+        db.add_all([customer, vehicle])
+        db.flush()
+        db.add_all(
+            [
+                Ticket(
+                    tenant_id=tenant_id,
+                    ticket_no="A-WASTE-OPEN",
+                    datetime=fixed_now,
+                    status=TicketStatusEnum.OPEN.value,
+                    direction=DirectionEnum.INWARD.value,
+                    transaction_type=TransactionTypeEnum.WASTEIN.value,
+                    customer_id=customer.id,
+                    vehicle_id=vehicle.id,
+                    net_kg=1300,
+                    dont_invoice=False,
+                    paid=False,
+                ),
+                Ticket(
+                    tenant_id=tenant_id,
+                    ticket_no="A-SALE-OPEN",
+                    datetime=fixed_now - timedelta(minutes=30),
+                    status=TicketStatusEnum.OPEN.value,
+                    direction=DirectionEnum.INWARD.value,
+                    transaction_type=TransactionTypeEnum.SALE.value,
+                    customer_id=customer.id,
+                    vehicle_id=vehicle.id,
+                    net_kg=1700,
+                    dont_invoice=False,
+                    paid=False,
+                ),
+            ]
+        )
+        db.commit()
+
+        question = "Which waste tickets are still open?"
+        context = ai_assistant_module.build_question_context(db, tenant_id, question)
+        items = ai_assistant_module._build_structured_result_items(question, context)
+        summary = ai_assistant_module._build_structured_summary_answer(question, context)
+
+    assert summary == "There is 1 open waste ticket."
+    assert [item["title"] for item in items] == ["A-WASTE-OPEN"]
 
 
 def test_new_tenant_creation_flow_seeds_usable_baseline_and_requires_user_creation_from_detail(

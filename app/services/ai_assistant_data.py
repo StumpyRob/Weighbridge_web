@@ -18,11 +18,17 @@ _WASTE_TRANSACTION_TYPES = (
     TransactionTypeEnum.WASTEIN.value,
     TransactionTypeEnum.WASTEOUT.value,
 )
-_OPEN_TICKET_HINTS = ("open ticket", "open tickets", "still open", "awaiting completion")
+_OPEN_TICKET_HINTS = (
+    "open ticket",
+    "open tickets",
+    "ticket still open",
+    "tickets are still open",
+    "awaiting completion",
+)
 _OPEN_WASTE_HINTS = ("open waste", "waste ticket", "waste tickets", "open waste tickets")
 _UNINVOICED_HINTS = ("uninvoic", "not invoiced", "ready to invoice", "invoice ready")
-_TODAY_WEIGHT_HINTS = ("today", "weight", "throughput", "kg", "tonne", "tonnes")
-_UNPAID_INVOICE_HINTS = ("unpaid", "outstanding invoice", "outstanding invoices", "overdue invoice", "overdue invoices")
+_TODAY_WEIGHT_HINTS = ("weight", "throughput", "kg", "tonne", "tonnes", "tonnage")
+_UNPAID_INVOICE_HINTS = ("unpaid", "outstanding invoice", "outstanding invoices")
 _OVERDUE_INVOICE_HINTS = (
     "overdue invoice",
     "overdue invoices",
@@ -438,7 +444,10 @@ def _include_topic(question_lower: str, hints: tuple[str, ...]) -> bool:
 
 def detect_question_topics(question: str) -> list[str]:
     normalized = str(question or "").strip().lower()
-    return [key for key, hints in _QUESTION_CONTEXT_TOPICS if _include_topic(normalized, hints)]
+    selected = [key for key, hints in _QUESTION_CONTEXT_TOPICS if _include_topic(normalized, hints)]
+    if "open_waste_tickets" in selected and "open_tickets" in selected:
+        selected = [key for key in selected if key != "open_tickets"]
+    return selected
 
 
 def build_question_context(
