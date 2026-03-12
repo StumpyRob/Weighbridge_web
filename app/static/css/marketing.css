@@ -41,40 +41,6 @@ body.marketing-landing-page::before {
   z-index: 0;
 }
 
-.marketing-nav {
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 2rem;
-  height: 52px;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  animation: marketing-fade-down 0.5s ease both;
-}
-
-.marketing-nav__brand {
-  font-size: 0.95rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--marketing-text);
-}
-
-.marketing-nav__badge {
-  font-size: 0.68rem;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  color: var(--marketing-muted);
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 99px;
-  padding: 0.25rem 0.75rem;
-}
-
 .marketing-hero {
   position: relative;
   z-index: 1;
@@ -146,98 +112,14 @@ body.marketing-landing-page::before {
   border-color: rgba(255, 255, 255, 0.25);
 }
 
-.marketing-card-wrap {
-  width: 100%;
-  max-width: 540px;
-  margin: 0 auto;
-  animation: marketing-fade-up 0.7s 0.5s ease both;
-  opacity: 0;
-}
-
-.marketing-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding: 2.4rem 2.6rem;
-  text-align: left;
-  position: relative;
-  overflow: hidden;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-.marketing-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 10%;
-  right: 10%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
-}
-
-.marketing-card__label {
-  font-size: 0.7rem;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--marketing-muted);
-  margin-bottom: 1rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.marketing-card__label::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #f5a623;
-  box-shadow: 0 0 6px #f5a623;
-}
-
-.marketing-card__panel {
-  padding: 1.35rem 1.4rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.03);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
-}
-
-.marketing-card__panel h2 {
-  font-size: 1.45rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--marketing-text);
-  margin-bottom: 0.75rem;
-  line-height: 1.2;
-}
-
-.marketing-card__panel p {
-  font-size: 0.9rem;
-  font-weight: 300;
-  line-height: 1.7;
-  color: var(--marketing-muted);
-  margin-bottom: 0;
-}
-
 .marketing-footer {
   position: relative;
   z-index: 1;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
   padding: 1.5rem 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  text-align: center;
   animation: marketing-fade-up 0.5s 0.7s ease both;
   opacity: 0;
-}
-
-.marketing-footer__brand {
-  font-size: 0.82rem;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.4);
 }
 
 .marketing-footer__note {
@@ -257,44 +139,20 @@ body.marketing-landing-page::before {
   }
 }
 
-@keyframes marketing-fade-down {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @media (max-width: 600px) {
   .marketing-hero {
     padding: 5rem 1.25rem 4rem;
   }
 
-  .marketing-card {
-    padding: 1.8rem 1.6rem;
-  }
-
-  .marketing-nav {
-    padding: 0 1.25rem;
-  }
-
   .marketing-footer {
-    flex-direction: column;
-    gap: 0.4rem;
-    text-align: center;
+    padding: 1.5rem 1.25rem;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .marketing-nav,
   .marketing-hero__eyebrow,
   .marketing-hero__title,
   .marketing-chips,
-  .marketing-card-wrap,
   .marketing-footer {
     animation: none !important;
     opacity: 1 !important;
