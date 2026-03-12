@@ -463,6 +463,23 @@ async def customer_price_override_create(
     )
     db.add(override)
     try:
+        db.flush()
+        audit_log(
+            db,
+            request,
+            action="CREATE",
+            entity_type="price_override",
+            entity_id=override.id,
+            summary=f"Created price override for customer {customer.account_code}",
+            details={
+                "customer_id": customer.id,
+                "customer_account_code": customer.account_code,
+                "product_id": product.id,
+                "product_code": str(product.code or "").strip() or None,
+                "unit_price": str(payload["unit_price"]),
+                "is_active": True,
+            },
+        )
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -539,10 +556,47 @@ async def customer_price_override_update(
             status_code=400,
         )
 
+    before_product = db.get(Product, override.product_id) if override.product_id else None
+    before_audit = {
+        "product_id": override.product_id,
+        "product_code": (
+            str(before_product.code or "").strip() or None if before_product else None
+        ),
+        "unit_price": override.unit_price,
+        "is_active": bool(override.is_active),
+    }
     override.product_id = product.id if product else override.product_id
     override.unit_price = payload["unit_price"]
     override.is_active = new_active
     override.updated_at = utcnow()
+    if product:
+        after_product_code = str(product.code or "").strip() or None
+    else:
+        existing_product = db.get(Product, override.product_id) if override.product_id else None
+        after_product_code = (
+            str(existing_product.code or "").strip() or None if existing_product else None
+        )
+    after_audit = {
+        "product_id": override.product_id,
+        "unit_price": override.unit_price,
+        "is_active": bool(override.is_active),
+        "product_code": after_product_code,
+    }
+    change_details = audit_diff(
+        before_audit,
+        after_audit,
+        ["product_id", "product_code", "unit_price", "is_active"],
+    )
+    if change_details["changed"]:
+        audit_log(
+            db,
+            request,
+            action="UPDATE",
+            entity_type="price_override",
+            entity_id=override.id,
+            summary=f"Updated price override for customer {customer.account_code}",
+            details=change_details,
+        )
     try:
         db.commit()
     except IntegrityError:
@@ -585,8 +639,23 @@ def customer_price_override_deactivate(
             errors=["Price override not found."],
             status_code=404,
         )
+    product = db.get(Product, override.product_id) if override.product_id else None
     override.is_active = False
     override.updated_at = utcnow()
+    audit_log(
+        db,
+        request,
+        action="DEACTIVATE",
+        entity_type="price_override",
+        entity_id=override.id,
+        summary=f"Deactivated price override for customer {customer.account_code}",
+        details={
+            "customer_id": customer.id,
+            "customer_account_code": customer.account_code,
+            "product_id": override.product_id,
+            "product_code": str(product.code or "").strip() or None if product else None,
+        },
+    )
     db.commit()
     return RedirectResponse(url=f"/customers/{customer.id}?saved=1", status_code=303)
 

@@ -98,6 +98,25 @@ def _current_login_email(user: User | None) -> str:
     return str(getattr(user, "email", "") or getattr(user, "username", "") or "").strip()
 
 
+def _company_setting_snapshot(setting: CompanySetting | None) -> dict[str, object]:
+    if setting is None:
+        return {}
+    return {
+        "name": str(setting.name or "").strip() or None,
+        "address_line1": str(setting.address_line1 or "").strip() or None,
+        "address_line2": str(setting.address_line2 or "").strip() or None,
+        "city": str(setting.city or "").strip() or None,
+        "postcode": str(setting.postcode or "").strip() or None,
+        "country": str(setting.country or "").strip() or None,
+        "navbar_color_hex": str(setting.navbar_color_hex or "").strip() or None,
+        "primary_color_hex": str(setting.primary_color_hex or "").strip() or None,
+        "nav_logo_height_px": setting.nav_logo_height_px,
+        "show_nav_logo": bool(setting.show_nav_logo),
+        "show_nav_title": bool(setting.show_nav_title),
+        "logo_configured": bool(str(setting.company_logo_path or "").strip()),
+    }
+
+
 def _form_checkbox(form, key: str) -> bool:
     values = list(form.getlist(key)) if hasattr(form, "getlist") else [form.get(key)]
     return any(_truthy(value) for value in values)
@@ -153,6 +172,7 @@ async def admin_company_settings_save(
 ) -> HTMLResponse:
     form = await request.form()
     setting = _get_or_create_company_setting(db)
+    settings_before = _company_setting_snapshot(setting)
     request_user = getattr(getattr(request, "state", None), "current_user", None)
     current_user_id = getattr(request_user, "id", None)
     current_user = db.get(User, int(current_user_id)) if current_user_id is not None else None
@@ -356,6 +376,36 @@ async def admin_company_settings_save(
     elif uploaded_web_path:
         setting.company_logo_path = uploaded_web_path
         setting.company_logo_updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    settings_after = _company_setting_snapshot(setting)
+    settings_change_details = audit_diff(
+        settings_before,
+        settings_after,
+        [
+            "name",
+            "address_line1",
+            "address_line2",
+            "city",
+            "postcode",
+            "country",
+            "navbar_color_hex",
+            "primary_color_hex",
+            "nav_logo_height_px",
+            "show_nav_logo",
+            "show_nav_title",
+            "logo_configured",
+        ],
+    )
+    if settings_change_details["changed"]:
+        audit_log(
+            db,
+            request,
+            action="UPDATE",
+            entity_type="company_setting",
+            entity_id=setting.id,
+            summary="Updated company settings",
+            details=settings_change_details,
+        )
 
     db.commit()
 

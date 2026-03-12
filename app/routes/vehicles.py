@@ -6,6 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..audit import diff as audit_diff
+from ..audit import log as audit_log
 from ..constants import REG_MAX
 from ..db import get_db
 from ..models.base import utcnow
@@ -23,6 +25,21 @@ from ..templating import templates
 
 router = APIRouter()
 REGISTRATION_SANITIZE_RE = re.compile(r"[^A-Z0-9]+")
+
+
+def _vehicle_snapshot(vehicle: Vehicle | None) -> dict[str, object]:
+    if vehicle is None:
+        return {}
+    return {
+        "registration": str(vehicle.registration or "").strip() or None,
+        "owner_customer_id": vehicle.owner_customer_id,
+        "default_customer_id": vehicle.default_customer_id,
+        "vehicle_type_id": vehicle.vehicle_type_id,
+        "default_tare_kg": vehicle.default_tare_kg,
+        "overweight_threshold_kg": vehicle.overweight_threshold_kg,
+        "default_haulier_id": vehicle.default_haulier_id,
+        "default_driver_id": vehicle.default_driver_id,
+    }
 
 
 def _resolved_tenant_id(
@@ -155,6 +172,16 @@ async def vehicles_create(
     )
     db.add(vehicle)
     try:
+        db.flush()
+        audit_log(
+            db,
+            request,
+            action="CREATE",
+            entity_type="vehicle",
+            entity_id=vehicle.id,
+            summary=f"Created vehicle {vehicle.registration}",
+            details=_vehicle_snapshot(vehicle),
+        )
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -269,6 +296,7 @@ async def vehicles_update(
             status_code=400,
         )
 
+    before_audit = _vehicle_snapshot(vehicle)
     vehicle.registration = payload["registration"]
     vehicle.owner_customer_id = payload["owner_customer_id"]
     vehicle.default_customer_id = payload["default_customer_id"]
@@ -278,6 +306,31 @@ async def vehicles_update(
     vehicle.default_haulier_id = payload["default_haulier_id"]
     vehicle.default_driver_id = payload["default_driver_id"]
     vehicle.updated_at = utcnow()
+    after_audit = _vehicle_snapshot(vehicle)
+    change_details = audit_diff(
+        before_audit,
+        after_audit,
+        [
+            "registration",
+            "owner_customer_id",
+            "default_customer_id",
+            "vehicle_type_id",
+            "default_tare_kg",
+            "overweight_threshold_kg",
+            "default_haulier_id",
+            "default_driver_id",
+        ],
+    )
+    if change_details["changed"]:
+        audit_log(
+            db,
+            request,
+            action="UPDATE",
+            entity_type="vehicle",
+            entity_id=vehicle.id,
+            summary=f"Updated vehicle {vehicle.registration}",
+            details=change_details,
+        )
     try:
         db.commit()
     except IntegrityError:
@@ -330,12 +383,51 @@ async def vehicle_tares_add(
             .where(VehicleTare.container_id == container_id)
         ).scalar_one_or_none()
         if existing:
+            before_tare = existing.tare_kg
             existing.tare_kg = tare_kg
-        else:
-            db.add(
-                VehicleTare(
-                    vehicle_id=vehicle.id, container_id=container_id, tare_kg=tare_kg
+            if before_tare != tare_kg:
+                audit_log(
+                    db,
+                    request,
+                    action="UPDATE",
+                    entity_type="vehicle_tare",
+                    entity_id=existing.id,
+                    summary=f"Updated tare for vehicle {vehicle.registration}",
+                    details={
+                        "vehicle_id": vehicle.id,
+                        "vehicle_registration": vehicle.registration,
+                        "container_id": container.id,
+                        "container_name": container.name,
+                        "changed": {
+                            "tare_kg": {
+                                "from": before_tare,
+                                "to": tare_kg,
+                            }
+                        },
+                    },
                 )
+        else:
+            tare = VehicleTare(
+                vehicle_id=vehicle.id,
+                container_id=container_id,
+                tare_kg=tare_kg,
+            )
+            db.add(tare)
+            db.flush()
+            audit_log(
+                db,
+                request,
+                action="CREATE",
+                entity_type="vehicle_tare",
+                entity_id=tare.id,
+                summary=f"Added tare for vehicle {vehicle.registration}",
+                details={
+                    "vehicle_id": vehicle.id,
+                    "vehicle_registration": vehicle.registration,
+                    "container_id": container.id,
+                    "container_name": container.name,
+                    "tare_kg": tare_kg,
+                },
             )
         db.commit()
 
@@ -355,7 +447,39 @@ async def vehicle_tares_update(
     form = await request.form()
     tare_kg = _parse_float(str(form.get("tare_kg", "")).strip())
     if tare_kg is not None:
+        before_tare = tare.tare_kg
+        vehicle = db.get(Vehicle, vehicle_id)
+        container = db.get(Container, tare.container_id) if tare.container_id else None
         tare.tare_kg = tare_kg
+        if before_tare != tare_kg:
+            audit_log(
+                db,
+                request,
+                action="UPDATE",
+                entity_type="vehicle_tare",
+                entity_id=tare.id,
+                summary=(
+                    f"Updated tare for vehicle {vehicle.registration}"
+                    if vehicle is not None
+                    else f"Updated tare for vehicle {vehicle_id}"
+                ),
+                details={
+                    "vehicle_id": vehicle_id,
+                    "vehicle_registration": str(vehicle.registration or "").strip() or None
+                    if vehicle
+                    else None,
+                    "container_id": tare.container_id,
+                    "container_name": str(container.name or "").strip() or None
+                    if container
+                    else None,
+                    "changed": {
+                        "tare_kg": {
+                            "from": before_tare,
+                            "to": tare_kg,
+                        }
+                    },
+                },
+            )
         db.commit()
     return RedirectResponse(url=f"/vehicles/{vehicle_id}", status_code=303)
 
@@ -364,10 +488,38 @@ async def vehicle_tares_update(
     "/vehicles/{vehicle_id}/tares/{tare_id}/delete", response_class=HTMLResponse
 )
 def vehicle_tares_delete(
-    vehicle_id: int, tare_id: int, db: Session = Depends(get_db)
+    vehicle_id: int,
+    tare_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
 ) -> HTMLResponse:
     tare = db.get(VehicleTare, tare_id)
     if tare and tare.vehicle_id == vehicle_id:
+        vehicle = db.get(Vehicle, vehicle_id)
+        container = db.get(Container, tare.container_id) if tare.container_id else None
+        audit_log(
+            db,
+            request,
+            action="DELETE",
+            entity_type="vehicle_tare",
+            entity_id=tare.id,
+            summary=(
+                f"Deleted tare for vehicle {vehicle.registration}"
+                if vehicle is not None
+                else f"Deleted tare for vehicle {vehicle_id}"
+            ),
+            details={
+                "vehicle_id": vehicle_id,
+                "vehicle_registration": str(vehicle.registration or "").strip() or None
+                if vehicle
+                else None,
+                "container_id": tare.container_id,
+                "container_name": str(container.name or "").strip() or None
+                if container
+                else None,
+                "tare_kg": tare.tare_kg,
+            },
+        )
         db.delete(tare)
         db.commit()
     return RedirectResponse(url=f"/vehicles/{vehicle_id}", status_code=303)

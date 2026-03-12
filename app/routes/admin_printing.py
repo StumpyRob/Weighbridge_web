@@ -9,6 +9,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from ..audit import diff as audit_diff
+from ..audit import log as audit_log
 from ..auth import ROLE_SUPERADMIN, ROLE_TENANT_ADMIN, normalize_role
 from ..constants import CODE_MAX, DESC_MAX
 from ..db import get_db
@@ -173,6 +175,43 @@ def _destination_has_jobs(db: Session, destination_id: int) -> bool:
         ).first()
         is not None
     )
+
+
+def _print_destination_snapshot(
+    destination: PrintDestination | None,
+    *,
+    template: PrintTemplate | None = None,
+) -> dict[str, object]:
+    if destination is None:
+        return {}
+    resolved_template = template
+    return {
+        "name": str(destination.name or "").strip() or None,
+        "description": str(destination.description or "").strip() or None,
+        "document_type": str(destination.document_type or "").strip() or None,
+        "template_id": destination.template_id,
+        "template_code": (
+            str(resolved_template.code or "").strip() or None
+            if resolved_template is not None
+            else None
+        ),
+        "delivery_type": str(destination.delivery_type or "").strip() or None,
+        "is_default": bool(destination.is_default),
+        "is_active": bool(destination.is_active),
+    }
+
+
+def _print_template_snapshot(template: PrintTemplate | None) -> dict[str, object]:
+    if template is None:
+        return {}
+    return {
+        "code": str(template.code or "").strip() or None,
+        "description": str(template.description or "").strip() or None,
+        "document_type": str(template.document_type or "").strip() or None,
+        "format": str(template.format or "").strip() or None,
+        "is_system": bool(template.is_system),
+        "is_active": bool(template.is_active),
+    }
 
 
 def _destination_delete_block_error(
@@ -528,6 +567,16 @@ async def admin_print_destinations_create(
         is_active=is_active,
     )
     db.add(destination)
+    db.flush()
+    audit_log(
+        db,
+        request,
+        action="CREATE",
+        entity_type="print_destination",
+        entity_id=destination.id,
+        summary=f"Created print destination {destination.name}",
+        details=_print_destination_snapshot(destination, template=template),
+    )
     db.commit()
     return RedirectResponse(
         url=_printing_redirect_url(request, base_path="/admin/printing/destinations"),
@@ -631,6 +680,10 @@ async def admin_print_destinations_update(
             destination_id=destination.id,
         )
 
+    before_audit = _print_destination_snapshot(
+        destination,
+        template=db.get(PrintTemplate, destination.template_id) if destination.template_id else None,
+    )
     destination.name = name
     destination.description = description
     destination.document_type = document_type
@@ -639,6 +692,31 @@ async def admin_print_destinations_update(
     destination.delivery_config = delivery_config
     destination.is_active = is_active
     destination.is_default = make_default
+    after_audit = _print_destination_snapshot(destination, template=template)
+    change_details = audit_diff(
+        before_audit,
+        after_audit,
+        [
+            "name",
+            "description",
+            "document_type",
+            "template_id",
+            "template_code",
+            "delivery_type",
+            "is_default",
+            "is_active",
+        ],
+    )
+    if change_details["changed"]:
+        audit_log(
+            db,
+            request,
+            action="UPDATE",
+            entity_type="print_destination",
+            entity_id=destination.id,
+            summary=f"Updated print destination {destination.name}",
+            details=change_details,
+        )
     db.commit()
     return RedirectResponse(
         url=_printing_redirect_url(
@@ -660,6 +738,18 @@ def admin_print_destinations_deactivate(
         return HTMLResponse("Destination not found.", status_code=404)
     destination.is_active = False
     destination.is_default = False
+    audit_log(
+        db,
+        request,
+        action="DEACTIVATE",
+        entity_type="print_destination",
+        entity_id=destination.id,
+        summary=f"Deactivated print destination {destination.name}",
+        details=_print_destination_snapshot(
+            destination,
+            template=db.get(PrintTemplate, destination.template_id) if destination.template_id else None,
+        ),
+    )
     db.commit()
     return RedirectResponse(
         url=_printing_redirect_url(request, base_path="/admin/printing/destinations"),
@@ -689,6 +779,18 @@ def admin_print_destinations_reactivate(
     ).first()
     if not has_other_default:
         destination.is_default = True
+    audit_log(
+        db,
+        request,
+        action="REACTIVATE",
+        entity_type="print_destination",
+        entity_id=destination.id,
+        summary=f"Reactivated print destination {destination.name}",
+        details=_print_destination_snapshot(
+            destination,
+            template=db.get(PrintTemplate, destination.template_id) if destination.template_id else None,
+        ),
+    )
     db.commit()
     return RedirectResponse(
         url=_printing_redirect_url(request, base_path="/admin/printing/destinations"),
@@ -721,6 +823,18 @@ def admin_print_destinations_delete(
             status_code=303,
         )
 
+    audit_log(
+        db,
+        request,
+        action="DELETE",
+        entity_type="print_destination",
+        entity_id=destination.id,
+        summary=f"Deleted print destination {destination.name}",
+        details=_print_destination_snapshot(
+            destination,
+            template=db.get(PrintTemplate, destination.template_id) if destination.template_id else None,
+        ),
+    )
     db.delete(destination)
     db.commit()
     return RedirectResponse(
@@ -867,6 +981,20 @@ async def admin_print_templates_create(
         is_active=is_active,
     )
     db.add(template)
+    db.flush()
+    audit_log(
+        db,
+        request,
+        action="CREATE",
+        entity_type="print_template",
+        entity_id=template.id,
+        summary=(
+            f"Created print template {template.code}"
+            if template.code
+            else f"Created print template #{template.id}"
+        ),
+        details=_print_template_snapshot(template),
+    )
     db.commit()
     return RedirectResponse(
         url=_printing_redirect_url(request, base_path="/admin/printing/templates"),
@@ -948,12 +1076,33 @@ async def admin_print_templates_update(
             status_code=400,
         )
 
+    before_audit = _print_template_snapshot(template)
     template.code = code
     template.description = description
     template.document_type = document_type
     template.format = template_format
     template.content = content
     template.is_active = is_active
+    after_audit = _print_template_snapshot(template)
+    change_details = audit_diff(
+        before_audit,
+        after_audit,
+        ["code", "description", "document_type", "format", "is_active"],
+    )
+    if change_details["changed"]:
+        audit_log(
+            db,
+            request,
+            action="UPDATE",
+            entity_type="print_template",
+            entity_id=template.id,
+            summary=(
+                f"Updated print template {template.code}"
+                if template.code
+                else f"Updated print template #{template.id}"
+            ),
+            details=change_details,
+        )
     db.commit()
     return RedirectResponse(
         url=_printing_redirect_url(
@@ -993,6 +1142,16 @@ def admin_print_templates_duplicate(
     db.add(duplicate)
     db.commit()
     db.refresh(duplicate)
+    audit_log(
+        db,
+        request,
+        action="CREATE",
+        entity_type="print_template",
+        entity_id=duplicate.id,
+        summary=f"Duplicated print template from {source_name}",
+        details=_print_template_snapshot(duplicate),
+    )
+    db.commit()
     return RedirectResponse(
         url=_printing_redirect_url(
             request,
@@ -1021,6 +1180,19 @@ def admin_print_templates_deactivate(
             status_code=403,
         )
     template.is_active = False
+    audit_log(
+        db,
+        request,
+        action="DEACTIVATE",
+        entity_type="print_template",
+        entity_id=template.id,
+        summary=(
+            f"Deactivated print template {template.code}"
+            if template.code
+            else f"Deactivated print template #{template.id}"
+        ),
+        details=_print_template_snapshot(template),
+    )
     db.commit()
     return RedirectResponse(
         url=_printing_redirect_url(request, base_path="/admin/printing/templates"),
@@ -1038,6 +1210,19 @@ def admin_print_templates_reactivate(
     if template is None:
         return HTMLResponse("Template not found.", status_code=404)
     template.is_active = True
+    audit_log(
+        db,
+        request,
+        action="REACTIVATE",
+        entity_type="print_template",
+        entity_id=template.id,
+        summary=(
+            f"Reactivated print template {template.code}"
+            if template.code
+            else f"Reactivated print template #{template.id}"
+        ),
+        details=_print_template_snapshot(template),
+    )
     db.commit()
     return RedirectResponse(
         url=_printing_redirect_url(request, base_path="/admin/printing/templates"),
@@ -1076,6 +1261,19 @@ def admin_print_templates_delete(
             ),
             status_code=303,
         )
+    audit_log(
+        db,
+        request,
+        action="DELETE",
+        entity_type="print_template",
+        entity_id=template.id,
+        summary=(
+            f"Deleted print template {template.code}"
+            if template.code
+            else f"Deleted print template #{template.id}"
+        ),
+        details=_print_template_snapshot(template),
+    )
     db.delete(template)
     db.commit()
     return RedirectResponse(
@@ -1313,6 +1511,21 @@ def admin_print_job_retry(
             ),
             status_code=303,
         )
+    audit_log(
+        db,
+        request,
+        action="RETRY",
+        entity_type="print_job",
+        entity_id=job.id,
+        summary=f"Retried print job #{job.id}",
+        details={
+            "document_type": str(job.document_type or "").strip() or None,
+            "destination_id": job.destination_id,
+            "template_id": job.template_id,
+            "status": str(job.status or "").strip() or None,
+        },
+    )
+    db.commit()
     return RedirectResponse(
         url=_printing_redirect_url(request, base_path=f"/admin/printing/jobs/{job.id}"),
         status_code=303,

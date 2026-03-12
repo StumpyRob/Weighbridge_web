@@ -47,6 +47,27 @@ PRODUCT_GROUP_DESCRIPTION_MAX_LEN = DESC_MAX
 NOMINAL_CODE_MAX_LEN = NOMINAL_CODE_MAX
 
 
+def _product_group_snapshot(group: ProductGroup | None) -> dict[str, object]:
+    if group is None:
+        return {}
+    return {
+        "name": str(group.name or "").strip() or None,
+        "description": str(group.description or "").strip() or None,
+        "nominal_code_default": str(group.nominal_code_default or "").strip() or None,
+        "is_active": bool(group.is_active),
+    }
+
+
+def _unit_snapshot(unit: Unit | None) -> dict[str, object]:
+    if unit is None:
+        return {}
+    return {
+        "name": str(unit.name or "").strip() or None,
+        "unit_type": str(unit.unit_type or "").strip() or None,
+        "is_active": bool(unit.is_active),
+    }
+
+
 @router.get("/products", response_class=HTMLResponse)
 def products_list(
     request: Request,
@@ -320,6 +341,16 @@ async def product_groups_create(
     )
     db.add(group)
     try:
+        db.flush()
+        audit_log(
+            db,
+            request,
+            action="CREATE",
+            entity_type="product_group",
+            entity_id=group.id,
+            summary=f"Created product group {group.name}",
+            details=_product_group_snapshot(group),
+        )
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -411,10 +442,27 @@ async def product_groups_update(
             status_code=400,
         )
 
+    before_audit = _product_group_snapshot(group)
     group.name = payload["name"]
     group.description = payload["description"]
     group.nominal_code_default = payload["nominal_code_default"]
     group.updated_at = utcnow()
+    after_audit = _product_group_snapshot(group)
+    change_details = audit_diff(
+        before_audit,
+        after_audit,
+        ["name", "description", "nominal_code_default", "is_active"],
+    )
+    if change_details["changed"]:
+        audit_log(
+            db,
+            request,
+            action="UPDATE",
+            entity_type="product_group",
+            entity_id=group.id,
+            summary=f"Updated product group {group.name}",
+            details=change_details,
+        )
     try:
         db.commit()
     except IntegrityError:
@@ -460,6 +508,15 @@ def product_groups_deactivate(
 
     group.is_active = False
     group.updated_at = utcnow()
+    audit_log(
+        db,
+        request,
+        action="DEACTIVATE",
+        entity_type="product_group",
+        entity_id=group.id,
+        summary=f"Deactivated product group {group.name}",
+        details=_product_group_snapshot(group),
+    )
     db.commit()
     return RedirectResponse(url="/products/groups?saved=1", status_code=303)
 
@@ -480,6 +537,15 @@ def product_groups_reactivate(
         )
     group.is_active = True
     group.updated_at = utcnow()
+    audit_log(
+        db,
+        request,
+        action="REACTIVATE",
+        entity_type="product_group",
+        entity_id=group.id,
+        summary=f"Reactivated product group {group.name}",
+        details=_product_group_snapshot(group),
+    )
     db.commit()
     return RedirectResponse(url="/products/groups?saved=1", status_code=303)
 
@@ -505,6 +571,16 @@ def product_groups_delete(
     if in_use:
         return RedirectResponse(url="/products/groups?error=in_use", status_code=303)
 
+    group_name = str(group.name or "").strip() or f"#{group.id}"
+    audit_log(
+        db,
+        request,
+        action="DELETE",
+        entity_type="product_group",
+        entity_id=group.id,
+        summary=f"Deleted product group {group_name}",
+        details=_product_group_snapshot(group),
+    )
     db.delete(group)
     db.commit()
     return RedirectResponse(url="/products/groups?saved=1", status_code=303)
@@ -595,6 +671,16 @@ async def units_create(
         )
     unit = Unit(name=name, unit_type=unit_type, is_active=True)
     db.add(unit)
+    db.flush()
+    audit_log(
+        db,
+        request,
+        action="CREATE",
+        entity_type="unit",
+        entity_id=unit.id,
+        summary=f"Created unit {unit.name}",
+        details=_unit_snapshot(unit),
+    )
     db.commit()
     return RedirectResponse(url="/products/units?saved=1", status_code=303)
 
@@ -673,9 +759,26 @@ async def units_update(
             },
             status_code=400,
         )
+    before_audit = _unit_snapshot(unit)
     unit.name = name
     unit.unit_type = unit_type
     unit.updated_at = utcnow()
+    after_audit = _unit_snapshot(unit)
+    change_details = audit_diff(
+        before_audit,
+        after_audit,
+        ["name", "unit_type", "is_active"],
+    )
+    if change_details["changed"]:
+        audit_log(
+            db,
+            request,
+            action="UPDATE",
+            entity_type="unit",
+            entity_id=unit.id,
+            summary=f"Updated unit {unit.name}",
+            details=change_details,
+        )
     db.commit()
     return RedirectResponse(url="/products/units?saved=1", status_code=303)
 
@@ -700,6 +803,15 @@ def units_deactivate(
         return RedirectResponse(url="/products/units?error=system", status_code=303)
     unit.is_active = False
     unit.updated_at = utcnow()
+    audit_log(
+        db,
+        request,
+        action="DEACTIVATE",
+        entity_type="unit",
+        entity_id=unit.id,
+        summary=f"Deactivated unit {unit.name}",
+        details=_unit_snapshot(unit),
+    )
     db.commit()
     return RedirectResponse(url="/products/units?saved=1", status_code=303)
 
@@ -724,6 +836,15 @@ def units_reactivate(
         return RedirectResponse(url="/products/units?error=system", status_code=303)
     unit.is_active = True
     unit.updated_at = utcnow()
+    audit_log(
+        db,
+        request,
+        action="REACTIVATE",
+        entity_type="unit",
+        entity_id=unit.id,
+        summary=f"Reactivated unit {unit.name}",
+        details=_unit_snapshot(unit),
+    )
     db.commit()
     return RedirectResponse(url="/products/units?saved=1", status_code=303)
 
@@ -755,6 +876,16 @@ def units_delete(
         return RedirectResponse(url="/products/units?error=in_use", status_code=303)
 
     try:
+        unit_name = str(unit.name or "").strip() or f"#{unit.id}"
+        audit_log(
+            db,
+            request,
+            action="DELETE",
+            entity_type="unit",
+            entity_id=unit.id,
+            summary=f"Deleted unit {unit_name}",
+            details=_unit_snapshot(unit),
+        )
         db.delete(unit)
         db.commit()
     except IntegrityError:
@@ -976,6 +1107,18 @@ def products_delete(
     if in_use:
         return RedirectResponse(url="/products?error=in_use", status_code=303)
 
+    audit_log(
+        db,
+        request,
+        action="DELETE",
+        entity_type="product",
+        entity_id=product.id,
+        summary=f"Deleted product {product.code}",
+        details={
+            "code": product.code,
+            "description": product.description,
+        },
+    )
     db.execute(
         delete(CustomerProductPrice).where(
             CustomerProductPrice.product_id == product.id

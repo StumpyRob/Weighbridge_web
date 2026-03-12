@@ -841,6 +841,109 @@ def test_tenant_admin_can_update_their_sign_in_email_from_company_settings(
         assert _login(tenant_client, email="b-admin@example.com", password="TestPass123!") == 303
 
 
+def test_tenant_audit_page_only_shows_current_workspace_events(
+    tmp_path,
+    monkeypatch,
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-audit-scope.db", monkeypatch=monkeypatch
+    )
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a")
+    tenant_b = _seed_tenant(SessionLocal, name="Tenant B", subdomain="b")
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_b,
+        company_name="Tenant B Co",
+        primary_color="#225577",
+    )
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+    _seed_user(
+        SessionLocal,
+        email="b-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_b,
+    )
+
+    with _client(app, base_url="https://a.localhost") as tenant_a_client:
+        assert _login(tenant_a_client, email="a-admin@example.com", password="TestPass123!") == 303
+        csrf = _prime_csrf(tenant_a_client)
+        response = tenant_a_client.post(
+            "/admin/company",
+            data={
+                "name": "Tenant A Co Updated",
+                "login_email": "a-admin@example.com",
+                "navbar_color_hex": "#113355",
+                "primary_color_hex": "#336699",
+                "nav_logo_height_px": "34",
+                "show_nav_logo": "1",
+                "show_nav_title": "1",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+    with _client(app, base_url="https://b.localhost") as tenant_b_client:
+        assert _login(tenant_b_client, email="b-admin@example.com", password="TestPass123!") == 303
+        csrf = _prime_csrf(tenant_b_client)
+        response = tenant_b_client.post(
+            "/admin/company",
+            data={
+                "name": "Tenant B Co Updated",
+                "login_email": "b-admin@example.com",
+                "navbar_color_hex": "#225577",
+                "primary_color_hex": "#557799",
+                "nav_logo_height_px": "34",
+                "show_nav_logo": "1",
+                "show_nav_title": "1",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+    with SessionLocal() as db:
+        settings_events = db.execute(
+            select(AuditEvent)
+            .where(
+                AuditEvent.action == "UPDATE",
+                AuditEvent.entity_type == "company_setting",
+            )
+            .order_by(AuditEvent.id.asc())
+        ).scalars().all()
+        assert any(str(event.tenant_id or "") == str(tenant_a) for event in settings_events)
+        assert any(str(event.tenant_id or "") == str(tenant_b) for event in settings_events)
+
+    with _client(app, base_url="https://a.localhost") as tenant_a_client:
+        assert _login(tenant_a_client, email="a-admin@example.com", password="TestPass123!") == 303
+        audit_page = tenant_a_client.get("/admin/audit?entity_type=company_setting&range=all")
+        assert audit_page.status_code == 200
+        assert "a-admin@example.com" in audit_page.text
+        assert "b-admin@example.com" not in audit_page.text
+        assert "company_setting #" in audit_page.text
+
+    with _client(app, base_url="https://b.localhost") as tenant_b_client:
+        assert _login(tenant_b_client, email="b-admin@example.com", password="TestPass123!") == 303
+        audit_page = tenant_b_client.get("/admin/audit?entity_type=company_setting&range=all")
+        assert audit_page.status_code == 200
+        assert "b-admin@example.com" in audit_page.text
+        assert "a-admin@example.com" not in audit_page.text
+        assert "company_setting #" in audit_page.text
+
+
 def test_user_identity_uniqueness_is_tenant_scoped(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-user-unique.db", monkeypatch=monkeypatch

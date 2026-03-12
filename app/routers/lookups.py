@@ -7,6 +7,8 @@ from sqlalchemy import func, select, true
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from ..audit import diff as audit_diff
+from ..audit import log as audit_log
 from ..constants import CODE_MAX, NAME_MAX
 from ..db import get_db
 from ..models import Container, Destination, Driver, Haulier, Ticket
@@ -15,6 +17,20 @@ from ..services.system_setup import missing_required_lookup_messages
 from ..templating import templates
 
 router = APIRouter(prefix="/lookups")
+
+
+def _lookup_snapshot(item) -> dict[str, object]:
+    if item is None:
+        return {}
+    snapshot = {
+        "name": str(getattr(item, "name", "") or "").strip() or None,
+        "is_active": bool(getattr(item, "is_active", False)),
+    }
+    if hasattr(item, "carrier_licence_number"):
+        snapshot["carrier_licence_number"] = (
+            str(getattr(item, "carrier_licence_number", "") or "").strip() or None
+        )
+    return snapshot
 
 def _lookup_redirect_url(request: Request, base_path: str) -> str:
     params: dict[str, str] = {"saved": "1"}
@@ -198,6 +214,16 @@ async def hauliers_create(
         is_active=True,
     )
     db.add(haulier)
+    db.flush()
+    audit_log(
+        db,
+        request,
+        action="CREATE",
+        entity_type="haulier",
+        entity_id=haulier.id,
+        summary=f"Created haulier {haulier.name}",
+        details=_lookup_snapshot(haulier),
+    )
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/hauliers"),
@@ -294,8 +320,24 @@ async def hauliers_update(
             status_code=400,
         )
 
+    before_audit = _lookup_snapshot(haulier)
     haulier.name = name
     haulier.carrier_licence_number = carrier_licence_number or None
+    change_details = audit_diff(
+        before_audit,
+        _lookup_snapshot(haulier),
+        ["name", "carrier_licence_number", "is_active"],
+    )
+    if change_details["changed"]:
+        audit_log(
+            db,
+            request,
+            action="UPDATE",
+            entity_type="haulier",
+            entity_id=haulier.id,
+            summary=f"Updated haulier {haulier.name}",
+            details=change_details,
+        )
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/hauliers"),
@@ -339,6 +381,15 @@ def hauliers_deactivate(
         )
 
     haulier.is_active = False
+    audit_log(
+        db,
+        request,
+        action="DEACTIVATE",
+        entity_type="haulier",
+        entity_id=haulier.id,
+        summary=f"Deactivated haulier {haulier.name}",
+        details=_lookup_snapshot(haulier),
+    )
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/hauliers"),
@@ -363,6 +414,15 @@ def hauliers_reactivate(
             status_code=404,
         )
     haulier.is_active = True
+    audit_log(
+        db,
+        request,
+        action="REACTIVATE",
+        entity_type="haulier",
+        entity_id=haulier.id,
+        summary=f"Reactivated haulier {haulier.name}",
+        details=_lookup_snapshot(haulier),
+    )
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/hauliers"),
@@ -444,6 +504,16 @@ async def drivers_create(
 
     driver = Driver(name=name, is_active=True)
     db.add(driver)
+    db.flush()
+    audit_log(
+        db,
+        request,
+        action="CREATE",
+        entity_type="driver",
+        entity_id=driver.id,
+        summary=f"Created driver {driver.name}",
+        details=_lookup_snapshot(driver),
+    )
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/drivers"),
@@ -532,7 +602,23 @@ async def drivers_update(
             status_code=400,
         )
 
+    before_audit = _lookup_snapshot(driver)
     driver.name = name
+    change_details = audit_diff(
+        before_audit,
+        _lookup_snapshot(driver),
+        ["name", "is_active"],
+    )
+    if change_details["changed"]:
+        audit_log(
+            db,
+            request,
+            action="UPDATE",
+            entity_type="driver",
+            entity_id=driver.id,
+            summary=f"Updated driver {driver.name}",
+            details=change_details,
+        )
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/drivers"),
@@ -574,6 +660,15 @@ def drivers_deactivate(
         )
 
     driver.is_active = False
+    audit_log(
+        db,
+        request,
+        action="DEACTIVATE",
+        entity_type="driver",
+        entity_id=driver.id,
+        summary=f"Deactivated driver {driver.name}",
+        details=_lookup_snapshot(driver),
+    )
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/drivers"),
@@ -598,6 +693,15 @@ def drivers_reactivate(
             status_code=404,
         )
     driver.is_active = True
+    audit_log(
+        db,
+        request,
+        action="REACTIVATE",
+        entity_type="driver",
+        entity_id=driver.id,
+        summary=f"Reactivated driver {driver.name}",
+        details=_lookup_snapshot(driver),
+    )
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/drivers"),
@@ -679,6 +783,16 @@ async def containers_create(
 
     container = Container(name=name, is_active=True)
     db.add(container)
+    db.flush()
+    audit_log(
+        db,
+        request,
+        action="CREATE",
+        entity_type="container",
+        entity_id=container.id,
+        summary=f"Created container {container.name}",
+        details=_lookup_snapshot(container),
+    )
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/containers"),
@@ -767,7 +881,23 @@ async def containers_update(
             status_code=400,
         )
 
+    before_audit = _lookup_snapshot(container)
     container.name = name
+    change_details = audit_diff(
+        before_audit,
+        _lookup_snapshot(container),
+        ["name", "is_active"],
+    )
+    if change_details["changed"]:
+        audit_log(
+            db,
+            request,
+            action="UPDATE",
+            entity_type="container",
+            entity_id=container.id,
+            summary=f"Updated container {container.name}",
+            details=change_details,
+        )
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/containers"),
@@ -809,6 +939,15 @@ def containers_deactivate(
         )
 
     container.is_active = False
+    audit_log(
+        db,
+        request,
+        action="DEACTIVATE",
+        entity_type="container",
+        entity_id=container.id,
+        summary=f"Deactivated container {container.name}",
+        details=_lookup_snapshot(container),
+    )
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/containers"),
@@ -833,6 +972,15 @@ def containers_reactivate(
             status_code=404,
         )
     container.is_active = True
+    audit_log(
+        db,
+        request,
+        action="REACTIVATE",
+        entity_type="container",
+        entity_id=container.id,
+        summary=f"Reactivated container {container.name}",
+        details=_lookup_snapshot(container),
+    )
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/containers"),
@@ -916,6 +1064,16 @@ async def destinations_create(
 
     destination = Destination(name=name, is_active=True)
     db.add(destination)
+    db.flush()
+    audit_log(
+        db,
+        request,
+        action="CREATE",
+        entity_type="destination",
+        entity_id=destination.id,
+        summary=f"Created destination {destination.name}",
+        details=_lookup_snapshot(destination),
+    )
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/destinations"),
@@ -1004,7 +1162,23 @@ async def destinations_update(
             status_code=400,
         )
 
+    before_audit = _lookup_snapshot(destination)
     destination.name = name
+    change_details = audit_diff(
+        before_audit,
+        _lookup_snapshot(destination),
+        ["name", "is_active"],
+    )
+    if change_details["changed"]:
+        audit_log(
+            db,
+            request,
+            action="UPDATE",
+            entity_type="destination",
+            entity_id=destination.id,
+            summary=f"Updated destination {destination.name}",
+            details=change_details,
+        )
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/destinations"),
@@ -1048,6 +1222,15 @@ def destinations_deactivate(
         )
 
     destination.is_active = False
+    audit_log(
+        db,
+        request,
+        action="DEACTIVATE",
+        entity_type="destination",
+        entity_id=destination.id,
+        summary=f"Deactivated destination {destination.name}",
+        details=_lookup_snapshot(destination),
+    )
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/destinations"),
@@ -1072,6 +1255,15 @@ def destinations_reactivate(
             status_code=404,
         )
     destination.is_active = True
+    audit_log(
+        db,
+        request,
+        action="REACTIVATE",
+        entity_type="destination",
+        entity_id=destination.id,
+        summary=f"Reactivated destination {destination.name}",
+        details=_lookup_snapshot(destination),
+    )
     db.commit()
     return RedirectResponse(
         url=_lookup_redirect_url(request, "/lookups/destinations"),
