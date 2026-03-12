@@ -3814,6 +3814,9 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert "09:00" in response.text
     assert 'data-dashboard-invoice="INV-A-1"' in response.text
     assert 'data-dashboard-invoice-ready-ticket="A-COMP-1"' in response.text
+    assert "<th>Vehicle</th>" in response.text
+    assert response.text.count("<th>Vehicle</th>") == 2
+    assert response.text.count("<th>Product</th>") == 1
     assert "Tenant A Customer" in response.text
     assert "Tenant B Customer" not in response.text
     assert 'data-dashboard-traffic-ticket="A-YDAY-1"' not in response.text

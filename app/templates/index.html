@@ -210,7 +210,6 @@
                     <th>Ticket</th>
                     <th>Date / Time</th>
                     <th>Customer</th>
-                    <th>Vehicle</th>
                     <th>Status</th>
                     <th class="num">Net</th>
                   </tr>
@@ -221,7 +220,6 @@
                       <td><a href="{{ tenant_path('/tickets/' ~ row.ticket_id) }}">{{ row.ticket_no }}</a></td>
                       <td>{{ row.datetime_display }}</td>
                       <td>{{ row.customer_name }}</td>
-                      <td>{{ row.vehicle_registration }}</td>
                       <td>
                         <span class="dashboard-status-pill {{ row.status_class }}">{{ row.status }}</span>
                       </td>
@@ -249,7 +247,6 @@
                     <th>Date / Time</th>
                     <th>Customer</th>
                     <th>Vehicle</th>
-                    <th>Product</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -259,7 +256,6 @@
                       <td>{{ row.datetime_display }}</td>
                       <td>{{ row.customer_name }}</td>
                       <td>{{ row.vehicle_registration }}</td>
-                      <td>{{ row.product_name }}</td>
                     </tr>
                   {% endfor %}
                 </tbody>

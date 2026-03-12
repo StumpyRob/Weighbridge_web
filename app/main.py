@@ -1377,7 +1377,6 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         primary_color = str(branding.get("primary_color", "") or "#FCA311")
         primary_contrast = str(branding.get("primary_contrast_hex", "") or "#111827")
         primary_soft = str(branding.get("primary_soft_rgba", "") or "rgba(252, 163, 17, 0.16)")
-        primary_light = lighten_hex_color(primary_color)
         primary_dark = darken_hex_color(primary_color)
         dark_nav = nav_foreground == "#FFFFFF"
         utility_text = (
@@ -1408,13 +1407,12 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
             f"  --theme-primary: {primary_color};\n"
             f"  --theme-primary-contrast: {primary_contrast};\n"
             f"  --theme-primary-soft: {primary_soft};\n"
-            f"  --theme-primary-light: {primary_light};\n"
             f"  --theme-primary-dark: {primary_dark};\n"
             f"  --utility-bar-text: {utility_text};\n"
             f"  --utility-bar-text-strong: {utility_text_strong};\n"
             f"  --utility-bar-link: {utility_link};\n"
-            f"  --dashboard-chart-bar-start: {primary_light};\n"
-            f"  --dashboard-chart-bar-end: {primary_color};\n"
+            f"  --dashboard-chart-bar-start: {primary_color};\n"
+            f"  --dashboard-chart-bar-end: {primary_dark};\n"
             f"  --dashboard-throughput-bar-start: {primary_color};\n"
             f"  --dashboard-throughput-bar-end: {primary_dark};\n"
             f"  --theme-logo-url: url('{logo_url}');\n"

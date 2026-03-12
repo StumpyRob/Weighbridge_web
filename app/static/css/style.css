@@ -6,13 +6,12 @@
   --theme-primary: var(--primary);
   --theme-primary-contrast: #14213D;
   --theme-primary-soft: rgba(252, 163, 17, 0.16);
-  --theme-primary-light: #FDB43C;
   --theme-primary-dark: #CF860E;
   --utility-bar-text: #FDCB73;
   --utility-bar-text-strong: #FFE1A7;
   --utility-bar-link: #FDB43C;
-  --dashboard-chart-bar-start: var(--theme-primary-light);
-  --dashboard-chart-bar-end: var(--theme-primary);
+  --dashboard-chart-bar-start: var(--theme-primary);
+  --dashboard-chart-bar-end: var(--theme-primary-dark);
   --dashboard-throughput-bar-start: var(--theme-primary);
   --dashboard-throughput-bar-end: var(--theme-primary-dark);
   --theme-nav-logo-height: 34px;
