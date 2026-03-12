@@ -3669,6 +3669,7 @@ def test_logged_in_tenant_home_shows_dashboard_empty_state(tmp_path, monkeypatch
     assert "Activity Overview" in response.text
     assert "Updated just now" in response.text
     assert "Overview Activity" not in response.text
+    assert 'data-dashboard-panel="ai-insights"' not in response.text
     assert 'data-dashboard-empty-state="1"' in response.text
     assert "No operational activity yet" in response.text
     assert "Awaiting completion" in response.text
@@ -3878,6 +3879,7 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert "Setup complete. System initialization checks are green." not in response.text
     assert response.text.count('data-dashboard-metric="') == 4
     assert 'data-dashboard-empty-state="1"' not in response.text
+    assert 'data-dashboard-panel="ai-insights"' not in response.text
     assert 'data-dashboard-panel="weight-throughput"' in response.text
     assert 'data-dashboard-panel="invoice-activity"' in response.text
     assert 'data-dashboard-period="12m"' in response.text
@@ -3969,6 +3971,195 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert 'data-dashboard-throughput-kg="1500"' not in response_12m.text
     assert 'data-dashboard-ticket="A-20D-1"' in response_12m.text
     assert 'data-dashboard-invoice="INV-A-OLD"' in response_12m.text
+
+
+def test_dashboard_ai_insights_show_fallback_for_ai_enabled_tenant_without_activity(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-dashboard-ai-insights-empty.db", monkeypatch=monkeypatch
+    )
+    tenant_id = _seed_tenant(
+        SessionLocal,
+        name="Dashboard AI Co",
+        subdomain="dashai",
+        ai_enabled=True,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_id,
+        company_name="Dashboard AI Co",
+        primary_color="#224466",
+    )
+    _seed_user(
+        SessionLocal,
+        email="dashai-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_id,
+    )
+
+    with _client(app, base_url="https://dashai.localhost") as tenant_client:
+        assert (
+            _login(
+                tenant_client,
+                email="dashai-admin@example.com",
+                password="TestPass123!",
+                next_path="/",
+            )
+            == 303
+        )
+        response = tenant_client.get("/")
+
+    assert response.status_code == 200
+    assert 'data-dashboard-panel="ai-insights"' in response.text
+    assert "AI Insights" in response.text
+    assert "Not enough recent activity to generate insights yet." in response.text
+
+
+def test_dashboard_ai_insights_use_tenant_scoped_metrics_when_enabled(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-dashboard-ai-insights.db", monkeypatch=monkeypatch
+    )
+    fixed_now = datetime(2026, 3, 12, 10, 0, 0)
+    monkeypatch.setattr(main_module, "utcnow", lambda: fixed_now)
+    monkeypatch.setattr(ai_assistant_module, "utcnow", lambda: fixed_now)
+    monkeypatch.setattr(settings, "openai_api_key", "test-openai-key")
+
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", ai_enabled=True)
+    tenant_b = _seed_tenant(SessionLocal, name="Tenant B", subdomain="b", ai_enabled=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_b,
+        company_name="Tenant B Co",
+        primary_color="#225577",
+    )
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+
+    with SessionLocal() as db:
+        customer_a = Customer(tenant_id=tenant_a, account_code="CUST-A", name="Tenant A Customer")
+        customer_b = Customer(tenant_id=tenant_b, account_code="CUST-B", name="Tenant B Customer")
+        vehicle_a = Vehicle(tenant_id=tenant_a, registration="A123 OPEN")
+        vehicle_b = Vehicle(tenant_id=tenant_b, registration="B123 OPEN")
+        db.add_all([customer_a, customer_b, vehicle_a, vehicle_b])
+        db.flush()
+        db.add_all(
+            [
+                Ticket(
+                    tenant_id=tenant_a,
+                    ticket_no="A-OPEN-1",
+                    datetime=fixed_now,
+                    status=TicketStatusEnum.OPEN.value,
+                    direction=DirectionEnum.INWARD.value,
+                    transaction_type=TransactionTypeEnum.WASTEIN.value,
+                    customer_id=customer_a.id,
+                    vehicle_id=vehicle_a.id,
+                    net_kg=1250,
+                    dont_invoice=False,
+                    paid=False,
+                ),
+                Ticket(
+                    tenant_id=tenant_a,
+                    ticket_no="A-COMP-1",
+                    datetime=fixed_now - timedelta(hours=1),
+                    status=TicketStatusEnum.COMPLETE.value,
+                    direction=DirectionEnum.INWARD.value,
+                    transaction_type=TransactionTypeEnum.SALE.value,
+                    customer_id=customer_a.id,
+                    vehicle_id=vehicle_a.id,
+                    net_kg=2400,
+                    dont_invoice=False,
+                    paid=False,
+                ),
+                Ticket(
+                    tenant_id=tenant_b,
+                    ticket_no="B-OPEN-1",
+                    datetime=fixed_now,
+                    status=TicketStatusEnum.OPEN.value,
+                    direction=DirectionEnum.INWARD.value,
+                    transaction_type=TransactionTypeEnum.WASTEIN.value,
+                    customer_id=customer_b.id,
+                    vehicle_id=vehicle_b.id,
+                    net_kg=9999,
+                    dont_invoice=False,
+                    paid=False,
+                ),
+                Invoice(
+                    tenant_id=tenant_a,
+                    invoice_no="INV-A-OD",
+                    customer_id=customer_a.id,
+                    invoice_date=fixed_now.date() - timedelta(days=14),
+                    due_date=fixed_now.date() - timedelta(days=2),
+                    status="OPEN",
+                    net_total=Decimal("100.00"),
+                    vat_total=Decimal("20.00"),
+                    gross_total=Decimal("120.00"),
+                ),
+                Invoice(
+                    tenant_id=tenant_b,
+                    invoice_no="INV-B-OD",
+                    customer_id=customer_b.id,
+                    invoice_date=fixed_now.date() - timedelta(days=14),
+                    due_date=fixed_now.date() - timedelta(days=3),
+                    status="OPEN",
+                    net_total=Decimal("200.00"),
+                    vat_total=Decimal("40.00"),
+                    gross_total=Decimal("240.00"),
+                ),
+            ]
+        )
+        db.commit()
+
+    captured: dict[str, object] = {}
+
+    def fake_openai_request(*, api_key: str, payload: dict[str, object]) -> dict[str, object]:
+        captured["api_key"] = api_key
+        captured["payload"] = payload
+        return {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "- 1 open ticket is still awaiting completion.\n- 1 overdue invoice needs follow-up.\n- Tenant A Customer is the top customer today at 2.4 tonnes.",
+                        }
+                    ],
+                }
+            ]
+        }
+
+    monkeypatch.setattr(ai_assistant_module, "_post_responses_request", fake_openai_request)
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="a-admin@example.com", password="TestPass123!") == 303
+        response = tenant_client.get("/")
+
+    assert response.status_code == 200
+    assert 'data-dashboard-panel="ai-insights"' in response.text
+    assert "1 open ticket is still awaiting completion." in response.text
+    assert "1 overdue invoice needs follow-up." in response.text
+    assert "Tenant A Customer is the top customer today at 2.4 tonnes." in response.text
+    payload = captured["payload"]
+    assert payload["max_output_tokens"] == 220
+    assert payload["reasoning"] == {"effort": "none"}
+    assert payload["text"] == {"verbosity": "low"}
+    insight_input = payload["input"][0]["content"][0]["text"]
+    assert "A-OPEN-1" in insight_input
+    assert "INV-A-OD" in insight_input
+    assert "Tenant A Customer" in insight_input
+    assert "B-OPEN-1" not in insight_input
+    assert "INV-B-OD" not in insight_input
 
 
 def test_all_tenant_subdomains_use_dashboard_on_root_and_non_tenant_hosts_do_not(
@@ -4207,10 +4398,16 @@ def test_tenant_ai_assistant_query_uses_gpt_5_mini_with_tenant_scoped_context(tm
     payload = captured["payload"]
     assert isinstance(payload, dict)
     assert payload["model"] == "gpt-5-mini"
-    assert payload["max_output_tokens"] == 400
+    assert payload["max_output_tokens"] == 320
+    assert payload["reasoning"] == {"effort": "none"}
+    assert payload["text"] == {"verbosity": "low"}
+    assert "Weighbridge Web operational assistant" in payload["instructions"]
+    assert "Examples:" in payload["instructions"]
     content_text = payload["input"][0]["content"][0]["text"]
     assert "A-OPEN-1" in content_text
     assert "B-OPEN-1" not in content_text
+    assert "First line: direct answer." in content_text
+    assert "Then up to 4 short bullet points only if useful." in content_text
 
 
 def test_tenant_ai_assistant_ui_renders_for_enabled_tenant(tmp_path, monkeypatch):
@@ -4245,12 +4442,21 @@ def test_tenant_ai_assistant_ui_renders_for_enabled_tenant(tmp_path, monkeypatch
     assert "Which tickets are still open?" in dashboard.text
     assert "How much weight did we process today?" in dashboard.text
     assert "Which invoices are unpaid?" in dashboard.text
+    assert "Who is the top customer today?" in dashboard.text
     assert 'class="assistant-panel__response-placeholder"' in dashboard.text
     assert "Ask a question or use a quick prompt to get started." in dashboard.text
     assert "Open tickets" in dashboard.text
+    assert "Open waste tickets" in dashboard.text
+    assert "Ready to invoice" in dashboard.text
     assert "Today's tonnage" in dashboard.text
     assert "Unpaid invoices" in dashboard.text
+    assert "Overdue invoices" in dashboard.text
     assert "Recent tickets" in dashboard.text
+    assert "Top customer today" in dashboard.text
+    assert 'data-assistant-followups' in dashboard.text
+    assert "Show open tickets" in dashboard.text
+    assert "Show unpaid invoices" in dashboard.text
+    assert "Show today's weight" in dashboard.text
     assert "/static/js/assistant_panel.js" in dashboard.text
 
 
@@ -4483,6 +4689,20 @@ def test_ai_assistant_system_prompt_stays_platform_controlled():
     assert ai_assistant_module.build_system_prompt() == ai_assistant_module.AI_ASSISTANT_SYSTEM_PROMPT
 
 
+def test_ai_assistant_system_prompt_includes_operational_rules_and_examples():
+    prompt = ai_assistant_module.AI_ASSISTANT_SYSTEM_PROMPT
+
+    assert "Use only the tenant-scoped data provided in this request." in prompt
+    assert "Never invent or assume tickets, invoices, customers, vehicles, weights, totals, dates, or statuses." in prompt
+    assert "You are read-only." in prompt
+    assert "Put the direct answer on the first line." in prompt
+    assert "When listing records, prefer short bullet points" in prompt
+    assert "Q: Which tickets are still open?" in prompt
+    assert "Q: How much weight did we process today?" in prompt
+    assert "Q: Which invoices are unpaid?" in prompt
+    assert "Q: Show recent activity for Premier Groundworks." in prompt
+
+
 def test_ai_assistant_future_tenant_prompt_preferences_append_after_base_prompt():
     preferences = ai_assistant_module.AssistantPromptPreferences(
         response_style="Detailed",
@@ -4498,6 +4718,116 @@ def test_ai_assistant_future_tenant_prompt_preferences_append_after_base_prompt(
     assert "Focus area: accounts." in prompt
     assert "Additional tenant instructions: Use short bullet points where helpful." in prompt
     assert "cannot override platform safety, read-only, or tenant-scoped data rules." in prompt
+
+
+def test_ai_assistant_payload_uses_tuned_generation_settings():
+    payload = ai_assistant_module._build_openai_payload(
+        "Which tickets are still open?",
+        {"open_tickets": {"count": 2, "tickets": [{"ticket_no": "26-00024"}]}},
+        model="gpt-5-mini",
+    )
+
+    assert payload["model"] == "gpt-5-mini"
+    assert payload["max_output_tokens"] == 320
+    assert payload["reasoning"] == {"effort": "none"}
+    assert payload["text"] == {"verbosity": "low"}
+
+
+def test_ai_assistant_context_supports_open_waste_and_top_customer_queries(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ai-assistant-context.db", monkeypatch=monkeypatch
+    )
+    _ = app
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", ai_enabled=True)
+    tenant_b = _seed_tenant(SessionLocal, name="Tenant B", subdomain="b", ai_enabled=True)
+    fixed_now = datetime(2026, 3, 12, 10, 0, 0)
+    monkeypatch.setattr(ai_assistant_module, "utcnow", lambda: fixed_now)
+
+    with SessionLocal() as db:
+        customer_a = Customer(tenant_id=tenant_a, account_code="CUST-A", name="Tenant A Customer")
+        customer_b = Customer(tenant_id=tenant_b, account_code="CUST-B", name="Tenant B Customer")
+        vehicle_a = Vehicle(tenant_id=tenant_a, registration="A123 WASTE")
+        vehicle_b = Vehicle(tenant_id=tenant_b, registration="B123 WASTE")
+        db.add_all([customer_a, customer_b, vehicle_a, vehicle_b])
+        db.flush()
+        db.add_all(
+            [
+                Ticket(
+                    tenant_id=tenant_a,
+                    ticket_no="A-WASTE-OPEN",
+                    datetime=fixed_now,
+                    status=TicketStatusEnum.OPEN.value,
+                    direction=DirectionEnum.INWARD.value,
+                    transaction_type=TransactionTypeEnum.WASTEIN.value,
+                    customer_id=customer_a.id,
+                    vehicle_id=vehicle_a.id,
+                    net_kg=1300,
+                    dont_invoice=False,
+                    paid=False,
+                ),
+                Ticket(
+                    tenant_id=tenant_a,
+                    ticket_no="A-COMP-TOP",
+                    datetime=fixed_now - timedelta(hours=1),
+                    status=TicketStatusEnum.COMPLETE.value,
+                    direction=DirectionEnum.INWARD.value,
+                    transaction_type=TransactionTypeEnum.SALE.value,
+                    customer_id=customer_a.id,
+                    vehicle_id=vehicle_a.id,
+                    net_kg=4200,
+                    dont_invoice=False,
+                    paid=False,
+                ),
+                Ticket(
+                    tenant_id=tenant_b,
+                    ticket_no="B-WASTE-OPEN",
+                    datetime=fixed_now,
+                    status=TicketStatusEnum.OPEN.value,
+                    direction=DirectionEnum.INWARD.value,
+                    transaction_type=TransactionTypeEnum.WASTEIN.value,
+                    customer_id=customer_b.id,
+                    vehicle_id=vehicle_b.id,
+                    net_kg=9999,
+                    dont_invoice=False,
+                    paid=False,
+                ),
+                Invoice(
+                    tenant_id=tenant_a,
+                    invoice_no="INV-A-OVERDUE",
+                    customer_id=customer_a.id,
+                    invoice_date=fixed_now.date() - timedelta(days=14),
+                    due_date=fixed_now.date() - timedelta(days=2),
+                    status="OPEN",
+                    net_total=Decimal("100.00"),
+                    vat_total=Decimal("20.00"),
+                    gross_total=Decimal("120.00"),
+                ),
+                Invoice(
+                    tenant_id=tenant_b,
+                    invoice_no="INV-B-OVERDUE",
+                    customer_id=customer_b.id,
+                    invoice_date=fixed_now.date() - timedelta(days=14),
+                    due_date=fixed_now.date() - timedelta(days=3),
+                    status="OPEN",
+                    net_total=Decimal("200.00"),
+                    vat_total=Decimal("40.00"),
+                    gross_total=Decimal("240.00"),
+                ),
+            ]
+        )
+        db.commit()
+
+        context = ai_assistant_module.build_question_context(
+            db,
+            tenant_a,
+            "Which waste tickets are still open, which invoices are overdue, and who is the top customer today?",
+        )
+
+    assert context["open_waste_tickets"]["count"] == 1
+    assert context["open_waste_tickets"]["tickets"][0]["ticket_no"] == "A-WASTE-OPEN"
+    assert context["overdue_invoices"]["count"] == 1
+    assert context["overdue_invoices"]["invoices"][0]["invoice_no"] == "INV-A-OVERDUE"
+    assert context["top_customer_today"]["customer"] == "Tenant A Customer"
 
 
 def test_new_tenant_creation_flow_seeds_usable_baseline_and_requires_user_creation_from_detail(

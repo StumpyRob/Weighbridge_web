@@ -54,6 +54,7 @@ from .services.credit import (
     INVOICE_OUTSTANDING_EXCLUDED_STATUSES,
     INVOICE_OUTSTANDING_ISSUED_STATUSES,
 )
+from .services.ai_assistant import generate_dashboard_insights, resolve_assistant_model
 from .services.pdf import check_invoice_pdf_renderer
 from .services.ui_branding import (
     darken_hex_color,
@@ -697,7 +698,14 @@ def _ticket_period_summary(points: list[dict[str, object]], *, period: str) -> s
     return f"Total processed this period: {total_count} {ticket_label}"
 
 
-def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
+def _build_tenant_dashboard(
+    db: Session,
+    *,
+    tenant_id: int,
+    period: str,
+    ai_enabled: bool = False,
+    ai_model: str | None = None,
+) -> dict[str, object]:
     today = utcnow().date()
     today_start, tomorrow_start = _datetime_bounds_for_day(today)
     overview_period = _normalize_dashboard_period(period)
@@ -856,6 +864,15 @@ def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
         chart_points,
         period=overview_period,
     )
+    ai_insights = (
+        generate_dashboard_insights(
+            db,
+            tenant_id,
+            model=resolve_assistant_model(ai_model),
+        )
+        if ai_enabled
+        else None
+    )
 
     return {
         "summary_cards": [
@@ -906,6 +923,7 @@ def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
         "chart_empty_message": chart_empty_message,
         "chart_has_data": max_count > 0,
         "weight_throughput": weight_throughput,
+        "ai_insights": ai_insights,
         "empty_state": empty_state,
     }
 
@@ -1480,6 +1498,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         )
         setup_ready = initialized and len(missing_required) == 0
         current_user = getattr(request.state, "current_user", None)
+        current_tenant = getattr(request.state, "tenant", None)
         show_dashboard = current_user is not None
         needs_platform_bootstrap = user_count == 0 and platform_superadmin_count == 0
         needs_workspace_admin = user_count == 0 and platform_superadmin_count > 0
@@ -1490,7 +1509,10 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 "request": request,
                 "dashboard": _build_tenant_dashboard(
                     db,
+                    tenant_id=int(getattr(current_tenant, "id", 0) or 0),
                     period=_normalize_dashboard_period(period),
+                    ai_enabled=bool(getattr(current_tenant, "ai_enabled", False)),
+                    ai_model=getattr(current_tenant, "ai_model", None),
                 )
                 if show_dashboard
                 else None,

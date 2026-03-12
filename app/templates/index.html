@@ -53,6 +53,23 @@
       {% endfor %}
     </section>
 
+    {% if dashboard.ai_insights %}
+      <section class="frame dashboard-ai-insights" data-dashboard-panel="ai-insights">
+        <div class="frame-header">AI Insights</div>
+        <div class="frame-body">
+          {% if dashboard.ai_insights["items"] %}
+            <ul class="dashboard-ai-insights__list">
+              {% for insight in dashboard.ai_insights["items"] %}
+                <li>{{ insight }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <div class="dashboard-inline-empty">{{ dashboard.ai_insights["message"] }}</div>
+          {% endif %}
+        </div>
+      </section>
+    {% endif %}
+
     <section class="dashboard-overview-toolbar" aria-label="Activity overview controls">
       <div class="dashboard-overview-toolbar__title">
         <h2>

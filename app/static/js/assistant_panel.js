@@ -34,7 +34,14 @@
     responseEl.appendChild(paragraph);
   }
 
-  async function submitAssistantQuestion(form, question) {
+  function setFollowupsVisible(followupsEl, isVisible) {
+    if (!followupsEl) {
+      return;
+    }
+    followupsEl.hidden = !isVisible;
+  }
+
+  async function submitAssistantQuestion(form, question, followupsEl) {
     const endpoint = form.getAttribute("data-endpoint") || "";
     const responseEl = document.querySelector("[data-assistant-response]");
     const submitButton = form.querySelector("[data-assistant-submit]");
@@ -46,11 +53,13 @@
     const trimmedQuestion = String(question || "").trim();
     if (!trimmedQuestion) {
       setResponseContent(responseEl, RESPONSE_EMPTY_QUESTION, true);
+      setFollowupsVisible(followupsEl, false);
       return;
     }
 
     setBusy(submitButton, statusEl, true);
     setResponseContent(responseEl, RESPONSE_BUSY, true);
+    setFollowupsVisible(followupsEl, false);
     const abortController = typeof AbortController === "function" ? new AbortController() : null;
     const timeoutId = window.setTimeout(function () {
       if (abortController) {
@@ -75,8 +84,10 @@
       const payload = await response.json();
       const answer = String((payload || {}).answer || "").trim();
       setResponseContent(responseEl, answer || RESPONSE_UNAVAILABLE, false);
+      setFollowupsVisible(followupsEl, true);
     } catch (_error) {
       setResponseContent(responseEl, RESPONSE_UNAVAILABLE, true);
+      setFollowupsVisible(followupsEl, true);
     } finally {
       window.clearTimeout(timeoutId);
       setBusy(submitButton, statusEl, false);
@@ -89,12 +100,14 @@
     const form = document.querySelector("[data-assistant-form]");
     const input = document.querySelector("[data-assistant-input]");
     const responseEl = document.querySelector("[data-assistant-response]");
+    const followupsEl = document.querySelector("[data-assistant-followups]");
     if (!panel || !openButton || !form || !input) {
       return;
     }
     if (responseEl) {
       setResponseContent(responseEl, RESPONSE_PLACEHOLDER, true);
     }
+    setFollowupsVisible(followupsEl, false);
 
     var closeTimer = null;
     const closeButtons = panel.querySelectorAll("[data-assistant-close]");
@@ -135,7 +148,7 @@
 
     form.addEventListener("submit", function (event) {
       event.preventDefault();
-      submitAssistantQuestion(form, input.value);
+      submitAssistantQuestion(form, input.value, followupsEl);
     });
 
     promptButtons.forEach(function (button) {
@@ -143,7 +156,7 @@
         const question = button.getAttribute("data-assistant-prompt") || "";
         input.value = question;
         openPanel();
-        submitAssistantQuestion(form, question);
+        submitAssistantQuestion(form, question, followupsEl);
       });
     });
   }

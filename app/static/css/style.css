@@ -3008,6 +3008,26 @@ details > summary:focus-visible {
   margin-top: var(--section-gap);
 }
 
+.dashboard-ai-insights {
+  margin-top: var(--section-gap);
+}
+
+.dashboard-ai-insights .frame-body {
+  padding-top: 1rem;
+}
+
+.dashboard-ai-insights__list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.45rem;
+  color: #1f2937;
+}
+
+.dashboard-ai-insights__list li {
+  line-height: 1.45;
+}
+
 .dashboard-panel[data-dashboard-panel="invoice-activity"] {
   grid-column: 1 / -1;
 }
@@ -4165,6 +4185,22 @@ body.assistant-panel-open {
 
 .assistant-panel__response-text {
   color: #111827;
+}
+
+.assistant-panel__followups {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.assistant-panel__followups-title {
+  margin: 0;
+  color: #4b5563;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.assistant-panel__prompts--followups {
+  gap: 0.4rem;
 }
 
 .company-logo-preview-container {

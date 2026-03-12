@@ -4,19 +4,28 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import datetime
 from decimal import Decimal
 
 import httpx
-from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..models import Customer, Invoice, Ticket, TicketStatusEnum, Vehicle
 from ..models.base import utcnow
-from .credit import (
-    INVOICE_OUTSTANDING_EXCLUDED_STATUSES,
-    INVOICE_OUTSTANDING_ISSUED_STATUSES,
+from .ai_assistant_data import (
+    AI_ASSISTANT_SAMPLE_LIMIT,
+    build_dashboard_insight_metrics as _build_dashboard_insight_metrics,
+    build_question_context as _build_question_context,
+    dashboard_insight_metrics_have_activity,
+    get_day_weight_total,
+    get_open_tickets,
+    get_open_waste_tickets,
+    get_overdue_invoices,
+    get_recent_tickets,
+    get_today_weight_total,
+    get_top_customer_today,
+    get_uninvoiced_tickets,
+    get_unpaid_invoices,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,17 +45,52 @@ SUPPORTED_ASSISTANT_FOCUS_AREAS = (
     "accounts",
     "mixed",
 )
-AI_ASSISTANT_MAX_OUTPUT_TOKENS = 400
-AI_ASSISTANT_SAMPLE_LIMIT = 5
+AI_ASSISTANT_MAX_OUTPUT_TOKENS = 320
 AI_ASSISTANT_QUESTION_MAX_CHARS = 500
 AI_ASSISTANT_CUSTOM_INSTRUCTIONS_MAX_CHARS = 240
+AI_ASSISTANT_REASONING_EFFORT = "none"
+AI_ASSISTANT_TEXT_VERBOSITY = "low"
+AI_DASHBOARD_INSIGHTS_MAX_OUTPUT_TOKENS = 220
 AI_ASSISTANT_SYSTEM_PROMPT = (
-    "You are an assistant for a weighbridge management system. "
-    "Answer operational questions about tickets, invoices, vehicles, customers, and waste processing. "
-    "Keep responses short and practical for operators. "
-    "You are read-only and must only use the provided tenant-scoped data. "
-    "If the answer is not in the data, say so."
+    "You are the Weighbridge Web operational assistant. "
+    "Answer operational questions for weighbridge operators and admins in a concise, practical, factual way. "
+    "Use only the tenant-scoped data provided in this request. "
+    "Never invent or assume tickets, invoices, customers, vehicles, weights, totals, dates, or statuses. "
+    "If the data is unavailable or the answer is not present, say so clearly. "
+    "You are read-only. Never create, edit, delete, complete, void, pay, print, email, or invoice records. "
+    "If asked to perform an action, briefly say that you cannot do that. "
+    "Keep answers short and useful. Put the direct answer on the first line. "
+    "When listing records, prefer short bullet points and include ticket numbers or invoice numbers when relevant. "
+    "Avoid generic chatbot wording, long explanations, or speculation.\n"
+    "\n"
+    "Examples:\n"
+    "Q: Which tickets are still open?\n"
+    "A: There are 4 open tickets.\n"
+    "- Oldest: 26-00024 for Premier Groundworks\n"
+    "- Latest: 26-00031 for ACME Recycling\n"
+    "\n"
+    "Q: How much weight did we process today?\n"
+    "A: Today we processed 255.5 tonnes across 26 completed tickets.\n"
+    "\n"
+    "Q: Which invoices are unpaid?\n"
+    "A: There are 3 unpaid invoices.\n"
+    "- INV-1024 for Premier Groundworks, 1240.00\n"
+    "- INV-1027 for North Aggregates, 980.00\n"
+    "\n"
+    "Q: Show recent activity for Premier Groundworks.\n"
+    "A: I can only report activity that appears in the provided tenant data.\n"
+    "- Latest ticket: 26-00031\n"
+    "- Status: complete"
 )
+AI_DASHBOARD_INSIGHTS_PROMPT = (
+    "For dashboard insights, return 3 to 5 short operational bullet points only. "
+    "No heading, no intro, and no closing sentence. "
+    "Use only the provided tenant-scoped metrics. "
+    "Do not invent trends or comparisons that are not supported by the metrics. "
+    "If the metrics are insufficient, say exactly: Not enough recent activity to generate insights yet."
+)
+AI_DASHBOARD_INSIGHTS_FALLBACK = "Not enough recent activity to generate insights yet."
+AI_DASHBOARD_INSIGHTS_UNAVAILABLE = "AI insights are temporarily unavailable."
 
 _WRITE_REQUEST_PATTERNS = (
     re.compile(r"^\s*(create|add|edit|update|change|delete|remove|void)\b", re.IGNORECASE),
@@ -54,12 +98,6 @@ _WRITE_REQUEST_PATTERNS = (
     re.compile(r"\b(mark|set)\b.*\b(paid|void|deleted|removed)\b", re.IGNORECASE),
     re.compile(r"\b(send|email|print)\b.*\b(invoice|ticket|receipt)\b", re.IGNORECASE),
 )
-
-_OPEN_TICKET_HINTS = ("open ticket", "open tickets", "still open", "awaiting completion")
-_UNINVOICED_HINTS = ("uninvoic", "not invoiced", "ready to invoice", "invoice ready")
-_TODAY_WEIGHT_HINTS = ("today", "weight", "throughput", "kg", "tonne", "tonnes")
-_UNPAID_INVOICE_HINTS = ("unpaid", "outstanding invoice", "outstanding invoices", "overdue invoice", "overdue invoices")
-_RECENT_ACTIVITY_HINTS = ("recent", "latest", "activity", "last ticket", "last tickets")
 
 
 class AIAssistantError(RuntimeError):
@@ -75,303 +113,9 @@ class AssistantPromptPreferences:
     custom_instructions: str | None = None
 
 
-def _format_datetime(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    return value.strftime("%d %b %Y %H:%M")
-
-
-def _format_date(value) -> str | None:
-    if value is None:
-        return None
-    return value.strftime("%d %b %Y")
-
-
-def _decimal_to_plain_string(value: Decimal) -> str:
-    text = format(value, "f")
-    if "." in text:
-        text = text.rstrip("0").rstrip(".")
-    return text or "0"
-
-
-def _format_weight_kg(value: object) -> str:
-    amount = Decimal(str(value or 0))
-    return f"{_decimal_to_plain_string(amount.quantize(Decimal('0.001')))} kg"
-
-
-def _format_money(value: object) -> str:
-    amount = Decimal(str(value or 0)).quantize(Decimal("0.01"))
-    return f"{amount}"
-
-
-def _vehicle_label(registration: str | None, manual_registration: str | None) -> str | None:
-    candidate = str(registration or "").strip() or str(manual_registration or "").strip()
-    return candidate or None
-
-
-def get_open_tickets(db: Session, tenant_id: int, *, limit: int = AI_ASSISTANT_SAMPLE_LIMIT) -> dict[str, object]:
-    status_open = TicketStatusEnum.OPEN.value
-    total = int(
-        db.execute(
-            select(func.count(Ticket.id)).where(
-                Ticket.tenant_id == int(tenant_id),
-                Ticket.status == status_open,
-            )
-        ).scalar_one()
-        or 0
-    )
-    rows = db.execute(
-        select(
-            Ticket.ticket_no,
-            Ticket.datetime,
-            Customer.name,
-            Vehicle.registration,
-            Ticket.vehicle_reg_text,
-        )
-        .outerjoin(Customer, Ticket.customer_id == Customer.id)
-        .outerjoin(Vehicle, Ticket.vehicle_id == Vehicle.id)
-        .where(
-            Ticket.tenant_id == int(tenant_id),
-            Ticket.status == status_open,
-        )
-        .order_by(Ticket.datetime.asc(), Ticket.id.asc())
-        .limit(limit)
-    ).all()
-    return {
-        "count": total,
-        "tickets": [
-            {
-                "ticket_no": ticket_no,
-                "datetime": _format_datetime(ticket_datetime),
-                "customer": str(customer_name or "").strip() or None,
-                "vehicle": _vehicle_label(vehicle_registration, vehicle_reg_text),
-            }
-            for ticket_no, ticket_datetime, customer_name, vehicle_registration, vehicle_reg_text in rows
-        ],
-    }
-
-
-def get_uninvoiced_tickets(
-    db: Session,
-    tenant_id: int,
-    *,
-    limit: int = AI_ASSISTANT_SAMPLE_LIMIT,
-) -> dict[str, object]:
-    status_complete = TicketStatusEnum.COMPLETE.value
-    filters = (
-        Ticket.tenant_id == int(tenant_id),
-        Ticket.status == status_complete,
-        Ticket.invoice_id.is_(None),
-        Ticket.dont_invoice.is_(False),
-        Ticket.paid.is_(False),
-    )
-    total = int(
-        db.execute(select(func.count(Ticket.id)).where(*filters)).scalar_one()
-        or 0
-    )
-    rows = db.execute(
-        select(
-            Ticket.ticket_no,
-            Ticket.datetime,
-            Customer.name,
-            Vehicle.registration,
-            Ticket.vehicle_reg_text,
-            Ticket.net_kg,
-        )
-        .outerjoin(Customer, Ticket.customer_id == Customer.id)
-        .outerjoin(Vehicle, Ticket.vehicle_id == Vehicle.id)
-        .where(*filters)
-        .order_by(Ticket.datetime.desc(), Ticket.id.desc())
-        .limit(limit)
-    ).all()
-    return {
-        "count": total,
-        "tickets": [
-            {
-                "ticket_no": ticket_no,
-                "datetime": _format_datetime(ticket_datetime),
-                "customer": str(customer_name or "").strip() or None,
-                "vehicle": _vehicle_label(vehicle_registration, vehicle_reg_text),
-                "net_kg": _format_weight_kg(net_kg),
-            }
-            for ticket_no, ticket_datetime, customer_name, vehicle_registration, vehicle_reg_text, net_kg in rows
-        ],
-    }
-
-
-def get_today_weight_total(db: Session, tenant_id: int) -> dict[str, object]:
-    today = utcnow().date()
-    day_start = datetime.combine(today, time.min)
-    day_end = day_start + timedelta(days=1)
-    status_complete = TicketStatusEnum.COMPLETE.value
-    total_kg = Decimal(
-        str(
-            db.execute(
-                select(func.coalesce(func.sum(Ticket.net_kg), 0)).where(
-                    Ticket.tenant_id == int(tenant_id),
-                    Ticket.status == status_complete,
-                    Ticket.datetime >= day_start,
-                    Ticket.datetime < day_end,
-                )
-            ).scalar_one()
-            or 0
-        )
-    )
-    completed_count = int(
-        db.execute(
-            select(func.count(Ticket.id)).where(
-                Ticket.tenant_id == int(tenant_id),
-                Ticket.status == status_complete,
-                Ticket.datetime >= day_start,
-                Ticket.datetime < day_end,
-            )
-        ).scalar_one()
-        or 0
-    )
-    tonnes = (total_kg / Decimal("1000")).quantize(Decimal("0.001"))
-    return {
-        "date": today.isoformat(),
-        "completed_ticket_count": completed_count,
-        "total_kg": _format_weight_kg(total_kg),
-        "total_tonnes": f"{_decimal_to_plain_string(tonnes)} tonnes",
-    }
-
-
-def get_unpaid_invoices(
-    db: Session,
-    tenant_id: int,
-    *,
-    limit: int = AI_ASSISTANT_SAMPLE_LIMIT,
-) -> dict[str, object]:
-    status_upper = func.upper(func.coalesce(Invoice.status, ""))
-    outstanding_filter = or_(
-        status_upper.in_(INVOICE_OUTSTANDING_ISSUED_STATUSES),
-        ~status_upper.in_(INVOICE_OUTSTANDING_EXCLUDED_STATUSES),
-    )
-    filters = (
-        Invoice.tenant_id == int(tenant_id),
-        status_upper != "",
-        outstanding_filter,
-    )
-    total = int(
-        db.execute(select(func.count(Invoice.id)).where(*filters)).scalar_one()
-        or 0
-    )
-    rows = db.execute(
-        select(
-            Invoice.invoice_no,
-            Invoice.invoice_date,
-            Invoice.status,
-            Invoice.gross_total,
-            Customer.name,
-        )
-        .join(Customer, Invoice.customer_id == Customer.id)
-        .where(*filters)
-        .order_by(Invoice.invoice_date.desc(), Invoice.id.desc())
-        .limit(limit)
-    ).all()
-    return {
-        "count": total,
-        "invoices": [
-            {
-                "invoice_no": invoice_no,
-                "invoice_date": _format_date(invoice_date),
-                "status": str(status or "").strip() or None,
-                "customer": str(customer_name or "").strip() or None,
-                "gross_total": _format_money(gross_total),
-            }
-            for invoice_no, invoice_date, status, gross_total, customer_name in rows
-        ],
-    }
-
-
-def get_recent_tickets(
-    db: Session,
-    tenant_id: int,
-    *,
-    limit: int = AI_ASSISTANT_SAMPLE_LIMIT,
-) -> dict[str, object]:
-    total = int(
-        db.execute(
-            select(func.count(Ticket.id)).where(
-                Ticket.tenant_id == int(tenant_id),
-                Ticket.status != TicketStatusEnum.VOID.value,
-            )
-        ).scalar_one()
-        or 0
-    )
-    rows = db.execute(
-        select(
-            Ticket.ticket_no,
-            Ticket.datetime,
-            Ticket.status,
-            Ticket.net_kg,
-            Customer.name,
-            Vehicle.registration,
-            Ticket.vehicle_reg_text,
-        )
-        .outerjoin(Customer, Ticket.customer_id == Customer.id)
-        .outerjoin(Vehicle, Ticket.vehicle_id == Vehicle.id)
-        .where(
-            Ticket.tenant_id == int(tenant_id),
-            Ticket.status != TicketStatusEnum.VOID.value,
-        )
-        .order_by(Ticket.datetime.desc(), Ticket.id.desc())
-        .limit(limit)
-    ).all()
-    return {
-        "count": total,
-        "tickets": [
-            {
-                "ticket_no": ticket_no,
-                "datetime": _format_datetime(ticket_datetime),
-                "status": str(status or "").strip() or None,
-                "customer": str(customer_name or "").strip() or None,
-                "vehicle": _vehicle_label(vehicle_registration, vehicle_reg_text),
-                "net_kg": _format_weight_kg(net_kg),
-            }
-            for ticket_no, ticket_datetime, status, net_kg, customer_name, vehicle_registration, vehicle_reg_text in rows
-        ],
-    }
-
-
 def _question_needs_write_access(question: str) -> bool:
     normalized = str(question or "").strip()
     return any(pattern.search(normalized) for pattern in _WRITE_REQUEST_PATTERNS)
-
-
-def _include_topic(question_lower: str, hints: tuple[str, ...]) -> bool:
-    return any(hint in question_lower for hint in hints)
-
-
-def build_question_context(db: Session, tenant_id: int, question: str) -> dict[str, object]:
-    normalized = str(question or "").strip().lower()
-    context: dict[str, object] = {
-        "generated_at": utcnow().isoformat(),
-        "tenant_id": int(tenant_id),
-    }
-
-    include_open = _include_topic(normalized, _OPEN_TICKET_HINTS)
-    include_uninvoiced = _include_topic(normalized, _UNINVOICED_HINTS)
-    include_today_weight = _include_topic(normalized, _TODAY_WEIGHT_HINTS)
-    include_unpaid = _include_topic(normalized, _UNPAID_INVOICE_HINTS)
-    include_recent = _include_topic(normalized, _RECENT_ACTIVITY_HINTS)
-
-    if not any((include_open, include_uninvoiced, include_today_weight, include_unpaid, include_recent)):
-        include_open = include_uninvoiced = include_today_weight = include_unpaid = include_recent = True
-
-    if include_open:
-        context["open_tickets"] = get_open_tickets(db, tenant_id)
-    if include_uninvoiced:
-        context["uninvoiced_tickets"] = get_uninvoiced_tickets(db, tenant_id)
-    if include_today_weight:
-        context["today_weight_total"] = get_today_weight_total(db, tenant_id)
-    if include_unpaid:
-        context["unpaid_invoices"] = get_unpaid_invoices(db, tenant_id)
-    if include_recent:
-        context["recent_tickets"] = get_recent_tickets(db, tenant_id)
-
-    return context
 
 
 def _json_default(value: object) -> str:
@@ -380,22 +124,6 @@ def _json_default(value: object) -> str:
     if isinstance(value, datetime):
         return value.isoformat()
     return str(value)
-
-
-def _build_user_input(question: str, context: dict[str, object]) -> str:
-    compact_context = json.dumps(
-        context,
-        default=_json_default,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-    return (
-        "Use only this tenant-scoped operational data.\n"
-        f"Question: {question.strip()}\n"
-        f"Data: {compact_context}\n"
-        "Answer in no more than 4 short sentences."
-    )
 
 
 def _normalize_prompt_preference(
@@ -419,6 +147,7 @@ def build_system_prompt(preferences: AssistantPromptPreferences | None = None) -
     if preferences is None:
         return AI_ASSISTANT_SYSTEM_PROMPT
 
+    additions: list[str] = []
     response_style = _normalize_prompt_preference(
         preferences.response_style,
         SUPPORTED_ASSISTANT_RESPONSE_STYLES,
@@ -428,18 +157,14 @@ def build_system_prompt(preferences: AssistantPromptPreferences | None = None) -
         SUPPORTED_ASSISTANT_FOCUS_AREAS,
     )
     custom_instructions = _normalize_custom_instructions(preferences.custom_instructions)
-
-    additions: list[str] = []
     if response_style:
         additions.append(f"Response style: {response_style}.")
     if focus:
         additions.append(f"Focus area: {focus}.")
     if custom_instructions:
         additions.append(f"Additional tenant instructions: {custom_instructions}")
-
     if not additions:
         return AI_ASSISTANT_SYSTEM_PROMPT
-
     return " ".join(
         [
             AI_ASSISTANT_SYSTEM_PROMPT,
@@ -450,11 +175,78 @@ def build_system_prompt(preferences: AssistantPromptPreferences | None = None) -
     )
 
 
+def build_question_context(db: Session, tenant_id: int, question: str) -> dict[str, object]:
+    now = utcnow()
+    return _build_question_context(
+        db,
+        tenant_id,
+        question,
+        generated_at=now,
+        today=now.date(),
+    )
+
+
+def build_dashboard_insight_metrics(db: Session, tenant_id: int) -> dict[str, object]:
+    return _build_dashboard_insight_metrics(db, tenant_id, today=utcnow().date())
+
+
 def resolve_assistant_model(candidate: str | None) -> str:
     normalized = str(candidate or "").strip()
     if normalized in SUPPORTED_ASSISTANT_MODELS:
         return normalized
     return AI_ASSISTANT_MODEL
+
+
+def _build_response_request(
+    *,
+    model: str,
+    instructions: str,
+    max_output_tokens: int,
+    user_input: str,
+) -> dict[str, object]:
+    return {
+        "model": resolve_assistant_model(model),
+        "instructions": instructions,
+        "max_output_tokens": max_output_tokens,
+        "reasoning": {
+            "effort": AI_ASSISTANT_REASONING_EFFORT,
+        },
+        "text": {
+            "verbosity": AI_ASSISTANT_TEXT_VERBOSITY,
+        },
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": user_input,
+                    }
+                ],
+            }
+        ],
+    }
+
+
+def _build_user_input(question: str, context: dict[str, object]) -> str:
+    compact_context = json.dumps(
+        context,
+        default=_json_default,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return (
+        "Use only this tenant-scoped operational data.\n"
+        f"Question: {question.strip()}\n"
+        f"Data: {compact_context}\n"
+        "Reply format:\n"
+        "- First line: direct answer.\n"
+        "- Then up to 4 short bullet points only if useful.\n"
+        "- Mention ticket numbers, invoice numbers, customers, dates, or totals when present in the data.\n"
+        "- If the data is missing, say so clearly.\n"
+        "- Keep the whole reply under 120 words."
+    )
 
 
 def _build_openai_payload(
@@ -464,22 +256,12 @@ def _build_openai_payload(
     model: str,
     prompt_preferences: AssistantPromptPreferences | None = None,
 ) -> dict[str, object]:
-    return {
-        "model": resolve_assistant_model(model),
-        "instructions": build_system_prompt(prompt_preferences),
-        "max_output_tokens": AI_ASSISTANT_MAX_OUTPUT_TOKENS,
-        "input": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": _build_user_input(question, context),
-                    }
-                ],
-            }
-        ],
-    }
+    return _build_response_request(
+        model=model,
+        instructions=build_system_prompt(prompt_preferences),
+        max_output_tokens=AI_ASSISTANT_MAX_OUTPUT_TOKENS,
+        user_input=_build_user_input(question, context),
+    )
 
 
 def _post_responses_request(*, api_key: str, payload: dict[str, object]) -> dict[str, object]:
@@ -553,6 +335,32 @@ def _extract_response_text(payload: dict[str, object]) -> str:
     raise AIAssistantError("AI assistant returned an empty response.", status_code=502)
 
 
+def _build_dashboard_insights_input(metrics: dict[str, object]) -> str:
+    compact_metrics = json.dumps(
+        metrics,
+        default=_json_default,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return (
+        "Generate 3 to 5 short operational dashboard insights from these tenant-scoped metrics.\n"
+        "Return bullet points only.\n"
+        f"Metrics: {compact_metrics}"
+    )
+
+
+def _extract_dashboard_insight_items(payload: dict[str, object]) -> list[str]:
+    items: list[str] = []
+    for raw_line in re.split(r"[\r\n]+", _extract_response_text(payload)):
+        normalized = re.sub(r"^(?:[-*]|[0-9]+\.)\s*", "", str(raw_line or "").strip()).strip()
+        if normalized:
+            items.append(normalized)
+    if not items:
+        return [AI_DASHBOARD_INSIGHTS_FALLBACK]
+    return items[:5]
+
+
 def answer_question(
     db: Session,
     tenant_id: int,
@@ -568,7 +376,6 @@ def answer_question(
             f"Question must be {AI_ASSISTANT_QUESTION_MAX_CHARS} characters or fewer.",
             status_code=400,
         )
-
     if _question_needs_write_access(clean_question):
         return (
             "The assistant is read-only. It can answer questions about current tenant data, "
@@ -579,11 +386,82 @@ def answer_question(
     if not api_key:
         raise AIAssistantError("AI assistant is not configured.", status_code=503)
 
-    context = build_question_context(db, tenant_id, clean_question)
     payload = _build_openai_payload(
         clean_question,
-        context,
+        build_question_context(db, tenant_id, clean_question),
         model=resolve_assistant_model(model),
     )
     response_payload = _post_responses_request(api_key=api_key, payload=payload)
     return _extract_response_text(response_payload)
+
+
+def generate_dashboard_insights(
+    db: Session,
+    tenant_id: int,
+    *,
+    model: str | None = None,
+) -> dict[str, object]:
+    metrics = build_dashboard_insight_metrics(db, tenant_id)
+    if not dashboard_insight_metrics_have_activity(metrics):
+        return {"items": [], "message": AI_DASHBOARD_INSIGHTS_FALLBACK, "metrics": metrics}
+
+    api_key = str(settings.openai_api_key or "").strip()
+    if not api_key:
+        return {"items": [], "message": AI_DASHBOARD_INSIGHTS_UNAVAILABLE, "metrics": metrics}
+
+    payload = _build_response_request(
+        model=resolve_assistant_model(model),
+        instructions=f"{build_system_prompt()} {AI_DASHBOARD_INSIGHTS_PROMPT}",
+        max_output_tokens=AI_DASHBOARD_INSIGHTS_MAX_OUTPUT_TOKENS,
+        user_input=_build_dashboard_insights_input(metrics),
+    )
+    try:
+        items = _extract_dashboard_insight_items(
+            _post_responses_request(api_key=api_key, payload=payload)
+        )
+    except AIAssistantError:
+        return {"items": [], "message": AI_DASHBOARD_INSIGHTS_UNAVAILABLE, "metrics": metrics}
+    return {
+        "items": items,
+        "message": "",
+        "metrics": metrics,
+    }
+
+
+__all__ = [
+    "AI_ASSISTANT_CUSTOM_INSTRUCTIONS_MAX_CHARS",
+    "AI_ASSISTANT_MAX_OUTPUT_TOKENS",
+    "AI_ASSISTANT_MODEL",
+    "AI_ASSISTANT_QUESTION_MAX_CHARS",
+    "AI_ASSISTANT_REASONING_EFFORT",
+    "AI_ASSISTANT_SAMPLE_LIMIT",
+    "AI_ASSISTANT_SYSTEM_PROMPT",
+    "AI_ASSISTANT_TEXT_VERBOSITY",
+    "AI_DASHBOARD_INSIGHTS_FALLBACK",
+    "AI_DASHBOARD_INSIGHTS_MAX_OUTPUT_TOKENS",
+    "AI_DASHBOARD_INSIGHTS_PROMPT",
+    "AI_DASHBOARD_INSIGHTS_UNAVAILABLE",
+    "AIAssistantError",
+    "AssistantPromptPreferences",
+    "SUPPORTED_ASSISTANT_FOCUS_AREAS",
+    "SUPPORTED_ASSISTANT_MODELS",
+    "SUPPORTED_ASSISTANT_RESPONSE_STYLES",
+    "_build_openai_payload",
+    "_extract_response_text",
+    "_post_responses_request",
+    "answer_question",
+    "build_dashboard_insight_metrics",
+    "build_question_context",
+    "build_system_prompt",
+    "generate_dashboard_insights",
+    "get_day_weight_total",
+    "get_open_tickets",
+    "get_open_waste_tickets",
+    "get_overdue_invoices",
+    "get_recent_tickets",
+    "get_today_weight_total",
+    "get_top_customer_today",
+    "get_uninvoiced_tickets",
+    "get_unpaid_invoices",
+    "resolve_assistant_model",
+]
