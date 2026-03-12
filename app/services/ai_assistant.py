@@ -521,6 +521,92 @@ def _build_structured_result_items(question: str, context: dict[str, object]) ->
     return items
 
 
+def _count_summary(
+    count: int,
+    *,
+    zero: str,
+    singular: str,
+    plural: str,
+) -> str:
+    if count <= 0:
+        return zero
+    if count == 1:
+        return singular
+    return plural.format(count=count)
+
+
+def _structured_summary_for_topic(topic: str, payload: object) -> str | None:
+    if topic == "open_tickets" and isinstance(payload, dict):
+        count = int(payload.get("count") or 0)
+        return _count_summary(
+            count,
+            zero="There are no open tickets.",
+            singular="There is 1 open ticket.",
+            plural="There are {count} open tickets.",
+        )
+    if topic == "open_waste_tickets" and isinstance(payload, dict):
+        count = int(payload.get("count") or 0)
+        return _count_summary(
+            count,
+            zero="There are no open waste tickets.",
+            singular="There is 1 open waste ticket.",
+            plural="There are {count} open waste tickets.",
+        )
+    if topic == "uninvoiced_tickets" and isinstance(payload, dict):
+        count = int(payload.get("count") or 0)
+        return _count_summary(
+            count,
+            zero="There are no tickets ready to invoice.",
+            singular="There is 1 ticket ready to invoice.",
+            plural="There are {count} tickets ready to invoice.",
+        )
+    if topic == "recent_tickets" and isinstance(payload, dict):
+        count = int(payload.get("count") or 0)
+        if count <= 0:
+            return "There are no recent tickets to show."
+        return "Here are the most recent tickets."
+    if topic == "unpaid_invoices" and isinstance(payload, dict):
+        count = int(payload.get("count") or 0)
+        return _count_summary(
+            count,
+            zero="There are no unpaid invoices.",
+            singular="There is 1 unpaid invoice.",
+            plural="There are {count} unpaid invoices.",
+        )
+    if topic == "overdue_invoices" and isinstance(payload, dict):
+        count = int(payload.get("count") or 0)
+        return _count_summary(
+            count,
+            zero="There are no overdue invoices.",
+            singular="There is 1 overdue invoice.",
+            plural="There are {count} overdue invoices.",
+        )
+    if topic == "top_customer_today" and isinstance(payload, dict):
+        customer = str(payload.get("customer") or "").strip()
+        if customer:
+            return f"{customer} is the top customer today."
+        return "There is no top customer yet today."
+    return None
+
+
+def _build_structured_summary_answer(question: str, context: dict[str, object]) -> str | None:
+    topics = detect_question_topics(question)
+    if not topics:
+        return None
+
+    lines: list[str] = []
+    seen: set[str] = set()
+    for topic in topics:
+        summary = _structured_summary_for_topic(topic, context.get(topic))
+        if not summary or summary in seen:
+            continue
+        seen.add(summary)
+        lines.append(summary)
+    if not lines:
+        return None
+    return "\n".join(lines[:3])
+
+
 def _dashboard_insight_prompt_metrics(metrics: dict[str, object]) -> dict[str, object]:
     compact = {
         "date": metrics.get("date"),
@@ -659,9 +745,11 @@ def answer_question_with_results(
         model=resolve_assistant_model(model),
     )
     response_payload = _post_responses_request(api_key=api_key, payload=payload)
+    items = _build_structured_result_items(clean_question, context)
+    structured_summary = _build_structured_summary_answer(clean_question, context)
     return {
-        "answer": _extract_response_text(response_payload),
-        "items": _build_structured_result_items(clean_question, context),
+        "answer": structured_summary or _extract_response_text(response_payload),
+        "items": items,
     }
 
 

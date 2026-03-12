@@ -3016,6 +3016,10 @@ details > summary:focus-visible {
   padding-top: 1rem;
 }
 
+.dashboard-ai-insights + .dashboard-overview-toolbar {
+  margin-top: calc(var(--section-gap) * 0.8);
+}
+
 .dashboard-ai-insights__list {
   margin: 0;
   padding-left: 1.1rem;

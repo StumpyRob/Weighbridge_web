@@ -4532,7 +4532,7 @@ def test_tenant_ai_assistant_query_uses_gpt_5_mini_with_tenant_scoped_context(tm
 
     assert response.status_code == 200
     assert response.json() == {
-        "answer": "There is 1 open ticket: A-OPEN-1.",
+        "answer": "There is 1 open ticket.",
         "items": [
             {
                 "record_type": "ticket",
@@ -4557,6 +4557,7 @@ def test_tenant_ai_assistant_query_uses_gpt_5_mini_with_tenant_scoped_context(tm
             }
         ],
     }
+    assert "A-OPEN-1" not in response.json()["answer"]
     assert captured["api_key"] == "test-openai-key"
     payload = captured["payload"]
     assert isinstance(payload, dict)
@@ -4794,7 +4795,7 @@ def test_tenant_ai_assistant_returns_linkable_invoice_results(tmp_path, monkeypa
 
     assert response.status_code == 200
     assert response.json() == {
-        "answer": "There is 1 unpaid invoice: INV-A-100.",
+        "answer": "There is 1 unpaid invoice.",
         "items": [
             {
                 "record_type": "invoice",
@@ -4813,6 +4814,7 @@ def test_tenant_ai_assistant_returns_linkable_invoice_results(tmp_path, monkeypa
             }
         ],
     }
+    assert "INV-A-100" not in response.json()["answer"]
 
 
 def test_tenant_ai_assistant_rejects_when_disabled_for_tenant(tmp_path, monkeypatch):
