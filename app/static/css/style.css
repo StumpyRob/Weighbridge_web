@@ -4136,6 +4136,9 @@ body.assistant-panel-open {
 }
 
 .assistant-panel__response-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
   overflow-y: auto;
   flex: 1 1 auto;
   min-height: 160px;
@@ -4145,7 +4148,23 @@ body.assistant-panel-open {
   background: #f8fafc;
   color: #111827;
   line-height: 1.5;
+  text-align: left;
   white-space: pre-wrap;
+}
+
+.assistant-panel__response-placeholder,
+.assistant-panel__response-text {
+  margin: 0;
+  max-width: 100%;
+  text-align: left;
+}
+
+.assistant-panel__response-placeholder {
+  color: #6b7280;
+}
+
+.assistant-panel__response-text {
+  color: #111827;
 }
 
 .company-logo-preview-container {

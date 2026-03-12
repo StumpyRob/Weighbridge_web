@@ -1,5 +1,9 @@
 (function () {
   var REQUEST_TIMEOUT_MS = 25000;
+  var RESPONSE_PLACEHOLDER = "Ask a question or use a quick prompt to get started.";
+  var RESPONSE_BUSY = "Working...";
+  var RESPONSE_EMPTY_QUESTION = "Enter a question to continue.";
+  var RESPONSE_UNAVAILABLE = "Assistant is temporarily unavailable.";
 
   function csrfToken() {
     const meta = document.querySelector("meta[name='csrf-token']");
@@ -17,6 +21,19 @@
     }
   }
 
+  function setResponseContent(responseEl, message, isPlaceholder) {
+    if (!responseEl) {
+      return;
+    }
+    responseEl.textContent = "";
+    const paragraph = document.createElement("p");
+    paragraph.className = isPlaceholder
+      ? "assistant-panel__response-placeholder"
+      : "assistant-panel__response-text";
+    paragraph.textContent = String(message || "").trim();
+    responseEl.appendChild(paragraph);
+  }
+
   async function submitAssistantQuestion(form, question) {
     const endpoint = form.getAttribute("data-endpoint") || "";
     const responseEl = document.querySelector("[data-assistant-response]");
@@ -28,12 +45,12 @@
 
     const trimmedQuestion = String(question || "").trim();
     if (!trimmedQuestion) {
-      responseEl.textContent = "Enter a question to continue.";
+      setResponseContent(responseEl, RESPONSE_EMPTY_QUESTION, true);
       return;
     }
 
     setBusy(submitButton, statusEl, true);
-    responseEl.textContent = "Working...";
+    setResponseContent(responseEl, RESPONSE_BUSY, true);
     const abortController = typeof AbortController === "function" ? new AbortController() : null;
     const timeoutId = window.setTimeout(function () {
       if (abortController) {
@@ -57,9 +74,9 @@
       }
       const payload = await response.json();
       const answer = String((payload || {}).answer || "").trim();
-      responseEl.textContent = answer || "Assistant is temporarily unavailable.";
+      setResponseContent(responseEl, answer || RESPONSE_UNAVAILABLE, false);
     } catch (_error) {
-      responseEl.textContent = "Assistant is temporarily unavailable.";
+      setResponseContent(responseEl, RESPONSE_UNAVAILABLE, true);
     } finally {
       window.clearTimeout(timeoutId);
       setBusy(submitButton, statusEl, false);
@@ -71,8 +88,12 @@
     const openButton = document.querySelector("[data-assistant-open]");
     const form = document.querySelector("[data-assistant-form]");
     const input = document.querySelector("[data-assistant-input]");
+    const responseEl = document.querySelector("[data-assistant-response]");
     if (!panel || !openButton || !form || !input) {
       return;
+    }
+    if (responseEl) {
+      setResponseContent(responseEl, RESPONSE_PLACEHOLDER, true);
     }
 
     var closeTimer = null;

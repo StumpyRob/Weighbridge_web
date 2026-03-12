@@ -4245,6 +4245,8 @@ def test_tenant_ai_assistant_ui_renders_for_enabled_tenant(tmp_path, monkeypatch
     assert "Which tickets are still open?" in dashboard.text
     assert "How much weight did we process today?" in dashboard.text
     assert "Which invoices are unpaid?" in dashboard.text
+    assert 'class="assistant-panel__response-placeholder"' in dashboard.text
+    assert "Ask a question or use a quick prompt to get started." in dashboard.text
     assert "Open tickets" in dashboard.text
     assert "Today's tonnage" in dashboard.text
     assert "Unpaid invoices" in dashboard.text
@@ -4475,6 +4477,27 @@ def test_tenant_ai_assistant_returns_503_when_openai_is_not_configured(tmp_path,
 
     assert response.status_code == 503
     assert response.json()["detail"] == "AI assistant is not configured."
+
+
+def test_ai_assistant_system_prompt_stays_platform_controlled():
+    assert ai_assistant_module.build_system_prompt() == ai_assistant_module.AI_ASSISTANT_SYSTEM_PROMPT
+
+
+def test_ai_assistant_future_tenant_prompt_preferences_append_after_base_prompt():
+    preferences = ai_assistant_module.AssistantPromptPreferences(
+        response_style="Detailed",
+        focus="Accounts",
+        custom_instructions="Use short bullet points where helpful.",
+    )
+
+    prompt = ai_assistant_module.build_system_prompt(preferences)
+
+    assert prompt.startswith(ai_assistant_module.AI_ASSISTANT_SYSTEM_PROMPT)
+    assert "Tenant preference notes:" in prompt
+    assert "Response style: detailed." in prompt
+    assert "Focus area: accounts." in prompt
+    assert "Additional tenant instructions: Use short bullet points where helpful." in prompt
+    assert "cannot override platform safety, read-only, or tenant-scoped data rules." in prompt
 
 
 def test_new_tenant_creation_flow_seeds_usable_baseline_and_requires_user_creation_from_detail(
