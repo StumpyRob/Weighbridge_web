@@ -162,6 +162,102 @@
     <main class="container">
       {% block content %}{% endblock %}
     </main>
+    {% if (not platform_mode) and current_user and current_tenant and current_tenant.ai_enabled %}
+      <div class="assistant-panel" data-assistant-panel hidden>
+        <div class="assistant-panel__backdrop" data-assistant-close></div>
+        <aside
+          id="assistant-panel-drawer"
+          class="assistant-panel__drawer"
+          aria-labelledby="assistant-panel-title"
+          aria-modal="true"
+          role="dialog"
+        >
+          <div class="assistant-panel__header">
+            <div>
+              <h2 id="assistant-panel-title">Assistant</h2>
+              <p class="assistant-panel__copy">Ask about tickets, invoices, customers, and today's activity.</p>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" data-assistant-close>Close</button>
+          </div>
+          <section class="assistant-panel__examples" aria-label="Assistant example questions">
+            <p class="assistant-panel__examples-title">Try asking...</p>
+            <ul class="assistant-panel__examples-list">
+              <li>Which tickets are still open?</li>
+              <li>How much weight did we process today?</li>
+              <li>Which invoices are unpaid?</li>
+            </ul>
+          </section>
+          <div class="assistant-panel__prompts">
+            <button
+              type="button"
+              class="assistant-panel__prompt"
+              data-assistant-prompt="Which tickets are still open?"
+            >
+              Open tickets
+            </button>
+            <button
+              type="button"
+              class="assistant-panel__prompt"
+              data-assistant-prompt="What is today's total tonnage?"
+            >
+              Today's tonnage
+            </button>
+            <button
+              type="button"
+              class="assistant-panel__prompt"
+              data-assistant-prompt="Which invoices are unpaid?"
+            >
+              Unpaid invoices
+            </button>
+            <button
+              type="button"
+              class="assistant-panel__prompt"
+              data-assistant-prompt="What are the most recent tickets?"
+            >
+              Recent tickets
+            </button>
+          </div>
+          <form
+            class="assistant-panel__form"
+            data-assistant-form
+            data-endpoint="{{ tenant_path('/api/assistant/query') }}"
+          >
+            <div class="field">
+              <label for="assistant-question">Question</label>
+              <textarea
+                id="assistant-question"
+                name="question"
+                class="assistant-panel__textarea"
+                rows="5"
+                maxlength="500"
+                placeholder="Ask about open tickets, today's tonnage, unpaid invoices, or recent activity."
+                data-assistant-input
+              ></textarea>
+            </div>
+            <div class="actions btn-group assistant-panel__actions">
+              <button type="submit" class="btn btn--primary" data-assistant-submit>Submit</button>
+            </div>
+            <div class="assistant-panel__status" data-assistant-status hidden>Thinking...</div>
+          </form>
+          <section class="assistant-panel__response" aria-live="polite">
+            <h3>Response</h3>
+            <div class="assistant-panel__response-body" data-assistant-response>
+              Ask a question or use a quick prompt to get started.
+            </div>
+          </section>
+        </aside>
+      </div>
+      <button
+        type="button"
+        class="assistant-trigger"
+        data-assistant-open
+        aria-controls="assistant-panel-drawer"
+        aria-expanded="false"
+      >
+        <span class="assistant-trigger__icon" aria-hidden="true">AI</span>
+        <span>Assistant</span>
+      </button>
+    {% endif %}
     <footer class="site-footer">
       <small class="site-footer__build">{{ app_build_label }}</small>
     </footer>
@@ -251,6 +347,9 @@
     <script src="/static/js/help_tooltips.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/toasts.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/table_rows.js?v={{ BUILD_STAMP }}" defer></script>
+    {% if (not platform_mode) and current_user and current_tenant and current_tenant.ai_enabled %}
+      <script src="/static/js/assistant_panel.js?v={{ BUILD_STAMP }}" defer></script>
+    {% endif %}
     {% if tenant_route_prefix %}
       <script src="/static/js/tenant_path_prefix.js?v={{ BUILD_STAMP }}" defer></script>
     {% endif %}

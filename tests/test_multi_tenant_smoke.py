@@ -4213,6 +4213,74 @@ def test_tenant_ai_assistant_query_uses_gpt_5_mini_with_tenant_scoped_context(tm
     assert "B-OPEN-1" not in content_text
 
 
+def test_tenant_ai_assistant_ui_renders_for_enabled_tenant(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ai-assistant-ui.db", monkeypatch=monkeypatch
+    )
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", ai_enabled=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="a-admin@example.com", password="TestPass123!") == 303
+        dashboard = tenant_client.get("/")
+
+    assert dashboard.status_code == 200
+    assert 'data-assistant-open' in dashboard.text
+    assert 'data-assistant-panel' in dashboard.text
+    assert 'data-endpoint="/api/assistant/query"' in dashboard.text
+    assert "Ask about tickets, invoices, customers, and today's activity." in dashboard.text
+    assert "Try asking..." in dashboard.text
+    assert "Which tickets are still open?" in dashboard.text
+    assert "How much weight did we process today?" in dashboard.text
+    assert "Which invoices are unpaid?" in dashboard.text
+    assert "Open tickets" in dashboard.text
+    assert "Today's tonnage" in dashboard.text
+    assert "Unpaid invoices" in dashboard.text
+    assert "Recent tickets" in dashboard.text
+    assert "/static/js/assistant_panel.js" in dashboard.text
+
+
+def test_tenant_ai_assistant_ui_hidden_when_disabled_for_tenant(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ai-assistant-ui-disabled.db", monkeypatch=monkeypatch
+    )
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", ai_enabled=False)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="a-admin@example.com", password="TestPass123!") == 303
+        dashboard = tenant_client.get("/")
+
+    assert dashboard.status_code == 200
+    assert 'data-assistant-open' not in dashboard.text
+    assert 'data-assistant-panel' not in dashboard.text
+    assert "/static/js/assistant_panel.js" not in dashboard.text
+
+
 def test_tenant_ai_assistant_uses_tenant_selected_model_when_configured(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-ai-assistant-model.db", monkeypatch=monkeypatch
