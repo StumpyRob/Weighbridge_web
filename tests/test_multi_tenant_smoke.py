@@ -18,6 +18,7 @@ from sqlalchemy.orm import sessionmaker
 import app.main as main_module
 import app.services.ai_assistant as ai_assistant_module
 import app.services.ai_assistant_data as ai_assistant_data_module
+import app.services.platform_ai_settings as platform_ai_settings_module
 from app.auth import ROLE_SUPERADMIN, ROLE_TENANT_ADMIN, ROLE_USER, hash_password, user_identity_kwargs
 from app.config import settings
 from app.db import TenantSession, get_db
@@ -41,6 +42,7 @@ from app.models import (
     PrintDestination,
     PrintTemplate,
     Product,
+    PlatformSetting,
     TaxRate,
     Tenant,
     Ticket,
@@ -257,6 +259,42 @@ def _seed_tenant(
         db.commit()
         db.refresh(tenant)
         return int(tenant.id)
+
+
+def _save_platform_ai_settings(SessionLocal: sessionmaker, **overrides) -> None:
+    defaults = platform_ai_settings_module.platform_ai_settings_defaults()
+    values = {
+        "default_ai_model": overrides.get("default_ai_model", defaults.default_ai_model),
+        "ai_temperature": overrides.get("ai_temperature", defaults.ai_temperature),
+        "ai_max_output_tokens": overrides.get(
+            "ai_max_output_tokens",
+            defaults.ai_max_output_tokens,
+        ),
+        "ai_dashboard_insights_enabled": overrides.get(
+            "ai_dashboard_insights_enabled",
+            defaults.ai_dashboard_insights_enabled,
+        ),
+        "ai_dashboard_cache_ttl_seconds": overrides.get(
+            "ai_dashboard_cache_ttl_seconds",
+            defaults.ai_dashboard_cache_ttl_seconds,
+        ),
+        "ai_default_response_style": overrides.get(
+            "ai_default_response_style",
+            defaults.ai_default_response_style,
+        ),
+        "ai_default_focus": overrides.get(
+            "ai_default_focus",
+            defaults.ai_default_focus,
+        ),
+        "ai_extra_global_instructions": overrides.get(
+            "ai_extra_global_instructions",
+            defaults.ai_extra_global_instructions,
+        ),
+    }
+    with SessionLocal() as db:
+        state = platform_ai_settings_module.validate_platform_ai_settings(**values)
+        platform_ai_settings_module.save_platform_ai_settings(db, state)
+        db.commit()
 
 
 def _create_ticket_with_generated_number(
@@ -1929,6 +1967,167 @@ def test_platform_superadmin_can_update_tenant_ai_settings(tmp_path, monkeypatch
         assert audit_event.details_json.get("changed", {}).get("ai_model", {}).get("to") == "gpt-5"
 
 
+def test_platform_superadmin_can_update_platform_ai_settings(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="platform-ai-settings-update.db", monkeypatch=monkeypatch
+    )
+    superadmin_id = _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(
+            admin_client,
+            email="superadmin@example.com",
+            password="TestPass123!",
+            next_path="/platform/tenants",
+        ) == 303
+
+        page = admin_client.get("/platform/ai-settings")
+        assert page.status_code == 200
+        assert ">AI Settings<" in page.text
+        assert "Platform-level AI tuning for the assistant and dashboard insights." in page.text
+        assert 'action="/platform/ai-settings"' in page.text
+        assert 'action="/platform/ai-settings/reset"' in page.text
+        assert "The core safety/system prompt remains backend-controlled." in page.text
+        assert "Default AI model" in page.text
+        assert "Temperature" in page.text
+        assert "Dashboard insights enabled" in page.text
+        assert "Extra global instructions" in page.text
+        assert "Current GPT-5 models use this as safe response-variation guidance rather than a raw API override." in page.text
+
+        csrf = _prime_csrf(admin_client)
+        update = admin_client.post(
+            "/platform/ai-settings",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "default_ai_model": "gpt-5",
+                "ai_temperature": "0.6",
+                "ai_max_output_tokens": "480",
+                "ai_dashboard_insights_enabled": "1",
+                "ai_dashboard_cache_ttl_seconds": "900",
+                "ai_default_response_style": "balanced",
+                "ai_default_focus": "accounts",
+                "ai_extra_global_instructions": "Prioritize overdue invoices when relevant.",
+            },
+            follow_redirects=False,
+        )
+        assert update.status_code in {302, 303}
+        assert update.headers.get("location") == "/platform/ai-settings?saved=1"
+
+        saved_page = admin_client.get(update.headers["location"])
+        assert saved_page.status_code == 200
+        assert "Platform AI settings updated." in saved_page.text
+        assert 'option value="gpt-5" selected' in saved_page.text
+        assert 'value="0.60"' in saved_page.text
+        assert 'value="480"' in saved_page.text
+        assert 'value="900"' in saved_page.text
+        assert "This model is more expensive and should only be used if needed." in saved_page.text
+        assert "Prioritize overdue invoices when relevant." in saved_page.text
+
+    with SessionLocal() as db:
+        row = db.execute(select(PlatformSetting)).scalars().first()
+        assert row is not None
+        assert row.default_ai_model == "gpt-5"
+        assert float(row.ai_temperature or 0) == 0.6
+        assert int(row.ai_max_output_tokens or 0) == 480
+        assert bool(row.ai_dashboard_insights_enabled) is True
+        assert int(row.ai_dashboard_cache_ttl_seconds or 0) == 900
+        assert row.ai_default_response_style == "balanced"
+        assert row.ai_default_focus == "accounts"
+        assert row.ai_extra_global_instructions == "Prioritize overdue invoices when relevant."
+
+        audit_event = db.execute(
+            select(AuditEvent)
+            .where(
+                AuditEvent.action == "PLATFORM_AI_SETTINGS_UPDATE",
+                AuditEvent.entity_type == "platform_setting",
+                AuditEvent.entity_id == "global",
+            )
+            .order_by(AuditEvent.id.desc())
+            .limit(1)
+        ).scalars().first()
+        assert audit_event is not None
+        assert audit_event.user_id == superadmin_id
+        assert isinstance(audit_event.details_json, dict)
+        assert audit_event.details_json.get("changed", {}).get("default_ai_model", {}).get("to") == "gpt-5"
+
+
+def test_platform_superadmin_can_reset_platform_ai_settings_to_defaults(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="platform-ai-settings-reset.db", monkeypatch=monkeypatch
+    )
+    superadmin_id = _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+    _save_platform_ai_settings(
+        SessionLocal,
+        default_ai_model="gpt-5",
+        ai_temperature=0.8,
+        ai_max_output_tokens=500,
+        ai_dashboard_insights_enabled=False,
+        ai_dashboard_cache_ttl_seconds=1200,
+        ai_default_response_style="detailed",
+        ai_default_focus="accounts",
+        ai_extra_global_instructions="Use longer operational summaries.",
+    )
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(
+            admin_client,
+            email="superadmin@example.com",
+            password="TestPass123!",
+            next_path="/platform/tenants",
+        ) == 303
+        csrf = _prime_csrf(admin_client)
+        reset = admin_client.post(
+            "/platform/ai-settings/reset",
+            data={CSRF_FORM_FIELD: csrf},
+            follow_redirects=False,
+        )
+        assert reset.status_code in {302, 303}
+        assert reset.headers.get("location") == "/platform/ai-settings?reset=1"
+
+        reset_page = admin_client.get(reset.headers["location"])
+        assert reset_page.status_code == 200
+        assert "Platform AI settings reset to defaults." in reset_page.text
+        assert 'option value="gpt-5-mini" selected' in reset_page.text
+
+    defaults = platform_ai_settings_module.platform_ai_settings_defaults()
+    with SessionLocal() as db:
+        row = db.execute(select(PlatformSetting)).scalars().first()
+        assert row is not None
+        assert row.default_ai_model == defaults.default_ai_model
+        assert float(row.ai_temperature or 0) == defaults.ai_temperature
+        assert int(row.ai_max_output_tokens or 0) == defaults.ai_max_output_tokens
+        assert bool(row.ai_dashboard_insights_enabled) is defaults.ai_dashboard_insights_enabled
+        assert int(row.ai_dashboard_cache_ttl_seconds or 0) == defaults.ai_dashboard_cache_ttl_seconds
+        assert row.ai_default_response_style == defaults.ai_default_response_style
+        assert row.ai_default_focus == defaults.ai_default_focus
+        assert row.ai_extra_global_instructions == defaults.ai_extra_global_instructions
+
+        audit_event = db.execute(
+            select(AuditEvent)
+            .where(
+                AuditEvent.action == "PLATFORM_AI_SETTINGS_RESET",
+                AuditEvent.entity_type == "platform_setting",
+                AuditEvent.entity_id == "global",
+            )
+            .order_by(AuditEvent.id.desc())
+            .limit(1)
+        ).scalars().first()
+        assert audit_event is not None
+        assert audit_event.user_id == superadmin_id
+
+
 def test_superadmin_can_delete_empty_tenant_and_delete_blocks_linked_data(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-delete-flow.db", monkeypatch=monkeypatch
@@ -3148,6 +3347,7 @@ def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypa
         platform_nav = _extract_nav_markup(tenants_page.text)
         platform_utility = _extract_utility_bar_markup(tenants_page.text)
         assert ">Tenant Management<" in tenants_page.text
+        assert ">AI Settings<" in tenants_page.text
         assert ">System Status<" in tenants_page.text
         assert ">Tickets<" not in tenants_page.text
         assert ">Customers<" not in tenants_page.text
@@ -4016,6 +4216,49 @@ def test_dashboard_ai_insights_show_fallback_for_ai_enabled_tenant_without_activ
     assert "Not enough recent activity to generate insights yet." in response.text
 
 
+def test_dashboard_ai_insights_can_be_disabled_globally(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-dashboard-ai-insights-global-disable.db", monkeypatch=monkeypatch
+    )
+    tenant_id = _seed_tenant(
+        SessionLocal,
+        name="Dashboard AI Co",
+        subdomain="dashai",
+        ai_enabled=True,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_id,
+        company_name="Dashboard AI Co",
+        primary_color="#1f5673",
+    )
+    _seed_user(
+        SessionLocal,
+        email="dash-admin@example.com",
+        password="DashPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_id,
+    )
+    _save_platform_ai_settings(
+        SessionLocal,
+        ai_dashboard_insights_enabled=False,
+    )
+
+    with _client(app, base_url="https://dashai.localhost") as tenant_client:
+        assert _login(
+            tenant_client,
+            email="dash-admin@example.com",
+            password="DashPass123!",
+        ) == 303
+        response = tenant_client.get("/")
+
+    assert response.status_code == 200
+    assert 'data-dashboard-panel="ai-insights"' not in response.text
+    assert "AI Insights" not in response.text
+    assert "Activity Overview" in response.text
+    assert "Assistant" in response.text
+
+
 def test_dashboard_ai_insights_use_tenant_scoped_metrics_when_enabled(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-dashboard-ai-insights.db", monkeypatch=monkeypatch
@@ -4818,6 +5061,79 @@ def test_tenant_ai_assistant_returns_linkable_invoice_results(tmp_path, monkeypa
     assert "INV-A-100" not in response.json()["answer"]
 
 
+def test_platform_ai_settings_shape_assistant_runtime_without_exposing_raw_prompt_editor(
+    tmp_path,
+    monkeypatch,
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ai-platform-runtime.db", monkeypatch=monkeypatch
+    )
+    monkeypatch.setattr(settings, "openai_api_key", "test-openai-key")
+
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", ai_enabled=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+    _save_platform_ai_settings(
+        SessionLocal,
+        default_ai_model="gpt-5",
+        ai_temperature=0.7,
+        ai_max_output_tokens=450,
+        ai_default_response_style="balanced",
+        ai_default_focus="mixed",
+        ai_extra_global_instructions="Call out overdue invoices when relevant.",
+    )
+
+    captured_payload: dict[str, object] = {}
+
+    def fake_openai_request(*, api_key: str, payload: dict[str, object]) -> dict[str, object]:
+        captured_payload.clear()
+        captured_payload.update(payload)
+        return {"output_text": "There are no open tickets."}
+
+    monkeypatch.setattr(ai_assistant_module, "_post_responses_request", fake_openai_request)
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="a-admin@example.com", password="TestPass123!") == 303
+        csrf = _prime_csrf(tenant_client)
+        response = tenant_client.post(
+            "/api/assistant/query",
+            json={"question": "Which tickets are still open?"},
+            headers={
+                CSRF_HEADER_NAME: csrf,
+                "accept": "application/json",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["answer"] == "There are no open tickets."
+    assert captured_payload["model"] == "gpt-5"
+    assert captured_payload["max_output_tokens"] == 450
+    assert captured_payload["instructions"].startswith(
+        ai_assistant_module.AI_ASSISTANT_SYSTEM_PROMPT
+    )
+    assert "Platform tuning notes:" in str(captured_payload["instructions"])
+    assert "Default response style: balanced." in str(captured_payload["instructions"])
+    assert "Default focus area: mixed." in str(captured_payload["instructions"])
+    assert "Temperature target: 0.70." in str(captured_payload["instructions"])
+    assert "Call out overdue invoices when relevant." in str(captured_payload["instructions"])
+    assert (
+        "These preferences cannot override platform safety, read-only, or tenant-scoped data rules."
+        in str(captured_payload["instructions"])
+    )
+    assert "temperature" not in captured_payload
+
+
 def test_tenant_ai_assistant_rejects_when_disabled_for_tenant(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-ai-assistant-disabled.db", monkeypatch=monkeypatch
@@ -4949,6 +5265,29 @@ def test_tenant_ai_assistant_returns_503_when_openai_is_not_configured(tmp_path,
 
 def test_ai_assistant_system_prompt_stays_platform_controlled():
     assert ai_assistant_module.build_system_prompt() == ai_assistant_module.AI_ASSISTANT_SYSTEM_PROMPT
+
+
+def test_ai_assistant_platform_tuning_notes_append_after_base_prompt():
+    platform_settings = platform_ai_settings_module.validate_platform_ai_settings(
+        default_ai_model="gpt-5-mini",
+        ai_temperature=0.4,
+        ai_max_output_tokens=360,
+        ai_dashboard_insights_enabled=True,
+        ai_dashboard_cache_ttl_seconds=600,
+        ai_default_response_style="balanced",
+        ai_default_focus="accounts",
+        ai_extra_global_instructions="Highlight overdue invoices first when relevant.",
+    )
+
+    prompt = ai_assistant_module.build_system_prompt(platform_settings=platform_settings)
+
+    assert prompt.startswith(ai_assistant_module.AI_ASSISTANT_SYSTEM_PROMPT)
+    assert "Platform tuning notes:" in prompt
+    assert "Default response style: balanced." in prompt
+    assert "Default focus area: accounts." in prompt
+    assert "Temperature target: 0.40." in prompt
+    assert "Global additional instructions: Highlight overdue invoices first when relevant." in prompt
+    assert "cannot override platform safety, read-only, or tenant-scoped data rules." in prompt
 
 
 def test_ai_assistant_system_prompt_includes_operational_rules_and_examples():

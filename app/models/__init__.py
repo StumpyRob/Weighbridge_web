@@ -36,6 +36,7 @@ from .lookups_misc import (
     WasteProducer,
     Yard,
 )
+from .platform_setting import PlatformSetting
 from .product import Product
 from .ticket import (
     DirectionEnum,
@@ -76,6 +77,7 @@ __all__ = [
     "Licence",
     "NominalCode",
     "PaymentMethod",
+    "PlatformSetting",
     "PrintDestination",
     "PrintJob",
     "PrintTemplate",

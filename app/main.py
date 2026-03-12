@@ -54,7 +54,8 @@ from .services.credit import (
     INVOICE_OUTSTANDING_EXCLUDED_STATUSES,
     INVOICE_OUTSTANDING_ISSUED_STATUSES,
 )
-from .services.ai_assistant import generate_dashboard_insights, resolve_assistant_model
+from .services.ai_assistant import generate_dashboard_insights
+from .services.platform_ai_settings import get_platform_ai_settings
 from .services.pdf import check_invoice_pdf_renderer
 from .services.ui_branding import (
     darken_hex_color,
@@ -122,6 +123,7 @@ _TENANT_ONLY_PREFIXES = (
 _PLATFORM_ONLY_PREFIXES = (
     "/platform",
     "/admin/tenants",
+    "/admin/ai-settings",
     "/admin/system-status",
     "/admin/dev-mode",
     "/bootstrap",
@@ -707,6 +709,7 @@ def _build_tenant_dashboard(
     ai_model: str | None = None,
 ) -> dict[str, object]:
     today = utcnow().date()
+    platform_ai_settings = get_platform_ai_settings(db)
     today_start, tomorrow_start = _datetime_bounds_for_day(today)
     overview_period = _normalize_dashboard_period(period)
     overview_start, overview_end = _dashboard_period_window(overview_period, today)
@@ -868,9 +871,9 @@ def _build_tenant_dashboard(
         generate_dashboard_insights(
             db,
             tenant_id,
-            model=resolve_assistant_model(ai_model),
+            model=ai_model,
         )
-        if ai_enabled
+        if ai_enabled and platform_ai_settings.ai_dashboard_insights_enabled
         else None
     )
 

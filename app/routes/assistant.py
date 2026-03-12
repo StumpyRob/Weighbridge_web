@@ -10,7 +10,6 @@ from ..security import has_unsafe_markup
 from ..services.ai_assistant import (
     AIAssistantError,
     answer_question_with_results,
-    resolve_assistant_model,
 )
 from ..tenancy import request_platform_mode, request_tenant_id
 
@@ -67,7 +66,7 @@ def assistant_query(
             db,
             tenant_id,
             payload.question,
-            model=resolve_assistant_model(getattr(tenant, "ai_model", None)),
+            model=getattr(tenant, "ai_model", None),
         )
     except AIAssistantError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc

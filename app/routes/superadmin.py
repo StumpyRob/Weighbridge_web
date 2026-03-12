@@ -66,10 +66,25 @@ from ..services.system_setup import (
     seed_required_reference_data,
     upsert_default_yard,
 )
-from ..services.ai_assistant import (
-    AI_ASSISTANT_MODEL,
+from ..services.ai_assistant import resolve_assistant_model
+from ..services.platform_ai_settings import (
+    AI_DASHBOARD_CACHE_TTL_MAX,
+    AI_DASHBOARD_CACHE_TTL_MIN,
+    AI_EXTRA_GLOBAL_INSTRUCTIONS_MAX_CHARS,
+    AI_MAX_OUTPUT_TOKENS_MAX,
+    AI_MAX_OUTPUT_TOKENS_MIN,
+    AI_TEMPERATURE_MAX,
+    AI_TEMPERATURE_MIN,
+    AI_TUNING_AUDIT_FIELDS,
+    SUPPORTED_ASSISTANT_FOCUS_AREAS,
     SUPPORTED_ASSISTANT_MODELS,
-    resolve_assistant_model,
+    SUPPORTED_ASSISTANT_RESPONSE_STYLES,
+    get_platform_ai_settings,
+    platform_ai_settings_defaults,
+    platform_ai_settings_snapshot,
+    reset_platform_ai_settings,
+    save_platform_ai_settings,
+    validate_platform_ai_settings,
 )
 from ..services.tenants import is_demo_tenant, normalize_subdomain, validate_subdomain
 from ..services.uploads import company_logo_upload_dir
@@ -422,6 +437,67 @@ def _tenant_form_context(
     }
 
 
+def _form_checkbox_checked(form, key: str) -> bool:
+    values = list(form.getlist(key)) if hasattr(form, "getlist") else [form.get(key)]
+    return any(str(value or "").strip().lower() in {"1", "true", "on", "yes"} for value in values)
+
+
+def _platform_ai_settings_page_context(
+    request: Request,
+    *,
+    settings_state,
+) -> dict[str, object]:
+    defaults = platform_ai_settings_defaults()
+    return {
+        "request": request,
+        "platform_ai_settings": settings_state,
+        "platform_ai_defaults": defaults,
+        "platform_ai_model_options": SUPPORTED_ASSISTANT_MODELS,
+        "platform_ai_response_style_options": SUPPORTED_ASSISTANT_RESPONSE_STYLES,
+        "platform_ai_focus_options": SUPPORTED_ASSISTANT_FOCUS_AREAS,
+        "platform_ai_temperature_min": AI_TEMPERATURE_MIN,
+        "platform_ai_temperature_max": AI_TEMPERATURE_MAX,
+        "platform_ai_max_tokens_min": AI_MAX_OUTPUT_TOKENS_MIN,
+        "platform_ai_max_tokens_max": AI_MAX_OUTPUT_TOKENS_MAX,
+        "platform_ai_cache_ttl_min": AI_DASHBOARD_CACHE_TTL_MIN,
+        "platform_ai_cache_ttl_max": AI_DASHBOARD_CACHE_TTL_MAX,
+        "platform_ai_extra_instructions_max_chars": AI_EXTRA_GLOBAL_INSTRUCTIONS_MAX_CHARS,
+        "saved": request.query_params.get("saved") == "1",
+        "reset_done": request.query_params.get("reset") == "1",
+        "error": request.query_params.get("error", ""),
+    }
+
+
+def _audit_platform_ai_settings_change(
+    db: Session,
+    request: Request,
+    *,
+    current_user: User,
+    action: str,
+    summary: str,
+    before,
+    after,
+) -> None:
+    changed = audit_diff(
+        platform_ai_settings_snapshot(before),
+        platform_ai_settings_snapshot(after),
+        AI_TUNING_AUDIT_FIELDS,
+    )
+    if not changed.get("changed"):
+        return
+    audit_log(
+        db,
+        request,
+        action=action,
+        entity_type="platform_setting",
+        entity_id="global",
+        summary=summary,
+        details=changed,
+        user=current_user,
+        tenant_id=None,
+    )
+
+
 @router.get("/platform/tenants", response_class=HTMLResponse)
 @router.get("/admin/tenants", response_class=HTMLResponse)
 def tenants_list(
@@ -507,6 +583,7 @@ def tenant_detail(
         tenant,
         user_count_hint=int(summary["user_count"]),
     )
+    platform_ai_settings = get_platform_ai_settings(db)
     return templates.TemplateResponse(
         request,
         "admin/tenant_detail.html",
@@ -533,12 +610,30 @@ def tenant_detail(
             "password_error": request.query_params.get("password_error", ""),
             "ai_saved": request.query_params.get("ai_saved") == "1",
             "ai_error": request.query_params.get("ai_error", ""),
-            "assistant_default_model": AI_ASSISTANT_MODEL,
+            "assistant_default_model": platform_ai_settings.default_ai_model,
             "assistant_model_options": SUPPORTED_ASSISTANT_MODELS,
             "tenant_effective_ai_model": resolve_assistant_model(
-                getattr(tenant, "ai_model", None)
+                getattr(tenant, "ai_model", None),
+                platform_ai_settings.default_ai_model,
             ),
         },
+    )
+
+
+@router.get("/platform/ai-settings", response_class=HTMLResponse)
+@router.get("/admin/ai-settings", response_class=HTMLResponse)
+def platform_ai_settings_detail(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    _require_platform_superadmin(request, db)
+    return templates.TemplateResponse(
+        request,
+        "admin/platform_ai_settings.html",
+        _platform_ai_settings_page_context(
+            request,
+            settings_state=get_platform_ai_settings(db),
+        ),
     )
 
 
@@ -558,6 +653,71 @@ def tenants_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse
             },
         ),
     )
+
+
+@router.post("/platform/ai-settings")
+@router.post("/admin/ai-settings")
+async def platform_ai_settings_update(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+    form = await request.form()
+    try:
+        settings_state = validate_platform_ai_settings(
+            default_ai_model=form.get("default_ai_model"),
+            ai_temperature=form.get("ai_temperature"),
+            ai_max_output_tokens=form.get("ai_max_output_tokens"),
+            ai_dashboard_insights_enabled=_form_checkbox_checked(
+                form,
+                "ai_dashboard_insights_enabled",
+            ),
+            ai_dashboard_cache_ttl_seconds=form.get("ai_dashboard_cache_ttl_seconds"),
+            ai_default_response_style=form.get("ai_default_response_style"),
+            ai_default_focus=form.get("ai_default_focus"),
+            ai_extra_global_instructions=form.get("ai_extra_global_instructions"),
+        )
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/platform/ai-settings?{urlencode({'error': str(exc)})}",
+            status_code=303,
+        )
+
+    before = get_platform_ai_settings(db)
+    saved = save_platform_ai_settings(db, settings_state)
+    _audit_platform_ai_settings_change(
+        db,
+        request,
+        current_user=current_user,
+        action="PLATFORM_AI_SETTINGS_UPDATE",
+        summary="Updated platform AI settings",
+        before=before,
+        after=saved,
+    )
+    db.commit()
+    return RedirectResponse(url="/platform/ai-settings?saved=1", status_code=303)
+
+
+@router.post("/platform/ai-settings/reset")
+@router.post("/admin/ai-settings/reset")
+def platform_ai_settings_reset_route(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+    before = get_platform_ai_settings(db)
+    reset_state = reset_platform_ai_settings(db)
+    _audit_platform_ai_settings_change(
+        db,
+        request,
+        current_user=current_user,
+        action="PLATFORM_AI_SETTINGS_RESET",
+        summary="Reset platform AI settings to defaults",
+        before=before,
+        after=reset_state,
+    )
+    db.commit()
+    return RedirectResponse(url="/platform/ai-settings?reset=1", status_code=303)
 
 
 @router.post("/platform/tenants/new", response_class=HTMLResponse)
@@ -964,15 +1124,7 @@ async def tenant_update_ai_settings(
         return RedirectResponse(url="/platform/tenants?error=Tenant+not+found", status_code=303)
 
     form = await request.form()
-    ai_enabled_values = (
-        list(form.getlist("ai_enabled"))
-        if hasattr(form, "getlist")
-        else [form.get("ai_enabled")]
-    )
-    ai_enabled = any(
-        str(value or "").strip().lower() in {"1", "true", "on", "yes"}
-        for value in ai_enabled_values
-    )
+    ai_enabled = _form_checkbox_checked(form, "ai_enabled")
     ai_model = str(form.get("ai_model", "") or "").strip() or None
     if ai_model is not None and ai_model not in SUPPORTED_ASSISTANT_MODELS:
         return RedirectResponse(
@@ -982,6 +1134,7 @@ async def tenant_update_ai_settings(
 
     previous_enabled = bool(getattr(tenant, "ai_enabled", False))
     previous_model = str(getattr(tenant, "ai_model", "") or "").strip() or None
+    platform_ai_settings = get_platform_ai_settings(db)
     tenant.ai_enabled = ai_enabled
     tenant.ai_model = ai_model
 
@@ -996,7 +1149,10 @@ async def tenant_update_ai_settings(
             changed["ai_model"] = {
                 "from": previous_model,
                 "to": ai_model,
-                "effective": resolve_assistant_model(ai_model),
+                "effective": resolve_assistant_model(
+                    ai_model,
+                    platform_ai_settings.default_ai_model,
+                ),
             }
         audit_log(
             db,

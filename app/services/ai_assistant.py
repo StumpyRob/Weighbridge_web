@@ -30,32 +30,32 @@ from .ai_assistant_data import (
     get_uninvoiced_tickets,
     get_unpaid_invoices,
 )
+from .platform_ai_settings import (
+    DEFAULT_AI_DASHBOARD_CACHE_TTL_SECONDS,
+    DEFAULT_AI_MAX_OUTPUT_TOKENS,
+    DEFAULT_AI_MODEL,
+    PlatformAISettingsState,
+    SUPPORTED_ASSISTANT_FOCUS_AREAS as PLATFORM_SUPPORTED_ASSISTANT_FOCUS_AREAS,
+    SUPPORTED_ASSISTANT_MODELS as PLATFORM_SUPPORTED_ASSISTANT_MODELS,
+    SUPPORTED_ASSISTANT_RESPONSE_STYLES as PLATFORM_SUPPORTED_ASSISTANT_RESPONSE_STYLES,
+    get_platform_ai_settings,
+    platform_ai_settings_defaults,
+)
 
 logger = logging.getLogger(__name__)
 
-AI_ASSISTANT_MODEL = "gpt-5-mini"
-SUPPORTED_ASSISTANT_MODELS = (
-    AI_ASSISTANT_MODEL,
-    "gpt-5",
-)
-SUPPORTED_ASSISTANT_RESPONSE_STYLES = (
-    "concise",
-    "balanced",
-    "detailed",
-)
-SUPPORTED_ASSISTANT_FOCUS_AREAS = (
-    "operations",
-    "accounts",
-    "mixed",
-)
-AI_ASSISTANT_MAX_OUTPUT_TOKENS = 320
+AI_ASSISTANT_MODEL = DEFAULT_AI_MODEL
+SUPPORTED_ASSISTANT_MODELS = PLATFORM_SUPPORTED_ASSISTANT_MODELS
+SUPPORTED_ASSISTANT_RESPONSE_STYLES = PLATFORM_SUPPORTED_ASSISTANT_RESPONSE_STYLES
+SUPPORTED_ASSISTANT_FOCUS_AREAS = PLATFORM_SUPPORTED_ASSISTANT_FOCUS_AREAS
+AI_ASSISTANT_MAX_OUTPUT_TOKENS = DEFAULT_AI_MAX_OUTPUT_TOKENS
 AI_ASSISTANT_QUESTION_MAX_CHARS = 500
 AI_ASSISTANT_CUSTOM_INSTRUCTIONS_MAX_CHARS = 240
 AI_ASSISTANT_REASONING_EFFORT = "minimal"
 AI_ASSISTANT_TEXT_VERBOSITY = "low"
 AI_DASHBOARD_INSIGHTS_MAX_OUTPUT_TOKENS = 220
 AI_ASSISTANT_HTTP_TIMEOUT_SECONDS = 30.0
-AI_DASHBOARD_INSIGHTS_CACHE_TTL_SECONDS = 600
+AI_DASHBOARD_INSIGHTS_CACHE_TTL_SECONDS = DEFAULT_AI_DASHBOARD_CACHE_TTL_SECONDS
 AI_ASSISTANT_SYSTEM_PROMPT = (
     "You are the Weighbridge Web operational assistant. "
     "Answer operational questions for weighbridge operators and admins in a concise, practical, factual way. "
@@ -153,36 +153,69 @@ def _normalize_custom_instructions(candidate: str | None) -> str | None:
     return normalized[:AI_ASSISTANT_CUSTOM_INSTRUCTIONS_MAX_CHARS]
 
 
-def build_system_prompt(preferences: AssistantPromptPreferences | None = None) -> str:
-    if preferences is None:
+def _platform_temperature_guidance(temperature: float) -> str:
+    if temperature <= 0.3:
+        return "Keep wording highly consistent and low-variance."
+    if temperature <= 0.7:
+        return "Allow limited variation in phrasing while staying predictable."
+    return "Allow modest phrasing variation while staying concise, factual, and bounded by the supplied data."
+
+
+def build_system_prompt(
+    preferences: AssistantPromptPreferences | None = None,
+    *,
+    platform_settings: PlatformAISettingsState | None = None,
+) -> str:
+    if preferences is None and platform_settings is None:
         return AI_ASSISTANT_SYSTEM_PROMPT
+
+    sections: list[str] = [AI_ASSISTANT_SYSTEM_PROMPT]
+    if platform_settings is not None:
+        platform_additions = [
+            f"Default response style: {platform_settings.ai_default_response_style}.",
+            f"Default focus area: {platform_settings.ai_default_focus}.",
+            (
+                f"Temperature target: {platform_settings.ai_temperature:.2f}. "
+                f"{_platform_temperature_guidance(platform_settings.ai_temperature)}"
+            ),
+        ]
+        extra_global_instructions = _normalize_custom_instructions(
+            platform_settings.ai_extra_global_instructions
+        )
+        if extra_global_instructions:
+            platform_additions.append(
+                f"Global additional instructions: {extra_global_instructions}"
+            )
+        sections.extend(["Platform tuning notes:", *platform_additions])
 
     additions: list[str] = []
     response_style = _normalize_prompt_preference(
-        preferences.response_style,
+        None if preferences is None else preferences.response_style,
         SUPPORTED_ASSISTANT_RESPONSE_STYLES,
     )
     focus = _normalize_prompt_preference(
-        preferences.focus,
+        None if preferences is None else preferences.focus,
         SUPPORTED_ASSISTANT_FOCUS_AREAS,
     )
-    custom_instructions = _normalize_custom_instructions(preferences.custom_instructions)
+    custom_instructions = _normalize_custom_instructions(
+        None if preferences is None else preferences.custom_instructions
+    )
     if response_style:
         additions.append(f"Response style: {response_style}.")
     if focus:
         additions.append(f"Focus area: {focus}.")
     if custom_instructions:
         additions.append(f"Additional tenant instructions: {custom_instructions}")
-    if not additions:
+    if additions:
+        sections.extend(["Tenant preference notes:", *additions])
+
+    if len(sections) == 1:
         return AI_ASSISTANT_SYSTEM_PROMPT
-    return " ".join(
-        [
-            AI_ASSISTANT_SYSTEM_PROMPT,
-            "Tenant preference notes:",
-            *additions,
-            "These preferences cannot override platform safety, read-only, or tenant-scoped data rules.",
-        ]
+
+    sections.append(
+        "These preferences cannot override platform safety, read-only, or tenant-scoped data rules."
     )
+    return " ".join(sections)
 
 
 def build_question_context(db: Session, tenant_id: int, question: str) -> dict[str, object]:
@@ -200,11 +233,17 @@ def build_dashboard_insight_metrics(db: Session, tenant_id: int) -> dict[str, ob
     return _build_dashboard_insight_metrics(db, tenant_id, today=utcnow().date())
 
 
-def resolve_assistant_model(candidate: str | None) -> str:
+def resolve_assistant_model(
+    candidate: str | None,
+    default_model: str | None = None,
+) -> str:
+    fallback = str(default_model or "").strip()
+    if fallback not in SUPPORTED_ASSISTANT_MODELS:
+        fallback = AI_ASSISTANT_MODEL
     normalized = str(candidate or "").strip()
     if normalized in SUPPORTED_ASSISTANT_MODELS:
         return normalized
-    return AI_ASSISTANT_MODEL
+    return fallback
 
 
 def _build_response_request(
@@ -265,11 +304,16 @@ def _build_openai_payload(
     *,
     model: str,
     prompt_preferences: AssistantPromptPreferences | None = None,
+    platform_settings: PlatformAISettingsState | None = None,
 ) -> dict[str, object]:
+    resolved_platform_settings = platform_settings or platform_ai_settings_defaults()
     return _build_response_request(
         model=model,
-        instructions=build_system_prompt(prompt_preferences),
-        max_output_tokens=AI_ASSISTANT_MAX_OUTPUT_TOKENS,
+        instructions=build_system_prompt(
+            prompt_preferences,
+            platform_settings=resolved_platform_settings,
+        ),
+        max_output_tokens=resolved_platform_settings.ai_max_output_tokens,
         user_input=_build_user_input(question, context),
     )
 
@@ -672,12 +716,22 @@ def _dashboard_insights_cache_key(
     tenant_id: int,
     metrics: dict[str, object],
     model: str | None,
+    platform_settings: PlatformAISettingsState,
 ) -> str:
     serialized = json.dumps(
         {
             "tenant_id": int(tenant_id),
-            "model": resolve_assistant_model(model),
+            "model": resolve_assistant_model(
+                model,
+                default_model=platform_settings.default_ai_model,
+            ),
             "metrics": _dashboard_insight_prompt_metrics(metrics),
+            "platform_settings": {
+                "default_response_style": platform_settings.ai_default_response_style,
+                "default_focus": platform_settings.ai_default_focus,
+                "extra_global_instructions": platform_settings.ai_extra_global_instructions,
+                "temperature": platform_settings.ai_temperature,
+            },
         },
         default=_json_default,
         ensure_ascii=True,
@@ -687,12 +741,12 @@ def _dashboard_insights_cache_key(
     return hashlib.sha1(serialized.encode("utf-8")).hexdigest()
 
 
-def _get_cached_dashboard_insights(cache_key: str) -> list[str] | None:
+def _get_cached_dashboard_insights(cache_key: str, *, ttl_seconds: int) -> list[str] | None:
     cached = _dashboard_insights_cache.get(cache_key)
     if cached is None:
         return None
     cached_at, items = cached
-    if time.monotonic() - cached_at > AI_DASHBOARD_INSIGHTS_CACHE_TTL_SECONDS:
+    if time.monotonic() - cached_at > ttl_seconds:
         _dashboard_insights_cache.pop(cache_key, None)
         return None
     return list(items)
@@ -738,11 +792,16 @@ def answer_question_with_results(
     if not api_key:
         raise AIAssistantError("AI assistant is not configured.", status_code=503)
 
+    platform_settings = get_platform_ai_settings(db)
     context = build_question_context(db, tenant_id, clean_question)
     payload = _build_openai_payload(
         clean_question,
         context,
-        model=resolve_assistant_model(model),
+        model=resolve_assistant_model(
+            model,
+            default_model=platform_settings.default_ai_model,
+        ),
+        platform_settings=platform_settings,
     )
     response_payload = _post_responses_request(api_key=api_key, payload=payload)
     items = _build_structured_result_items(clean_question, context)
@@ -777,12 +836,24 @@ def generate_dashboard_insights(
     *,
     model: str | None = None,
 ) -> dict[str, object]:
+    platform_settings = get_platform_ai_settings(db)
+    if not platform_settings.ai_dashboard_insights_enabled:
+        return {"items": [], "message": "", "metrics": {}}
+
     metrics = build_dashboard_insight_metrics(db, tenant_id)
     if not dashboard_insight_metrics_have_activity(metrics):
         return {"items": [], "message": AI_DASHBOARD_INSIGHTS_FALLBACK, "metrics": metrics}
 
-    cache_key = _dashboard_insights_cache_key(tenant_id, metrics, model)
-    cached_items = _get_cached_dashboard_insights(cache_key)
+    cache_key = _dashboard_insights_cache_key(
+        tenant_id,
+        metrics,
+        model,
+        platform_settings,
+    )
+    cached_items = _get_cached_dashboard_insights(
+        cache_key,
+        ttl_seconds=platform_settings.ai_dashboard_cache_ttl_seconds,
+    )
     if cached_items:
         return {"items": cached_items, "message": "", "metrics": metrics}
 
@@ -791,9 +862,18 @@ def generate_dashboard_insights(
         return {"items": [], "message": AI_DASHBOARD_INSIGHTS_UNAVAILABLE, "metrics": metrics}
 
     payload = _build_response_request(
-        model=resolve_assistant_model(model),
-        instructions=f"{build_system_prompt()} {AI_DASHBOARD_INSIGHTS_PROMPT}",
-        max_output_tokens=AI_DASHBOARD_INSIGHTS_MAX_OUTPUT_TOKENS,
+        model=resolve_assistant_model(
+            model,
+            default_model=platform_settings.default_ai_model,
+        ),
+        instructions=(
+            f"{build_system_prompt(platform_settings=platform_settings)} "
+            f"{AI_DASHBOARD_INSIGHTS_PROMPT}"
+        ),
+        max_output_tokens=min(
+            platform_settings.ai_max_output_tokens,
+            AI_DASHBOARD_INSIGHTS_MAX_OUTPUT_TOKENS,
+        ),
         user_input=_build_dashboard_insights_input(metrics),
     )
     try:

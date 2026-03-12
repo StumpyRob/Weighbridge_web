@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+
+{% block title %}Platform AI Settings | Weighbridge Web{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>AI Settings</h1>
+      <p class="muted">Platform-level AI tuning for the assistant and dashboard insights.</p>
+    </div>
+    <div class="actions btn-group">
+      <a class="btn btn--ghost" href="/platform/tenants">Back to Tenants</a>
+    </div>
+  </div>
+
+  {% if saved %}
+    <div class="notice">
+      Platform AI settings updated.
+    </div>
+  {% endif %}
+
+  {% if reset_done %}
+    <div class="notice">
+      Platform AI settings reset to defaults.
+    </div>
+  {% endif %}
+
+  {% if error %}
+    <div class="alert alert--danger">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  <section class="frame">
+    <div class="frame-header">
+      <h2>AI Assistant Settings</h2>
+    </div>
+    <div class="frame-body">
+      <p class="help">
+        The core safety/system prompt remains backend-controlled. These settings tune the default model, output length, dashboard insight behaviour, and a short global instruction addendum only.
+      </p>
+      <form method="post" action="/platform/ai-settings" class="ticket-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+
+        <div class="field">
+          <label for="default_ai_model">Default AI model</label>
+          <select id="default_ai_model" name="default_ai_model">
+            {% for model_name in platform_ai_model_options %}
+              <option value="{{ model_name }}" {% if platform_ai_settings.default_ai_model == model_name %}selected{% endif %}>
+                {{ model_name }}
+              </option>
+            {% endfor %}
+          </select>
+          <p class="help">
+            Default model used when a tenant does not select its own model. {{ platform_ai_defaults.default_ai_model }} remains the recommended cost-efficient baseline.
+          </p>
+          <p class="help" data-platform-ai-model-warning {% if platform_ai_settings.default_ai_model != "gpt-5" %}hidden{% endif %}>
+            This model is more expensive and should only be used if needed.
+          </p>
+        </div>
+
+        <div class="field">
+          <label for="ai_temperature">Temperature</label>
+          <input
+            type="number"
+            id="ai_temperature"
+            name="ai_temperature"
+            min="{{ platform_ai_temperature_min }}"
+            max="{{ platform_ai_temperature_max }}"
+            step="0.1"
+            value="{{ '%.2f'|format(platform_ai_settings.ai_temperature) }}"
+          />
+          <p class="help">
+            Lower values keep replies more consistent. Allowed range: {{ platform_ai_temperature_min }} to {{ platform_ai_temperature_max }}.
+          </p>
+          <p class="help">
+            Current GPT-5 models use this as safe response-variation guidance rather than a raw API override.
+          </p>
+        </div>
+
+        <div class="field">
+          <label for="ai_max_output_tokens">Max output tokens</label>
+          <input
+            type="number"
+            id="ai_max_output_tokens"
+            name="ai_max_output_tokens"
+            min="{{ platform_ai_max_tokens_min }}"
+            max="{{ platform_ai_max_tokens_max }}"
+            step="10"
+            value="{{ platform_ai_settings.ai_max_output_tokens }}"
+          />
+          <p class="help">
+            Bounds assistant response length and cost. Allowed range: {{ platform_ai_max_tokens_min }} to {{ platform_ai_max_tokens_max }}.
+          </p>
+        </div>
+
+        <div class="field checkbox">
+          <input type="hidden" name="ai_dashboard_insights_enabled" value="0" />
+          <input
+            type="checkbox"
+            id="ai_dashboard_insights_enabled"
+            name="ai_dashboard_insights_enabled"
+            value="1"
+            {% if platform_ai_settings.ai_dashboard_insights_enabled %}checked{% endif %}
+          />
+          <label for="ai_dashboard_insights_enabled">Dashboard insights enabled</label>
+        </div>
+        <p class="help">
+          Turns the tenant dashboard AI Insights panel on or off globally, without affecting the tenant assistant drawer itself.
+        </p>
+
+        <div class="field">
+          <label for="ai_dashboard_cache_ttl_seconds">Dashboard insights cache TTL (seconds)</label>
+          <input
+            type="number"
+            id="ai_dashboard_cache_ttl_seconds"
+            name="ai_dashboard_cache_ttl_seconds"
+            min="{{ platform_ai_cache_ttl_min }}"
+            max="{{ platform_ai_cache_ttl_max }}"
+            step="60"
+            value="{{ platform_ai_settings.ai_dashboard_cache_ttl_seconds }}"
+          />
+          <p class="help">
+            Reuses recent insight results per tenant to reduce repeated OpenAI calls. Allowed range: {{ platform_ai_cache_ttl_min }} to {{ platform_ai_cache_ttl_max }} seconds.
+          </p>
+        </div>
+
+        <div class="field">
+          <label for="ai_default_response_style">Default response style</label>
+          <select id="ai_default_response_style" name="ai_default_response_style">
+            {% for style_name in platform_ai_response_style_options %}
+              <option value="{{ style_name }}" {% if platform_ai_settings.ai_default_response_style == style_name %}selected{% endif %}>
+                {{ style_name.title() }}
+              </option>
+            {% endfor %}
+          </select>
+          <p class="help">
+            Sets the default tone guidance for the assistant. Concise is recommended for most operational users.
+          </p>
+        </div>
+
+        <div class="field">
+          <label for="ai_default_focus">Default assistant focus</label>
+          <select id="ai_default_focus" name="ai_default_focus">
+            {% for focus_name in platform_ai_focus_options %}
+              <option value="{{ focus_name }}" {% if platform_ai_settings.ai_default_focus == focus_name %}selected{% endif %}>
+                {{ focus_name.title() }}
+              </option>
+            {% endfor %}
+          </select>
+          <p class="help">
+            Sets the default emphasis for answers. This only tunes assistant behaviour and does not change data access or permissions.
+          </p>
+        </div>
+
+        <div class="field">
+          <label for="ai_extra_global_instructions">Extra global instructions</label>
+          <textarea
+            id="ai_extra_global_instructions"
+            name="ai_extra_global_instructions"
+            rows="4"
+            maxlength="{{ platform_ai_extra_instructions_max_chars }}"
+            placeholder="Optional short guidance appended after the platform-controlled base prompt."
+          >{{ platform_ai_settings.ai_extra_global_instructions }}</textarea>
+          <p class="help">
+            Optional short prompt addendum appended after the core backend prompt. It cannot override safety, read-only, or tenant-isolation rules.
+          </p>
+        </div>
+
+        <div class="actions btn-group">
+          <button type="submit" class="btn btn--primary">Save AI Settings</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="frame-header">
+      <h2>Reset to Defaults</h2>
+    </div>
+    <div class="frame-body">
+      <p class="help">
+        Reset platform AI tuning back to the safe default baseline: {{ platform_ai_defaults.default_ai_model }}, temperature {{ '%.2f'|format(platform_ai_defaults.ai_temperature) }}, max output tokens {{ platform_ai_defaults.ai_max_output_tokens }}, and dashboard insights enabled.
+      </p>
+      <form method="post" action="/platform/ai-settings/reset" class="ticket-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+        <div class="actions btn-group">
+          <button
+            type="submit"
+            class="btn btn--secondary"
+            onclick="return window.confirm('Reset platform AI settings to defaults?');"
+          >
+            Reset to Defaults
+          </button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <script>
+    (() => {
+      const modelSelect = document.getElementById("default_ai_model");
+      const modelWarning = document.querySelector("[data-platform-ai-model-warning]");
+      if (!modelSelect || !modelWarning) {
+        return;
+      }
+
+      const syncModelWarning = () => {
+        modelWarning.hidden = modelSelect.value !== "gpt-5";
+      };
+
+      modelSelect.addEventListener("change", syncModelWarning);
+      syncModelWarning();
+    })();
+  </script>
+{% endblock %}
