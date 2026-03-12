@@ -2886,6 +2886,11 @@ details > summary:focus-visible {
   min-width: 0;
 }
 
+.dashboard-chart--throughput {
+  box-sizing: border-box;
+  padding-inline: 0.35rem;
+}
+
 .dashboard-chart:not(.dashboard-chart--throughput) {
   gap: 0.65rem;
 }

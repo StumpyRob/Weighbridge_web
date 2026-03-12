@@ -3800,7 +3800,9 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert _dashboard_metric_value(response.text, "completed_today") == "1"
     assert _dashboard_metric_value(response.text, "total_weight_today") == "1,500 kg"
     assert _dashboard_metric_value(response.text, "invoices_pending") == "2"
+    assert "Total processed this period: 4 tickets" in response.text
     assert "Total processed this period: 5.5 tonnes" in response.text
+    assert response.text.count("Total processed this period:") == 2
     assert 'data-dashboard-ticket="A-COMP-1"' in response.text
     assert 'data-dashboard-ticket="A-OPEN-1"' in response.text
     assert 'data-dashboard-open-ticket="A-OPEN-1"' in response.text
@@ -3842,6 +3844,7 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert 'data-dashboard-period="today"' in response_today.text
     assert 'data-dashboard-period-active="1"' in response_today.text
     assert "Total processed this period: 1.5 tonnes" in response_today.text
+    assert response_today.text.count("Total processed this period:") == 1
     assert 'data-dashboard-throughput-kg="1500"' in response_today.text
     assert 'data-dashboard-throughput-kg="1750"' not in response_today.text
     assert 'data-dashboard-throughput-kg="2200"' not in response_today.text
@@ -3868,7 +3871,9 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert response_12m.text.count('data-dashboard-throughput-point="') == 12
     assert 'data-dashboard-chart-day="Mar 26"' in response_12m.text
     assert 'data-dashboard-chart-day="Feb 26"' in response_12m.text
+    assert "Total processed this period: 4 tickets" in response_12m.text
     assert "Total processed this period: 8.6 tonnes" in response_12m.text
+    assert response_12m.text.count("Total processed this period:") == 2
     assert 'data-dashboard-throughput-kg="5450"' in response_12m.text
     assert 'data-dashboard-throughput-kg="3100"' in response_12m.text
     assert 'data-dashboard-throughput-kg="1500"' not in response_12m.text

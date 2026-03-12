@@ -94,6 +94,9 @@
       <section class="frame">
         <div class="frame-header">{{ dashboard.chart_title }}{{ help(help_text.dashboard_ticket_activity, "dashboard-ticket-activity-help") }}</div>
         <div class="frame-body">
+          {% if dashboard.chart_summary %}
+            <p class="muted dashboard-section-copy">{{ dashboard.chart_summary }}</p>
+          {% endif %}
           {% if dashboard.chart_has_data %}
             <div class="dashboard-chart-wrap">
               <div

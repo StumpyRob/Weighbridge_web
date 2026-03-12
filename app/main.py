@@ -691,6 +691,14 @@ def _build_monthly_weight_throughput_chart(
     }
 
 
+def _ticket_period_summary(points: list[dict[str, object]], *, period: str) -> str | None:
+    if period == "today":
+        return None
+    total_count = sum(int(point.get("count", 0) or 0) for point in points)
+    ticket_label = "ticket" if total_count == 1 else "tickets"
+    return f"Total processed this period: {total_count} {ticket_label}"
+
+
 def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
     today = utcnow().date()
     today_start, tomorrow_start = _datetime_bounds_for_day(today)
@@ -846,6 +854,10 @@ def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
         "7d": "Last 7 Days",
         "12m": "Last 12 Months",
     }
+    chart_summary = _ticket_period_summary(
+        chart_points,
+        period=overview_period,
+    )
 
     return {
         "summary_cards": [
@@ -892,6 +904,7 @@ def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
         "invoice_ready_count": invoice_ready_count,
         "chart_points": chart_points,
         "chart_title": chart_title,
+        "chart_summary": chart_summary,
         "chart_empty_message": chart_empty_message,
         "chart_has_data": max_count > 0,
         "weight_throughput": weight_throughput,
