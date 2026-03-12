@@ -90,6 +90,18 @@
     </div>
   {% endif %}
 
+  {% if ai_saved %}
+    <div class="notice">
+      AI settings updated.
+    </div>
+  {% endif %}
+
+  {% if ai_error %}
+    <div class="alert alert--danger">
+      {{ ai_error }}
+    </div>
+  {% endif %}
+
   {% if demo_reset %}
     <div class="notice">
       Demo tenant data deleted and recreated.
@@ -323,6 +335,61 @@
 
   <section class="frame">
     <div class="frame-header">
+      <h2>AI Assistant Settings</h2>
+    </div>
+    <div class="frame-body">
+      <form method="post" action="/platform/tenants/{{ tenant.id }}/ai-settings" class="ticket-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+        <div class="field checkbox">
+          <input type="hidden" name="ai_enabled" value="0" />
+          <input
+            type="checkbox"
+            id="ai_enabled"
+            name="ai_enabled"
+            value="1"
+            {% if tenant.ai_enabled %}checked{% endif %}
+          />
+          <label for="ai_enabled">AI Assistant Enabled</label>
+        </div>
+        <p class="help">
+          Enables the AI assistant feature for this tenant. Uses the platform-managed OpenAI configuration.
+        </p>
+        <div class="field">
+          <label for="ai_model">AI Model</label>
+          <select id="ai_model" name="ai_model">
+            <option value="" {% if not tenant.ai_model %}selected{% endif %}>
+              Use platform default ({{ assistant_default_model }})
+            </option>
+            {% for model_name in assistant_model_options %}
+              <option value="{{ model_name }}" {% if tenant.ai_model == model_name %}selected{% endif %}>
+                {{ model_name }}
+              </option>
+            {% endfor %}
+          </select>
+          <p class="help">
+            If no tenant-specific model is selected, the assistant uses {{ assistant_default_model }}.
+          </p>
+          <p class="help">
+            gpt-5-mini is recommended for most tenants due to lower cost.
+          </p>
+          <p
+            class="help"
+            data-ai-model-warning
+            aria-live="polite"
+            {% if tenant_effective_ai_model != "gpt-5" %}hidden{% endif %}
+          >
+            This model is more expensive and should only be used if needed.
+          </p>
+        </div>
+        <div class="actions btn-group">
+          <button type="submit" class="btn btn--primary">Save AI Settings</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="frame-header">
       <h2>Maintenance</h2>
     </div>
     <div class="frame-body">
@@ -375,6 +442,23 @@
       {% endif %}
     </div>
   </section>
+
+  <script>
+    (() => {
+      const aiModelSelect = document.getElementById("ai_model");
+      const aiModelWarning = document.querySelector("[data-ai-model-warning]");
+      if (!aiModelSelect || !aiModelWarning) {
+        return;
+      }
+
+      const syncAiModelWarning = () => {
+        aiModelWarning.hidden = aiModelSelect.value !== "gpt-5";
+      };
+
+      aiModelSelect.addEventListener("change", syncAiModelWarning);
+      syncAiModelWarning();
+    })();
+  </script>
 
   {% if tenant_is_demo %}
     <script src="/static/js/platform_demo_reset.js?v={{ BUILD_STAMP }}" defer></script>

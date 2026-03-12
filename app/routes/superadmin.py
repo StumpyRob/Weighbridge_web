@@ -66,6 +66,11 @@ from ..services.system_setup import (
     seed_required_reference_data,
     upsert_default_yard,
 )
+from ..services.ai_assistant import (
+    AI_ASSISTANT_MODEL,
+    SUPPORTED_ASSISTANT_MODELS,
+    resolve_assistant_model,
+)
 from ..services.tenants import is_demo_tenant, normalize_subdomain, validate_subdomain
 from ..services.uploads import company_logo_upload_dir
 from ..tenancy import (
@@ -526,6 +531,13 @@ def tenant_detail(
             "email_error": request.query_params.get("email_error", ""),
             "password_saved": request.query_params.get("password_saved") == "1",
             "password_error": request.query_params.get("password_error", ""),
+            "ai_saved": request.query_params.get("ai_saved") == "1",
+            "ai_error": request.query_params.get("ai_error", ""),
+            "assistant_default_model": AI_ASSISTANT_MODEL,
+            "assistant_model_options": SUPPORTED_ASSISTANT_MODELS,
+            "tenant_effective_ai_model": resolve_assistant_model(
+                getattr(tenant, "ai_model", None)
+            ),
         },
     )
 
@@ -934,6 +946,73 @@ async def tenant_update_admin_password(
 
     return RedirectResponse(
         url=f"/platform/tenants/{tenant.id}?password_saved=1",
+        status_code=303,
+    )
+
+
+@router.post("/platform/tenants/{tenant_id:int}/ai-settings")
+@router.post("/admin/tenants/{tenant_id:int}/ai-settings")
+async def tenant_update_ai_settings(
+    tenant_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None:
+        return RedirectResponse(url="/platform/tenants?error=Tenant+not+found", status_code=303)
+
+    form = await request.form()
+    ai_enabled_values = (
+        list(form.getlist("ai_enabled"))
+        if hasattr(form, "getlist")
+        else [form.get("ai_enabled")]
+    )
+    ai_enabled = any(
+        str(value or "").strip().lower() in {"1", "true", "on", "yes"}
+        for value in ai_enabled_values
+    )
+    ai_model = str(form.get("ai_model", "") or "").strip() or None
+    if ai_model is not None and ai_model not in SUPPORTED_ASSISTANT_MODELS:
+        return RedirectResponse(
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'ai_error': 'Select a valid AI model.'})}",
+            status_code=303,
+        )
+
+    previous_enabled = bool(getattr(tenant, "ai_enabled", False))
+    previous_model = str(getattr(tenant, "ai_model", "") or "").strip() or None
+    tenant.ai_enabled = ai_enabled
+    tenant.ai_model = ai_model
+
+    if previous_enabled != ai_enabled or previous_model != ai_model:
+        changed: dict[str, dict[str, object]] = {}
+        if previous_enabled != ai_enabled:
+            changed["ai_enabled"] = {
+                "from": previous_enabled,
+                "to": ai_enabled,
+            }
+        if previous_model != ai_model:
+            changed["ai_model"] = {
+                "from": previous_model,
+                "to": ai_model,
+                "effective": resolve_assistant_model(ai_model),
+            }
+        audit_log(
+            db,
+            request,
+            action="TENANT_UPDATE",
+            entity_type="tenant",
+            entity_id=tenant.id,
+            summary=f"Updated AI settings for tenant {tenant.name}",
+            details={"changed": changed},
+            user=current_user,
+            tenant_id=tenant.id,
+        )
+        db.commit()
+
+    return RedirectResponse(
+        url=f"/platform/tenants/{tenant.id}?ai_saved=1",
         status_code=303,
     )
 

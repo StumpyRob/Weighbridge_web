@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 import app.main as main_module
+import app.services.ai_assistant as ai_assistant_module
 from app.auth import ROLE_SUPERADMIN, ROLE_TENANT_ADMIN, ROLE_USER, hash_password, user_identity_kwargs
 from app.config import settings
 from app.db import TenantSession, get_db
@@ -54,7 +55,7 @@ from app.models import (
 from app.models.base import utcnow
 from app.routes.tickets import _generate_ticket_no
 from app.seed import seed_print_destinations, seed_print_templates
-from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD
+from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER_NAME
 from app.services.credit import customer_outstanding_total
 from app.services.print_context import build_print_base_context
 from app.services.print_payload import _company_logo_src
@@ -239,6 +240,8 @@ def _seed_tenant(
     subdomain: str,
     is_active: bool = True,
     is_demo: bool = False,
+    ai_enabled: bool = False,
+    ai_model: str | None = None,
 ) -> int:
     with SessionLocal() as db:
         tenant = Tenant(
@@ -246,6 +249,8 @@ def _seed_tenant(
             subdomain=subdomain,
             is_active=is_active,
             is_demo=is_demo,
+            ai_enabled=ai_enabled,
+            ai_model=ai_model,
         )
         db.add(tenant)
         db.commit()
@@ -1841,6 +1846,86 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         tenant = db.get(Tenant, tenant_a)
         assert tenant is not None
         assert bool(tenant.is_active) is True
+
+
+def test_platform_superadmin_can_update_tenant_ai_settings(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ai-settings-admin.db", monkeypatch=monkeypatch
+    )
+    superadmin_id = _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", is_active=True)
+    _seed_user(
+        SessionLocal,
+        email="tenant-admin@example.com",
+        password="TenantPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(
+            admin_client,
+            email="superadmin@example.com",
+            password="TestPass123!",
+            next_path="/platform/tenants",
+        ) == 303
+        csrf = _prime_csrf(admin_client)
+
+        tenant_detail = admin_client.get(f"/platform/tenants/{tenant_a}")
+        assert tenant_detail.status_code == 200
+        assert "AI Assistant Settings" in tenant_detail.text
+        assert f'action="/platform/tenants/{tenant_a}/ai-settings"' in tenant_detail.text
+        assert "AI Assistant Enabled" in tenant_detail.text
+        assert "Enables the AI assistant feature for this tenant. Uses the platform-managed OpenAI configuration." in tenant_detail.text
+        assert "Use platform default (gpt-5-mini)" in tenant_detail.text
+        assert "If no tenant-specific model is selected, the assistant uses gpt-5-mini." in tenant_detail.text
+        assert "gpt-5-mini is recommended for most tenants due to lower cost." in tenant_detail.text
+        assert 'option value="gpt-5"' in tenant_detail.text
+
+        update_ai = admin_client.post(
+            f"/platform/tenants/{tenant_a}/ai-settings",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "ai_enabled": "1",
+                "ai_model": "gpt-5",
+            },
+            follow_redirects=False,
+        )
+        assert update_ai.status_code in {302, 303}
+        assert update_ai.headers.get("location") == f"/platform/tenants/{tenant_a}?ai_saved=1"
+
+        updated_detail = admin_client.get(update_ai.headers["location"])
+        assert updated_detail.status_code == 200
+        assert "AI settings updated." in updated_detail.text
+        assert 'value="gpt-5" selected' in updated_detail.text
+        assert "This model is more expensive and should only be used if needed." in updated_detail.text
+
+    with SessionLocal() as db:
+        tenant = db.get(Tenant, tenant_a)
+        assert tenant is not None
+        assert bool(tenant.ai_enabled) is True
+        assert tenant.ai_model == "gpt-5"
+        audit_event = db.execute(
+            select(AuditEvent)
+            .where(
+                AuditEvent.action == "TENANT_UPDATE",
+                AuditEvent.entity_id == str(tenant_a),
+                AuditEvent.summary == "Updated AI settings for tenant Tenant A",
+            )
+            .order_by(AuditEvent.id.desc())
+            .limit(1)
+        ).scalars().first()
+        assert audit_event is not None
+        assert audit_event.user_id == superadmin_id
+        assert isinstance(audit_event.details_json, dict)
+        assert audit_event.details_json.get("changed", {}).get("ai_enabled", {}).get("to") is True
+        assert audit_event.details_json.get("changed", {}).get("ai_model", {}).get("to") == "gpt-5"
 
 
 def test_superadmin_can_delete_empty_tenant_and_delete_blocks_linked_data(tmp_path, monkeypatch):
@@ -4007,6 +4092,321 @@ def test_all_tenant_subdomains_use_dashboard_on_root_and_non_tenant_hosts_do_not
         admin_root = admin_client.get("/", follow_redirects=False)
         assert admin_root.status_code in {302, 303}
         assert admin_root.headers.get("location") == "/platform/tenants"
+
+
+def test_tenant_ai_assistant_query_uses_gpt_5_mini_with_tenant_scoped_context(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ai-assistant.db", monkeypatch=monkeypatch
+    )
+    monkeypatch.setattr(settings, "openai_api_key", "test-openai-key")
+
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", ai_enabled=True)
+    tenant_b = _seed_tenant(SessionLocal, name="Tenant B", subdomain="b", ai_enabled=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_b,
+        company_name="Tenant B Co",
+        primary_color="#225577",
+    )
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+    _seed_user(
+        SessionLocal,
+        email="b-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_b,
+    )
+
+    with SessionLocal() as db:
+        customer_a = Customer(tenant_id=tenant_a, account_code="CUST-A", name="Tenant A Customer")
+        customer_b = Customer(tenant_id=tenant_b, account_code="CUST-B", name="Tenant B Customer")
+        vehicle_a = Vehicle(tenant_id=tenant_a, registration="A123 OPEN")
+        vehicle_b = Vehicle(tenant_id=tenant_b, registration="B123 OPEN")
+        db.add_all([customer_a, customer_b, vehicle_a, vehicle_b])
+        db.flush()
+        db.add_all(
+            [
+                Ticket(
+                    tenant_id=tenant_a,
+                    ticket_no="A-OPEN-1",
+                    datetime=datetime(2026, 3, 12, 8, 0, 0),
+                    status=TicketStatusEnum.OPEN.value,
+                    direction=DirectionEnum.INWARD.value,
+                    transaction_type=TransactionTypeEnum.SALE.value,
+                    customer_id=customer_a.id,
+                    vehicle_id=vehicle_a.id,
+                    net_kg=1250,
+                    dont_invoice=False,
+                    paid=False,
+                ),
+                Ticket(
+                    tenant_id=tenant_b,
+                    ticket_no="B-OPEN-1",
+                    datetime=datetime(2026, 3, 12, 9, 0, 0),
+                    status=TicketStatusEnum.OPEN.value,
+                    direction=DirectionEnum.INWARD.value,
+                    transaction_type=TransactionTypeEnum.SALE.value,
+                    customer_id=customer_b.id,
+                    vehicle_id=vehicle_b.id,
+                    net_kg=2400,
+                    dont_invoice=False,
+                    paid=False,
+                ),
+            ]
+        )
+        db.commit()
+
+    captured: dict[str, object] = {}
+
+    def fake_openai_request(*, api_key: str, payload: dict[str, object]) -> dict[str, object]:
+        captured["api_key"] = api_key
+        captured["payload"] = payload
+        return {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "There is 1 open ticket: A-OPEN-1.",
+                        }
+                    ],
+                }
+            ]
+        }
+
+    monkeypatch.setattr(ai_assistant_module, "_post_responses_request", fake_openai_request)
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="a-admin@example.com", password="TestPass123!") == 303
+        csrf = _prime_csrf(tenant_client)
+        response = tenant_client.post(
+            "/api/assistant/query",
+            json={"question": "Which tickets are still open?"},
+            headers={
+                CSRF_HEADER_NAME: csrf,
+                "accept": "application/json",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"answer": "There is 1 open ticket: A-OPEN-1."}
+    assert captured["api_key"] == "test-openai-key"
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    assert payload["model"] == "gpt-5-mini"
+    assert payload["max_output_tokens"] == 400
+    content_text = payload["input"][0]["content"][0]["text"]
+    assert "A-OPEN-1" in content_text
+    assert "B-OPEN-1" not in content_text
+
+
+def test_tenant_ai_assistant_uses_tenant_selected_model_when_configured(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ai-assistant-model.db", monkeypatch=monkeypatch
+    )
+    monkeypatch.setattr(settings, "openai_api_key", "test-openai-key")
+
+    tenant_a = _seed_tenant(
+        SessionLocal,
+        name="Tenant A",
+        subdomain="a",
+        ai_enabled=True,
+        ai_model="gpt-5",
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_openai_request(*, api_key: str, payload: dict[str, object]) -> dict[str, object]:
+        captured["api_key"] = api_key
+        captured["payload"] = payload
+        return {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "There are no open tickets.",
+                        }
+                    ],
+                }
+            ]
+        }
+
+    monkeypatch.setattr(ai_assistant_module, "_post_responses_request", fake_openai_request)
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="a-admin@example.com", password="TestPass123!") == 303
+        csrf = _prime_csrf(tenant_client)
+        response = tenant_client.post(
+            "/api/assistant/query",
+            json={"question": "Which tickets are still open?"},
+            headers={
+                CSRF_HEADER_NAME: csrf,
+                "accept": "application/json",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"answer": "There are no open tickets."}
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    assert payload["model"] == "gpt-5"
+
+
+def test_tenant_ai_assistant_rejects_when_disabled_for_tenant(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ai-assistant-disabled.db", monkeypatch=monkeypatch
+    )
+    monkeypatch.setattr(settings, "openai_api_key", "test-openai-key")
+
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", ai_enabled=False)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+
+    called = {"value": False}
+
+    def fake_openai_request(*, api_key: str, payload: dict[str, object]) -> dict[str, object]:
+        called["value"] = True
+        return {}
+
+    monkeypatch.setattr(ai_assistant_module, "_post_responses_request", fake_openai_request)
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="a-admin@example.com", password="TestPass123!") == 303
+        csrf = _prime_csrf(tenant_client)
+        response = tenant_client.post(
+            "/api/assistant/query",
+            json={"question": "Which tickets are still open?"},
+            headers={
+                CSRF_HEADER_NAME: csrf,
+                "accept": "application/json",
+            },
+        )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "AI assistant is disabled for this tenant."
+    assert called["value"] is False
+
+
+def test_tenant_ai_assistant_refuses_write_requests_without_calling_openai(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ai-assistant-readonly.db", monkeypatch=monkeypatch
+    )
+    monkeypatch.setattr(settings, "openai_api_key", "test-openai-key")
+
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", ai_enabled=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+
+    called = {"value": False}
+
+    def fake_openai_request(*, api_key: str, payload: dict[str, object]) -> dict[str, object]:
+        called["value"] = True
+        return {}
+
+    monkeypatch.setattr(ai_assistant_module, "_post_responses_request", fake_openai_request)
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="a-admin@example.com", password="TestPass123!") == 303
+        csrf = _prime_csrf(tenant_client)
+        response = tenant_client.post(
+            "/api/assistant/query",
+            json={"question": "Please create a new ticket for ABC123."},
+            headers={
+                CSRF_HEADER_NAME: csrf,
+                "accept": "application/json",
+            },
+        )
+
+    assert response.status_code == 200
+    assert "read-only" in response.json()["answer"].lower()
+    assert called["value"] is False
+
+
+def test_tenant_ai_assistant_returns_503_when_openai_is_not_configured(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ai-assistant-no-key.db", monkeypatch=monkeypatch
+    )
+    monkeypatch.setattr(settings, "openai_api_key", "")
+
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", ai_enabled=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="a-admin@example.com", password="TestPass123!") == 303
+        csrf = _prime_csrf(tenant_client)
+        response = tenant_client.post(
+            "/api/assistant/query",
+            json={"question": "Which tickets are still open?"},
+            headers={
+                CSRF_HEADER_NAME: csrf,
+                "accept": "application/json",
+            },
+        )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "AI assistant is not configured."
 
 
 def test_new_tenant_creation_flow_seeds_usable_baseline_and_requires_user_creation_from_detail(

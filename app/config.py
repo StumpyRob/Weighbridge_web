@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     smtp_from_email: str = ""
     smtp_use_tls: bool = True
     smtp_use_ssl: bool = False
+    openai_api_key: str = ""
     base_domain: str = ""
     allowed_hosts: str = ""
     platform_subdomain: str = "admin"

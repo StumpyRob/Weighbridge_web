@@ -27,4 +27,11 @@ class Tenant(Base):
         default=False,
         server_default=sa.false(),
     )
+    ai_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=sa.false(),
+    )
+    ai_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
