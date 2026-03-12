@@ -19,25 +19,22 @@
   </div>
 </div>
 
-<section class="card">
-  <h2>Filters</h2>
-  <form class="filters" method="get" action="/invoices">
-    <div class="field">
-      <label for="q">Search invoice no or customer</label>
-      <input type="text" id="q" name="q" value="{{ q }}" />
-    </div>
-    {% if customer_id %}
-      <input type="hidden" name="customer_id" value="{{ customer_id }}" />
-    {% endif %}
-    {% if unpaid_only %}
-      <input type="hidden" name="unpaid_only" value="1" />
-    {% endif %}
-    <div class="actions btn-group">
-      <button type="submit" class="btn btn--secondary">Search</button>
-      <a class="btn btn--ghost" href="/invoices">Reset</a>
-    </div>
-  </form>
-</section>
+<form class="filters" method="get" action="/invoices">
+  <div class="field">
+    <label for="q">Search invoice no or customer</label>
+    <input type="text" id="q" name="q" value="{{ q }}" />
+  </div>
+  {% if customer_id %}
+    <input type="hidden" name="customer_id" value="{{ customer_id }}" />
+  {% endif %}
+  {% if unpaid_only %}
+    <input type="hidden" name="unpaid_only" value="1" />
+  {% endif %}
+  <div class="actions btn-group">
+    <button type="submit" class="btn btn--secondary">Search</button>
+    <a class="btn btn--outline" href="/invoices">Reset</a>
+  </div>
+</form>
 
 <section class="invoice-list-section">
   <div class="table-wrap list-table-wrap">

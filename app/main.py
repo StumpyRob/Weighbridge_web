@@ -15,7 +15,7 @@ from fastapi.responses import (
     RedirectResponse,
     Response,
 )
-from sqlalchemy import func, or_, select
+from sqlalchemy import extract, func, or_, select
 from sqlalchemy.orm import Session
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -227,9 +227,34 @@ def _datetime_bounds_for_day(target_day: date) -> tuple[datetime, datetime]:
     return day_start, next_day
 
 
+def _month_start(target_day: date) -> date:
+    return date(target_day.year, target_day.month, 1)
+
+
+def _shift_month(target_month: date, months: int) -> date:
+    month_index = (target_month.year * 12) + (target_month.month - 1) + months
+    year, month_offset = divmod(month_index, 12)
+    return date(year, month_offset + 1, 1)
+
+
+def _dashboard_month_window(today: date) -> tuple[datetime, datetime]:
+    current_month = _month_start(today)
+    first_month = _shift_month(current_month, -11)
+    next_month = _shift_month(current_month, 1)
+    return datetime.combine(first_month, time.min), datetime.combine(next_month, time.min)
+
+
+def _dashboard_month_starts(today: date, *, month_count: int = 12) -> list[date]:
+    current_month = _month_start(today)
+    first_month = _shift_month(current_month, -(month_count - 1))
+    return [_shift_month(first_month, offset) for offset in range(month_count)]
+
+
 def _normalize_dashboard_period(value: str | None) -> str:
     normalized = str(value or "").strip().lower()
-    if normalized in {"today", "7d", "30d"}:
+    if normalized == "30d":
+        return "12m"
+    if normalized in {"today", "7d", "12m"}:
         return normalized
     return "7d"
 
@@ -238,8 +263,8 @@ def _dashboard_period_window(period: str, today: date) -> tuple[datetime, dateti
     today_start, tomorrow_start = _datetime_bounds_for_day(today)
     if period == "today":
         return today_start, tomorrow_start
-    if period == "30d":
-        return datetime.combine(today - timedelta(days=29), time.min), tomorrow_start
+    if period == "12m":
+        return _dashboard_month_window(today)
     return datetime.combine(today - timedelta(days=6), time.min), tomorrow_start
 
 
@@ -402,6 +427,43 @@ def _dashboard_invoice_ready_rows(
     return rows
 
 
+def _dashboard_monthly_completed_metrics(
+    db: Session,
+    *,
+    date_from: datetime,
+    date_to: datetime,
+    complete_status: str,
+) -> list[tuple[date, int, Decimal]]:
+    ticket_year = extract("year", Ticket.datetime)
+    ticket_month = extract("month", Ticket.datetime)
+    rows = db.execute(
+        select(
+            ticket_year.label("ticket_year"),
+            ticket_month.label("ticket_month"),
+            func.count(Ticket.id).label("ticket_count"),
+            func.coalesce(func.sum(Ticket.net_kg), 0).label("weight_kg"),
+        )
+        .where(
+            Ticket.datetime >= date_from,
+            Ticket.datetime < date_to,
+            Ticket.status == complete_status,
+        )
+        .group_by(ticket_year, ticket_month)
+        .order_by(ticket_year, ticket_month)
+    ).all()
+
+    monthly_metrics: list[tuple[date, int, Decimal]] = []
+    for ticket_year_value, ticket_month_value, ticket_count, weight_kg in rows:
+        monthly_metrics.append(
+            (
+                date(int(ticket_year_value), int(ticket_month_value), 1),
+                int(ticket_count or 0),
+                _normalize_decimal(weight_kg),
+            )
+        )
+    return monthly_metrics
+
+
 def _build_dashboard_chart_points(
     activity_datetimes: list[datetime],
     *,
@@ -466,6 +528,45 @@ def _build_dashboard_chart_points(
     return chart_points, max_count, chart_title, chart_empty_message
 
 
+def _build_monthly_dashboard_chart_points(
+    monthly_metrics: list[tuple[date, int, Decimal]],
+    *,
+    today: date,
+) -> tuple[list[dict[str, object]], int, str, str]:
+    monthly_counts = {
+        month_start: ticket_count for month_start, ticket_count, _weight_kg in monthly_metrics
+    }
+    chart_points: list[dict[str, object]] = []
+    max_count = 0
+
+    for month_start in _dashboard_month_starts(today):
+        count = int(monthly_counts.get(month_start, 0))
+        max_count = max(max_count, count)
+        chart_points.append(
+            {
+                "date_label": month_start.strftime("%b %y"),
+                "short_label": month_start.strftime("%b"),
+                "count": count,
+                "height_percent": 0,
+            }
+        )
+
+    for point in chart_points:
+        count = int(point["count"])
+        point["height_percent"] = (
+            max(14, round((count / max_count) * 100))
+            if max_count and count
+            else 0
+        )
+
+    return (
+        chart_points,
+        max_count,
+        "Tickets Processed Per Month",
+        "No completed tickets have been recorded in the last 12 months.",
+    )
+
+
 def _build_weight_throughput_chart(
     rows: list[tuple[datetime, object]],
     *,
@@ -522,6 +623,53 @@ def _build_weight_throughput_chart(
                     "value_label": "",
                 }
             )
+
+    unit = _throughput_display_unit(max_weight, total_weight)
+    for point in chart_points:
+        weight_kg = point["weight_kg"]
+        point["value_label"] = _format_throughput_weight(weight_kg, unit=unit)
+        point["height_percent"] = (
+            max(14, round((float(weight_kg) / float(max_weight)) * 100))
+            if max_weight > 0 and weight_kg > 0
+            else 0
+        )
+
+    return {
+        "title": "Weight Throughput",
+        "summary": f"Total processed this period: {_format_throughput_weight(total_weight, unit=unit)}",
+        "unit": unit,
+        "points": chart_points,
+        "has_data": total_weight > 0,
+        "empty_message": "No completed ticket weight recorded for this period.",
+    }
+
+
+def _build_monthly_weight_throughput_chart(
+    monthly_metrics: list[tuple[date, int, Decimal]],
+    *,
+    today: date,
+) -> dict[str, object]:
+    monthly_weights = {
+        month_start: weight_kg for month_start, _ticket_count, weight_kg in monthly_metrics
+    }
+    chart_points: list[dict[str, object]] = []
+    max_weight = Decimal("0")
+    total_weight = Decimal("0")
+
+    for month_start in _dashboard_month_starts(today):
+        weight_kg = monthly_weights.get(month_start, Decimal("0"))
+        total_weight += weight_kg
+        max_weight = max(max_weight, weight_kg)
+        chart_points.append(
+            {
+                "date_label": month_start.strftime("%b %y"),
+                "short_label": month_start.strftime("%b"),
+                "weight_kg": weight_kg,
+                "weight_kg_raw": _trim_decimal_text(weight_kg),
+                "height_percent": 0,
+                "value_label": "",
+            }
+        )
 
     unit = _throughput_display_unit(max_weight, total_weight)
     for point in chart_points:
@@ -629,30 +777,46 @@ def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
         date_to=overview_end,
     )
 
-    recent_activity_datetimes = db.execute(
-        select(Ticket.datetime).where(
-            Ticket.datetime >= overview_start,
-            Ticket.datetime < overview_end,
-            Ticket.status != void_status,
+    if overview_period == "12m":
+        monthly_metrics = _dashboard_monthly_completed_metrics(
+            db,
+            date_from=overview_start,
+            date_to=overview_end,
+            complete_status=complete_status,
         )
-    ).scalars().all()
-    weight_throughput_rows = db.execute(
-        select(Ticket.datetime, Ticket.net_kg).where(
-            Ticket.datetime >= overview_start,
-            Ticket.datetime < overview_end,
-            Ticket.status == complete_status,
+        chart_points, max_count, chart_title, chart_empty_message = _build_monthly_dashboard_chart_points(
+            monthly_metrics,
+            today=today,
         )
-    ).all()
-    chart_points, max_count, chart_title, chart_empty_message = _build_dashboard_chart_points(
-        recent_activity_datetimes,
-        period=overview_period,
-        today=today,
-    )
-    weight_throughput = _build_weight_throughput_chart(
-        weight_throughput_rows,
-        period=overview_period,
-        today=today,
-    )
+        weight_throughput = _build_monthly_weight_throughput_chart(
+            monthly_metrics,
+            today=today,
+        )
+    else:
+        recent_activity_datetimes = db.execute(
+            select(Ticket.datetime).where(
+                Ticket.datetime >= overview_start,
+                Ticket.datetime < overview_end,
+                Ticket.status != void_status,
+            )
+        ).scalars().all()
+        weight_throughput_rows = db.execute(
+            select(Ticket.datetime, Ticket.net_kg).where(
+                Ticket.datetime >= overview_start,
+                Ticket.datetime < overview_end,
+                Ticket.status == complete_status,
+            )
+        ).all()
+        chart_points, max_count, chart_title, chart_empty_message = _build_dashboard_chart_points(
+            recent_activity_datetimes,
+            period=overview_period,
+            today=today,
+        )
+        weight_throughput = _build_weight_throughput_chart(
+            weight_throughput_rows,
+            period=overview_period,
+            today=today,
+        )
 
     activity_count = int(
         db.execute(
@@ -680,7 +844,7 @@ def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
     period_labels = {
         "today": "Today",
         "7d": "Last 7 Days",
-        "30d": "Last 30 Days",
+        "12m": "Last 12 Months",
     }
 
     return {
@@ -718,7 +882,7 @@ def _build_tenant_dashboard(db: Session, *, period: str) -> dict[str, object]:
         "period_options": (
             {"key": "today", "label": "Today", "active": overview_period == "today"},
             {"key": "7d", "label": "7 Days", "active": overview_period == "7d"},
-            {"key": "30d", "label": "30 Days", "active": overview_period == "30d"},
+            {"key": "12m", "label": "12 Months", "active": overview_period == "12m"},
         ),
         "recent_tickets": recent_tickets,
         "open_tickets": open_ticket_rows,

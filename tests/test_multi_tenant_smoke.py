@@ -15,6 +15,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
+import app.main as main_module
 from app.auth import ROLE_SUPERADMIN, ROLE_TENANT_ADMIN, ROLE_USER, hash_password, user_identity_kwargs
 from app.config import settings
 from app.db import TenantSession, get_db
@@ -3473,7 +3474,8 @@ def test_logged_in_tenant_home_shows_dashboard_empty_state(tmp_path, monkeypatch
     assert 'data-dashboard-panel="weight-throughput"' in response.text
     assert 'data-dashboard-period="today"' in response.text
     assert 'data-dashboard-period="7d"' in response.text
-    assert 'data-dashboard-period="30d"' in response.text
+    assert 'data-dashboard-period="12m"' in response.text
+    assert 'data-dashboard-period="30d"' not in response.text
     assert 'data-dashboard-period-active="1"' in response.text
     assert "Activity Overview" in response.text
     assert "Updated just now" in response.text
@@ -3496,10 +3498,16 @@ def test_logged_in_tenant_home_shows_dashboard_empty_state(tmp_path, monkeypatch
     assert _dashboard_metric_value(response.text, "invoices_pending") == "0"
 
 
+def test_dashboard_legacy_30d_period_maps_to_12m():
+    assert main_module._normalize_dashboard_period("30d") == "12m"
+
+
 def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-dashboard-data.db", monkeypatch=monkeypatch
     )
+    fixed_now = datetime(2026, 3, 12, 10, 0, 0)
+    monkeypatch.setattr(main_module, "utcnow", lambda: fixed_now)
     tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a")
     tenant_b = _seed_tenant(SessionLocal, name="Tenant B", subdomain="b")
     _seed_tenant_baseline(
@@ -3530,7 +3538,7 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     )
 
     with SessionLocal() as db:
-        today = utcnow().replace(hour=10, minute=0, second=0, microsecond=0)
+        today = fixed_now
         yesterday = today - timedelta(days=1)
         five_days_ago = today - timedelta(days=5)
         twenty_days_ago = today - timedelta(days=20)
@@ -3683,6 +3691,8 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert 'data-dashboard-empty-state="1"' not in response.text
     assert 'data-dashboard-panel="weight-throughput"' in response.text
     assert 'data-dashboard-panel="invoice-activity"' in response.text
+    assert 'data-dashboard-period="12m"' in response.text
+    assert 'data-dashboard-period="30d"' not in response.text
     assert _dashboard_metric_value(response.text, "open_tickets") == "1"
     assert _dashboard_metric_value(response.text, "completed_today") == "1"
     assert _dashboard_metric_value(response.text, "total_weight_today") == "1,500 kg"
@@ -3740,19 +3750,27 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
                 tenant_client,
                 email="a-admin@example.com",
                 password="TestPass123!",
-                next_path="/?period=30d",
+                next_path="/?period=12m",
             )
             == 303
         )
-        response_30d = tenant_client.get("/?period=30d")
+        response_12m = tenant_client.get("/?period=12m")
 
-    assert response_30d.status_code == 200
-    assert 'data-dashboard-period="30d"' in response_30d.text
-    assert 'data-dashboard-period-active="1"' in response_30d.text
-    assert "Total processed this period: 8.6 tonnes" in response_30d.text
-    assert 'data-dashboard-throughput-kg="3100"' in response_30d.text
-    assert 'data-dashboard-ticket="A-20D-1"' in response_30d.text
-    assert 'data-dashboard-invoice="INV-A-OLD"' in response_30d.text
+    assert response_12m.status_code == 200
+    assert 'data-dashboard-period="12m"' in response_12m.text
+    assert 'data-dashboard-period="30d"' not in response_12m.text
+    assert 'data-dashboard-period-active="1"' in response_12m.text
+    assert "Tickets Processed Per Month" in response_12m.text
+    assert response_12m.text.count('data-dashboard-chart-day="') == 12
+    assert response_12m.text.count('data-dashboard-throughput-point="') == 12
+    assert 'data-dashboard-chart-day="Mar 26"' in response_12m.text
+    assert 'data-dashboard-chart-day="Feb 26"' in response_12m.text
+    assert "Total processed this period: 8.6 tonnes" in response_12m.text
+    assert 'data-dashboard-throughput-kg="5450"' in response_12m.text
+    assert 'data-dashboard-throughput-kg="3100"' in response_12m.text
+    assert 'data-dashboard-throughput-kg="1500"' not in response_12m.text
+    assert 'data-dashboard-ticket="A-20D-1"' in response_12m.text
+    assert 'data-dashboard-invoice="INV-A-OLD"' in response_12m.text
 
 
 def test_all_tenant_subdomains_use_dashboard_on_root_and_non_tenant_hosts_do_not(

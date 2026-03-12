@@ -706,13 +706,11 @@
   </section>
   </fieldset>
 
-  <div class="actions btn-group">
-    {% if is_open %}
-      <button type="submit" class="btn btn--primary" name="action" value="save">Save</button>
-    {% endif %}
-    <a class="btn btn--secondary" href="/tickets">{{ "Cancel" if is_open else "Back" }}</a>
-  </div>
   {% if is_open %}
+    <div class="actions btn-group">
+      <button type="submit" class="btn btn--primary" name="action" value="save">Save</button>
+      <a class="btn btn--secondary" href="/tickets">Cancel</a>
+    </div>
     <div id="unsaved-changes-indicator" class="hint unsaved-changes-indicator" style="display:none">
       Unsaved changes.
     </div>
@@ -753,6 +751,12 @@
       </form>
     </div>
   </details>
+{% endif %}
+
+{% if not is_open %}
+  <div class="actions btn-group">
+    <a class="btn btn--secondary" href="/tickets">Back</a>
+  </div>
 {% endif %}
 
 <script>

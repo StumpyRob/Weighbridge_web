@@ -47,7 +47,7 @@
     </div>
   {% endif %}
 
-  <form class="filters filters-inline" method="get" action="{{ base_path }}">
+  <form class="filters filters-inline lookup-list-filters" method="get" action="{{ base_path }}">
     <div class="field">
       <label for="q">Search</label>
       <input type="text" id="q" name="q" value="{{ q }}" />
@@ -65,7 +65,7 @@
     </div>
     <div class="actions btn-group">
       <button type="submit" class="btn btn--secondary">Search</button>
-      <a class="btn btn--ghost" href="{{ base_path }}">Reset</a>
+      <a class="btn btn--outline" href="{{ base_path }}">Reset</a>
     </div>
   </form>
 

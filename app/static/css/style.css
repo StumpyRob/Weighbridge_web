@@ -411,6 +411,20 @@ body {
   color: #374151;
 }
 
+.btn--outline {
+  background: #ffffff;
+  border-color: #d1d5db;
+  color: #111827;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.btn--outline:hover,
+.btn--outline:focus {
+  background: #f9fafb;
+  border-color: #9ca3af;
+  color: #111827;
+}
+
 .btn--sm {
   height: 30px;
   padding: 0.25rem 0.6rem;
@@ -447,6 +461,11 @@ a.btn[aria-disabled="true"] {
 
 .filters.filters-inline .field {
   min-width: 180px;
+}
+
+.lookup-list-filters .field:first-child {
+  flex: 1 1 320px;
+  min-width: min(100%, 320px);
 }
 
 .field label {
@@ -1797,15 +1816,19 @@ body.js-help-tooltips .help-tooltip {
   margin-top: 1.5rem;
 }
 
+.pager-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 .pager-links a {
-  margin-left: 0.75rem;
-  color: #14213d;
-  text-decoration: none;
+  margin-left: 0;
 }
 
 .pager-links a:hover,
 .pager-links a:focus {
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 .link-muted {

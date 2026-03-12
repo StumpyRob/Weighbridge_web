@@ -43,6 +43,8 @@ def test_lookup_tabs_render_table_wrapper_and_actions_column(client, path):
         '<th class="actions-col">Actions</th>' in response.text
         or 'class="actions-col destinations-col-actions">Actions</th>' in response.text
     )
+    if path != "/admin/printing/destinations":
+        assert 'class="filters filters-inline lookup-list-filters"' in response.text
 
 
 def test_tickets_list_renders_status_column_markup(client, db_session):

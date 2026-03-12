@@ -63,6 +63,29 @@ def test_tickets_list_uses_net_header_and_compact_badges(client, db_session):
     assert 'class="ticket-kind-badge ticket-kind-badge--sale"' in response.text
     assert "WALK-IN" in response.text
     assert "1,250 kg" in response.text
+    assert 'class="btn btn--outline" href="/tickets">Reset</a>' in response.text
+
+
+def test_tickets_list_pagination_links_render_as_buttons(client, db_session):
+    for index in range(3):
+        db_session.add(
+            Ticket(
+                ticket_no=f"T-LIST-PAGE-{index + 1}",
+                datetime=datetime(2026, 2, 18, 8, 30 + index, 0),
+                status=TicketStatusEnum.OPEN.value,
+                direction=DirectionEnum.INWARD.value,
+                transaction_type=TransactionTypeEnum.SALE.value,
+                dont_invoice=False,
+                paid=False,
+            )
+        )
+    db_session.commit()
+
+    response = client.get("/tickets?page=2&page_size=1")
+
+    assert response.status_code == 200
+    assert 'class="btn btn--outline" href="/tickets?page=1">Previous</a>' in response.text
+    assert 'class="btn btn--outline" href="/tickets?page=3">Next</a>' in response.text
 
 
 def test_customers_list_hides_contact_columns_and_shows_operational_badges(
@@ -124,6 +147,7 @@ def test_customers_list_hides_contact_columns_and_shows_operational_badges(
     assert "status-open\">Active" not in response.text
     assert "status-void\">Inactive" not in response.text
     assert "&mdash;" in response.text
+    assert 'class="btn btn--outline" href="/customers">Reset</a>' in response.text
 
 
 def test_vehicles_list_uses_vehicle_type_header_and_kg_formatting(client, db_session):
@@ -149,6 +173,7 @@ def test_vehicles_list_uses_vehicle_type_header_and_kg_formatting(client, db_ses
     assert "List Default Haulier" in response.text
     assert "12,500 kg" in response.text
     assert "32,000 kg" in response.text
+    assert 'class="btn btn--outline" href="/vehicles">Reset</a>' in response.text
 
 
 def test_products_units_list_shows_weight_system_label(client, db_session):
@@ -188,3 +213,6 @@ def test_invoices_list_uses_status_badges_and_currency(client, db_session):
     assert "&pound;1,234.50" in response.text
     assert "&pound;246.90" in response.text
     assert "&pound;1,481.40" in response.text
+    assert '<form class="filters" method="get" action="/invoices">' in response.text
+    assert 'class="btn btn--outline" href="/invoices">Reset</a>' in response.text
+    assert "<h2>Filters</h2>" not in response.text
