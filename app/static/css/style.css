@@ -463,9 +463,23 @@ a.btn[aria-disabled="true"] {
   min-width: 180px;
 }
 
+.lookup-list-filters {
+  grid-template-columns: 1fr auto;
+  align-items: end;
+}
+
 .lookup-list-filters .field:first-child {
-  flex: 1 1 320px;
-  min-width: min(100%, 320px);
+  max-width: 520px;
+}
+
+.lookup-list-filters .field.checkbox {
+  grid-column: 1;
+}
+
+.lookup-list-filters .actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: end;
 }
 
 .field label {
@@ -4013,6 +4027,19 @@ details > summary:focus-visible {
 }
 
 @media (max-width: 720px) {
+  .lookup-list-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .lookup-list-filters .field:first-child {
+    max-width: none;
+  }
+
+  .lookup-list-filters .actions {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
   .dashboard-summary-grid {
     grid-template-columns: 1fr;
   }
