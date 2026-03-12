@@ -1,9 +1,10 @@
 (function () {
-  var REQUEST_TIMEOUT_MS = 25000;
+  var REQUEST_TIMEOUT_MS = 35000;
   var RESPONSE_PLACEHOLDER = "Ask a question or use a quick prompt to get started.";
   var RESPONSE_BUSY = "Working...";
   var RESPONSE_EMPTY_QUESTION = "Enter a question to continue.";
   var RESPONSE_UNAVAILABLE = "Assistant is temporarily unavailable.";
+  var RESPONSE_TIMEOUT = "Assistant is taking longer than expected. Please try again.";
 
   function csrfToken() {
     const meta = document.querySelector("meta[name='csrf-token']");
@@ -39,6 +40,19 @@
       return;
     }
     followupsEl.hidden = !isVisible;
+  }
+
+  async function readErrorMessage(response) {
+    try {
+      const payload = await response.json();
+      const detail = String((payload || {}).detail || "").trim();
+      if (detail) {
+        return detail;
+      }
+    } catch (_error) {
+      // Keep the default fallback if the response body is not JSON.
+    }
+    return RESPONSE_UNAVAILABLE;
   }
 
   async function submitAssistantQuestion(form, question, followupsEl) {
@@ -79,14 +93,17 @@
         body: JSON.stringify({ question: trimmedQuestion }),
       });
       if (!response.ok) {
-        throw new Error("assistant-unavailable");
+        throw new Error(await readErrorMessage(response));
       }
       const payload = await response.json();
       const answer = String((payload || {}).answer || "").trim();
       setResponseContent(responseEl, answer || RESPONSE_UNAVAILABLE, false);
       setFollowupsVisible(followupsEl, true);
-    } catch (_error) {
-      setResponseContent(responseEl, RESPONSE_UNAVAILABLE, true);
+    } catch (error) {
+      const message = error && error.name === "AbortError"
+        ? RESPONSE_TIMEOUT
+        : String((error && error.message) || "").trim() || RESPONSE_UNAVAILABLE;
+      setResponseContent(responseEl, message, true);
       setFollowupsVisible(followupsEl, true);
     } finally {
       window.clearTimeout(timeoutId);

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -51,6 +53,8 @@ AI_ASSISTANT_CUSTOM_INSTRUCTIONS_MAX_CHARS = 240
 AI_ASSISTANT_REASONING_EFFORT = "none"
 AI_ASSISTANT_TEXT_VERBOSITY = "low"
 AI_DASHBOARD_INSIGHTS_MAX_OUTPUT_TOKENS = 220
+AI_ASSISTANT_HTTP_TIMEOUT_SECONDS = 30.0
+AI_DASHBOARD_INSIGHTS_CACHE_TTL_SECONDS = 300
 AI_ASSISTANT_SYSTEM_PROMPT = (
     "You are the Weighbridge Web operational assistant. "
     "Answer operational questions for weighbridge operators and admins in a concise, practical, factual way. "
@@ -91,6 +95,7 @@ AI_DASHBOARD_INSIGHTS_PROMPT = (
 )
 AI_DASHBOARD_INSIGHTS_FALLBACK = "Not enough recent activity to generate insights yet."
 AI_DASHBOARD_INSIGHTS_UNAVAILABLE = "AI insights are temporarily unavailable."
+_dashboard_insights_cache: dict[str, tuple[float, tuple[str, ...]]] = {}
 
 _WRITE_REQUEST_PATTERNS = (
     re.compile(r"^\s*(create|add|edit|update|change|delete|remove|void)\b", re.IGNORECASE),
@@ -270,7 +275,9 @@ def _post_responses_request(*, api_key: str, payload: dict[str, object]) -> dict
         "Content-Type": "application/json",
     }
     try:
-        with httpx.Client(timeout=httpx.Timeout(20.0, connect=5.0)) as client:
+        with httpx.Client(
+            timeout=httpx.Timeout(AI_ASSISTANT_HTTP_TIMEOUT_SECONDS, connect=5.0)
+        ) as client:
             response = client.post(
                 "https://api.openai.com/v1/responses",
                 headers=headers,
@@ -361,6 +368,38 @@ def _extract_dashboard_insight_items(payload: dict[str, object]) -> list[str]:
     return items[:5]
 
 
+def _dashboard_insights_cache_key(metrics: dict[str, object], model: str | None) -> str:
+    serialized = json.dumps(
+        {
+            "model": resolve_assistant_model(model),
+            "metrics": metrics,
+        },
+        default=_json_default,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha1(serialized.encode("utf-8")).hexdigest()
+
+
+def _get_cached_dashboard_insights(cache_key: str) -> list[str] | None:
+    cached = _dashboard_insights_cache.get(cache_key)
+    if cached is None:
+        return None
+    cached_at, items = cached
+    if time.monotonic() - cached_at > AI_DASHBOARD_INSIGHTS_CACHE_TTL_SECONDS:
+        _dashboard_insights_cache.pop(cache_key, None)
+        return None
+    return list(items)
+
+
+def _store_cached_dashboard_insights(cache_key: str, items: list[str]) -> None:
+    _dashboard_insights_cache[cache_key] = (
+        time.monotonic(),
+        tuple(str(item or "").strip() for item in items if str(item or "").strip()),
+    )
+
+
 def answer_question(
     db: Session,
     tenant_id: int,
@@ -405,6 +444,11 @@ def generate_dashboard_insights(
     if not dashboard_insight_metrics_have_activity(metrics):
         return {"items": [], "message": AI_DASHBOARD_INSIGHTS_FALLBACK, "metrics": metrics}
 
+    cache_key = _dashboard_insights_cache_key(metrics, model)
+    cached_items = _get_cached_dashboard_insights(cache_key)
+    if cached_items:
+        return {"items": cached_items, "message": "", "metrics": metrics}
+
     api_key = str(settings.openai_api_key or "").strip()
     if not api_key:
         return {"items": [], "message": AI_DASHBOARD_INSIGHTS_UNAVAILABLE, "metrics": metrics}
@@ -420,7 +464,10 @@ def generate_dashboard_insights(
             _post_responses_request(api_key=api_key, payload=payload)
         )
     except AIAssistantError:
+        if cached_items:
+            return {"items": cached_items, "message": "", "metrics": metrics}
         return {"items": [], "message": AI_DASHBOARD_INSIGHTS_UNAVAILABLE, "metrics": metrics}
+    _store_cached_dashboard_insights(cache_key, items)
     return {
         "items": items,
         "message": "",
@@ -435,8 +482,10 @@ __all__ = [
     "AI_ASSISTANT_QUESTION_MAX_CHARS",
     "AI_ASSISTANT_REASONING_EFFORT",
     "AI_ASSISTANT_SAMPLE_LIMIT",
+    "AI_ASSISTANT_HTTP_TIMEOUT_SECONDS",
     "AI_ASSISTANT_SYSTEM_PROMPT",
     "AI_ASSISTANT_TEXT_VERBOSITY",
+    "AI_DASHBOARD_INSIGHTS_CACHE_TTL_SECONDS",
     "AI_DASHBOARD_INSIGHTS_FALLBACK",
     "AI_DASHBOARD_INSIGHTS_MAX_OUTPUT_TOKENS",
     "AI_DASHBOARD_INSIGHTS_PROMPT",

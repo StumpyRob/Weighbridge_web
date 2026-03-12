@@ -4162,6 +4162,71 @@ def test_dashboard_ai_insights_use_tenant_scoped_metrics_when_enabled(tmp_path, 
     assert "INV-B-OD" not in insight_input
 
 
+def test_dashboard_ai_insights_reuse_recent_cached_result(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-dashboard-ai-insights-cache.db", monkeypatch=monkeypatch
+    )
+    _ = app
+    fixed_now = datetime(2026, 3, 12, 10, 0, 0)
+    monkeypatch.setattr(ai_assistant_module, "utcnow", lambda: fixed_now)
+    monkeypatch.setattr(settings, "openai_api_key", "test-openai-key")
+    ai_assistant_module._dashboard_insights_cache.clear()
+
+    tenant_id = _seed_tenant(SessionLocal, name="Tenant Cache", subdomain="cache", ai_enabled=True)
+
+    with SessionLocal() as db:
+        customer = Customer(tenant_id=tenant_id, account_code="CUST-CACHE", name="Cache Customer")
+        vehicle = Vehicle(tenant_id=tenant_id, registration="CACHE123")
+        db.add_all([customer, vehicle])
+        db.flush()
+        db.add(
+            Ticket(
+                tenant_id=tenant_id,
+                ticket_no="CACHE-OPEN-1",
+                datetime=fixed_now,
+                status=TicketStatusEnum.OPEN.value,
+                direction=DirectionEnum.INWARD.value,
+                transaction_type=TransactionTypeEnum.WASTEIN.value,
+                customer_id=customer.id,
+                vehicle_id=vehicle.id,
+                net_kg=1500,
+                dont_invoice=False,
+                paid=False,
+            )
+        )
+        db.commit()
+
+    call_count = {"value": 0}
+
+    def fake_openai_request(*, api_key: str, payload: dict[str, object]) -> dict[str, object]:
+        _ = api_key
+        _ = payload
+        call_count["value"] += 1
+        return {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "- 1 open ticket is waiting for completion.",
+                        }
+                    ],
+                }
+            ]
+        }
+
+    monkeypatch.setattr(ai_assistant_module, "_post_responses_request", fake_openai_request)
+
+    with SessionLocal() as db:
+        first = ai_assistant_module.generate_dashboard_insights(db, tenant_id, model="gpt-5-mini")
+        second = ai_assistant_module.generate_dashboard_insights(db, tenant_id, model="gpt-5-mini")
+
+    assert call_count["value"] == 1
+    assert first["items"] == ["1 open ticket is waiting for completion."]
+    assert second["items"] == ["1 open ticket is waiting for completion."]
+
+
 def test_all_tenant_subdomains_use_dashboard_on_root_and_non_tenant_hosts_do_not(
     tmp_path,
     monkeypatch,
