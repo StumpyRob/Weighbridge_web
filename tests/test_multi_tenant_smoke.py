@@ -4152,7 +4152,7 @@ def test_dashboard_ai_insights_use_tenant_scoped_metrics_when_enabled(tmp_path, 
     assert "Tenant A Customer is the top customer today at 2.4 tonnes." in response.text
     payload = captured["payload"]
     assert payload["max_output_tokens"] == 220
-    assert payload["reasoning"] == {"effort": "none"}
+    assert payload["reasoning"] == {"effort": "minimal"}
     assert payload["text"] == {"verbosity": "low"}
     insight_input = payload["input"][0]["content"][0]["text"]
     assert "A-OPEN-1" in insight_input
@@ -4464,7 +4464,7 @@ def test_tenant_ai_assistant_query_uses_gpt_5_mini_with_tenant_scoped_context(tm
     assert isinstance(payload, dict)
     assert payload["model"] == "gpt-5-mini"
     assert payload["max_output_tokens"] == 320
-    assert payload["reasoning"] == {"effort": "none"}
+    assert payload["reasoning"] == {"effort": "minimal"}
     assert payload["text"] == {"verbosity": "low"}
     assert "Weighbridge Web operational assistant" in payload["instructions"]
     assert "Examples:" in payload["instructions"]
@@ -4794,7 +4794,7 @@ def test_ai_assistant_payload_uses_tuned_generation_settings():
 
     assert payload["model"] == "gpt-5-mini"
     assert payload["max_output_tokens"] == 320
-    assert payload["reasoning"] == {"effort": "none"}
+    assert payload["reasoning"] == {"effort": "minimal"}
     assert payload["text"] == {"verbosity": "low"}
 
 
