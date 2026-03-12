@@ -135,9 +135,12 @@ def _completed_ticket_totals_between(
 
 def _ticket_summary_query(*, include_status: bool = False, include_net: bool = False):
     columns = [
+        Ticket.id.label("ticket_id"),
         Ticket.ticket_no.label("ticket_no"),
         Ticket.datetime.label("ticket_datetime"),
+        Customer.id.label("customer_id"),
         Customer.name.label("customer_name"),
+        Vehicle.id.label("vehicle_id"),
         Vehicle.registration.label("vehicle_registration"),
         Ticket.vehicle_reg_text.label("vehicle_reg_text"),
         Ticket.transaction_type.label("transaction_type"),
@@ -162,9 +165,12 @@ def _serialize_ticket_summary_rows(
     items: list[dict[str, object]] = []
     for row in rows:
         item: dict[str, object] = {
+            "ticket_id": int(row.ticket_id),
             "ticket_no": row.ticket_no,
             "datetime": _format_datetime(row.ticket_datetime),
+            "customer_id": int(row.customer_id) if row.customer_id is not None else None,
             "customer": str(row.customer_name or "").strip() or None,
+            "vehicle_id": int(row.vehicle_id) if row.vehicle_id is not None else None,
             "vehicle": _vehicle_label(row.vehicle_registration, row.vehicle_reg_text),
             "kind": _ticket_kind_label(row.transaction_type),
         }
@@ -191,11 +197,13 @@ def _outstanding_invoice_filters(tenant_id: int):
 def _invoice_summary_query():
     return (
         select(
+            Invoice.id.label("invoice_id"),
             Invoice.invoice_no.label("invoice_no"),
             Invoice.invoice_date.label("invoice_date"),
             Invoice.due_date.label("due_date"),
             Invoice.status.label("status"),
             Invoice.gross_total.label("gross_total"),
+            Customer.id.label("customer_id"),
             Customer.name.label("customer_name"),
         )
         .join(Customer, Invoice.customer_id == Customer.id)
@@ -205,10 +213,12 @@ def _invoice_summary_query():
 def _serialize_invoice_summary_rows(rows) -> list[dict[str, object]]:
     return [
         {
+            "invoice_id": int(row.invoice_id),
             "invoice_no": row.invoice_no,
             "invoice_date": _format_date(row.invoice_date),
             "due_date": _format_date(row.due_date),
             "status": str(row.status or "").strip() or None,
+            "customer_id": int(row.customer_id) if row.customer_id is not None else None,
             "customer": str(row.customer_name or "").strip() or None,
             "gross_total": _format_money(row.gross_total),
         }
@@ -394,6 +404,7 @@ def get_top_customer_today(
     ticket_count = func.count(Ticket.id).label("ticket_count")
     row = db.execute(
         select(
+            Customer.id,
             Customer.name,
             ticket_count,
             total_weight_kg,
@@ -411,8 +422,9 @@ def get_top_customer_today(
     ).first()
     if row is None:
         return None
-    customer_name, customer_ticket_count, customer_weight_kg = row
+    customer_id, customer_name, customer_ticket_count, customer_weight_kg = row
     return {
+        "customer_id": int(customer_id),
         "customer": str(customer_name or "").strip() or None,
         "completed_ticket_count": int(customer_ticket_count or 0),
         "total_kg": _format_weight_kg(customer_weight_kg),
@@ -422,6 +434,11 @@ def get_top_customer_today(
 
 def _include_topic(question_lower: str, hints: tuple[str, ...]) -> bool:
     return any(hint in question_lower for hint in hints)
+
+
+def detect_question_topics(question: str) -> list[str]:
+    normalized = str(question or "").strip().lower()
+    return [key for key, hints in _QUESTION_CONTEXT_TOPICS if _include_topic(normalized, hints)]
 
 
 def build_question_context(
@@ -434,7 +451,6 @@ def build_question_context(
 ) -> dict[str, object]:
     resolved_generated_at = generated_at or utcnow()
     resolved_today = today or resolved_generated_at.date()
-    normalized = str(question or "").strip().lower()
     context: dict[str, object] = {
         "generated_at": resolved_generated_at.isoformat(),
         "tenant_id": int(tenant_id),
@@ -449,9 +465,7 @@ def build_question_context(
         "recent_tickets": lambda: get_recent_tickets(db, tenant_id),
         "top_customer_today": lambda: get_top_customer_today(db, tenant_id, today=resolved_today),
     }
-    selected_keys = [
-        key for key, hints in _QUESTION_CONTEXT_TOPICS if _include_topic(normalized, hints)
-    ] or list(builders)
+    selected_keys = detect_question_topics(question) or list(builders)
     for key in selected_keys:
         context[key] = builders[key]()
     return context

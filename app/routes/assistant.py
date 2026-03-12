@@ -9,7 +9,7 @@ from ..models import Tenant, User
 from ..security import has_unsafe_markup
 from ..services.ai_assistant import (
     AIAssistantError,
-    answer_question,
+    answer_question_with_results,
     resolve_assistant_model,
 )
 from ..tenancy import request_platform_mode, request_tenant_id
@@ -21,8 +21,25 @@ class AssistantQueryRequest(BaseModel):
     question: str = Field(min_length=1, max_length=500)
 
 
+class AssistantResultLink(BaseModel):
+    record_type: str
+    record_id: int
+    label: str
+    href: str
+
+
+class AssistantResultItem(BaseModel):
+    record_type: str
+    record_id: int
+    title: str
+    href: str
+    meta: str = ""
+    links: list[AssistantResultLink] = Field(default_factory=list)
+
+
 class AssistantQueryResponse(BaseModel):
     answer: str
+    items: list[AssistantResultItem] = Field(default_factory=list)
 
 
 @router.post("/query", response_model=AssistantQueryResponse)
@@ -46,7 +63,7 @@ def assistant_query(
     if not bool(getattr(tenant, "ai_enabled", False)):
         raise HTTPException(status_code=403, detail="AI assistant is disabled for this tenant.")
     try:
-        answer = answer_question(
+        result = answer_question_with_results(
             db,
             tenant_id,
             payload.question,
@@ -54,4 +71,4 @@ def assistant_query(
         )
     except AIAssistantError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-    return AssistantQueryResponse(answer=answer)
+    return AssistantQueryResponse(**result)

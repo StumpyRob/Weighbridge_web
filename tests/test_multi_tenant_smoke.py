@@ -4154,12 +4154,14 @@ def test_dashboard_ai_insights_use_tenant_scoped_metrics_when_enabled(tmp_path, 
     assert payload["max_output_tokens"] == 220
     assert payload["reasoning"] == {"effort": "minimal"}
     assert payload["text"] == {"verbosity": "low"}
+    assert "Do not list ticket numbers, invoice numbers, or long record lists." in payload["instructions"]
     insight_input = payload["input"][0]["content"][0]["text"]
-    assert "A-OPEN-1" in insight_input
-    assert "INV-A-OD" in insight_input
+    assert "A-OPEN-1" not in insight_input
+    assert "INV-A-OD" not in insight_input
     assert "Tenant A Customer" in insight_input
     assert "B-OPEN-1" not in insight_input
     assert "INV-B-OD" not in insight_input
+    assert '"sample"' not in insight_input
 
 
 def test_dashboard_ai_insights_reuse_recent_cached_result(tmp_path, monkeypatch):
@@ -4225,6 +4227,76 @@ def test_dashboard_ai_insights_reuse_recent_cached_result(tmp_path, monkeypatch)
     assert call_count["value"] == 1
     assert first["items"] == ["1 open ticket is waiting for completion."]
     assert second["items"] == ["1 open ticket is waiting for completion."]
+
+
+def test_dashboard_ai_insights_cache_is_tenant_scoped(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-dashboard-ai-insights-cache-scope.db", monkeypatch=monkeypatch
+    )
+    _ = app
+    fixed_now = datetime(2026, 3, 12, 10, 0, 0)
+    monkeypatch.setattr(ai_assistant_module, "utcnow", lambda: fixed_now)
+    monkeypatch.setattr(settings, "openai_api_key", "test-openai-key")
+    ai_assistant_module._dashboard_insights_cache.clear()
+
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant Cache A", subdomain="cachea", ai_enabled=True)
+    tenant_b = _seed_tenant(SessionLocal, name="Tenant Cache B", subdomain="cacheb", ai_enabled=True)
+
+    with SessionLocal() as db:
+        for tenant_id, account_code, registration in (
+            (tenant_a, "CUST-CACHE-A", "CACHEA123"),
+            (tenant_b, "CUST-CACHE-B", "CACHEB123"),
+        ):
+            customer = Customer(tenant_id=tenant_id, account_code=account_code, name="Shared Metrics Customer")
+            vehicle = Vehicle(tenant_id=tenant_id, registration=registration)
+            db.add_all([customer, vehicle])
+            db.flush()
+            db.add(
+                Ticket(
+                    tenant_id=tenant_id,
+                    ticket_no=f"CACHE-{tenant_id}",
+                    datetime=fixed_now,
+                    status=TicketStatusEnum.OPEN.value,
+                    direction=DirectionEnum.INWARD.value,
+                    transaction_type=TransactionTypeEnum.WASTEIN.value,
+                    customer_id=customer.id,
+                    vehicle_id=vehicle.id,
+                    net_kg=1500,
+                    dont_invoice=False,
+                    paid=False,
+                )
+            )
+        db.commit()
+
+    call_count = {"value": 0}
+
+    def fake_openai_request(*, api_key: str, payload: dict[str, object]) -> dict[str, object]:
+        _ = api_key
+        _ = payload
+        call_count["value"] += 1
+        return {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "- 1 open ticket is waiting for completion.",
+                        }
+                    ],
+                }
+            ]
+        }
+
+    monkeypatch.setattr(ai_assistant_module, "_post_responses_request", fake_openai_request)
+
+    with SessionLocal() as db:
+        tenant_a_result = ai_assistant_module.generate_dashboard_insights(db, tenant_a, model="gpt-5-mini")
+        tenant_b_result = ai_assistant_module.generate_dashboard_insights(db, tenant_b, model="gpt-5-mini")
+
+    assert call_count["value"] == 2
+    assert tenant_a_result["items"] == ["1 open ticket is waiting for completion."]
+    assert tenant_b_result["items"] == ["1 open ticket is waiting for completion."]
 
 
 def test_all_tenant_subdomains_use_dashboard_on_root_and_non_tenant_hosts_do_not(
@@ -4392,36 +4464,37 @@ def test_tenant_ai_assistant_query_uses_gpt_5_mini_with_tenant_scoped_context(tm
         vehicle_b = Vehicle(tenant_id=tenant_b, registration="B123 OPEN")
         db.add_all([customer_a, customer_b, vehicle_a, vehicle_b])
         db.flush()
-        db.add_all(
-            [
-                Ticket(
-                    tenant_id=tenant_a,
-                    ticket_no="A-OPEN-1",
-                    datetime=datetime(2026, 3, 12, 8, 0, 0),
-                    status=TicketStatusEnum.OPEN.value,
-                    direction=DirectionEnum.INWARD.value,
-                    transaction_type=TransactionTypeEnum.SALE.value,
-                    customer_id=customer_a.id,
-                    vehicle_id=vehicle_a.id,
-                    net_kg=1250,
-                    dont_invoice=False,
-                    paid=False,
-                ),
-                Ticket(
-                    tenant_id=tenant_b,
-                    ticket_no="B-OPEN-1",
-                    datetime=datetime(2026, 3, 12, 9, 0, 0),
-                    status=TicketStatusEnum.OPEN.value,
-                    direction=DirectionEnum.INWARD.value,
-                    transaction_type=TransactionTypeEnum.SALE.value,
-                    customer_id=customer_b.id,
-                    vehicle_id=vehicle_b.id,
-                    net_kg=2400,
-                    dont_invoice=False,
-                    paid=False,
-                ),
-            ]
+        ticket_a = Ticket(
+            tenant_id=tenant_a,
+            ticket_no="A-OPEN-1",
+            datetime=datetime(2026, 3, 12, 8, 0, 0),
+            status=TicketStatusEnum.OPEN.value,
+            direction=DirectionEnum.INWARD.value,
+            transaction_type=TransactionTypeEnum.SALE.value,
+            customer_id=customer_a.id,
+            vehicle_id=vehicle_a.id,
+            net_kg=1250,
+            dont_invoice=False,
+            paid=False,
         )
+        ticket_b = Ticket(
+            tenant_id=tenant_b,
+            ticket_no="B-OPEN-1",
+            datetime=datetime(2026, 3, 12, 9, 0, 0),
+            status=TicketStatusEnum.OPEN.value,
+            direction=DirectionEnum.INWARD.value,
+            transaction_type=TransactionTypeEnum.SALE.value,
+            customer_id=customer_b.id,
+            vehicle_id=vehicle_b.id,
+            net_kg=2400,
+            dont_invoice=False,
+            paid=False,
+        )
+        db.add_all([ticket_a, ticket_b])
+        db.flush()
+        ticket_a_id = int(ticket_a.id)
+        customer_a_id = int(customer_a.id)
+        vehicle_a_id = int(vehicle_a.id)
         db.commit()
 
     captured: dict[str, object] = {}
@@ -4458,7 +4531,32 @@ def test_tenant_ai_assistant_query_uses_gpt_5_mini_with_tenant_scoped_context(tm
         )
 
     assert response.status_code == 200
-    assert response.json() == {"answer": "There is 1 open ticket: A-OPEN-1."}
+    assert response.json() == {
+        "answer": "There is 1 open ticket: A-OPEN-1.",
+        "items": [
+            {
+                "record_type": "ticket",
+                "record_id": ticket_a_id,
+                "title": "A-OPEN-1",
+                "href": f"/tickets/{ticket_a_id}",
+                "meta": "12 Mar 2026 08:00 | Tenant A Customer | A123 OPEN",
+                "links": [
+                    {
+                        "record_type": "customer",
+                        "record_id": customer_a_id,
+                        "label": "Tenant A Customer",
+                        "href": f"/customers/{customer_a_id}",
+                    },
+                    {
+                        "record_type": "vehicle",
+                        "record_id": vehicle_a_id,
+                        "label": "A123 OPEN",
+                        "href": f"/vehicles/{vehicle_a_id}",
+                    },
+                ],
+            }
+        ],
+    }
     assert captured["api_key"] == "test-openai-key"
     payload = captured["payload"]
     assert isinstance(payload, dict)
@@ -4615,10 +4713,106 @@ def test_tenant_ai_assistant_uses_tenant_selected_model_when_configured(tmp_path
         )
 
     assert response.status_code == 200
-    assert response.json() == {"answer": "There are no open tickets."}
+    assert response.json() == {"answer": "There are no open tickets.", "items": []}
     payload = captured["payload"]
     assert isinstance(payload, dict)
     assert payload["model"] == "gpt-5"
+
+
+def test_tenant_ai_assistant_returns_linkable_invoice_results(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ai-assistant-invoice-links.db", monkeypatch=monkeypatch
+    )
+    monkeypatch.setattr(settings, "openai_api_key", "test-openai-key")
+
+    tenant_a = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", ai_enabled=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_a,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_a,
+    )
+
+    with SessionLocal() as db:
+        customer = Customer(tenant_id=tenant_a, account_code="CUST-A", name="Tenant A Customer")
+        db.add(customer)
+        db.flush()
+        invoice = Invoice(
+            tenant_id=tenant_a,
+            invoice_no="INV-A-100",
+            customer_id=customer.id,
+            invoice_date=datetime(2026, 3, 1, 0, 0, 0).date(),
+            due_date=datetime(2026, 3, 8, 0, 0, 0).date(),
+            status="OPEN",
+            net_total=Decimal("100.00"),
+            vat_total=Decimal("20.00"),
+            gross_total=Decimal("120.00"),
+        )
+        db.add(invoice)
+        db.flush()
+        invoice_id = int(invoice.id)
+        customer_id = int(customer.id)
+        db.commit()
+
+    def fake_openai_request(*, api_key: str, payload: dict[str, object]) -> dict[str, object]:
+        _ = api_key
+        _ = payload
+        return {
+            "output": [
+                {
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "There is 1 unpaid invoice: INV-A-100.",
+                        }
+                    ],
+                }
+            ]
+        }
+
+    monkeypatch.setattr(ai_assistant_module, "_post_responses_request", fake_openai_request)
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="a-admin@example.com", password="TestPass123!") == 303
+        csrf = _prime_csrf(tenant_client)
+        response = tenant_client.post(
+            "/api/assistant/query",
+            json={"question": "Which invoices are unpaid?"},
+            headers={
+                CSRF_HEADER_NAME: csrf,
+                "accept": "application/json",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "answer": "There is 1 unpaid invoice: INV-A-100.",
+        "items": [
+            {
+                "record_type": "invoice",
+                "record_id": invoice_id,
+                "title": "INV-A-100",
+                "href": f"/invoices/{invoice_id}",
+                "meta": "Tenant A Customer | Due 08 Mar 2026 | 120.00 | OPEN",
+                "links": [
+                    {
+                        "record_type": "customer",
+                        "record_id": customer_id,
+                        "label": "Tenant A Customer",
+                        "href": f"/customers/{customer_id}",
+                    }
+                ],
+            }
+        ],
+    }
 
 
 def test_tenant_ai_assistant_rejects_when_disabled_for_tenant(tmp_path, monkeypatch):

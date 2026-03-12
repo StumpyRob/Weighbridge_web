@@ -19,6 +19,7 @@ from .ai_assistant_data import (
     build_dashboard_insight_metrics as _build_dashboard_insight_metrics,
     build_question_context as _build_question_context,
     dashboard_insight_metrics_have_activity,
+    detect_question_topics,
     get_day_weight_total,
     get_open_tickets,
     get_open_waste_tickets,
@@ -54,7 +55,7 @@ AI_ASSISTANT_REASONING_EFFORT = "minimal"
 AI_ASSISTANT_TEXT_VERBOSITY = "low"
 AI_DASHBOARD_INSIGHTS_MAX_OUTPUT_TOKENS = 220
 AI_ASSISTANT_HTTP_TIMEOUT_SECONDS = 30.0
-AI_DASHBOARD_INSIGHTS_CACHE_TTL_SECONDS = 300
+AI_DASHBOARD_INSIGHTS_CACHE_TTL_SECONDS = 600
 AI_ASSISTANT_SYSTEM_PROMPT = (
     "You are the Weighbridge Web operational assistant. "
     "Answer operational questions for weighbridge operators and admins in a concise, practical, factual way. "
@@ -90,6 +91,10 @@ AI_DASHBOARD_INSIGHTS_PROMPT = (
     "For dashboard insights, return 3 to 5 short operational bullet points only. "
     "No heading, no intro, and no closing sentence. "
     "Use only the provided tenant-scoped metrics. "
+    "Keep each bullet short, high-level, and easy to scan. "
+    "Do not list ticket numbers, invoice numbers, or long record lists. "
+    "Do not repeat multiple customer names or low-level details already visible elsewhere on the dashboard. "
+    "You may mention at most one named customer example in a bullet if it adds useful context. "
     "Do not invent trends or comparisons that are not supported by the metrics. "
     "If the metrics are insufficient, say exactly: Not enough recent activity to generate insights yet."
 )
@@ -342,9 +347,218 @@ def _extract_response_text(payload: dict[str, object]) -> str:
     raise AIAssistantError("AI assistant returned an empty response.", status_code=502)
 
 
+def _record_href(record_type: str, record_id: object) -> str | None:
+    try:
+        resolved_id = int(record_id or 0)
+    except (TypeError, ValueError):
+        return None
+    if resolved_id <= 0:
+        return None
+    return {
+        "ticket": f"/tickets/{resolved_id}",
+        "invoice": f"/invoices/{resolved_id}",
+        "customer": f"/customers/{resolved_id}",
+        "vehicle": f"/vehicles/{resolved_id}",
+    }.get(record_type)
+
+
+def _build_related_link(record_type: str, record_id: object, label: object) -> dict[str, object] | None:
+    href = _record_href(record_type, record_id)
+    title = str(label or "").strip()
+    if not href or not title:
+        return None
+    return {
+        "record_type": record_type,
+        "record_id": int(record_id),
+        "label": title,
+        "href": href,
+    }
+
+
+def _join_meta_parts(*parts: object) -> str:
+    return " | ".join(str(part).strip() for part in parts if str(part or "").strip())
+
+
+def _dedupe_links(links: list[dict[str, object]]) -> list[dict[str, object]]:
+    items: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for link in links:
+        href = str(link.get("href") or "").strip()
+        label = str(link.get("label") or "").strip()
+        if not href or not label:
+            continue
+        key = (href, label)
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append(link)
+    return items
+
+
+def _build_ticket_result_item(record: dict[str, object]) -> dict[str, object] | None:
+    ticket_id = record.get("ticket_id")
+    title = str(record.get("ticket_no") or "").strip()
+    href = _record_href("ticket", ticket_id)
+    if not href or not title:
+        return None
+    links = _dedupe_links(
+        [
+            link
+            for link in (
+                _build_related_link("customer", record.get("customer_id"), record.get("customer")),
+                _build_related_link("vehicle", record.get("vehicle_id"), record.get("vehicle")),
+            )
+            if link
+        ]
+    )
+    return {
+        "record_type": "ticket",
+        "record_id": int(ticket_id),
+        "title": title,
+        "href": href,
+        "meta": _join_meta_parts(
+            record.get("datetime"),
+            record.get("customer"),
+            record.get("vehicle"),
+            record.get("status"),
+            record.get("net_kg"),
+        ),
+        "links": links,
+    }
+
+
+def _build_invoice_result_item(record: dict[str, object]) -> dict[str, object] | None:
+    invoice_id = record.get("invoice_id")
+    title = str(record.get("invoice_no") or "").strip()
+    href = _record_href("invoice", invoice_id)
+    if not href or not title:
+        return None
+    due_date = str(record.get("due_date") or "").strip()
+    invoice_date = str(record.get("invoice_date") or "").strip()
+    when_label = f"Due {due_date}" if due_date else invoice_date
+    links = _dedupe_links(
+        [
+            link
+            for link in (
+                _build_related_link("customer", record.get("customer_id"), record.get("customer")),
+            )
+            if link
+        ]
+    )
+    return {
+        "record_type": "invoice",
+        "record_id": int(invoice_id),
+        "title": title,
+        "href": href,
+        "meta": _join_meta_parts(
+            record.get("customer"),
+            when_label,
+            record.get("gross_total"),
+            record.get("status"),
+        ),
+        "links": links,
+    }
+
+
+def _build_customer_result_item(record: dict[str, object]) -> dict[str, object] | None:
+    customer_id = record.get("customer_id")
+    title = str(record.get("customer") or "").strip()
+    href = _record_href("customer", customer_id)
+    if not href or not title:
+        return None
+    ticket_count = int(record.get("completed_ticket_count") or 0)
+    tonnes = str(record.get("total_tonnes") or "").strip()
+    ticket_label = f"{ticket_count} ticket today" if ticket_count == 1 else f"{ticket_count} tickets today"
+    return {
+        "record_type": "customer",
+        "record_id": int(customer_id),
+        "title": title,
+        "href": href,
+        "meta": _join_meta_parts(ticket_label if ticket_count else "", tonnes),
+        "links": [],
+    }
+
+
+def _build_structured_result_items(question: str, context: dict[str, object]) -> list[dict[str, object]]:
+    topics = detect_question_topics(question)
+    if not topics:
+        return []
+
+    candidate_items: list[dict[str, object]] = []
+    for topic in topics:
+        topic_payload = context.get(topic)
+        if topic in {"open_tickets", "open_waste_tickets", "uninvoiced_tickets", "recent_tickets"}:
+            records = ((topic_payload or {}).get("tickets")) if isinstance(topic_payload, dict) else []
+            for record in records or []:
+                if isinstance(record, dict):
+                    item = _build_ticket_result_item(record)
+                    if item:
+                        candidate_items.append(item)
+        elif topic in {"unpaid_invoices", "overdue_invoices"}:
+            records = ((topic_payload or {}).get("invoices")) if isinstance(topic_payload, dict) else []
+            for record in records or []:
+                if isinstance(record, dict):
+                    item = _build_invoice_result_item(record)
+                    if item:
+                        candidate_items.append(item)
+        elif topic == "top_customer_today" and isinstance(topic_payload, dict):
+            item = _build_customer_result_item(topic_payload)
+            if item:
+                candidate_items.append(item)
+
+    items: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in candidate_items:
+        href = str(item.get("href") or "").strip()
+        title = str(item.get("title") or "").strip()
+        key = (str(item.get("record_type") or "").strip(), href or title)
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append(item)
+        if len(items) >= AI_ASSISTANT_SAMPLE_LIMIT:
+            break
+    return items
+
+
+def _dashboard_insight_prompt_metrics(metrics: dict[str, object]) -> dict[str, object]:
+    compact = {
+        "date": metrics.get("date"),
+        "open_tickets": {"count": int(((metrics.get("open_tickets") or {}).get("count")) or 0)},
+        "open_waste_tickets": {
+            "count": int(((metrics.get("open_waste_tickets") or {}).get("count")) or 0)
+        },
+        "ready_to_invoice": {
+            "count": int(((metrics.get("ready_to_invoice") or {}).get("count")) or 0)
+        },
+        "unpaid_invoices": {
+            "count": int(((metrics.get("unpaid_invoices") or {}).get("count")) or 0)
+        },
+        "overdue_invoices": {
+            "count": int(((metrics.get("overdue_invoices") or {}).get("count")) or 0)
+        },
+        "today": {
+            "completed_ticket_count": int(((metrics.get("today") or {}).get("completed_ticket_count")) or 0),
+            "total_tonnes": str(((metrics.get("today") or {}).get("total_tonnes")) or "").strip(),
+        },
+        "yesterday": {
+            "completed_ticket_count": int(((metrics.get("yesterday") or {}).get("completed_ticket_count")) or 0),
+            "total_tonnes": str(((metrics.get("yesterday") or {}).get("total_tonnes")) or "").strip(),
+        },
+    }
+    top_customer = metrics.get("top_customer_today")
+    if isinstance(top_customer, dict) and str(top_customer.get("customer") or "").strip():
+        compact["top_customer_today"] = {
+            "customer": str(top_customer.get("customer") or "").strip(),
+            "completed_ticket_count": int(top_customer.get("completed_ticket_count") or 0),
+            "total_tonnes": str(top_customer.get("total_tonnes") or "").strip(),
+        }
+    return compact
+
+
 def _build_dashboard_insights_input(metrics: dict[str, object]) -> str:
     compact_metrics = json.dumps(
-        metrics,
+        _dashboard_insight_prompt_metrics(metrics),
         default=_json_default,
         ensure_ascii=True,
         separators=(",", ":"),
@@ -368,11 +582,16 @@ def _extract_dashboard_insight_items(payload: dict[str, object]) -> list[str]:
     return items[:5]
 
 
-def _dashboard_insights_cache_key(metrics: dict[str, object], model: str | None) -> str:
+def _dashboard_insights_cache_key(
+    tenant_id: int,
+    metrics: dict[str, object],
+    model: str | None,
+) -> str:
     serialized = json.dumps(
         {
+            "tenant_id": int(tenant_id),
             "model": resolve_assistant_model(model),
-            "metrics": metrics,
+            "metrics": _dashboard_insight_prompt_metrics(metrics),
         },
         default=_json_default,
         ensure_ascii=True,
@@ -400,13 +619,7 @@ def _store_cached_dashboard_insights(cache_key: str, items: list[str]) -> None:
     )
 
 
-def answer_question(
-    db: Session,
-    tenant_id: int,
-    question: str,
-    *,
-    model: str | None = None,
-) -> str:
+def _normalize_question(question: str) -> str:
     clean_question = str(question or "").strip()
     if not clean_question:
         raise AIAssistantError("Question is required.", status_code=400)
@@ -415,23 +628,59 @@ def answer_question(
             f"Question must be {AI_ASSISTANT_QUESTION_MAX_CHARS} characters or fewer.",
             status_code=400,
         )
+    return clean_question
+
+
+def answer_question_with_results(
+    db: Session,
+    tenant_id: int,
+    question: str,
+    *,
+    model: str | None = None,
+) -> dict[str, object]:
+    clean_question = _normalize_question(question)
     if _question_needs_write_access(clean_question):
-        return (
-            "The assistant is read-only. It can answer questions about current tenant data, "
-            "but it cannot create, edit, delete, void, pay, email, or print records."
-        )
+        return {
+            "answer": (
+                "The assistant is read-only. It can answer questions about current tenant data, "
+                "but it cannot create, edit, delete, void, pay, email, or print records."
+            ),
+            "items": [],
+        }
 
     api_key = str(settings.openai_api_key or "").strip()
     if not api_key:
         raise AIAssistantError("AI assistant is not configured.", status_code=503)
 
+    context = build_question_context(db, tenant_id, clean_question)
     payload = _build_openai_payload(
         clean_question,
-        build_question_context(db, tenant_id, clean_question),
+        context,
         model=resolve_assistant_model(model),
     )
     response_payload = _post_responses_request(api_key=api_key, payload=payload)
-    return _extract_response_text(response_payload)
+    return {
+        "answer": _extract_response_text(response_payload),
+        "items": _build_structured_result_items(clean_question, context),
+    }
+
+
+def answer_question(
+    db: Session,
+    tenant_id: int,
+    question: str,
+    *,
+    model: str | None = None,
+) -> str:
+    return str(
+        answer_question_with_results(
+            db,
+            tenant_id,
+            question,
+            model=model,
+        ).get("answer")
+        or ""
+    )
 
 
 def generate_dashboard_insights(
@@ -444,7 +693,7 @@ def generate_dashboard_insights(
     if not dashboard_insight_metrics_have_activity(metrics):
         return {"items": [], "message": AI_DASHBOARD_INSIGHTS_FALLBACK, "metrics": metrics}
 
-    cache_key = _dashboard_insights_cache_key(metrics, model)
+    cache_key = _dashboard_insights_cache_key(tenant_id, metrics, model)
     cached_items = _get_cached_dashboard_insights(cache_key)
     if cached_items:
         return {"items": cached_items, "message": "", "metrics": metrics}
@@ -499,6 +748,7 @@ __all__ = [
     "_extract_response_text",
     "_post_responses_request",
     "answer_question",
+    "answer_question_with_results",
     "build_dashboard_insight_metrics",
     "build_question_context",
     "build_system_prompt",
