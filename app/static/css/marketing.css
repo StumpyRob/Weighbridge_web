@@ -72,7 +72,7 @@ body.marketing-landing-page::before {
   letter-spacing: -0.03em;
   color: var(--marketing-text);
   max-width: 14ch;
-  margin: 0 auto 3rem;
+  margin: 0 auto 4rem;
   animation: marketing-fade-up 0.6s 0.2s ease both;
   opacity: 0;
 }
@@ -89,7 +89,7 @@ body.marketing-landing-page::before {
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.6rem;
-  margin-bottom: 2.75rem;
+  margin-bottom: 0;
   animation: marketing-fade-up 0.6s 0.4s ease both;
   opacity: 0;
 }
@@ -113,17 +113,14 @@ body.marketing-landing-page::before {
 }
 
 .marketing-demo-cta {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.85rem;
+  justify-content: center;
+  width: 100%;
+  margin-top: 2.5rem;
   margin-bottom: 5rem;
   animation: marketing-fade-up 0.6s 0.55s ease both;
   opacity: 0;
-}
-
-.marketing-demo-cta__text {
-  font-size: 0.92rem;
-  color: rgba(255, 255, 255, 0.58);
 }
 
 .marketing-demo-cta__button {
@@ -193,8 +190,7 @@ body.marketing-landing-page::before {
   }
 
   .marketing-demo-cta {
-    flex-direction: column;
-    gap: 0.7rem;
+    margin-top: 2rem;
     margin-bottom: 4rem;
   }
 
