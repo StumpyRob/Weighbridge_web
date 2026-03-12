@@ -351,13 +351,15 @@ def test_software_subdomain_serves_marketing_page_and_other_subdomains_still_rou
         assert landing.status_code == 200
         assert "Weighbridge Web" in landing.text
         assert "Cloud software for weighbridge operations." in landing.text
-        assert "Built for day-to-day weighbridge work" in landing.text
         assert "Cloud software for ticketing, compliance, and invoicing." in landing.text
+        assert "Want to test it?" in landing.text
+        assert "Try the demo" in landing.text
         assert 'name="description"' in landing.text
         assert 'property="og:title"' in landing.text
         assert 'property="og:description"' in landing.text
         assert "/static/css/marketing.css" in landing.text
         assert "https://software.example.test/" in landing.text
+        assert 'href="https://demo.example.test/"' in landing.text
 
         blocked_tickets = marketing_client.get("/tickets")
         assert blocked_tickets.status_code == 404
@@ -3996,6 +3998,7 @@ def test_all_tenant_subdomains_use_dashboard_on_root_and_non_tenant_hosts_do_not
         marketing = marketing_client.get("/")
         assert marketing.status_code == 200
         assert "Cloud software for weighbridge operations." in marketing.text
+        assert "Try the demo" in marketing.text
         assert "Operations Dashboard" not in marketing.text
 
     with _client(app, base_url="https://admin.example.test") as admin_client:

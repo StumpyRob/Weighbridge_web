@@ -89,7 +89,7 @@ body.marketing-landing-page::before {
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.6rem;
-  margin-bottom: 5rem;
+  margin-bottom: 1.5rem;
   animation: marketing-fade-up 0.6s 0.4s ease both;
   opacity: 0;
 }
@@ -110,6 +110,54 @@ body.marketing-landing-page::before {
 .marketing-chip:hover {
   color: rgba(255, 255, 255, 0.9);
   border-color: rgba(255, 255, 255, 0.25);
+}
+
+.marketing-demo-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 5rem;
+  animation: marketing-fade-up 0.6s 0.55s ease both;
+  opacity: 0;
+}
+
+.marketing-demo-cta__text {
+  font-size: 0.92rem;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.marketing-demo-cta__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0.7rem 1.2rem;
+  border: 1px solid rgba(41, 151, 255, 0.35);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(41, 151, 255, 0.22), rgba(41, 151, 255, 0.12));
+  color: #f5f5f7;
+  font-size: 0.9rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  box-shadow: 0 14px 30px rgba(41, 151, 255, 0.14);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.marketing-demo-cta__button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(41, 151, 255, 0.55);
+  background: linear-gradient(180deg, rgba(41, 151, 255, 0.3), rgba(41, 151, 255, 0.16));
+  box-shadow: 0 18px 36px rgba(41, 151, 255, 0.18);
+}
+
+.marketing-demo-cta__button:focus-visible {
+  outline: 2px solid rgba(41, 151, 255, 0.75);
+  outline-offset: 3px;
 }
 
 .marketing-footer {
@@ -144,6 +192,12 @@ body.marketing-landing-page::before {
     padding: 5rem 1.25rem 4rem;
   }
 
+  .marketing-demo-cta {
+    flex-direction: column;
+    gap: 0.7rem;
+    margin-bottom: 4rem;
+  }
+
   .marketing-footer {
     padding: 1.5rem 1.25rem;
   }
@@ -153,12 +207,14 @@ body.marketing-landing-page::before {
   .marketing-hero__eyebrow,
   .marketing-hero__title,
   .marketing-chips,
+  .marketing-demo-cta,
   .marketing-footer {
     animation: none !important;
     opacity: 1 !important;
   }
 
-  .marketing-chip {
+  .marketing-chip,
+  .marketing-demo-cta__button {
     transition: none !important;
   }
 }

@@ -1457,6 +1457,10 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 {
                     "request": request,
                     "marketing_base_domain": settings.effective_base_domain or host_without_port(str(request.url.hostname or "")),
+                    "marketing_demo_url": (
+                        f"https://{settings.effective_demo_tenant_subdomain}."
+                        f"{settings.effective_base_domain or host_without_port(str(request.url.hostname or ''))}/"
+                    ),
                 },
             )
         if bool(getattr(request.state, "platform_mode", False)):
