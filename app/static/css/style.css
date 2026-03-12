@@ -4128,7 +4128,8 @@ body.assistant-panel-open {
 }
 
 .assistant-panel__response {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.6rem;
   min-height: 0;
   flex: 1 1 auto;
@@ -4136,6 +4137,7 @@ body.assistant-panel-open {
 
 .assistant-panel__response-body {
   overflow-y: auto;
+  flex: 1 1 auto;
   min-height: 160px;
   padding: 0.9rem 0.95rem;
   border: 1px solid #dbe1ea;

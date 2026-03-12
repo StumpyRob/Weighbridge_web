@@ -4,6 +4,21 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.16.2 - 2026-03-12
+
+### RELEASE
+- `v0.16.2` introduces the tenant-facing AI chatbot inside the workspace, giving operators a live assistant drawer for operational questions without leaving the current screen.
+
+### ADD
+- Add a tenant-visible AI Assistant trigger and right-side drawer across the workspace for AI-enabled tenants.
+- Add quick prompts for open tickets, today's tonnage, unpaid invoices, and recent tickets, wired to the existing tenant-scoped assistant endpoint.
+
+### FIX
+- Polish the assistant drawer copy, loading state, slide-in behavior, and response layout so answers appear cleanly under the response heading.
+
+### TEST
+- Re-run tenant assistant workspace UI visibility and assistant query smoke coverage for enabled and disabled tenants.
+
 ## v0.16.1 - 2026-03-12
 
 ### RELEASE
