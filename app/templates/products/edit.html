@@ -3,6 +3,7 @@
 {% block title %}Edit Product {{ product.code }} | Weighbridge Web{% endblock %}
 
 {% block content %}
+{% set readonly_mode = not permissions.manage_products %}
 <div class="page-header">
   <div>
     <h1>{{ product.code }}</h1>
@@ -23,9 +24,13 @@
 {% endif %}
 
 <form class="ticket-form" method="post" action="/products/{{ product.id }}">
-  {% include "products/_form.html" %}
+  <fieldset {% if readonly_mode %}disabled aria-disabled="true"{% endif %}>
+    {% include "products/_form.html" %}
+  </fieldset>
     <div class="actions btn-group">
-      <button type="submit" class="btn btn--primary">Save</button>
+      {% if not readonly_mode %}
+        <button type="submit" class="btn btn--primary">Save</button>
+      {% endif %}
       <a class="btn btn--secondary" href="/products">Back</a>
     </div>
   </form>

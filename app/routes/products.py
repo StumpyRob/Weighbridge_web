@@ -11,6 +11,11 @@ from ..audit import diff as audit_diff
 from ..audit import log as audit_log
 from ..constants import CODE_MAX, DESC_MAX, NAME_MAX, NOMINAL_CODE_MAX
 from ..db import get_db
+from ..permissions import (
+    PERM_MANAGE_PRODUCTS,
+    PERM_VIEW_PRODUCTS,
+    require_permission,
+)
 from ..models.base import utcnow
 from ..models import (
     CustomerProductPrice,
@@ -47,6 +52,14 @@ PRODUCT_GROUP_DESCRIPTION_MAX_LEN = DESC_MAX
 NOMINAL_CODE_MAX_LEN = NOMINAL_CODE_MAX
 
 
+def _require_products_view(request: Request) -> None:
+    require_permission(request, PERM_VIEW_PRODUCTS)
+
+
+def _require_products_manage(request: Request) -> None:
+    require_permission(request, PERM_MANAGE_PRODUCTS)
+
+
 def _product_group_snapshot(group: ProductGroup | None) -> dict[str, object]:
     if group is None:
         return {}
@@ -74,6 +87,7 @@ def products_list(
     q: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    _require_products_view(request)
     _backfill_product_units(db)
     _backfill_product_tax_rates(db)
     search_query = _normalize_search_query(q)
@@ -117,6 +131,7 @@ def products_list(
 
 @router.get("/products/new", response_class=HTMLResponse)
 def products_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    _require_products_manage(request)
     options = _load_options(db)
     errors: list[str] = []
     if not options.get("units"):
@@ -140,6 +155,7 @@ def products_new(request: Request, db: Session = Depends(get_db)) -> HTMLRespons
 async def products_create(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_products_manage(request)
     form = await request.form()
     payload = _parse_product_form(form)
     duplicate_error = _validate_product_code_unique(db, payload.get("code"))
@@ -239,6 +255,7 @@ def product_groups_list(
     hide_inactive: int | None = Query(None),
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    _require_products_manage(request)
     resolved_hide = _resolve_hide_inactive(request, hide_inactive)
     error = None
     error_code = request.query_params.get("error")
@@ -293,6 +310,7 @@ def product_groups_list(
 
 @router.get("/products/groups/new", response_class=HTMLResponse)
 def product_groups_new(request: Request) -> HTMLResponse:
+    _require_products_manage(request)
     return templates.TemplateResponse(
         request,
         "products/group_form.html",
@@ -310,6 +328,7 @@ def product_groups_new(request: Request) -> HTMLResponse:
 async def product_groups_create(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_products_manage(request)
     form = await request.form()
     payload = _parse_product_group_form(form)
     duplicate_error = _validate_product_group_name_unique(
@@ -376,6 +395,7 @@ def product_groups_edit(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    _require_products_manage(request)
     group = db.get(ProductGroup, group_id)
     if not group:
         return templates.TemplateResponse(
@@ -411,6 +431,7 @@ async def product_groups_update(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    _require_products_manage(request)
     group = db.get(ProductGroup, group_id)
     if not group:
         return templates.TemplateResponse(
@@ -489,6 +510,7 @@ def product_groups_deactivate(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    _require_products_manage(request)
     group = db.get(ProductGroup, group_id)
     if not group:
         return templates.TemplateResponse(
@@ -527,6 +549,7 @@ def product_groups_reactivate(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    _require_products_manage(request)
     group = db.get(ProductGroup, group_id)
     if not group:
         return templates.TemplateResponse(
@@ -556,6 +579,7 @@ def product_groups_delete(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    _require_products_manage(request)
     group = db.get(ProductGroup, group_id)
     if not group:
         return templates.TemplateResponse(
@@ -593,6 +617,7 @@ def units_list(
     hide_inactive: int | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    _require_products_manage(request)
     _ensure_system_units(db)
     resolved_hide = _resolve_hide_inactive(request, hide_inactive)
     error = None
@@ -627,6 +652,7 @@ def units_list(
 
 @router.get("/products/units/new", response_class=HTMLResponse)
 def units_new(request: Request) -> HTMLResponse:
+    _require_products_manage(request)
     return templates.TemplateResponse(request, 
         "lookups/form.html",
         {
@@ -646,6 +672,7 @@ def units_new(request: Request) -> HTMLResponse:
 async def units_create(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_products_manage(request)
     form = await request.form()
     unit_type = _normalize_unit_type(form.get("unit_type"))
     name = _normalize_unit_name_for_type(form.get("name"), unit_type)
@@ -689,6 +716,7 @@ async def units_create(
 def units_edit(
     unit_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_products_manage(request)
     unit = db.get(Unit, unit_id)
     if not unit:
         return templates.TemplateResponse(request, 
@@ -722,6 +750,7 @@ def units_edit(
 async def units_update(
     unit_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_products_manage(request)
     unit = db.get(Unit, unit_id)
     if not unit:
         return templates.TemplateResponse(request, 
@@ -787,6 +816,7 @@ async def units_update(
 def units_deactivate(
     unit_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_products_manage(request)
     unit = db.get(Unit, unit_id)
     if not unit:
         return templates.TemplateResponse(request, 
@@ -820,6 +850,7 @@ def units_deactivate(
 def units_reactivate(
     unit_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_products_manage(request)
     unit = db.get(Unit, unit_id)
     if not unit:
         return templates.TemplateResponse(request, 
@@ -853,6 +884,7 @@ def units_reactivate(
 def units_delete(
     unit_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_products_manage(request)
     unit = db.get(Unit, unit_id)
     if not unit:
         return templates.TemplateResponse(
@@ -908,6 +940,7 @@ def _resolve_hide_inactive(request: Request, hide_inactive: int | None) -> int:
 def products_edit(
     product_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_products_view(request)
     _ensure_system_units(db)
     product = db.get(Product, product_id)
     if not product:
@@ -939,6 +972,7 @@ def products_edit(
 async def products_update(
     product_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_products_manage(request)
     product = db.get(Product, product_id)
     if not product:
         return templates.TemplateResponse(request, 
@@ -1092,6 +1126,7 @@ def products_delete(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    _require_products_manage(request)
     product = db.get(Product, product_id)
     if not product:
         return templates.TemplateResponse(

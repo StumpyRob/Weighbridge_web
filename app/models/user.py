@@ -5,7 +5,12 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, event
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from .base import Base, utcnow
-from ..user_roles import ROLE_SUPERADMIN, ROLE_TENANT_ADMIN, ROLE_USER, normalize_role
+from ..user_roles import (
+    ROLE_OPERATOR,
+    ROLE_SUPERADMIN,
+    ROLE_TENANT_ADMIN,
+    normalize_role,
+)
 
 
 class User(Base):
@@ -32,8 +37,10 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(150), nullable=False)
+    first_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id"), nullable=True)
-    role: Mapped[str] = mapped_column(String(20), nullable=False, default=ROLE_USER)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default=ROLE_OPERATOR)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -66,9 +73,13 @@ def _session_platform_superadmin_count(session: Session) -> int:
 def _normalize_user_for_write(target: User) -> None:
     tenant_id = getattr(target, "tenant_id", None)
     normalized = normalize_role(getattr(target, "role", None), default=None)
+    first_name = str(getattr(target, "first_name", "") or "").strip()
+    last_name = str(getattr(target, "last_name", "") or "").strip()
+    target.first_name = first_name or None
+    target.last_name = last_name or None
 
     if normalized is None:
-        normalized = ROLE_USER if tenant_id is None else ROLE_TENANT_ADMIN
+        normalized = ROLE_OPERATOR if tenant_id is None else ROLE_TENANT_ADMIN
 
     if normalized == ROLE_SUPERADMIN:
         target.tenant_id = None
@@ -98,7 +109,7 @@ def _assign_new_user_roles_before_flush(session: Session, _flush_context, _insta
             normalized = ROLE_SUPERADMIN
             bootstrap_assigned = True
         elif normalized is None:
-            normalized = ROLE_USER if tenant_id is None else ROLE_TENANT_ADMIN
+            normalized = ROLE_OPERATOR if tenant_id is None else ROLE_TENANT_ADMIN
 
         if normalized == ROLE_SUPERADMIN:
             user.tenant_id = None

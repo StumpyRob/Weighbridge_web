@@ -10,6 +10,11 @@ from ..audit import diff as audit_diff
 from ..audit import log as audit_log
 from ..constants import REG_MAX
 from ..db import get_db
+from ..permissions import (
+    PERM_MANAGE_VEHICLES,
+    PERM_VIEW_VEHICLES,
+    require_permission,
+)
 from ..models.base import utcnow
 from ..security import validate_no_html_fields
 from ..models import (
@@ -81,6 +86,7 @@ def vehicles_list(
     q: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    require_permission(request, PERM_VIEW_VEHICLES)
     query = (
         select(Vehicle, Customer, VehicleType, Haulier)
         .outerjoin(Customer, Vehicle.owner_customer_id == Customer.id)
@@ -105,6 +111,7 @@ def vehicles_list(
 
 @router.get("/vehicles/new", response_class=HTMLResponse)
 def vehicles_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    require_permission(request, PERM_MANAGE_VEHICLES)
     options = _load_options(db)
     errors: list[str] = []
     if not options.get("vehicle_types"):
@@ -127,6 +134,7 @@ def vehicles_new(request: Request, db: Session = Depends(get_db)) -> HTMLRespons
 async def vehicles_create(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    require_permission(request, PERM_MANAGE_VEHICLES)
     form = await request.form()
     payload = _parse_vehicle_form(form)
     tenant_id = _resolved_tenant_id(request, db)
@@ -203,6 +211,7 @@ async def vehicles_create(
 def vehicles_edit(
     vehicle_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    require_permission(request, PERM_VIEW_VEHICLES)
     vehicle = db.get(Vehicle, vehicle_id)
     if not vehicle:
         return templates.TemplateResponse(request, 
@@ -233,6 +242,7 @@ def vehicles_edit(
 async def vehicles_update(
     vehicle_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    require_permission(request, PERM_MANAGE_VEHICLES)
     vehicle = db.get(Vehicle, vehicle_id)
     if not vehicle:
         return templates.TemplateResponse(request, 
@@ -361,6 +371,7 @@ async def vehicles_update(
 async def vehicle_tares_add(
     vehicle_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    require_permission(request, PERM_MANAGE_VEHICLES)
     vehicle = db.get(Vehicle, vehicle_id)
     if not vehicle:
         return templates.TemplateResponse(request, 
@@ -440,6 +451,7 @@ async def vehicle_tares_add(
 async def vehicle_tares_update(
     vehicle_id: int, tare_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    require_permission(request, PERM_MANAGE_VEHICLES)
     tare = db.get(VehicleTare, tare_id)
     if not tare or tare.vehicle_id != vehicle_id:
         return RedirectResponse(url=f"/vehicles/{vehicle_id}", status_code=303)
@@ -493,6 +505,7 @@ def vehicle_tares_delete(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    require_permission(request, PERM_MANAGE_VEHICLES)
     tare = db.get(VehicleTare, tare_id)
     if tare and tare.vehicle_id == vehicle_id:
         vehicle = db.get(Vehicle, vehicle_id)

@@ -1,10 +1,12 @@
 from fastapi.templating import Jinja2Templates
 
+from .auth import user_display_name, user_role_label
 from .build_info import get_build_info
 from .config import settings
 from .constants import field_limits
 from .constants.help_text import HELP_TEXT
 from .db import get_db
+from .permissions import permission_context_for_request
 from .services.ui_branding import get_branding
 from .tenancy import host_without_port, prefix_tenant_route_target
 
@@ -83,6 +85,9 @@ def _auth_context(request) -> dict[str, object]:
     return {
         "current_user": current_user,
         "current_user_is_superadmin": is_superadmin,
+        "current_user_display_name": user_display_name(current_user),
+        "current_user_role_label": user_role_label(current_user),
+        "permissions": permission_context_for_request(request),
     }
 
 
@@ -124,3 +129,5 @@ templates.env.globals["app_version"] = _build_info["version"]
 templates.env.globals["app_commit_short"] = _build_info["commit_short"]
 templates.env.globals["app_build_label"] = _build_info["label"]
 templates.env.globals["BUILD_STAMP"] = _asset_build_stamp
+templates.env.globals["user_display_name"] = user_display_name
+templates.env.globals["user_role_label"] = user_role_label

@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block title %}Workspace Users | Weighbridge Web{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Workspace Users</h1>
+      <p class="muted">Create users, change roles, activate access, and reset passwords for this tenant.</p>
+    </div>
+    <div class="actions btn-group">
+      <a class="btn btn--secondary" href="/admin">Back to Settings</a>
+    </div>
+  </div>
+
+  {% if message %}
+    <div class="notice">{{ message }}</div>
+  {% endif %}
+  {% if error %}
+    <div class="alert alert--danger">{{ error }}</div>
+  {% endif %}
+
+  <div class="stacked-frames">
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Create User</h2>
+      </div>
+      <div class="frame-body">
+        <form class="ticket-form" method="post" action="/admin/users">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+          <div class="form-grid">
+            <div class="field">
+              <label for="first_name">First name</label>
+              <input type="text" id="first_name" name="first_name" maxlength="100" autocomplete="given-name" />
+            </div>
+            <div class="field">
+              <label for="last_name">Last name</label>
+              <input type="text" id="last_name" name="last_name" maxlength="100" autocomplete="family-name" />
+            </div>
+            <div class="field">
+              <label for="email">Email</label>
+              <input type="email" id="email" name="email" required autocomplete="email" />
+            </div>
+            <div class="field">
+              <label for="role">Role</label>
+              <select id="role" name="role" required>
+                {% for role_value, role_name in role_options %}
+                  <option value="{{ role_value }}">{{ role_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field">
+              <label for="password">Temporary password</label>
+              <input type="password" id="password" name="password" required minlength="8" autocomplete="new-password" />
+            </div>
+            <div class="field">
+              <label for="confirm_password">Confirm password</label>
+              <input type="password" id="confirm_password" name="confirm_password" required minlength="8" autocomplete="new-password" />
+            </div>
+          </div>
+          <div class="actions btn-group">
+            <button type="submit" class="btn btn--primary">Create User</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Existing Users</h2>
+      </div>
+      <div class="frame-body">
+        <div class="table-wrap list-table-wrap">
+          <table class="data-table list-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Password</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for user in users %}
+                <tr>
+                  <td>
+                    <form method="post" action="/admin/users/{{ user.id }}/update" class="ticket-form">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                      <div class="form-grid">
+                        <div class="field">
+                          <label for="user_{{ user.id }}_first_name">First name</label>
+                          <input
+                            type="text"
+                            id="user_{{ user.id }}_first_name"
+                            name="first_name"
+                            value="{{ user.first_name or '' }}"
+                            maxlength="100"
+                            autocomplete="given-name"
+                          />
+                        </div>
+                        <div class="field">
+                          <label for="user_{{ user.id }}_last_name">Last name</label>
+                          <input
+                            type="text"
+                            id="user_{{ user.id }}_last_name"
+                            name="last_name"
+                            value="{{ user.last_name or '' }}"
+                            maxlength="100"
+                            autocomplete="family-name"
+                          />
+                        </div>
+                        <div class="field">
+                          <label for="user_{{ user.id }}_email">Email</label>
+                          <input
+                            type="email"
+                            id="user_{{ user.id }}_email"
+                            name="email"
+                            value="{{ user.email or user.username }}"
+                            required
+                            autocomplete="email"
+                          />
+                        </div>
+                        <div class="field">
+                          <label for="user_{{ user.id }}_role">Role</label>
+                          <select id="user_{{ user.id }}_role" name="role" required>
+                            {% for role_value, role_name in role_options %}
+                              <option value="{{ role_value }}" {% if user.role == role_value or (user.role == 'user' and role_value == 'operator') %}selected{% endif %}>{{ role_name }}</option>
+                            {% endfor %}
+                          </select>
+                        </div>
+                        <div class="field checkbox">
+                          <input type="hidden" name="is_active" value="off" />
+                          <input
+                            type="checkbox"
+                            id="user_{{ user.id }}_is_active"
+                            name="is_active"
+                            value="on"
+                            {% if user.is_active %}checked{% endif %}
+                          />
+                          <label for="user_{{ user.id }}_is_active">Active</label>
+                        </div>
+                      </div>
+                      <div class="actions btn-group">
+                        <button type="submit" class="btn btn--secondary">Save User</button>
+                        {% if current_user_id == user.id %}
+                          <span class="muted">Current user</span>
+                        {% endif %}
+                      </div>
+                    </form>
+                  </td>
+                  <td>
+                    <strong>{{ user_role_label(user) }}</strong>
+                    <div class="muted">{{ user_display_name(user) }}</div>
+                  </td>
+                  <td>
+                    {% if user.is_active %}
+                      <span class="status-pill status-open">Active</span>
+                    {% else %}
+                      <span class="status-pill status-void">Inactive</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <form method="post" action="/admin/users/{{ user.id }}/reset-password" class="ticket-form">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                      <div class="form-grid">
+                        <div class="field">
+                          <label for="user_{{ user.id }}_password">New password</label>
+                          <input
+                            type="password"
+                            id="user_{{ user.id }}_password"
+                            name="password"
+                            minlength="8"
+                            required
+                            autocomplete="new-password"
+                          />
+                        </div>
+                        <div class="field">
+                          <label for="user_{{ user.id }}_confirm_password">Confirm password</label>
+                          <input
+                            type="password"
+                            id="user_{{ user.id }}_confirm_password"
+                            name="confirm_password"
+                            minlength="8"
+                            required
+                            autocomplete="new-password"
+                          />
+                        </div>
+                      </div>
+                      <div class="actions btn-group">
+                        <button type="submit" class="btn btn--ghost">Reset Password</button>
+                      </div>
+                    </form>
+                  </td>
+                </tr>
+              {% else %}
+                <tr>
+                  <td colspan="4" class="empty">No users created for this workspace.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+{% endblock %}

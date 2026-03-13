@@ -17,9 +17,11 @@
       <h1>{{ entity_plural }}</h1>
       <p class="muted">Manage {{ entity_plural | lower }}.</p>
     </div>
-    <div class="actions btn-group">
-      <a class="btn btn--primary" href="{{ base_path }}/new">Add {{ entity_singular }}</a>
-    </div>
+    {% if permissions.manage_lookups %}
+      <div class="actions btn-group">
+        <a class="btn btn--primary" href="{{ base_path }}/new">Add {{ entity_singular }}</a>
+      </div>
+    {% endif %}
   </div>
 
   {% if base_path.startswith("/products/") %}
@@ -118,26 +120,28 @@
                 {% if not can_edit %}
                   &nbsp;
                 {% else %}
-                  <a class="btn btn--ghost btn--sm" href="{{ base_path }}/{{ item.id }}/edit">Edit</a>
-                  {% if item.is_active %}
-                    <form method="post" action="{{ base_path }}/{{ item.id }}/deactivate">
-                      <button type="submit" class="btn btn--danger btn--sm">Deactivate</button>
-                    </form>
-                  {% elif not hide_inactive %}
-                    <form method="post" action="{{ base_path }}/{{ item.id }}/reactivate">
-                      <button type="submit" class="btn btn--secondary btn--sm">Reactivate</button>
-                    </form>
-                  {% endif %}
-                  {% if entity_singular == "Unit" %}
-                    <form method="post" action="{{ base_path }}/{{ item.id }}/delete">
-                      <button
-                        type="submit"
-                        class="btn btn--danger btn--sm"
-                        onclick="return window.confirm('Delete unit {{ item.name }}?');"
-                      >
-                        Delete
-                      </button>
-                    </form>
+                  <a class="btn btn--ghost btn--sm" href="{{ base_path }}/{{ item.id }}/edit">Open</a>
+                  {% if permissions.manage_lookups %}
+                    {% if item.is_active %}
+                      <form method="post" action="{{ base_path }}/{{ item.id }}/deactivate">
+                        <button type="submit" class="btn btn--danger btn--sm">Deactivate</button>
+                      </form>
+                    {% elif not hide_inactive %}
+                      <form method="post" action="{{ base_path }}/{{ item.id }}/reactivate">
+                        <button type="submit" class="btn btn--secondary btn--sm">Reactivate</button>
+                      </form>
+                    {% endif %}
+                    {% if entity_singular == "Unit" %}
+                      <form method="post" action="{{ base_path }}/{{ item.id }}/delete">
+                        <button
+                          type="submit"
+                          class="btn btn--danger btn--sm"
+                          onclick="return window.confirm('Delete unit {{ item.name }}?');"
+                        >
+                          Delete
+                        </button>
+                      </form>
+                    {% endif %}
                   {% endif %}
                 {% endif %}
               </div>

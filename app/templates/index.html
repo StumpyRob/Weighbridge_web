@@ -19,10 +19,12 @@
         <strong>Setup is still incomplete.</strong>
         Finish core configuration before relying on live operational workflows.
         <div class="actions btn-group">
-          {% if not setup_initialized %}
+          {% if not setup_initialized and permissions.manage_settings %}
             <a class="btn btn--secondary btn--sm" href="{{ tenant_path('/setup') }}">Complete Company Setup</a>
           {% endif %}
-          <a class="btn btn--secondary btn--sm" href="{{ tenant_path('/admin') }}">Open Settings</a>
+          {% if permissions.manage_settings or permissions.manage_users %}
+            <a class="btn btn--secondary btn--sm" href="{{ tenant_path('/admin') }}">Open Settings</a>
+          {% endif %}
         </div>
         {% if missing_required_lookups %}
           <ul>
@@ -53,7 +55,7 @@
       {% endfor %}
     </section>
 
-    {% if dashboard.ai_insights %}
+    {% if permissions.view_ai_insights and dashboard.ai_insights %}
       <section class="frame dashboard-ai-insights" data-dashboard-panel="ai-insights">
         <div class="frame-header">AI Insights</div>
         <div class="frame-body">
@@ -99,11 +101,19 @@
         <p>
           This workspace has no tickets or invoices yet. Start with the core records below, then create the first ticket when vehicles arrive on site.
         </p>
-        <div class="actions btn-group">
-          <a class="btn" href="{{ tenant_path('/tickets/new') }}">Create Ticket</a>
-          <a class="btn btn--secondary" href="{{ tenant_path('/customers/new') }}">Add Customer</a>
-          <a class="btn btn--secondary" href="{{ tenant_path('/vehicles/new') }}">Add Vehicle</a>
-        </div>
+        {% if permissions.manage_tickets or permissions.manage_customers or permissions.manage_vehicles %}
+          <div class="actions btn-group">
+            {% if permissions.manage_tickets %}
+              <a class="btn" href="{{ tenant_path('/tickets/new') }}">Create Ticket</a>
+            {% endif %}
+            {% if permissions.manage_customers %}
+              <a class="btn btn--secondary" href="{{ tenant_path('/customers/new') }}">Add Customer</a>
+            {% endif %}
+            {% if permissions.manage_vehicles %}
+              <a class="btn btn--secondary" href="{{ tenant_path('/vehicles/new') }}">Add Vehicle</a>
+            {% endif %}
+          </div>
+        {% endif %}
       </section>
     {% endif %}
 

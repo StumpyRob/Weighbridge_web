@@ -5,16 +5,16 @@ import logging
 import csv
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.datastructures import UploadFile
 
-from ..auth import is_admin_user
 from ..db import get_db
 from ..models import EwcCode, EwcImportLog
+from ..permissions import PERM_MANAGE_SETTINGS, require_permission
 from ..services.ewc_import import import_ewc_codes, parse_import_errors_json
 from ..templating import templates
 
@@ -24,10 +24,8 @@ logger = logging.getLogger(__name__)
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
-def _require_admin_access(request: Request, db: Session) -> None:
-    current_user = getattr(getattr(request, "state", None), "current_user", None)
-    if not is_admin_user(db, current_user):
-        raise HTTPException(status_code=403, detail="Forbidden")
+def _require_admin_access(request: Request, _db: Session) -> None:
+    require_permission(request, PERM_MANAGE_SETTINGS)
 
 
 def _build_page_context(

@@ -9,11 +9,17 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth import is_admin_user, is_superadmin_user, user_display_name
+from ..auth import is_superadmin_user, user_display_name
 from ..config import settings
 from ..db import get_db
 from ..models import AuditEvent, CompanySetting, User, Yard
 from ..models.base import utcnow
+from ..permissions import (
+    PERM_MANAGE_SETTINGS,
+    PERM_MANAGE_USERS,
+    require_any_permission,
+    require_permission,
+)
 from ..services.health import collect_system_health
 from ..services.print_payload import print_payload_variable_docs
 from ..services.system_setup import (
@@ -116,12 +122,14 @@ async def admin_dev_mode_toggle(
 
 
 @router.get("/admin/help")
-def admin_help_root() -> RedirectResponse:
+def admin_help_root(request: Request) -> RedirectResponse:
+    require_any_permission(request, PERM_MANAGE_SETTINGS, PERM_MANAGE_USERS)
     return RedirectResponse(url="/admin/help/getting-started", status_code=303)
 
 
 @router.get("/admin/help/getting-started", response_class=HTMLResponse)
 def admin_help_getting_started(request: Request) -> HTMLResponse:
+    require_any_permission(request, PERM_MANAGE_SETTINGS, PERM_MANAGE_USERS)
     return templates.TemplateResponse(
         request,
         "admin/help_getting_started.html",
@@ -134,6 +142,7 @@ def admin_help_getting_started(request: Request) -> HTMLResponse:
 
 @router.get("/admin/help/template-variables", response_class=HTMLResponse)
 def admin_help_template_variables(request: Request) -> HTMLResponse:
+    require_any_permission(request, PERM_MANAGE_SETTINGS, PERM_MANAGE_USERS)
     return templates.TemplateResponse(
         request,
         "admin/help_template_variables.html",
@@ -190,9 +199,7 @@ def admin_audit(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    current_user = getattr(request.state, "current_user", None)
-    if not is_admin_user(db, current_user):
-        return HTMLResponse("Forbidden", status_code=403)
+    require_permission(request, PERM_MANAGE_SETTINGS)
 
     selected_entity_type = str(request.query_params.get("entity_type", "")).strip().lower()
     selected_action = str(request.query_params.get("action", "")).strip().upper()

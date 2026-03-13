@@ -17,9 +17,11 @@
     <h1>Products</h1>
     <p class="muted">Manage products and pricing.</p>
   </div>
-  <div>
-    <a class="btn btn--primary" href="/products/new">New Product</a>
-  </div>
+  {% if permissions.manage_products %}
+    <div>
+      <a class="btn btn--primary" href="/products/new">New Product</a>
+    </div>
+  {% endif %}
 </div>
 
 {% include "products/_subnav.html" %}
@@ -118,16 +120,18 @@
           </td>
           <td class="actions-col" data-row-link-ignore>
             <div class="actions btn-group lookup-actions" data-row-link-ignore>
-              <a class="btn btn--ghost btn--sm" href="/products/{{ product.id }}">Edit</a>
-              <form method="post" action="/products/{{ product.id }}/delete">
-                <button
-                  type="submit"
-                  class="btn btn--danger btn--sm"
-                  onclick="return window.confirm('Delete product {{ product.code }}?');"
-                >
-                  Delete
-                </button>
-              </form>
+              <a class="btn btn--ghost btn--sm" href="/products/{{ product.id }}">Open</a>
+              {% if permissions.manage_products %}
+                <form method="post" action="/products/{{ product.id }}/delete">
+                  <button
+                    type="submit"
+                    class="btn btn--danger btn--sm"
+                    onclick="return window.confirm('Delete product {{ product.code }}?');"
+                  >
+                    Delete
+                  </button>
+                </form>
+              {% endif %}
             </div>
           </td>
         </tr>

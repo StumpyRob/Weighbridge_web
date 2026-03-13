@@ -18,6 +18,7 @@
 {% endblock %}
 
 {% block content %}
+{% set readonly_mode = not permissions.manage_customers %}
 <div class="page-header">
   <div>
     <h1>{{ customer.name }}</h1>
@@ -80,46 +81,52 @@
     </div>
   </div>
   <p class="customer-credit-summary__links">
-    <a href="/invoices?customer_id={{ customer.id }}&unpaid_only=1">View open invoices</a>
+    {% if permissions.view_invoices %}
+      <a href="/invoices?customer_id={{ customer.id }}&unpaid_only=1">View open invoices</a>
+    {% endif %}
     <a href="#customer-adjustments-section">View adjustments</a>
   </p>
 </section>
 
 <div class="ticket-form">
   <form id="customer-edit-form" class="ticket-form" method="post" action="/customers/{{ customer.id }}">
-    {% include "customers/_form.html" %}
+    <fieldset {% if readonly_mode %}disabled aria-disabled="true"{% endif %}>
+      {% include "customers/_form.html" %}
+    </fieldset>
   </form>
 
   <section class="card">
     <h2>Price Overrides{{ help(help_text.customer_price_overrides, "customer-price-overrides-help") }}</h2>
-    <form class="filters filters-inline" method="post" action="/customers/{{ customer.id }}/price-overrides">
-      <div class="field">
-        <label for="override_product_id">Product{{ help(help_text.customer_price_override_product, "customer-override-product-help") }}</label>
-        <select id="override_product_id" name="product_id" required>
-          <option value="">Select product</option>
-          {% for product_id, product_label in options.override_products %}
-            <option value="{{ product_id }}" {% if override_form.product_id == product_id %}selected{% endif %}>
-              {{ product_label }}
-            </option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label for="override_unit_price">Override price{{ help(help_text.customer_price_override_price, "customer-override-price-help") }}</label>
-        <input
-          type="number"
-          step="0.01"
-          id="override_unit_price"
-          name="unit_price"
-          value="{{ override_form.unit_price }}"
-          min="0"
-          required
-        />
-      </div>
-      <div class="actions btn-group">
-        <button type="submit" class="btn btn--secondary">Add override</button>
-      </div>
-    </form>
+    {% if not readonly_mode %}
+      <form class="filters filters-inline" method="post" action="/customers/{{ customer.id }}/price-overrides">
+        <div class="field">
+          <label for="override_product_id">Product{{ help(help_text.customer_price_override_product, "customer-override-product-help") }}</label>
+          <select id="override_product_id" name="product_id" required>
+            <option value="">Select product</option>
+            {% for product_id, product_label in options.override_products %}
+              <option value="{{ product_id }}" {% if override_form.product_id == product_id %}selected{% endif %}>
+                {{ product_label }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="override_unit_price">Override price{{ help(help_text.customer_price_override_price, "customer-override-price-help") }}</label>
+          <input
+            type="number"
+            step="0.01"
+            id="override_unit_price"
+            name="unit_price"
+            value="{{ override_form.unit_price }}"
+            min="0"
+            required
+          />
+        </div>
+        <div class="actions btn-group">
+          <button type="submit" class="btn btn--secondary">Add override</button>
+        </div>
+      </form>
+    {% endif %}
 
     <div class="table-wrap">
       <table class="data-table">
@@ -138,23 +145,27 @@
               <td>{{ override.product.code if override.product else "-" }} - {{ override.product.description if override.product else "-" }}</td>
               <td>{{ override.product.unit.unit_type if override.product and override.product.unit else "-" }}</td>
               <td>
-                <form class="inline-form btn-group" method="post" action="/customers/{{ customer.id }}/price-overrides/{{ override.id }}/update">
-                  <input type="hidden" name="product_id" value="{{ override.product_id }}" />
-                  <input
-                    type="number"
-                    step="0.01"
-                    name="unit_price"
-                    value="{{ "{:.2f}".format(override.unit_price or 0) }}"
-                    min="0"
-                    required
-                  />
-                  <input type="hidden" name="is_active" value="off" />
-                  <label class="field checkbox">
-                    <input type="checkbox" name="is_active" {% if override.is_active %}checked{% endif %} />
-                    <span>Active</span>
-                  </label>
-                  <button type="submit" class="btn btn--ghost">Save</button>
-                </form>
+                {% if not readonly_mode %}
+                  <form class="inline-form btn-group" method="post" action="/customers/{{ customer.id }}/price-overrides/{{ override.id }}/update">
+                    <input type="hidden" name="product_id" value="{{ override.product_id }}" />
+                    <input
+                      type="number"
+                      step="0.01"
+                      name="unit_price"
+                      value="{{ "{:.2f}".format(override.unit_price or 0) }}"
+                      min="0"
+                      required
+                    />
+                    <input type="hidden" name="is_active" value="off" />
+                    <label class="field checkbox">
+                      <input type="checkbox" name="is_active" {% if override.is_active %}checked{% endif %} />
+                      <span>Active</span>
+                    </label>
+                    <button type="submit" class="btn btn--ghost">Save</button>
+                  </form>
+                {% else %}
+                  &pound;{{ "{:.2f}".format(override.unit_price or 0) }}
+                {% endif %}
               </td>
               <td>
                 {% if override.is_active %}
@@ -164,10 +175,12 @@
                 {% endif %}
               </td>
               <td class="actions-col">
-                {% if override.is_active %}
+                {% if (not readonly_mode) and override.is_active %}
                   <form method="post" action="/customers/{{ customer.id }}/price-overrides/{{ override.id }}/deactivate">
                     <button type="submit" class="btn btn--danger">Deactivate</button>
                   </form>
+                {% else %}
+                  <span class="muted">&mdash;</span>
                 {% endif %}
               </td>
             </tr>
@@ -228,63 +241,67 @@
       </table>
     </div>
 
-    <details class="account-adjustments-disclosure" {% if adjustment_form_expanded %}open{% endif %}>
-      <summary class="btn btn--secondary account-adjustments-add-btn">+ Add adjustment</summary>
-      <form
-        class="filters filters-inline account-adjustments-form"
-        method="post"
-        action="/customers/{{ customer.id }}/adjustments"
-        onsubmit="return window.confirm('Apply this adjustment to outstanding balance?');"
-      >
-        <div class="field">
-          <label for="adjustment_amount_decimal">Amount (+ charge / - credit){{ help(help_text.customer_adjustment_amount, "customer-adjustment-amount-help") }}</label>
-          <input
-            type="number"
-            step="0.01"
-            id="adjustment_amount_decimal"
-            name="amount_decimal"
-            value="{{ adjustment_form.amount_decimal }}"
-            placeholder="-50.00"
-            required
-          />
-        </div>
-        <div class="field">
-          <label for="adjustment_reason">Reason{{ help(help_text.customer_adjustment_reason, "customer-adjustment-reason-help") }}</label>
-          <select id="adjustment_reason" name="reason" required>
-            {% for reason_code, reason_label in options.adjustment_reasons %}
-              <option value="{{ reason_code }}" {% if adjustment_form.reason == reason_code %}selected{% endif %}>
-                {{ reason_label }}
-              </option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="field">
-          <label for="adjustment_note">Note{{ help(help_text.customer_adjustment_note, "customer-adjustment-note-help") }} (required)</label>
-          <input
-            type="text"
-            id="adjustment_note"
-            name="note"
-            value="{{ adjustment_form.note }}"
-            maxlength="{{ limits.NOTES_MAX }}"
-            required
-          />
-        </div>
-        <div class="actions btn-group">
-          <button type="submit" class="btn btn--secondary">Add adjustment</button>
-          <button
-            type="button"
-            class="btn btn--ghost"
-            onclick="this.closest('details').removeAttribute('open'); this.closest('details').querySelector('summary').focus();"
-          >
-            Cancel
-          </button>
-        </div>
-      </form>
-    </details>
+    {% if not readonly_mode %}
+      <details class="account-adjustments-disclosure" {% if adjustment_form_expanded %}open{% endif %}>
+        <summary class="btn btn--secondary account-adjustments-add-btn">+ Add adjustment</summary>
+        <form
+          class="filters filters-inline account-adjustments-form"
+          method="post"
+          action="/customers/{{ customer.id }}/adjustments"
+          onsubmit="return window.confirm('Apply this adjustment to outstanding balance?');"
+        >
+          <div class="field">
+            <label for="adjustment_amount_decimal">Amount (+ charge / - credit){{ help(help_text.customer_adjustment_amount, "customer-adjustment-amount-help") }}</label>
+            <input
+              type="number"
+              step="0.01"
+              id="adjustment_amount_decimal"
+              name="amount_decimal"
+              value="{{ adjustment_form.amount_decimal }}"
+              placeholder="-50.00"
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="adjustment_reason">Reason{{ help(help_text.customer_adjustment_reason, "customer-adjustment-reason-help") }}</label>
+            <select id="adjustment_reason" name="reason" required>
+              {% for reason_code, reason_label in options.adjustment_reasons %}
+                <option value="{{ reason_code }}" {% if adjustment_form.reason == reason_code %}selected{% endif %}>
+                  {{ reason_label }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="adjustment_note">Note{{ help(help_text.customer_adjustment_note, "customer-adjustment-note-help") }} (required)</label>
+            <input
+              type="text"
+              id="adjustment_note"
+              name="note"
+              value="{{ adjustment_form.note }}"
+              maxlength="{{ limits.NOTES_MAX }}"
+              required
+            />
+          </div>
+          <div class="actions btn-group">
+            <button type="submit" class="btn btn--secondary">Add adjustment</button>
+            <button
+              type="button"
+              class="btn btn--ghost"
+              onclick="this.closest('details').removeAttribute('open'); this.closest('details').querySelector('summary').focus();"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </details>
+    {% endif %}
   </section>
 
   <div class="actions btn-group">
-    <button type="submit" form="customer-edit-form" class="btn btn--primary">Save</button>
+    {% if not readonly_mode %}
+      <button type="submit" form="customer-edit-form" class="btn btn--primary">Save</button>
+    {% endif %}
     <a class="btn btn--secondary" href="/customers">Back</a>
   </div>
 </div>

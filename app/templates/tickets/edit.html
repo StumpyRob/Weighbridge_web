@@ -48,6 +48,9 @@
 
 {% block content %}
 {% set is_complete = form.status == "COMPLETE" %}
+{% set can_manage_ticket = permissions.manage_tickets %}
+{% set can_complete_ticket = permissions.complete_tickets %}
+{% set ticket_form_disabled = is_locked or not can_manage_ticket %}
 {% set document_groups = [] %}
 {% if is_complete %}
   {% set document_groups = [
@@ -81,22 +84,28 @@
     {% if invoice %}
       <div class="ticket-meta">
         <span>Invoiced on:</span>
-        <a href="/invoices/{{ invoice.id }}">{{ invoice.invoice_no }}</a>
+        {% if permissions.view_invoices %}
+          <a href="/invoices/{{ invoice.id }}">{{ invoice.invoice_no }}</a>
+        {% else %}
+          <span>{{ invoice.invoice_no }}</span>
+        {% endif %}
       </div>
     {% endif %}
   </div>
-  {% if is_complete %}
+  {% if is_complete and can_manage_ticket %}
     <div class="page-header__aside page-header__aside--documents">
       {% set documents_panel_classes = "documents-panel--header" %}
       {% include "printing/_documents_panel.html" %}
     </div>
-  {% elif is_open %}
+  {% elif is_open and (can_complete_ticket or (allow_dev_preview and can_manage_ticket)) %}
     <div class="actions btn-group ticket-header-actions">
       <div class="ticket-header-actions__primary">
-        <button type="submit" class="btn btn--primary" form="ticket-form" name="action" value="complete">
-          Mark Complete
-        </button>
-        {% if allow_dev_preview %}
+        {% if can_complete_ticket %}
+          <button type="submit" class="btn btn--primary" form="ticket-form" name="action" value="complete">
+            Mark Complete
+          </button>
+        {% endif %}
+        {% if allow_dev_preview and can_manage_ticket %}
           <form method="get" action="{{ print_actions.preview_url or ('/tickets/' ~ ticket.id ~ '/preview') }}" target="_blank">
             <button type="submit" class="btn btn--secondary" id="preview_browser_print_button">
               Preview Ticket
@@ -104,7 +113,7 @@
           </form>
         {% endif %}
       </div>
-      {% if allow_dev_preview %}
+      {% if allow_dev_preview and can_manage_ticket %}
         <p class="ticket-print-availability-hint muted">DEV mode preview enabled (DRAFT banner shown).</p>
       {% endif %}
     </div>
@@ -132,6 +141,10 @@
   <div class="alert alert--warning">
     {{ locked_message or "This ticket is complete and cannot be edited." }}
   </div>
+{% endif %}
+
+{% if not can_manage_ticket %}
+  <div class="alert alert--warning">View only. Your role cannot change tickets.</div>
 {% endif %}
 
 {% if customer_po_required_warning %}
@@ -186,7 +199,7 @@
 {% endif %}
 
 {% set warning_messages = warnings if warnings is defined else [] %}
-{% if not is_locked %}
+{% if not ticket_form_disabled %}
   <div id="ticket-status-warnings">
     {% if warning_messages %}
       <div class="alert alert--warning">
@@ -213,9 +226,9 @@
   class="ticket-form"
   method="post"
   action="/tickets/{{ ticket.id }}"
-  {% if is_locked %}hx-disable="true"{% endif %}
+  {% if ticket_form_disabled %}hx-disable="true"{% endif %}
 >
-  <fieldset {% if is_locked %}disabled aria-disabled="true"{% endif %}>
+  <fieldset {% if ticket_form_disabled %}disabled aria-disabled="true"{% endif %}>
   <section class="frame">
     <div class="frame-header">
       <h2>Ticket Info</h2>
@@ -229,7 +242,6 @@
         <div class="field">
           <label for="direction">Direction{{ help(help_text.ticket_direction, "ticket-direction-help") }}</label>
           <select id="direction" name="direction" required>
-            <option value="">Select direction</option>
             {% for value, label in options.directions %}
               <option value="{{ value }}" {% if form.direction == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
@@ -238,7 +250,6 @@
         <div class="field">
           <label for="transaction_type">Transaction type{{ help(help_text.ticket_transaction_type, "ticket-transaction-type-help") }}</label>
           <select id="transaction_type" name="transaction_type" required>
-            <option value="">Select transaction</option>
             {% for value, label in options.transaction_types %}
               <option value="{{ value }}" {% if form.transaction_type == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
@@ -285,7 +296,7 @@
               name="walk_in_sale"
               value="on"
               {% if form.walk_in_sale %}checked{% endif %}
-              {% if is_locked %}disabled aria-disabled="true"{% endif %}
+              {% if ticket_form_disabled %}disabled aria-disabled="true"{% endif %}
             />
             <label for="walk_in_sale">Walk-in sale (no invoice)</label>
             {{ help(help_text.ticket_walk_in_sale, "ticket-walk-in-sale-help") }}
@@ -307,7 +318,7 @@
               <label>PO number{{ help(help_text.ticket_po_number, "ticket-po-number-readonly-help") }}</label>
               <div class="po-inline-row">
                 <div class="readonly">{{ form.po_number or "-" }}</div>
-                {% if can_edit_complete_po %}
+                {% if can_edit_complete_po and can_manage_ticket %}
                   <details class="po-inline-details">
                     <summary class="btn btn--secondary">{{ "Change" if form.po_number else "Add" }}</summary>
                     <div class="po-inline-editor">
@@ -355,7 +366,7 @@
     </div>
   </section>
 
-  <fieldset {% if is_locked %}disabled aria-disabled="true"{% endif %}>
+  <fieldset {% if ticket_form_disabled %}disabled aria-disabled="true"{% endif %}>
   <section class="frame compact">
     <div class="frame-header">
       <h2>Material</h2>
@@ -705,7 +716,7 @@
   </section>
   </fieldset>
 
-  {% if is_open %}
+  {% if is_open and can_manage_ticket %}
     <div class="actions btn-group">
       <button type="submit" class="btn btn--primary" name="action" value="save">Save</button>
       <a class="btn btn--secondary" href="/tickets">Cancel</a>
@@ -716,7 +727,7 @@
   {% endif %}
 </form>
 
-{% if form.status != "VOID" %}
+{% if permissions.void_tickets and form.status != "VOID" %}
   <details class="frame compact ticket-void-frame ticket-void-disclosure">
     <summary class="frame-header">Void Ticket</summary>
     <div class="frame-body">
@@ -741,7 +752,7 @@
           </div>
         </div>
         <div class="actions btn-group ticket-void-actions">
-          {% if can_void %}
+          {% if can_void and permissions.void_tickets %}
             <button type="submit" class="btn btn--danger">Void Ticket</button>
           {% else %}
             <span class="muted">{{ void_blocked_message or "Only complete tickets can be voided." }}</span>
@@ -907,10 +918,6 @@
       }
 
       transactionTypeSelect.innerHTML = "";
-      const placeholder = document.createElement("option");
-      placeholder.value = "";
-      placeholder.textContent = "Select transaction";
-      transactionTypeSelect.appendChild(placeholder);
 
       nextOptions.forEach(function (option) {
         const optionElement = document.createElement("option");
@@ -926,7 +933,7 @@
         })
       ) {
         nextValue = previousValue;
-      } else if (forceDirectionRule && direction === "INWARD" && nextOptions.length === 1) {
+      } else if (nextOptions.length) {
         nextValue = nextOptions[0][0];
       }
 

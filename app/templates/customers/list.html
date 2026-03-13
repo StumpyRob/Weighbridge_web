@@ -18,9 +18,11 @@
     <h1>Customers</h1>
     <p class="muted">Manage customer accounts.</p>
   </div>
-  <div>
-    <a class="btn btn--primary" href="/customers/new">New Customer</a>
-  </div>
+  {% if permissions.manage_customers %}
+    <div>
+      <a class="btn btn--primary" href="/customers/new">New Customer</a>
+    </div>
+  {% endif %}
 </div>
 
 <form class="filters" method="get" action="/customers">

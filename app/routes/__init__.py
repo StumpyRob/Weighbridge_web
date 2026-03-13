@@ -4,6 +4,7 @@ from .assistant import router as assistant_router
 from .auth import router as auth_router
 from .admin import router as admin_router
 from .admin_ewc import router as admin_ewc_router
+from .admin_users import router as admin_users_router
 from .customers import router as customers_router
 from .admin_printing import router as admin_printing_router
 from .admin_company import router as admin_company_router
@@ -20,6 +21,7 @@ api_router.include_router(auth_router, tags=["auth"])
 api_router.include_router(setup_router, tags=["setup"])
 api_router.include_router(admin_router, tags=["admin"])
 api_router.include_router(admin_ewc_router, tags=["admin-ewc"])
+api_router.include_router(admin_users_router, tags=["admin-users"])
 api_router.include_router(admin_printing_router, tags=["admin-printing"])
 api_router.include_router(admin_company_router, tags=["admin-company"])
 api_router.include_router(customers_router, tags=["customers"])

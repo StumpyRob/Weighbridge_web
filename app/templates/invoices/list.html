@@ -14,9 +14,11 @@
       </p>
     {% endif %}
   </div>
-  <div>
-    <a class="btn btn--primary" href="/invoices/generate">Generate Invoice</a>
-  </div>
+  {% if permissions.generate_invoices %}
+    <div>
+      <a class="btn btn--primary" href="/invoices/generate">Generate Invoice</a>
+    </div>
+  {% endif %}
 </div>
 
 <form class="filters" method="get" action="/invoices">

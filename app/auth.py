@@ -11,15 +11,21 @@ from sqlalchemy.orm import Session
 
 from .models import User
 from .user_roles import (
+    ROLE_ACCOUNTS as _ROLE_ACCOUNTS,
     ROLE_SUPERADMIN,
     ROLE_TENANT_ADMIN,
+    ROLE_OPERATOR as _ROLE_OPERATOR,
+    ROLE_READ_ONLY as _ROLE_READ_ONLY,
     ROLE_USER,
     legacy_role_for_tenant_id,
     normalize_role,
+    role_label,
 )
 
 ROLE_ADMIN = ROLE_TENANT_ADMIN
-ROLE_OPERATOR = ROLE_USER
+ROLE_OPERATOR = _ROLE_OPERATOR
+ROLE_ACCOUNTS = _ROLE_ACCOUNTS
+ROLE_READ_ONLY = _ROLE_READ_ONLY
 
 SESSION_USER_ID_KEY = "user_id"
 SESSION_TENANT_ID_KEY = "tenant_id"
@@ -89,7 +95,7 @@ def user_identity_kwargs(*, email: str, role: str | None = None) -> dict[str, ob
     if hasattr(User, "username"):
         kwargs["username"] = normalized
     if role and hasattr(User, "role"):
-        kwargs["role"] = normalize_role(role, default=ROLE_USER)
+        kwargs["role"] = normalize_role(role, default=ROLE_OPERATOR)
     return kwargs
 
 
@@ -194,6 +200,11 @@ def is_admin_user(db: Session, user: User | None) -> bool:
 def user_display_name(user: User | None) -> str:
     if user is None:
         return "System"
+    first_name = str(getattr(user, "first_name", "") or "").strip()
+    last_name = str(getattr(user, "last_name", "") or "").strip()
+    full_name = " ".join(part for part in (first_name, last_name) if part).strip()
+    if full_name:
+        return full_name
     email = str(getattr(user, "email", "") or "").strip()
     if email:
         return email
@@ -201,6 +212,12 @@ def user_display_name(user: User | None) -> str:
     if username:
         return username
     return f"User {getattr(user, 'id', '?')}"
+
+
+def user_role_label(user: User | None) -> str:
+    if user is None:
+        return "Unknown"
+    return role_label(getattr(user, "role", None))
 
 
 def login_next_path(request: Request) -> str:

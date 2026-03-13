@@ -19,6 +19,11 @@ from ..constants import (
     POSTCODE_MAX,
 )
 from ..db import get_db
+from ..permissions import (
+    PERM_MANAGE_CUSTOMERS,
+    PERM_VIEW_CUSTOMERS,
+    require_permission,
+)
 from ..security import validate_no_html_fields
 from ..models.base import utcnow
 from ..models import (
@@ -134,6 +139,7 @@ def customers_list(
     q: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    require_permission(request, PERM_VIEW_CUSTOMERS)
     active_price_override_count = (
         select(func.count(CustomerProductPrice.id))
         .where(
@@ -168,6 +174,7 @@ def customers_list(
 
 @router.get("/customers/new", response_class=HTMLResponse)
 def customers_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    require_permission(request, PERM_MANAGE_CUSTOMERS)
     return templates.TemplateResponse(request, 
         "customers/new.html",
         {
@@ -183,6 +190,7 @@ def customers_new(request: Request, db: Session = Depends(get_db)) -> HTMLRespon
 async def customers_create(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    require_permission(request, PERM_MANAGE_CUSTOMERS)
     form = await request.form()
     payload = _parse_customer_form(form)
     tenant_id = _resolved_tenant_id(request, db)
@@ -273,6 +281,7 @@ async def customers_create(
 def customers_edit(
     customer_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    require_permission(request, PERM_VIEW_CUSTOMERS)
     customer = db.get(Customer, customer_id)
     if not customer:
         return templates.TemplateResponse(request, 
@@ -295,6 +304,7 @@ def customers_edit(
 async def customers_update(
     customer_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    require_permission(request, PERM_MANAGE_CUSTOMERS)
     customer = db.get(Customer, customer_id)
     if not customer:
         return templates.TemplateResponse(request, 
@@ -418,6 +428,7 @@ async def customer_price_override_create(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    require_permission(request, PERM_MANAGE_CUSTOMERS)
     customer = db.get(Customer, customer_id)
     if not customer:
         return templates.TemplateResponse(
@@ -504,6 +515,7 @@ async def customer_price_override_update(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    require_permission(request, PERM_MANAGE_CUSTOMERS)
     customer = db.get(Customer, customer_id)
     if not customer:
         return templates.TemplateResponse(
@@ -622,6 +634,7 @@ def customer_price_override_deactivate(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    require_permission(request, PERM_MANAGE_CUSTOMERS)
     customer = db.get(Customer, customer_id)
     if not customer:
         return templates.TemplateResponse(
@@ -666,8 +679,7 @@ async def customer_adjustment_create(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    if not _current_user_is_admin(request, db):
-        return _forbidden_response()
+    require_permission(request, PERM_MANAGE_CUSTOMERS)
     customer = db.get(Customer, customer_id)
     if not customer:
         return templates.TemplateResponse(

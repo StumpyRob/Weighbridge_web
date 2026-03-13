@@ -169,41 +169,43 @@
     </div>
   </section>
 
-  <section class="card">
-    <header class="card-header">Mark Paid</header>
-    <div class="card-body">
-      {% if invoice.status == "VOID" %}
-        <p class="muted">Invoice is VOID and cannot be modified.</p>
-      {% elif invoice.status == "PAID" %}
-        <p class="muted">Already paid.</p>
-      {% else %}
-        <form
-          id="mark-paid-form"
-          class="invoice-action-form invoice-mark-paid-grid"
-          method="post"
-          action="/invoices/{{ invoice.id }}/paid"
-        >
-          <div class="field">
-            <label for="payment_method_id">Payment method{{ help(help_text.invoice_payment_method, "invoice-payment-method-help") }}</label>
-            <select id="payment_method_id" name="payment_method_id" required>
-              <option value="">Select payment method</option>
-              {% for method in payment_methods %}
-                <option value="{{ method.id }}">{{ method.code }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="field">
-            <label for="paid_at">Paid date</label>
-            <input type="date" id="paid_at" name="paid_at" required />
-          </div>
-          <div class="field invoice-mark-paid-action">
-            <label for="mark-paid-submit">Action</label>
-            <button type="submit" id="mark-paid-submit" class="btn btn--primary" disabled>Mark Paid</button>
-          </div>
-        </form>
-      {% endif %}
-    </div>
-  </section>
+  {% if permissions.mark_invoices_paid %}
+    <section class="card">
+      <header class="card-header">Mark Paid</header>
+      <div class="card-body">
+        {% if invoice.status == "VOID" %}
+          <p class="muted">Invoice is VOID and cannot be modified.</p>
+        {% elif invoice.status == "PAID" %}
+          <p class="muted">Already paid.</p>
+        {% else %}
+          <form
+            id="mark-paid-form"
+            class="invoice-action-form invoice-mark-paid-grid"
+            method="post"
+            action="/invoices/{{ invoice.id }}/paid"
+          >
+            <div class="field">
+              <label for="payment_method_id">Payment method{{ help(help_text.invoice_payment_method, "invoice-payment-method-help") }}</label>
+              <select id="payment_method_id" name="payment_method_id" required>
+                <option value="">Select payment method</option>
+                {% for method in payment_methods %}
+                  <option value="{{ method.id }}">{{ method.code }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field">
+              <label for="paid_at">Paid date</label>
+              <input type="date" id="paid_at" name="paid_at" required />
+            </div>
+            <div class="field invoice-mark-paid-action">
+              <label for="mark-paid-submit">Action</label>
+              <button type="submit" id="mark-paid-submit" class="btn btn--primary" disabled>Mark Paid</button>
+            </div>
+          </form>
+        {% endif %}
+      </div>
+    </section>
+  {% endif %}
 
   <section class="card">
     <header class="card-header">Line Items</header>
@@ -334,38 +336,40 @@
     </div>
   </section>
 
-  <details class="card invoice-void-card invoice-void-disclosure">
-    <summary class="card-header">Void Invoice</summary>
-    <div class="card-body">
-      <p class="muted invoice-warning-text">This action cannot be undone.</p>
-      {% if invoice.status == "VOID" %}
-        <p class="muted">Invoice is VOID and cannot be modified.</p>
-      {% elif invoice.status == "PAID" %}
-        <p class="muted">Cannot void a paid invoice.</p>
-      {% else %}
-        <form method="post" action="/invoices/{{ invoice.id }}/void">
-          <div class="invoice-void-grid">
-            <div class="field">
-              <label for="void_reason_id">Void reason{{ help(help_text.invoice_void_reason, "invoice-void-reason-help") }}</label>
-              <select id="void_reason_id" name="void_reason_id">
-                <option value="">Select reason</option>
-                {% for reason in void_reasons %}
-                  <option value="{{ reason.id }}">{{ reason.description if reason.description else reason.code }}</option>
-                {% endfor %}
-              </select>
+  {% if permissions.void_invoices %}
+    <details class="card invoice-void-card invoice-void-disclosure">
+      <summary class="card-header">Void Invoice</summary>
+      <div class="card-body">
+        <p class="muted invoice-warning-text">This action cannot be undone.</p>
+        {% if invoice.status == "VOID" %}
+          <p class="muted">Invoice is VOID and cannot be modified.</p>
+        {% elif invoice.status == "PAID" %}
+          <p class="muted">Cannot void a paid invoice.</p>
+        {% else %}
+          <form method="post" action="/invoices/{{ invoice.id }}/void">
+            <div class="invoice-void-grid">
+              <div class="field">
+                <label for="void_reason_id">Void reason{{ help(help_text.invoice_void_reason, "invoice-void-reason-help") }}</label>
+                <select id="void_reason_id" name="void_reason_id">
+                  <option value="">Select reason</option>
+                  {% for reason in void_reasons %}
+                    <option value="{{ reason.id }}">{{ reason.description if reason.description else reason.code }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="field">
+                <label for="void_note">Reason note</label>
+                <input type="text" id="void_note" name="void_note" maxlength="{{ limits.NOTES_MAX }}" placeholder="Optional note" />
+              </div>
             </div>
-            <div class="field">
-              <label for="void_note">Reason note</label>
-              <input type="text" id="void_note" name="void_note" maxlength="{{ limits.NOTES_MAX }}" placeholder="Optional note" />
+            <div class="actions btn-group invoice-void-actions">
+              <button type="submit" class="btn btn--danger">Void Invoice</button>
             </div>
-          </div>
-          <div class="actions btn-group invoice-void-actions">
-            <button type="submit" class="btn btn--danger">Void Invoice</button>
-          </div>
-        </form>
-      {% endif %}
-    </div>
-  </details>
+          </form>
+        {% endif %}
+      </div>
+    </details>
+  {% endif %}
 
   <div class="invoice-back-link">
     <a class="btn btn--secondary" href="/invoices">Back</a>

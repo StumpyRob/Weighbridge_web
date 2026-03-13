@@ -12,11 +12,25 @@ from ..audit import log as audit_log
 from ..constants import CODE_MAX, NAME_MAX
 from ..db import get_db
 from ..models import Container, Destination, Driver, Haulier, Ticket
+from ..permissions import (
+    PERM_MANAGE_LOOKUPS,
+    PERM_VIEW_LOOKUPS,
+    require_permission,
+)
 from ..security import validate_no_html_fields
 from ..services.system_setup import missing_required_lookup_messages
 from ..templating import templates
 
-router = APIRouter(prefix="/lookups")
+
+def _require_lookups_view(request: Request) -> None:
+    require_permission(request, PERM_VIEW_LOOKUPS)
+
+
+def _require_lookups_manage(request: Request) -> None:
+    require_permission(request, PERM_MANAGE_LOOKUPS)
+
+
+router = APIRouter(prefix="/lookups", dependencies=[Depends(_require_lookups_view)])
 
 
 def _lookup_snapshot(item) -> dict[str, object]:
@@ -150,6 +164,7 @@ def hauliers_list(
 
 @router.get("/hauliers/new", response_class=HTMLResponse)
 def hauliers_new(request: Request) -> HTMLResponse:
+    _require_lookups_manage(request)
     return templates.TemplateResponse(request, 
         "lookups/form.html",
         {
@@ -169,6 +184,7 @@ def hauliers_new(request: Request) -> HTMLResponse:
 async def hauliers_create(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_manage(request)
     form = await request.form()
     raw_name = str(form.get("name", ""))
     carrier_licence_number = str(form.get("carrier_licence_number", "")).strip()
@@ -235,6 +251,7 @@ async def hauliers_create(
 def hauliers_edit(
     haulier_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_view(request)
     haulier = db.get(Haulier, haulier_id)
     if not haulier:
         return templates.TemplateResponse(request, 
@@ -266,6 +283,7 @@ def hauliers_edit(
 async def hauliers_update(
     haulier_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_manage(request)
     haulier = db.get(Haulier, haulier_id)
     if not haulier:
         return templates.TemplateResponse(request, 
@@ -349,6 +367,7 @@ async def hauliers_update(
 def hauliers_deactivate(
     haulier_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_manage(request)
     haulier = db.get(Haulier, haulier_id)
     if not haulier:
         return templates.TemplateResponse(request, 
@@ -401,6 +420,7 @@ def hauliers_deactivate(
 def hauliers_reactivate(
     haulier_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_manage(request)
     haulier = db.get(Haulier, haulier_id)
     if not haulier:
         return templates.TemplateResponse(request, 
@@ -452,6 +472,7 @@ def drivers_list(
 
 @router.get("/drivers/new", response_class=HTMLResponse)
 def drivers_new(request: Request) -> HTMLResponse:
+    _require_lookups_manage(request)
     return templates.TemplateResponse(request, 
         "lookups/form.html",
         {
@@ -471,6 +492,7 @@ def drivers_new(request: Request) -> HTMLResponse:
 async def drivers_create(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_manage(request)
     form = await request.form()
     raw_name = str(form.get("name", ""))
     name = re.sub(r"\s+", " ", raw_name.strip())
@@ -525,6 +547,7 @@ async def drivers_create(
 def drivers_edit(
     driver_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_view(request)
     driver = db.get(Driver, driver_id)
     if not driver:
         return templates.TemplateResponse(request, 
@@ -556,6 +579,7 @@ def drivers_edit(
 async def drivers_update(
     driver_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_manage(request)
     driver = db.get(Driver, driver_id)
     if not driver:
         return templates.TemplateResponse(request, 
@@ -630,6 +654,7 @@ async def drivers_update(
 def drivers_deactivate(
     driver_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_manage(request)
     driver = db.get(Driver, driver_id)
     if not driver:
         return templates.TemplateResponse(request, 
@@ -680,6 +705,7 @@ def drivers_deactivate(
 def drivers_reactivate(
     driver_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_manage(request)
     driver = db.get(Driver, driver_id)
     if not driver:
         return templates.TemplateResponse(request, 
@@ -731,6 +757,7 @@ def containers_list(
 
 @router.get("/containers/new", response_class=HTMLResponse)
 def containers_new(request: Request) -> HTMLResponse:
+    _require_lookups_manage(request)
     return templates.TemplateResponse(request, 
         "lookups/form.html",
         {
@@ -750,6 +777,7 @@ def containers_new(request: Request) -> HTMLResponse:
 async def containers_create(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_manage(request)
     form = await request.form()
     raw_name = str(form.get("name", ""))
     name = re.sub(r"\s+", " ", raw_name.strip())
@@ -804,6 +832,7 @@ async def containers_create(
 def containers_edit(
     container_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_view(request)
     container = db.get(Container, container_id)
     if not container:
         return templates.TemplateResponse(request, 
@@ -835,6 +864,7 @@ def containers_edit(
 async def containers_update(
     container_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_manage(request)
     container = db.get(Container, container_id)
     if not container:
         return templates.TemplateResponse(request, 
@@ -909,6 +939,7 @@ async def containers_update(
 def containers_deactivate(
     container_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_manage(request)
     container = db.get(Container, container_id)
     if not container:
         return templates.TemplateResponse(request, 
@@ -959,6 +990,7 @@ def containers_deactivate(
 def containers_reactivate(
     container_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_manage(request)
     container = db.get(Container, container_id)
     if not container:
         return templates.TemplateResponse(request, 
@@ -1010,6 +1042,7 @@ def destinations_list(
 
 @router.get("/destinations/new", response_class=HTMLResponse)
 def destinations_new(request: Request) -> HTMLResponse:
+    _require_lookups_manage(request)
     return templates.TemplateResponse(request, 
         "lookups/form.html",
         {
@@ -1029,6 +1062,7 @@ def destinations_new(request: Request) -> HTMLResponse:
 async def destinations_create(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_manage(request)
     form = await request.form()
     raw_name = str(form.get("name", ""))
     name = re.sub(r"\s+", " ", raw_name.strip())
@@ -1085,6 +1119,7 @@ async def destinations_create(
 def destinations_edit(
     destination_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_view(request)
     destination = db.get(Destination, destination_id)
     if not destination:
         return templates.TemplateResponse(request, 
@@ -1116,6 +1151,7 @@ def destinations_edit(
 async def destinations_update(
     destination_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_manage(request)
     destination = db.get(Destination, destination_id)
     if not destination:
         return templates.TemplateResponse(request, 
@@ -1190,6 +1226,7 @@ async def destinations_update(
 def destinations_deactivate(
     destination_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_manage(request)
     destination = db.get(Destination, destination_id)
     if not destination:
         return templates.TemplateResponse(request, 
@@ -1242,6 +1279,7 @@ def destinations_deactivate(
 def destinations_reactivate(
     destination_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_lookups_manage(request)
     destination = db.get(Destination, destination_id)
     if not destination:
         return templates.TemplateResponse(request, 

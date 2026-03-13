@@ -5,7 +5,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Tenant, User
+from ..models import Tenant
+from ..permissions import PERM_USE_AI_ASSISTANT, require_permission
 from ..security import has_unsafe_markup
 from ..services.ai_assistant import (
     AIAssistantError,
@@ -47,9 +48,7 @@ def assistant_query(
     request: Request,
     db: Session = Depends(get_db),
 ) -> AssistantQueryResponse:
-    current_user = getattr(getattr(request, "state", None), "current_user", None)
-    if not isinstance(current_user, User) or not bool(getattr(current_user, "is_active", False)):
-        raise HTTPException(status_code=401, detail="Authentication required.")
+    current_user = require_permission(request, PERM_USE_AI_ASSISTANT)
     if request_platform_mode(request):
         raise HTTPException(status_code=403, detail="AI assistant is only available in tenant workspaces.")
     if has_unsafe_markup(payload.question):

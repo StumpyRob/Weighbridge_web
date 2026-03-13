@@ -4,6 +4,7 @@
 {% block title %}Edit Vehicle {{ vehicle.registration }} | Weighbridge Web{% endblock %}
 
 {% block content %}
+{% set readonly_mode = not permissions.manage_vehicles %}
 <div class="page-header">
   <div>
     <h1>{{ vehicle.registration }}</h1>
@@ -23,21 +24,25 @@
 
 <div class="ticket-form">
   <form id="vehicle-edit-form" class="ticket-form" method="post" action="/vehicles/{{ vehicle.id }}">
-    {% include "vehicles/_form.html" %}
+    <fieldset {% if readonly_mode %}disabled aria-disabled="true"{% endif %}>
+      {% include "vehicles/_form.html" %}
+    </fieldset>
   </form>
 
   <section class="card">
     <h2>Per-Container Tares{{ help(help_text.vehicle_per_container_tares, "vehicle-per-container-tares-help") }}</h2>
-    <form class="inline-form btn-group vehicle-tares-add-form" method="post" action="/vehicles/{{ vehicle.id }}/tares">
-      <select name="container_id">
-        <option value="">Select container</option>
-        {% for id, label in options.containers %}
-          <option value="{{ id }}">{{ label }}</option>
-        {% endfor %}
-      </select>
-      <input type="number" step="0.001" name="tare_kg" placeholder="Tare kg" />
-      <button type="submit" class="btn btn--secondary">Add/Update</button>
-    </form>
+    {% if not readonly_mode %}
+      <form class="inline-form btn-group vehicle-tares-add-form" method="post" action="/vehicles/{{ vehicle.id }}/tares">
+        <select name="container_id">
+          <option value="">Select container</option>
+          {% for id, label in options.containers %}
+            <option value="{{ id }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+        <input type="number" step="0.001" name="tare_kg" placeholder="Tare kg" />
+        <button type="submit" class="btn btn--secondary">Add/Update</button>
+      </form>
+    {% endif %}
 
     <div class="table-wrap">
       <table class="data-table">
@@ -53,15 +58,23 @@
             <tr>
               <td>{{ container.name }}</td>
               <td>
-                <form class="inline-form btn-group" method="post" action="/vehicles/{{ vehicle.id }}/tares/{{ tare.id }}/update">
-                  <input type="number" step="0.001" name="tare_kg" value="{{ tare.tare_kg }}" />
-                  <button type="submit" class="btn btn--secondary">Save</button>
-                </form>
+                {% if not readonly_mode %}
+                  <form class="inline-form btn-group" method="post" action="/vehicles/{{ vehicle.id }}/tares/{{ tare.id }}/update">
+                    <input type="number" step="0.001" name="tare_kg" value="{{ tare.tare_kg }}" />
+                    <button type="submit" class="btn btn--secondary">Save</button>
+                  </form>
+                {% else %}
+                  {{ tare.tare_kg }}
+                {% endif %}
               </td>
               <td>
-                <form method="post" action="/vehicles/{{ vehicle.id }}/tares/{{ tare.id }}/delete">
-                <button type="submit" class="btn btn--danger">Delete</button>
-                </form>
+                {% if not readonly_mode %}
+                  <form method="post" action="/vehicles/{{ vehicle.id }}/tares/{{ tare.id }}/delete">
+                  <button type="submit" class="btn btn--danger">Delete</button>
+                  </form>
+                {% else %}
+                  <span class="muted">&mdash;</span>
+                {% endif %}
               </td>
             </tr>
           {% else %}
@@ -75,7 +88,9 @@
   </section>
 
   <div class="actions btn-group">
-    <button type="submit" form="vehicle-edit-form" class="btn btn--primary">Save</button>
+    {% if not readonly_mode %}
+      <button type="submit" form="vehicle-edit-form" class="btn btn--primary">Save</button>
+    {% endif %}
     <a class="btn btn--secondary" href="/vehicles">Back</a>
   </div>
 </div>

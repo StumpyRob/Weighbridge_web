@@ -89,6 +89,8 @@ def user_snapshot(user: User | None) -> dict[str, Any]:
     snapshot: dict[str, Any] = {
         "username": username,
         "email": email,
+        "first_name": str(getattr(user, "first_name", "") or "").strip() or None,
+        "last_name": str(getattr(user, "last_name", "") or "").strip() or None,
         "is_active": bool(getattr(user, "is_active", False)),
     }
     if hasattr(user, "role"):

@@ -14,6 +14,13 @@ from ..config import settings
 from ..constants import NOTES_MAX
 from ..db import get_db
 from ..models.base import utcnow
+from ..permissions import (
+    PERM_GENERATE_INVOICES,
+    PERM_MARK_INVOICES_PAID,
+    PERM_VIEW_INVOICES,
+    PERM_VOID_INVOICES,
+    require_permission,
+)
 from ..models import (
     Customer,
     Invoice,
@@ -85,6 +92,7 @@ def invoices_list(
     unpaid_only: int | None = Query(None),
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    require_permission(request, PERM_VIEW_INVOICES)
     query = (
         select(Invoice, Customer)
         .join(Customer, Invoice.customer_id == Customer.id)
@@ -123,6 +131,7 @@ def invoices_list(
 def invoices_generate_form(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    require_permission(request, PERM_GENERATE_INVOICES)
     customers = db.execute(select(Customer).order_by(Customer.name)).scalars().all()
     return templates.TemplateResponse(request, 
         "invoices/generate.html",
@@ -139,6 +148,7 @@ def invoices_generate_form(
 async def invoices_generate(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    require_permission(request, PERM_GENERATE_INVOICES)
     form = await request.form()
     customer_id = _parse_int(str(form.get("customer_id", "")).strip())
     date_from_raw = str(form.get("date_from", "")).strip()
@@ -266,6 +276,7 @@ async def invoices_generate(
 async def invoices_generate_confirm(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    require_permission(request, PERM_GENERATE_INVOICES)
     form = await request.form()
     customer_id = _parse_int(str(form.get("customer_id", "")).strip())
     date_from_raw = str(form.get("date_from", "")).strip()
@@ -492,6 +503,7 @@ def invoices_detail(
     voided: int | None = Query(None),
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    require_permission(request, PERM_VIEW_INVOICES)
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         return templates.TemplateResponse(request, 
@@ -519,6 +531,7 @@ def invoices_download_pdf(
     request: Request,
     db: Session = Depends(get_db),
 ) -> Response:
+    require_permission(request, PERM_VIEW_INVOICES)
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found.")
@@ -581,8 +594,10 @@ def invoices_download_pdf(
 @router.get("/invoices/{invoice_id}/pdf/html", response_class=HTMLResponse)
 def invoices_pdf_html_debug(
     invoice_id: int,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    require_permission(request, PERM_VIEW_INVOICES)
     if not _invoice_pdf_debug_route_enabled():
         raise HTTPException(status_code=404, detail="Not found.")
     invoice_template = _resolve_invoice_pdf_template_for_request(
@@ -609,6 +624,7 @@ def invoices_preview(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    require_permission(request, PERM_VIEW_INVOICES)
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         return templates.TemplateResponse(
@@ -650,6 +666,7 @@ async def invoices_print_dispatch(
     request: Request,
     db: Session = Depends(get_db),
 ) -> Response:
+    require_permission(request, PERM_GENERATE_INVOICES)
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found.")
@@ -766,6 +783,7 @@ async def invoices_print_dispatch(
 async def invoices_mark_paid(
     invoice_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    require_permission(request, PERM_MARK_INVOICES_PAID)
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         return templates.TemplateResponse(request, 
@@ -863,6 +881,7 @@ async def invoices_mark_paid(
 async def invoices_void(
     invoice_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    require_permission(request, PERM_VOID_INVOICES)
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         return templates.TemplateResponse(request, 

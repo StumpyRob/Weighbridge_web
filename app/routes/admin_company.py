@@ -17,6 +17,7 @@ from ..auth import normalize_email, set_user_identity_email, validate_email
 from ..constants import ADDRESS_LINE_MAX, NAME_MAX, POSTCODE_MAX
 from ..db import get_db
 from ..models import CompanySetting, User
+from ..permissions import PERM_MANAGE_SETTINGS, require_permission
 from ..services.uploads import company_logo_upload_dir, logo_file_from_web_path
 from ..services.ui_branding import (
     DEFAULT_NAVBAR_COLOR_HEX,
@@ -142,6 +143,7 @@ def admin_company_settings(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    require_permission(request, PERM_MANAGE_SETTINGS)
     setting = _get_company_setting(db) or CompanySetting()
     branding = get_branding(db)
     has_logo_configured = bool(str(getattr(setting, "company_logo_path", "") or "").strip())
@@ -170,6 +172,7 @@ async def admin_company_settings_save(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    require_permission(request, PERM_MANAGE_SETTINGS)
     form = await request.form()
     setting = _get_or_create_company_setting(db)
     settings_before = _company_setting_snapshot(setting)

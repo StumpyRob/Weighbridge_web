@@ -28,6 +28,13 @@ from ..constants import (
 )
 from ..db import get_db
 from ..models.base import utcnow
+from ..permissions import (
+    PERM_COMPLETE_TICKETS,
+    PERM_MANAGE_TICKETS,
+    PERM_VIEW_TICKETS,
+    PERM_VOID_TICKETS,
+    require_permission,
+)
 from ..models import (
     Area,
     Container,
@@ -83,7 +90,16 @@ from ..services.wip_snapshots import ticket_wip_snapshot
 from ..seed import seed_void_reasons
 from ..templating import templates
 
-router = APIRouter()
+
+def _require_tickets_view(request: Request) -> None:
+    require_permission(request, PERM_VIEW_TICKETS)
+
+
+def _require_tickets_manage(request: Request) -> None:
+    require_permission(request, PERM_MANAGE_TICKETS)
+
+
+router = APIRouter(dependencies=[Depends(_require_tickets_view)])
 logger = logging.getLogger(__name__)
 
 LOCKED_STATUSES = {TicketStatusEnum.COMPLETE.value, TicketStatusEnum.VOID.value}
@@ -262,7 +278,11 @@ def tickets_list(
 
 
 @router.post("/tickets/print-last")
-def tickets_print_last_again(db: Session = Depends(get_db)) -> RedirectResponse:
+def tickets_print_last_again(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    _require_tickets_manage(request)
     last_job = (
         db.execute(
             select(PrintJob)
@@ -316,6 +336,7 @@ def tickets_print_last_again(db: Session = Depends(get_db)) -> RedirectResponse:
 
 @router.get("/tickets/new", response_class=HTMLResponse)
 def tickets_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    _require_tickets_manage(request)
     missing = missing_required_lookup_messages(db)
     if missing:
         return templates.TemplateResponse(
@@ -332,6 +353,7 @@ def tickets_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse
 
 @router.post("/tickets/new/quick", response_class=HTMLResponse)
 def tickets_quick_create(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    _require_tickets_manage(request)
     now = utcnow()
     recent_cutoff = now - timedelta(seconds=NEW_TICKET_DEDUP_SECONDS)
     recent_ticket = (
@@ -2022,6 +2044,7 @@ async def tickets_print_dispatch(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    _require_tickets_manage(request)
     ticket = db.get(Ticket, ticket_id)
     expects_json = _request_expects_json(request)
     if not ticket:
@@ -2333,6 +2356,7 @@ async def tickets_wtn_send(
     request: Request,
     db: Session = Depends(get_db),
 ) -> Response:
+    _require_tickets_manage(request)
     ticket = db.get(Ticket, ticket_id)
     expects_json = _request_expects_json(request)
     if ticket is None:
@@ -2494,6 +2518,7 @@ async def tickets_wtn_send(
 async def tickets_update_po(
     ticket_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_tickets_manage(request)
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         return templates.TemplateResponse(request, 
@@ -2563,6 +2588,12 @@ async def tickets_update(
 
     form = await request.form()
     action = str(form.get("action", "save"))
+    if action == "complete":
+        require_permission(request, PERM_COMPLETE_TICKETS)
+    elif action == "void":
+        require_permission(request, PERM_VOID_TICKETS)
+    else:
+        _require_tickets_manage(request)
     original_snapshot = _ticket_audit_snapshot(ticket) if action == "save" else None
     original_audit_values = _ticket_audit_values(ticket) if action == "save" else None
     if action == "void":
@@ -2928,6 +2959,7 @@ async def tickets_update(
 async def tickets_apply_vehicle_suggestion(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_tickets_manage(request)
     form = await request.form()
     ticket_id = _parse_int(_form_value(form, "ticket_id"))
     if not ticket_id:
@@ -3096,7 +3128,8 @@ async def tickets_apply_vehicle_suggestion(
 
 
 @router.post("/tickets/vehicle-suggestion/dismiss", response_class=HTMLResponse)
-def tickets_dismiss_vehicle_suggestion() -> HTMLResponse:
+def tickets_dismiss_vehicle_suggestion(request: Request) -> HTMLResponse:
+    _require_tickets_manage(request)
     return HTMLResponse("", status_code=200)
 
 
@@ -3104,6 +3137,7 @@ def tickets_dismiss_vehicle_suggestion() -> HTMLResponse:
 async def tickets_apply_default_customer(
     ticket_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_tickets_manage(request)
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         return HTMLResponse("Ticket not found.", status_code=404)
@@ -3194,6 +3228,7 @@ async def tickets_apply_default_customer(
 async def tickets_apply_default_haulier(
     ticket_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_tickets_manage(request)
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         return HTMLResponse("Ticket not found.", status_code=404)
@@ -3295,6 +3330,7 @@ async def tickets_apply_default_haulier(
 async def tickets_apply_defaults(
     ticket_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_tickets_manage(request)
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         return HTMLResponse("Ticket not found.", status_code=404)
@@ -3402,6 +3438,7 @@ async def tickets_apply_defaults(
 async def tickets_set_vehicle_from_reg(
     ticket_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_tickets_manage(request)
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         return HTMLResponse("Ticket not found.", status_code=404)
@@ -3501,6 +3538,7 @@ async def tickets_set_vehicle_from_reg(
 async def tickets_capture_gross(
     ticket_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_tickets_manage(request)
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         return HTMLResponse("Ticket not found.", status_code=404)
@@ -3552,6 +3590,7 @@ async def tickets_capture_gross(
 async def tickets_capture_tare(
     ticket_id: int, request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_tickets_manage(request)
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         return HTMLResponse("Ticket not found.", status_code=404)
@@ -3601,6 +3640,7 @@ async def tickets_capture_tare(
 async def tickets_read_weight(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_tickets_manage(request)
     form = await request.form()
     ticket_id = _parse_int(_form_value(form, "ticket_id"))
     if not ticket_id:
@@ -3628,6 +3668,7 @@ async def tickets_read_weight(
 async def tickets_read_weight_apply(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_tickets_manage(request)
     form = await request.form()
     ticket_id = _parse_int(_form_value(form, "ticket_id"))
     if not ticket_id:
@@ -3655,6 +3696,7 @@ async def tickets_read_weight_apply(
 async def tickets_swap_weights_preview(
     request: Request, db: Session = Depends(get_db)
 ) -> HTMLResponse:
+    _require_tickets_manage(request)
     form = await request.form()
     ticket_id = _parse_int(_form_value(form, "ticket_id"))
     if not ticket_id:

@@ -14,12 +14,14 @@
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
   </head>
   <body>
+    {% set show_assistant = (not platform_mode) and current_user and current_tenant and current_tenant.ai_enabled and permissions.use_ai_assistant %}
     <header class="site-header">
       <div class="site-header__utility">
         {% if current_host_label %}
           <div class="site-utility-host" aria-label="Host domain">{{ current_host_label }}</div>
         {% endif %}
-        {% set signed_in_as = (current_user.email or current_user.username or 'User') if current_user else '' %}
+        {% set signed_in_as = current_user_display_name if current_user else '' %}
+        {% set signed_in_as_identity = (current_user.email or current_user.username or current_user_display_name or 'User') if current_user else '' %}
         <div class="site-utility-bar">
           {% if platform_mode %}
             <span class="site-utility-bar__item site-utility-bar__item--platform">Platform Admin</span>
@@ -34,11 +36,12 @@
           {% if current_user %}
             <span
               class="site-utility-bar__item site-utility-bar__item--user"
-              title="{{ signed_in_as }}"
+              title="{{ signed_in_as_identity }}"
               aria-label="Signed in as {{ signed_in_as }}"
             >
               Signed in as {{ signed_in_as }}
             </span>
+            <span class="site-utility-bar__item">{{ current_user_role_label }}</span>
             <form method="post" action="{{ tenant_path('/logout') }}" class="site-auth__logout site-utility-bar__action">
               <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
               <button type="submit" class="site-auth__link">Logout</button>
@@ -77,15 +80,33 @@
               <a href="{{ tenant_path('/admin/system-status') }}" class="{% if request.url.path.startswith('/admin/system-status') %}is-active{% endif %}" {% if request.url.path.startswith('/admin/system-status') %}aria-current="page"{% endif %}>System Status</a>
             {% endif %}
           {% else %}
-            <a href="{{ tenant_path('/') }}" class="{% if request.url.path == '/' %}is-active{% endif %}" {% if request.url.path == '/' %}aria-current="page"{% endif %}>Home</a>
-            <a href="{{ tenant_path('/tickets') }}" class="{% if request.url.path.startswith('/tickets') %}is-active{% endif %}" {% if request.url.path.startswith('/tickets') %}aria-current="page"{% endif %}>Tickets</a>
-            <a href="{{ tenant_path('/customers') }}" class="{% if request.url.path.startswith('/customers') %}is-active{% endif %}" {% if request.url.path.startswith('/customers') %}aria-current="page"{% endif %}>Customers</a>
-            <a href="{{ tenant_path('/vehicles') }}" class="{% if request.url.path.startswith('/vehicles') %}is-active{% endif %}" {% if request.url.path.startswith('/vehicles') %}aria-current="page"{% endif %}>Vehicles</a>
-            <a href="{{ tenant_path('/products') }}" class="{% if request.url.path.startswith('/products') %}is-active{% endif %}" {% if request.url.path.startswith('/products') %}aria-current="page"{% endif %}>Products</a>
-            <a href="{{ tenant_path('/invoices') }}" class="{% if request.url.path.startswith('/invoices') %}is-active{% endif %}" {% if request.url.path.startswith('/invoices') %}aria-current="page"{% endif %}>Invoices</a>
-            <a href="{{ tenant_path('/lookups/hauliers') }}" class="{% if request.url.path.startswith('/lookups') %}is-active{% endif %}" {% if request.url.path.startswith('/lookups') %}aria-current="page"{% endif %}>Lookups</a>
-            <a href="{{ tenant_path('/reports') }}" class="{% if request.url.path.startswith('/reports') %}is-active{% endif %}" {% if request.url.path.startswith('/reports') %}aria-current="page"{% endif %}>Reports</a>
-            <a href="{{ tenant_path('/admin') }}" class="{% if request.url.path.startswith('/admin') %}is-active{% endif %}" {% if request.url.path.startswith('/admin') %}aria-current="page"{% endif %}>Settings</a>
+            {% if permissions.view_dashboard %}
+              <a href="{{ tenant_path('/') }}" class="{% if request.url.path == '/' %}is-active{% endif %}" {% if request.url.path == '/' %}aria-current="page"{% endif %}>Home</a>
+            {% endif %}
+            {% if permissions.view_tickets %}
+              <a href="{{ tenant_path('/tickets') }}" class="{% if request.url.path.startswith('/tickets') %}is-active{% endif %}" {% if request.url.path.startswith('/tickets') %}aria-current="page"{% endif %}>Tickets</a>
+            {% endif %}
+            {% if permissions.view_customers %}
+              <a href="{{ tenant_path('/customers') }}" class="{% if request.url.path.startswith('/customers') %}is-active{% endif %}" {% if request.url.path.startswith('/customers') %}aria-current="page"{% endif %}>Customers</a>
+            {% endif %}
+            {% if permissions.view_vehicles %}
+              <a href="{{ tenant_path('/vehicles') }}" class="{% if request.url.path.startswith('/vehicles') %}is-active{% endif %}" {% if request.url.path.startswith('/vehicles') %}aria-current="page"{% endif %}>Vehicles</a>
+            {% endif %}
+            {% if permissions.view_products %}
+              <a href="{{ tenant_path('/products') }}" class="{% if request.url.path.startswith('/products') %}is-active{% endif %}" {% if request.url.path.startswith('/products') %}aria-current="page"{% endif %}>Products</a>
+            {% endif %}
+            {% if permissions.view_invoices %}
+              <a href="{{ tenant_path('/invoices') }}" class="{% if request.url.path.startswith('/invoices') %}is-active{% endif %}" {% if request.url.path.startswith('/invoices') %}aria-current="page"{% endif %}>Invoices</a>
+            {% endif %}
+            {% if permissions.view_lookups %}
+              <a href="{{ tenant_path('/lookups/hauliers') }}" class="{% if request.url.path.startswith('/lookups') %}is-active{% endif %}" {% if request.url.path.startswith('/lookups') %}aria-current="page"{% endif %}>Lookups</a>
+            {% endif %}
+            {% if permissions.view_reports %}
+              <a href="{{ tenant_path('/reports') }}" class="{% if request.url.path.startswith('/reports') %}is-active{% endif %}" {% if request.url.path.startswith('/reports') %}aria-current="page"{% endif %}>Reports</a>
+            {% endif %}
+            {% if permissions.manage_settings or permissions.manage_users %}
+              <a href="{{ tenant_path('/admin') }}" class="{% if request.url.path.startswith('/admin') %}is-active{% endif %}" {% if request.url.path.startswith('/admin') %}aria-current="page"{% endif %}>Settings</a>
+            {% endif %}
           {% endif %}
         </nav>
       </div>
@@ -163,7 +184,7 @@
     <main class="container">
       {% block content %}{% endblock %}
     </main>
-    {% if (not platform_mode) and current_user and current_tenant and current_tenant.ai_enabled %}
+    {% if show_assistant %}
       <div class="assistant-panel" data-assistant-panel hidden>
         <div class="assistant-panel__backdrop" data-assistant-close></div>
         <aside
@@ -405,7 +426,7 @@
     <script src="/static/js/help_tooltips.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/toasts.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/table_rows.js?v={{ BUILD_STAMP }}" defer></script>
-    {% if (not platform_mode) and current_user and current_tenant and current_tenant.ai_enabled %}
+    {% if show_assistant %}
       <script src="/static/js/assistant_panel.js?v={{ BUILD_STAMP }}" defer></script>
     {% endif %}
     {% if tenant_route_prefix %}

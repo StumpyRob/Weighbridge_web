@@ -18,9 +18,11 @@
     <h1>Vehicles</h1>
     <p class="muted">Manage vehicle records.</p>
   </div>
-  <div>
-    <a class="btn btn--primary" href="/vehicles/new">New Vehicle</a>
-  </div>
+  {% if permissions.manage_vehicles %}
+    <div>
+      <a class="btn btn--primary" href="/vehicles/new">New Vehicle</a>
+    </div>
+  {% endif %}
 </div>
 
 <form class="filters" method="get" action="/vehicles">

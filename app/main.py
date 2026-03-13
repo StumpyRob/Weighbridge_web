@@ -34,6 +34,15 @@ from .config import settings
 from .db import get_db
 from .models import Customer, Invoice, Product, Ticket, TicketStatusEnum, User, Vehicle
 from .models.base import utcnow
+from .permissions import (
+    PERM_ACCESS_WORKSPACE,
+    PERM_MANAGE_SETTINGS,
+    PERM_MANAGE_USERS,
+    PERM_VIEW_AI_INSIGHTS,
+    has_permission,
+    require_any_permission,
+    require_permission,
+)
 from .routes import api_router
 from .routers.lookups import router as lookups_router
 from .security_hardening import (
@@ -118,6 +127,7 @@ _TENANT_ONLY_PREFIXES = (
     "/invoices",
     "/lookups",
     "/setup",
+    "/admin/users",
     "/admin/company",
     "/admin/printing",
 )
@@ -710,6 +720,7 @@ def _build_tenant_dashboard(
     ai_model: str | None = None,
     ai_dashboard_insights_override: bool | None = None,
     ai_request_user_id: int | None = None,
+    allow_ai_insights: bool = True,
 ) -> dict[str, object]:
     today = utcnow().date()
     platform_ai_settings = get_platform_ai_settings(db)
@@ -877,7 +888,7 @@ def _build_tenant_dashboard(
         period=overview_period,
     )
     ai_insights = None
-    if tenant_ai_settings.dashboard_insights_enabled:
+    if allow_ai_insights and tenant_ai_settings.dashboard_insights_enabled:
         try:
             generated_ai_insights = generate_dashboard_insights(
                 db,
@@ -1532,6 +1543,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                     None,
                 ),
                 ai_request_user_id=int(getattr(current_user, "id", 0) or 0) or None,
+                allow_ai_insights=has_permission(current_user, PERM_VIEW_AI_INSIGHTS),
             )
             if show_dashboard
             else None
@@ -1539,6 +1551,8 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         db.commit()
         needs_platform_bootstrap = user_count == 0 and platform_superadmin_count == 0
         needs_workspace_admin = user_count == 0 and platform_superadmin_count > 0
+        if current_user is not None:
+            require_permission(request, PERM_ACCESS_WORKSPACE)
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -1562,12 +1576,14 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
 
     @app.get("/reports", response_class=HTMLResponse)
     def reports(request: Request) -> HTMLResponse:
+        require_permission(request, PERM_ACCESS_WORKSPACE)
         return templates.TemplateResponse(request, "reports.html", {"request": request})
 
     @app.get("/admin", response_class=HTMLResponse)
     def admin(request: Request) -> HTMLResponse:
         if bool(getattr(request.state, "platform_mode", False)):
             return RedirectResponse(url="/platform/tenants", status_code=303)
+        require_any_permission(request, PERM_MANAGE_SETTINGS, PERM_MANAGE_USERS)
         return templates.TemplateResponse(request, "admin.html", {"request": request})
 
     @app.exception_handler(Exception)
