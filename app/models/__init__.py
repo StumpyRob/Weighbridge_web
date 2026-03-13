@@ -1,4 +1,5 @@
 from .base import Base
+from .ai_usage_log import AIUsageLog
 from .audit_event import AuditEvent
 from .company_setting import CompanySetting
 from .customer import Customer
@@ -54,6 +55,7 @@ from .vehicle_tare import VehicleTare
 
 __all__ = [
     "Base",
+    "AIUsageLog",
     "AuditEvent",
     "CompanySetting",
     "Customer",

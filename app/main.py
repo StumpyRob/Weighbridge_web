@@ -56,6 +56,7 @@ from .services.credit import (
 )
 from .services.ai_assistant import generate_dashboard_insights
 from .services.platform_ai_settings import get_platform_ai_settings
+from .services.tenant_ai_settings import resolve_tenant_ai_settings
 from .services.pdf import check_invoice_pdf_renderer
 from .services.ui_branding import (
     darken_hex_color,
@@ -707,9 +708,17 @@ def _build_tenant_dashboard(
     period: str,
     ai_enabled: bool = False,
     ai_model: str | None = None,
+    ai_dashboard_insights_override: bool | None = None,
+    ai_request_user_id: int | None = None,
 ) -> dict[str, object]:
     today = utcnow().date()
     platform_ai_settings = get_platform_ai_settings(db)
+    tenant_ai_settings = resolve_tenant_ai_settings(
+        ai_assistant_enabled=ai_enabled,
+        ai_model_override=ai_model,
+        dashboard_insights_override=ai_dashboard_insights_override,
+        platform_settings=platform_ai_settings,
+    )
     today_start, tomorrow_start = _datetime_bounds_for_day(today)
     overview_period = _normalize_dashboard_period(period)
     overview_start, overview_end = _dashboard_period_window(overview_period, today)
@@ -867,15 +876,22 @@ def _build_tenant_dashboard(
         chart_points,
         period=overview_period,
     )
-    ai_insights = (
-        generate_dashboard_insights(
-            db,
-            tenant_id,
-            model=ai_model,
-        )
-        if ai_enabled and platform_ai_settings.ai_dashboard_insights_enabled
-        else None
-    )
+    ai_insights = None
+    if tenant_ai_settings.dashboard_insights_enabled:
+        try:
+            generated_ai_insights = generate_dashboard_insights(
+                db,
+                tenant_id,
+                user_id=ai_request_user_id,
+                model=tenant_ai_settings.effective_ai_model,
+            )
+        except Exception:
+            logger.exception("Dashboard AI insights failed for tenant_id=%s", tenant_id)
+            generated_ai_insights = None
+        if generated_ai_insights and (
+            generated_ai_insights.get("items") or generated_ai_insights.get("message")
+        ):
+            ai_insights = generated_ai_insights
 
     return {
         "summary_cards": [
@@ -1503,6 +1519,24 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         current_user = getattr(request.state, "current_user", None)
         current_tenant = getattr(request.state, "tenant", None)
         show_dashboard = current_user is not None
+        dashboard_payload = (
+            _build_tenant_dashboard(
+                db,
+                tenant_id=int(getattr(current_tenant, "id", 0) or 0),
+                period=_normalize_dashboard_period(period),
+                ai_enabled=bool(getattr(current_tenant, "ai_enabled", False)),
+                ai_model=getattr(current_tenant, "ai_model", None),
+                ai_dashboard_insights_override=getattr(
+                    current_tenant,
+                    "ai_dashboard_insights_override",
+                    None,
+                ),
+                ai_request_user_id=int(getattr(current_user, "id", 0) or 0) or None,
+            )
+            if show_dashboard
+            else None
+        )
+        db.commit()
         needs_platform_bootstrap = user_count == 0 and platform_superadmin_count == 0
         needs_workspace_admin = user_count == 0 and platform_superadmin_count > 0
         return templates.TemplateResponse(
@@ -1510,15 +1544,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
             "index.html",
             {
                 "request": request,
-                "dashboard": _build_tenant_dashboard(
-                    db,
-                    tenant_id=int(getattr(current_tenant, "id", 0) or 0),
-                    period=_normalize_dashboard_period(period),
-                    ai_enabled=bool(getattr(current_tenant, "ai_enabled", False)),
-                    ai_model=getattr(current_tenant, "ai_model", None),
-                )
-                if show_dashboard
-                else None,
+                "dashboard": dashboard_payload,
                 "show_dashboard": show_dashboard,
                 "show_first_time_setup": not setup_ready,
                 "setup_initialized": initialized,

@@ -2089,6 +2089,11 @@ body.js-help-tooltips .help-tooltip {
   gap: 1rem;
 }
 
+.platform-admin-stack {
+  display: grid;
+  gap: 1.25rem;
+}
+
 .help-template-frames > .frame + .frame {
   margin-top: 0.15rem;
 }

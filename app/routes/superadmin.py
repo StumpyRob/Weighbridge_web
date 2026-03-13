@@ -66,8 +66,11 @@ from ..services.system_setup import (
     seed_required_reference_data,
     upsert_default_yard,
 )
-from ..services.ai_assistant import resolve_assistant_model
 from ..services.platform_ai_settings import (
+    ASSISTANT_REQUESTS_PER_TENANT_PER_HOUR_MAX,
+    ASSISTANT_REQUESTS_PER_TENANT_PER_HOUR_MIN,
+    ASSISTANT_REQUESTS_PER_USER_PER_HOUR_MAX,
+    ASSISTANT_REQUESTS_PER_USER_PER_HOUR_MIN,
     AI_DASHBOARD_CACHE_TTL_MAX,
     AI_DASHBOARD_CACHE_TTL_MIN,
     AI_EXTRA_GLOBAL_INSTRUCTIONS_MAX_CHARS,
@@ -76,6 +79,10 @@ from ..services.platform_ai_settings import (
     AI_TEMPERATURE_MAX,
     AI_TEMPERATURE_MIN,
     AI_TUNING_AUDIT_FIELDS,
+    DASHBOARD_INSIGHTS_MAX_PER_TENANT_PER_HOUR_MAX,
+    DASHBOARD_INSIGHTS_MAX_PER_TENANT_PER_HOUR_MIN,
+    DASHBOARD_INSIGHTS_MIN_REFRESH_SECONDS_MAX,
+    DASHBOARD_INSIGHTS_MIN_REFRESH_SECONDS_MIN,
     SUPPORTED_ASSISTANT_FOCUS_AREAS,
     SUPPORTED_ASSISTANT_MODELS,
     SUPPORTED_ASSISTANT_RESPONSE_STYLES,
@@ -85,6 +92,10 @@ from ..services.platform_ai_settings import (
     reset_platform_ai_settings,
     save_platform_ai_settings,
     validate_platform_ai_settings,
+)
+from ..services.tenant_ai_settings import (
+    parse_dashboard_insights_override,
+    resolve_tenant_ai_settings,
 )
 from ..services.tenants import is_demo_tenant, normalize_subdomain, validate_subdomain
 from ..services.uploads import company_logo_upload_dir
@@ -461,6 +472,14 @@ def _platform_ai_settings_page_context(
         "platform_ai_max_tokens_max": AI_MAX_OUTPUT_TOKENS_MAX,
         "platform_ai_cache_ttl_min": AI_DASHBOARD_CACHE_TTL_MIN,
         "platform_ai_cache_ttl_max": AI_DASHBOARD_CACHE_TTL_MAX,
+        "assistant_requests_per_user_per_hour_min": ASSISTANT_REQUESTS_PER_USER_PER_HOUR_MIN,
+        "assistant_requests_per_user_per_hour_max": ASSISTANT_REQUESTS_PER_USER_PER_HOUR_MAX,
+        "assistant_requests_per_tenant_per_hour_min": ASSISTANT_REQUESTS_PER_TENANT_PER_HOUR_MIN,
+        "assistant_requests_per_tenant_per_hour_max": ASSISTANT_REQUESTS_PER_TENANT_PER_HOUR_MAX,
+        "dashboard_insights_min_refresh_seconds_min": DASHBOARD_INSIGHTS_MIN_REFRESH_SECONDS_MIN,
+        "dashboard_insights_min_refresh_seconds_max": DASHBOARD_INSIGHTS_MIN_REFRESH_SECONDS_MAX,
+        "dashboard_insights_max_per_tenant_per_hour_min": DASHBOARD_INSIGHTS_MAX_PER_TENANT_PER_HOUR_MIN,
+        "dashboard_insights_max_per_tenant_per_hour_max": DASHBOARD_INSIGHTS_MAX_PER_TENANT_PER_HOUR_MAX,
         "platform_ai_extra_instructions_max_chars": AI_EXTRA_GLOBAL_INSTRUCTIONS_MAX_CHARS,
         "saved": request.query_params.get("saved") == "1",
         "reset_done": request.query_params.get("reset") == "1",
@@ -584,6 +603,12 @@ def tenant_detail(
         user_count_hint=int(summary["user_count"]),
     )
     platform_ai_settings = get_platform_ai_settings(db)
+    tenant_ai_settings = resolve_tenant_ai_settings(
+        ai_assistant_enabled=bool(getattr(tenant, "ai_enabled", False)),
+        ai_model_override=getattr(tenant, "ai_model", None),
+        dashboard_insights_override=getattr(tenant, "ai_dashboard_insights_override", None),
+        platform_settings=platform_ai_settings,
+    )
     return templates.TemplateResponse(
         request,
         "admin/tenant_detail.html",
@@ -611,10 +636,13 @@ def tenant_detail(
             "ai_saved": request.query_params.get("ai_saved") == "1",
             "ai_error": request.query_params.get("ai_error", ""),
             "assistant_default_model": platform_ai_settings.default_ai_model,
+            "platform_dashboard_insights_default_enabled": (
+                platform_ai_settings.ai_dashboard_insights_enabled
+            ),
             "assistant_model_options": SUPPORTED_ASSISTANT_MODELS,
-            "tenant_effective_ai_model": resolve_assistant_model(
-                getattr(tenant, "ai_model", None),
-                platform_ai_settings.default_ai_model,
+            "tenant_effective_ai_model": tenant_ai_settings.effective_ai_model,
+            "tenant_effective_dashboard_insights_enabled": (
+                tenant_ai_settings.dashboard_insights_enabled
             ),
         },
     )
@@ -673,6 +701,10 @@ async def platform_ai_settings_update(
                 "ai_dashboard_insights_enabled",
             ),
             ai_dashboard_cache_ttl_seconds=form.get("ai_dashboard_cache_ttl_seconds"),
+            assistant_requests_per_user_per_hour=form.get("assistant_requests_per_user_per_hour"),
+            assistant_requests_per_tenant_per_hour=form.get("assistant_requests_per_tenant_per_hour"),
+            dashboard_insights_min_refresh_seconds=form.get("dashboard_insights_min_refresh_seconds"),
+            dashboard_insights_max_per_tenant_per_hour=form.get("dashboard_insights_max_per_tenant_per_hour"),
             ai_default_response_style=form.get("ai_default_response_style"),
             ai_default_focus=form.get("ai_default_focus"),
             ai_extra_global_instructions=form.get("ai_extra_global_instructions"),
@@ -1125,34 +1157,62 @@ async def tenant_update_ai_settings(
 
     form = await request.form()
     ai_enabled = _form_checkbox_checked(form, "ai_enabled")
-    ai_model = str(form.get("ai_model", "") or "").strip() or None
-    if ai_model is not None and ai_model not in SUPPORTED_ASSISTANT_MODELS:
+    ai_model_override = str(form.get("ai_model_override", "") or "").strip() or None
+    if ai_model_override is not None and ai_model_override not in SUPPORTED_ASSISTANT_MODELS:
         return RedirectResponse(
             url=f"/platform/tenants/{tenant.id}?{urlencode({'ai_error': 'Select a valid AI model.'})}",
             status_code=303,
         )
+    try:
+        dashboard_insights_override = parse_dashboard_insights_override(
+            form.get("ai_dashboard_insights_override")
+        )
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'ai_error': str(exc)})}",
+            status_code=303,
+        )
 
     previous_enabled = bool(getattr(tenant, "ai_enabled", False))
-    previous_model = str(getattr(tenant, "ai_model", "") or "").strip() or None
+    previous_model_override = str(getattr(tenant, "ai_model", "") or "").strip() or None
+    previous_dashboard_insights_override = getattr(
+        tenant,
+        "ai_dashboard_insights_override",
+        None,
+    )
     platform_ai_settings = get_platform_ai_settings(db)
     tenant.ai_enabled = ai_enabled
-    tenant.ai_model = ai_model
+    tenant.ai_model = ai_model_override
+    tenant.ai_dashboard_insights_override = dashboard_insights_override
+    resolved_tenant_ai_settings = resolve_tenant_ai_settings(
+        ai_assistant_enabled=ai_enabled,
+        ai_model_override=ai_model_override,
+        dashboard_insights_override=dashboard_insights_override,
+        platform_settings=platform_ai_settings,
+    )
 
-    if previous_enabled != ai_enabled or previous_model != ai_model:
+    if (
+        previous_enabled != ai_enabled
+        or previous_model_override != ai_model_override
+        or previous_dashboard_insights_override != dashboard_insights_override
+    ):
         changed: dict[str, dict[str, object]] = {}
         if previous_enabled != ai_enabled:
             changed["ai_enabled"] = {
                 "from": previous_enabled,
                 "to": ai_enabled,
             }
-        if previous_model != ai_model:
-            changed["ai_model"] = {
-                "from": previous_model,
-                "to": ai_model,
-                "effective": resolve_assistant_model(
-                    ai_model,
-                    platform_ai_settings.default_ai_model,
-                ),
+        if previous_model_override != ai_model_override:
+            changed["ai_model_override"] = {
+                "from": previous_model_override,
+                "to": ai_model_override,
+                "effective": resolved_tenant_ai_settings.effective_ai_model,
+            }
+        if previous_dashboard_insights_override != dashboard_insights_override:
+            changed["ai_dashboard_insights_override"] = {
+                "from": previous_dashboard_insights_override,
+                "to": dashboard_insights_override,
+                "effective": resolved_tenant_ai_settings.dashboard_insights_enabled,
             }
         audit_log(
             db,

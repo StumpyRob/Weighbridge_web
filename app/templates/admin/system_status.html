@@ -15,112 +15,114 @@
     </div>
   </div>
 
-  <section class="frame">
-    <div class="frame-header">
-      <h2>Initialization</h2>
-    </div>
-    <div class="frame-body">
-      <div class="audit">
-        <div><strong>Initialized:</strong> {{ "Yes" if initialized else "No" }}</div>
-        <div><strong>Company settings row:</strong> {{ "Yes" if has_company_setting else "No" }}</div>
-        <div><strong>Default yard:</strong> {{ "Yes" if has_default_yard else "No" }}</div>
-        <div><strong>Print defaults ready:</strong> {{ "Yes" if print_defaults_ready else "No" }}</div>
+  <div class="platform-admin-stack">
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Initialization</h2>
       </div>
-    </div>
-  </section>
-
-  <section class="frame">
-    <div class="frame-header">
-      <h2>Branding</h2>
-    </div>
-    <div class="frame-body">
-      <div class="audit">
-        <div><strong>Resolved logo URL:</strong> <code>{{ branding_status.logo_url }}</code></div>
-        <div><strong>Logo file exists on disk:</strong> {{ "Yes" if branding_status.logo_exists else "No" }}</div>
-        <div><strong>Navbar colour:</strong> <code>{{ branding_status.nav_color }}</code></div>
-        <div><strong>Primary colour:</strong> <code>{{ branding_status.primary_color }}</code></div>
+      <div class="frame-body">
+        <div class="audit">
+          <div><strong>Initialized:</strong> {{ "Yes" if initialized else "No" }}</div>
+          <div><strong>Company settings row:</strong> {{ "Yes" if has_company_setting else "No" }}</div>
+          <div><strong>Default yard:</strong> {{ "Yes" if has_default_yard else "No" }}</div>
+          <div><strong>Print defaults ready:</strong> {{ "Yes" if print_defaults_ready else "No" }}</div>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  {% if not lookup_schema.migrations_complete %}
-    <div class="alert alert--danger">
-      Migrations incomplete: one or more required lookup tables are missing/unreadable.
-      Check deployment logs and run migrations.
-    </div>
-  {% endif %}
-
-  <section class="frame">
-    <div class="frame-header">
-      <h2>Required Lookups</h2>
-    </div>
-    <div class="frame-body">
-      <div class="table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Lookup</th>
-              <th class="numeric-col">Count</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr><td>Units</td><td class="numeric-col">{{ lookup_counts.units }}</td></tr>
-            <tr><td>Tax rates</td><td class="numeric-col">{{ lookup_counts.tax_rates }}</td></tr>
-            <tr><td>Vehicle types</td><td class="numeric-col">{{ lookup_counts.vehicle_types }}</td></tr>
-            <tr><td>Payment methods</td><td class="numeric-col">{{ lookup_counts.payment_methods }}</td></tr>
-            <tr><td>Ticket void reasons</td><td class="numeric-col">{{ lookup_counts.ticket_void_reasons }}</td></tr>
-            <tr><td>Invoice void reasons</td><td class="numeric-col">{{ lookup_counts.invoice_void_reasons }}</td></tr>
-          </tbody>
-        </table>
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Branding</h2>
       </div>
-    </div>
-  </section>
+      <div class="frame-body">
+        <div class="audit">
+          <div><strong>Resolved logo URL:</strong> <code>{{ branding_status.logo_url }}</code></div>
+          <div><strong>Logo file exists on disk:</strong> {{ "Yes" if branding_status.logo_exists else "No" }}</div>
+          <div><strong>Navbar colour:</strong> <code>{{ branding_status.nav_color }}</code></div>
+          <div><strong>Primary colour:</strong> <code>{{ branding_status.primary_color }}</code></div>
+        </div>
+      </div>
+    </section>
 
-  <section class="frame">
-    <div class="frame-header">
-      <h2>Lookup Table Schema</h2>
-    </div>
-    <div class="frame-body">
-      <div class="table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Table</th>
-              <th>Status</th>
-              <th class="numeric-col">Rows</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in lookup_schema.rows %}
+    {% if not lookup_schema.migrations_complete %}
+      <div class="alert alert--danger">
+        Migrations incomplete: one or more required lookup tables are missing/unreadable.
+        Check deployment logs and run migrations.
+      </div>
+    {% endif %}
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Required Lookups</h2>
+      </div>
+      <div class="frame-body">
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
               <tr>
-                <td>{{ row.label }} (<code>{{ row.table_name }}</code>)</td>
-                <td>
-                  {% if row.exists %}
-                    <span class="status-pill status-open">Present</span>
-                  {% else %}
-                    <span class="status-pill status-void">Missing</span>
-                  {% endif %}
-                </td>
-                <td class="numeric-col">{{ row.row_count if row.row_count is not none else "-" }}</td>
+                <th>Lookup</th>
+                <th class="numeric-col">Count</th>
               </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              <tr><td>Units</td><td class="numeric-col">{{ lookup_counts.units }}</td></tr>
+              <tr><td>Tax rates</td><td class="numeric-col">{{ lookup_counts.tax_rates }}</td></tr>
+              <tr><td>Vehicle types</td><td class="numeric-col">{{ lookup_counts.vehicle_types }}</td></tr>
+              <tr><td>Payment methods</td><td class="numeric-col">{{ lookup_counts.payment_methods }}</td></tr>
+              <tr><td>Ticket void reasons</td><td class="numeric-col">{{ lookup_counts.ticket_void_reasons }}</td></tr>
+              <tr><td>Invoice void reasons</td><td class="numeric-col">{{ lookup_counts.invoice_void_reasons }}</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <section class="frame">
-    <div class="frame-header">
-      <h2>Uploads</h2>
-    </div>
-    <div class="frame-body">
-      <div class="audit">
-        <div><strong>Path:</strong> <code>{{ uploads.path }}</code></div>
-        <div><strong>Layout:</strong> <code>{{ uploads.layout }}</code></div>
-        <div><strong>Exists:</strong> {{ "Yes" if uploads.exists else "No" }}</div>
-        <div><strong>Writable:</strong> {{ "Yes" if uploads.writable else "No" }}</div>
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Lookup Table Schema</h2>
       </div>
-    </div>
-  </section>
+      <div class="frame-body">
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Table</th>
+                <th>Status</th>
+                <th class="numeric-col">Rows</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in lookup_schema.rows %}
+                <tr>
+                  <td>{{ row.label }} (<code>{{ row.table_name }}</code>)</td>
+                  <td>
+                    {% if row.exists %}
+                      <span class="status-pill status-open">Present</span>
+                    {% else %}
+                      <span class="status-pill status-void">Missing</span>
+                    {% endif %}
+                  </td>
+                  <td class="numeric-col">{{ row.row_count if row.row_count is not none else "-" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Uploads</h2>
+      </div>
+      <div class="frame-body">
+        <div class="audit">
+          <div><strong>Path:</strong> <code>{{ uploads.path }}</code></div>
+          <div><strong>Layout:</strong> <code>{{ uploads.layout }}</code></div>
+          <div><strong>Exists:</strong> {{ "Yes" if uploads.exists else "No" }}</div>
+          <div><strong>Writable:</strong> {{ "Yes" if uploads.writable else "No" }}</div>
+        </div>
+      </div>
+    </section>
+  </div>
 {% endblock %}

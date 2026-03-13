@@ -335,9 +335,12 @@
 
   <section class="frame">
     <div class="frame-header">
-      <h2>AI Assistant Settings</h2>
+      <h2>Tenant AI Overrides</h2>
     </div>
     <div class="frame-body">
+      <p class="help">
+        Platform AI Settings sets defaults. This page can override the AI model and dashboard insights for this tenant. Leaving an override on platform default falls back to the platform setting.
+      </p>
       <form method="post" action="/platform/tenants/{{ tenant.id }}/ai-settings" class="ticket-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
         <div class="field checkbox">
@@ -349,14 +352,18 @@
             value="1"
             {% if tenant.ai_enabled %}checked{% endif %}
           />
-          <label for="ai_enabled">AI Assistant Enabled</label>
+          <label for="ai_enabled">AI assistant enabled</label>
         </div>
         <p class="help">
-          Enables the AI assistant feature for this tenant. Uses the platform-managed OpenAI configuration.
+          Controls the assistant drawer for this tenant only. This does not change read-only safeguards or tenant isolation.
         </p>
         <div class="field">
-          <label for="ai_model">AI Model</label>
-          <select id="ai_model" name="ai_model">
+          <label for="ai_model_override">AI model override</label>
+          <select
+            id="ai_model_override"
+            name="ai_model_override"
+            data-platform-default-model="{{ assistant_default_model }}"
+          >
             <option value="" {% if not tenant.ai_model %}selected{% endif %}>
               Use platform default ({{ assistant_default_model }})
             </option>
@@ -367,7 +374,7 @@
             {% endfor %}
           </select>
           <p class="help">
-            If no tenant-specific model is selected, the assistant uses {{ assistant_default_model }}.
+            Leave this on platform default to fall back to {{ assistant_default_model }}. Effective AI model: {{ tenant_effective_ai_model }}.
           </p>
           <p class="help">
             gpt-5-mini is recommended for most tenants due to lower cost.
@@ -381,8 +388,37 @@
             This model is more expensive and should only be used if needed.
           </p>
         </div>
+        <div class="field">
+          <label for="ai_dashboard_insights_override">Dashboard insights override</label>
+          <select id="ai_dashboard_insights_override" name="ai_dashboard_insights_override">
+            <option
+              value=""
+              {% if tenant.ai_dashboard_insights_override is none %}selected{% endif %}
+            >
+              Use platform default ({{ "Enabled" if platform_dashboard_insights_default_enabled else "Disabled" }})
+            </option>
+            <option
+              value="enabled"
+              {% if tenant.ai_dashboard_insights_override is sameas true %}selected{% endif %}
+            >
+              Enabled
+            </option>
+            <option
+              value="disabled"
+              {% if tenant.ai_dashboard_insights_override is sameas false %}selected{% endif %}
+            >
+              Disabled
+            </option>
+          </select>
+          <p class="help">
+            Controls the dashboard AI Insights panel for this tenant. Use platform default falls back to the platform setting.
+          </p>
+          <p class="help">
+            Effective dashboard insights setting: {{ "Enabled" if tenant_effective_dashboard_insights_enabled else "Disabled" }}.
+          </p>
+        </div>
         <div class="actions btn-group">
-          <button type="submit" class="btn btn--primary">Save AI Settings</button>
+          <button type="submit" class="btn btn--primary">Save AI Overrides</button>
         </div>
       </form>
     </div>
@@ -445,14 +481,15 @@
 
   <script>
     (() => {
-      const aiModelSelect = document.getElementById("ai_model");
+      const aiModelSelect = document.getElementById("ai_model_override");
       const aiModelWarning = document.querySelector("[data-ai-model-warning]");
       if (!aiModelSelect || !aiModelWarning) {
         return;
       }
 
       const syncAiModelWarning = () => {
-        aiModelWarning.hidden = aiModelSelect.value !== "gpt-5";
+        const resolvedModel = aiModelSelect.value || aiModelSelect.dataset.platformDefaultModel || "";
+        aiModelWarning.hidden = resolvedModel !== "gpt-5";
       };
 
       aiModelSelect.addEventListener("change", syncAiModelWarning);

@@ -66,8 +66,14 @@ def assistant_query(
             db,
             tenant_id,
             payload.question,
+            user_id=int(current_user.id),
             model=getattr(tenant, "ai_model", None),
         )
+        db.commit()
     except AIAssistantError as exc:
+        db.commit()
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception as exc:
+        db.commit()
+        raise HTTPException(status_code=502, detail="AI assistant is temporarily unavailable.") from exc
     return AssistantQueryResponse(**result)

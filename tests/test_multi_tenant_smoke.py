@@ -18,12 +18,14 @@ from sqlalchemy.orm import sessionmaker
 import app.main as main_module
 import app.services.ai_assistant as ai_assistant_module
 import app.services.ai_assistant_data as ai_assistant_data_module
+import app.services.ai_usage as ai_usage_module
 import app.services.platform_ai_settings as platform_ai_settings_module
 from app.auth import ROLE_SUPERADMIN, ROLE_TENANT_ADMIN, ROLE_USER, hash_password, user_identity_kwargs
 from app.config import settings
 from app.db import TenantSession, get_db
 from app.main import create_app
 from app.models import (
+    AIUsageLog,
     AuditEvent,
     Area,
     Base,
@@ -245,6 +247,7 @@ def _seed_tenant(
     is_demo: bool = False,
     ai_enabled: bool = False,
     ai_model: str | None = None,
+    ai_dashboard_insights_override: bool | None = None,
 ) -> int:
     with SessionLocal() as db:
         tenant = Tenant(
@@ -254,6 +257,7 @@ def _seed_tenant(
             is_demo=is_demo,
             ai_enabled=ai_enabled,
             ai_model=ai_model,
+            ai_dashboard_insights_override=ai_dashboard_insights_override,
         )
         db.add(tenant)
         db.commit()
@@ -277,6 +281,22 @@ def _save_platform_ai_settings(SessionLocal: sessionmaker, **overrides) -> None:
         "ai_dashboard_cache_ttl_seconds": overrides.get(
             "ai_dashboard_cache_ttl_seconds",
             defaults.ai_dashboard_cache_ttl_seconds,
+        ),
+        "assistant_requests_per_user_per_hour": overrides.get(
+            "assistant_requests_per_user_per_hour",
+            defaults.assistant_requests_per_user_per_hour,
+        ),
+        "assistant_requests_per_tenant_per_hour": overrides.get(
+            "assistant_requests_per_tenant_per_hour",
+            defaults.assistant_requests_per_tenant_per_hour,
+        ),
+        "dashboard_insights_min_refresh_seconds": overrides.get(
+            "dashboard_insights_min_refresh_seconds",
+            defaults.dashboard_insights_min_refresh_seconds,
+        ),
+        "dashboard_insights_max_per_tenant_per_hour": overrides.get(
+            "dashboard_insights_max_per_tenant_per_hour",
+            defaults.dashboard_insights_max_per_tenant_per_hour,
         ),
         "ai_default_response_style": overrides.get(
             "ai_default_response_style",
@@ -1746,6 +1766,7 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert f"/platform/tenants/{tenant_a}" in tenants_page.text
         assert f"/platform/tenants/{tenant_a}/disable" in tenants_page.text
         assert f"/platform/tenants/{tenant_a}/delete" in tenants_page.text
+        assert "Disabled" in tenants_page.text
         assert "/t/a/login" in tenants_page.text
         assert 'name="csrf_token"' in tenants_page.text
 
@@ -1918,12 +1939,15 @@ def test_platform_superadmin_can_update_tenant_ai_settings(tmp_path, monkeypatch
 
         tenant_detail = admin_client.get(f"/platform/tenants/{tenant_a}")
         assert tenant_detail.status_code == 200
-        assert "AI Assistant Settings" in tenant_detail.text
+        assert "Tenant AI Overrides" in tenant_detail.text
         assert f'action="/platform/tenants/{tenant_a}/ai-settings"' in tenant_detail.text
-        assert "AI Assistant Enabled" in tenant_detail.text
-        assert "Enables the AI assistant feature for this tenant. Uses the platform-managed OpenAI configuration." in tenant_detail.text
+        assert "AI assistant enabled" in tenant_detail.text
+        assert "Platform AI Settings sets defaults. This page can override the AI model and dashboard insights for this tenant." in tenant_detail.text
+        assert "AI model override" in tenant_detail.text
+        assert "Dashboard insights override" in tenant_detail.text
         assert "Use platform default (gpt-5-mini)" in tenant_detail.text
-        assert "If no tenant-specific model is selected, the assistant uses gpt-5-mini." in tenant_detail.text
+        assert "Leave this on platform default to fall back to gpt-5-mini." in tenant_detail.text
+        assert "Use platform default (Enabled)" in tenant_detail.text
         assert "gpt-5-mini is recommended for most tenants due to lower cost." in tenant_detail.text
         assert 'option value="gpt-5"' in tenant_detail.text
 
@@ -1932,7 +1956,8 @@ def test_platform_superadmin_can_update_tenant_ai_settings(tmp_path, monkeypatch
             data={
                 CSRF_FORM_FIELD: csrf,
                 "ai_enabled": "1",
-                "ai_model": "gpt-5",
+                "ai_model_override": "gpt-5",
+                "ai_dashboard_insights_override": "disabled",
             },
             follow_redirects=False,
         )
@@ -1943,13 +1968,16 @@ def test_platform_superadmin_can_update_tenant_ai_settings(tmp_path, monkeypatch
         assert updated_detail.status_code == 200
         assert "AI settings updated." in updated_detail.text
         assert 'value="gpt-5" selected' in updated_detail.text
+        assert 'value="disabled"' in updated_detail.text
         assert "This model is more expensive and should only be used if needed." in updated_detail.text
+        assert "Effective dashboard insights setting: Disabled." in updated_detail.text
 
     with SessionLocal() as db:
         tenant = db.get(Tenant, tenant_a)
         assert tenant is not None
         assert bool(tenant.ai_enabled) is True
         assert tenant.ai_model == "gpt-5"
+        assert tenant.ai_dashboard_insights_override is False
         audit_event = db.execute(
             select(AuditEvent)
             .where(
@@ -1964,7 +1992,16 @@ def test_platform_superadmin_can_update_tenant_ai_settings(tmp_path, monkeypatch
         assert audit_event.user_id == superadmin_id
         assert isinstance(audit_event.details_json, dict)
         assert audit_event.details_json.get("changed", {}).get("ai_enabled", {}).get("to") is True
-        assert audit_event.details_json.get("changed", {}).get("ai_model", {}).get("to") == "gpt-5"
+        assert (
+            audit_event.details_json.get("changed", {}).get("ai_model_override", {}).get("to")
+            == "gpt-5"
+        )
+        assert (
+            audit_event.details_json.get("changed", {})
+            .get("ai_dashboard_insights_override", {})
+            .get("to")
+            is False
+        )
 
 
 def test_platform_superadmin_can_update_platform_ai_settings(tmp_path, monkeypatch):
@@ -1989,14 +2026,18 @@ def test_platform_superadmin_can_update_platform_ai_settings(tmp_path, monkeypat
 
         page = admin_client.get("/platform/ai-settings")
         assert page.status_code == 200
-        assert ">AI Settings<" in page.text
-        assert "Platform-level AI tuning for the assistant and dashboard insights." in page.text
+        assert ">Platform AI Defaults<" in page.text
+        assert "Platform-level AI defaults for tenant workspaces. Tenant Management can override these per tenant." in page.text
         assert 'action="/platform/ai-settings"' in page.text
         assert 'action="/platform/ai-settings/reset"' in page.text
-        assert "The core safety/system prompt remains backend-controlled." in page.text
+        assert "This page sets platform defaults only." in page.text
         assert "Default AI model" in page.text
         assert "Temperature" in page.text
-        assert "Dashboard insights enabled" in page.text
+        assert "Dashboard insights default enabled" in page.text
+        assert "Assistant requests per user per hour" in page.text
+        assert "Assistant requests per tenant per hour" in page.text
+        assert "Dashboard insights minimum refresh (seconds)" in page.text
+        assert "Dashboard insights max per tenant per hour" in page.text
         assert "Extra global instructions" in page.text
         assert "Current GPT-5 models use this as safe response-variation guidance rather than a raw API override." in page.text
 
@@ -2010,6 +2051,10 @@ def test_platform_superadmin_can_update_platform_ai_settings(tmp_path, monkeypat
                 "ai_max_output_tokens": "480",
                 "ai_dashboard_insights_enabled": "1",
                 "ai_dashboard_cache_ttl_seconds": "900",
+                "assistant_requests_per_user_per_hour": "18",
+                "assistant_requests_per_tenant_per_hour": "120",
+                "dashboard_insights_min_refresh_seconds": "420",
+                "dashboard_insights_max_per_tenant_per_hour": "16",
                 "ai_default_response_style": "balanced",
                 "ai_default_focus": "accounts",
                 "ai_extra_global_instructions": "Prioritize overdue invoices when relevant.",
@@ -2021,11 +2066,15 @@ def test_platform_superadmin_can_update_platform_ai_settings(tmp_path, monkeypat
 
         saved_page = admin_client.get(update.headers["location"])
         assert saved_page.status_code == 200
-        assert "Platform AI settings updated." in saved_page.text
+        assert "Platform AI defaults updated." in saved_page.text
         assert 'option value="gpt-5" selected' in saved_page.text
         assert 'value="0.60"' in saved_page.text
         assert 'value="480"' in saved_page.text
         assert 'value="900"' in saved_page.text
+        assert 'value="18"' in saved_page.text
+        assert 'value="120"' in saved_page.text
+        assert 'value="420"' in saved_page.text
+        assert 'value="16"' in saved_page.text
         assert "This model is more expensive and should only be used if needed." in saved_page.text
         assert "Prioritize overdue invoices when relevant." in saved_page.text
 
@@ -2037,6 +2086,10 @@ def test_platform_superadmin_can_update_platform_ai_settings(tmp_path, monkeypat
         assert int(row.ai_max_output_tokens or 0) == 480
         assert bool(row.ai_dashboard_insights_enabled) is True
         assert int(row.ai_dashboard_cache_ttl_seconds or 0) == 900
+        assert int(row.assistant_requests_per_user_per_hour or 0) == 18
+        assert int(row.assistant_requests_per_tenant_per_hour or 0) == 120
+        assert int(row.dashboard_insights_min_refresh_seconds or 0) == 420
+        assert int(row.dashboard_insights_max_per_tenant_per_hour or 0) == 16
         assert row.ai_default_response_style == "balanced"
         assert row.ai_default_focus == "accounts"
         assert row.ai_extra_global_instructions == "Prioritize overdue invoices when relevant."
@@ -2098,7 +2151,7 @@ def test_platform_superadmin_can_reset_platform_ai_settings_to_defaults(tmp_path
 
         reset_page = admin_client.get(reset.headers["location"])
         assert reset_page.status_code == 200
-        assert "Platform AI settings reset to defaults." in reset_page.text
+        assert "Platform AI defaults reset." in reset_page.text
         assert 'option value="gpt-5-mini" selected' in reset_page.text
 
     defaults = platform_ai_settings_module.platform_ai_settings_defaults()
@@ -2110,6 +2163,22 @@ def test_platform_superadmin_can_reset_platform_ai_settings_to_defaults(tmp_path
         assert int(row.ai_max_output_tokens or 0) == defaults.ai_max_output_tokens
         assert bool(row.ai_dashboard_insights_enabled) is defaults.ai_dashboard_insights_enabled
         assert int(row.ai_dashboard_cache_ttl_seconds or 0) == defaults.ai_dashboard_cache_ttl_seconds
+        assert (
+            int(row.assistant_requests_per_user_per_hour or 0)
+            == defaults.assistant_requests_per_user_per_hour
+        )
+        assert (
+            int(row.assistant_requests_per_tenant_per_hour or 0)
+            == defaults.assistant_requests_per_tenant_per_hour
+        )
+        assert (
+            int(row.dashboard_insights_min_refresh_seconds or 0)
+            == defaults.dashboard_insights_min_refresh_seconds
+        )
+        assert (
+            int(row.dashboard_insights_max_per_tenant_per_hour or 0)
+            == defaults.dashboard_insights_max_per_tenant_per_hour
+        )
         assert row.ai_default_response_style == defaults.ai_default_response_style
         assert row.ai_default_focus == defaults.ai_default_focus
         assert row.ai_extra_global_instructions == defaults.ai_extra_global_instructions
@@ -4259,6 +4328,97 @@ def test_dashboard_ai_insights_can_be_disabled_globally(tmp_path, monkeypatch):
     assert "Assistant" in response.text
 
 
+def test_dashboard_ai_insights_can_be_enabled_for_one_tenant_when_platform_default_is_disabled(
+    tmp_path,
+    monkeypatch,
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-dashboard-ai-insights-tenant-enable.db", monkeypatch=monkeypatch
+    )
+    tenant_id = _seed_tenant(
+        SessionLocal,
+        name="Dashboard AI Co",
+        subdomain="dashai",
+        ai_enabled=False,
+        ai_dashboard_insights_override=True,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_id,
+        company_name="Dashboard AI Co",
+        primary_color="#28556a",
+    )
+    _seed_user(
+        SessionLocal,
+        email="dash-admin@example.com",
+        password="DashPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_id,
+    )
+    _save_platform_ai_settings(
+        SessionLocal,
+        ai_dashboard_insights_enabled=False,
+    )
+
+    with _client(app, base_url="https://dashai.localhost") as tenant_client:
+        assert _login(
+            tenant_client,
+            email="dash-admin@example.com",
+            password="DashPass123!",
+        ) == 303
+        response = tenant_client.get("/")
+
+    assert response.status_code == 200
+    assert 'data-dashboard-panel="ai-insights"' in response.text
+    assert "AI Insights" in response.text
+    assert "Not enough recent activity to generate insights yet." in response.text
+    assert 'data-assistant-open' not in response.text
+    assert 'data-assistant-panel' not in response.text
+
+
+def test_dashboard_ai_insights_can_be_disabled_for_one_tenant_when_platform_default_is_enabled(
+    tmp_path,
+    monkeypatch,
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-dashboard-ai-insights-tenant-disable.db", monkeypatch=monkeypatch
+    )
+    tenant_id = _seed_tenant(
+        SessionLocal,
+        name="Dashboard AI Co",
+        subdomain="dashai",
+        ai_enabled=True,
+        ai_dashboard_insights_override=False,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_id,
+        company_name="Dashboard AI Co",
+        primary_color="#174f73",
+    )
+    _seed_user(
+        SessionLocal,
+        email="dash-admin@example.com",
+        password="DashPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_id,
+    )
+
+    with _client(app, base_url="https://dashai.localhost") as tenant_client:
+        assert _login(
+            tenant_client,
+            email="dash-admin@example.com",
+            password="DashPass123!",
+        ) == 303
+        response = tenant_client.get("/")
+
+    assert response.status_code == 200
+    assert 'data-dashboard-panel="ai-insights"' not in response.text
+    assert "AI Insights" not in response.text
+    assert "Activity Overview" in response.text
+    assert "Assistant" in response.text
+
+
 def test_dashboard_ai_insights_use_tenant_scoped_metrics_when_enabled(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-dashboard-ai-insights.db", monkeypatch=monkeypatch
@@ -4399,6 +4559,7 @@ def test_dashboard_ai_insights_use_tenant_scoped_metrics_when_enabled(tmp_path, 
     assert payload["reasoning"] == {"effort": "minimal"}
     assert payload["text"] == {"verbosity": "low"}
     assert "Do not list ticket numbers, invoice numbers, or long record lists." in payload["instructions"]
+    assert ai_assistant_module.AI_PROMPT_INJECTION_GUARD in payload["instructions"]
     insight_input = payload["input"][0]["content"][0]["text"]
     assert "A-OPEN-1" not in insight_input
     assert "INV-A-OD" not in insight_input
@@ -4809,8 +4970,11 @@ def test_tenant_ai_assistant_query_uses_gpt_5_mini_with_tenant_scoped_context(tm
     assert payload["max_output_tokens"] == 320
     assert payload["reasoning"] == {"effort": "minimal"}
     assert payload["text"] == {"verbosity": "low"}
+    assert payload["instructions"].startswith(ai_assistant_module.AI_ASSISTANT_SYSTEM_PROMPT)
+    assert ai_assistant_module.AI_PROMPT_INJECTION_GUARD in payload["instructions"]
     assert "Weighbridge Web operational assistant" in payload["instructions"]
     assert "Examples:" in payload["instructions"]
+    assert ai_assistant_module.AI_PROMPT_INJECTION_GUARD in payload["instructions"]
     content_text = payload["input"][0]["content"][0]["text"]
     assert "A-OPEN-1" in content_text
     assert "B-OPEN-1" not in content_text
@@ -5263,6 +5427,177 @@ def test_tenant_ai_assistant_returns_503_when_openai_is_not_configured(tmp_path,
     assert response.json()["detail"] == "AI assistant is not configured."
 
 
+def test_tenant_ai_assistant_returns_clear_message_when_user_rate_limit_reached(
+    tmp_path,
+    monkeypatch,
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ai-assistant-user-rate-limit.db", monkeypatch=monkeypatch
+    )
+    monkeypatch.setattr(settings, "openai_api_key", "test-openai-key")
+    _save_platform_ai_settings(
+        SessionLocal,
+        assistant_requests_per_user_per_hour=1,
+        assistant_requests_per_tenant_per_hour=10,
+    )
+
+    tenant_id = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", ai_enabled=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_id,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    user_id = _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_id,
+    )
+
+    call_count = {"value": 0}
+
+    def fake_openai_request(*, api_key: str, payload: dict[str, object]) -> dict[str, object]:
+        _ = api_key
+        _ = payload
+        call_count["value"] += 1
+        return {"output_text": "There are no open tickets."}
+
+    monkeypatch.setattr(ai_assistant_module, "_post_responses_request", fake_openai_request)
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="a-admin@example.com", password="TestPass123!") == 303
+        csrf = _prime_csrf(tenant_client)
+        first = tenant_client.post(
+            "/api/assistant/query",
+            json={"question": "Which tickets are still open?"},
+            headers={CSRF_HEADER_NAME: csrf, "accept": "application/json"},
+        )
+        second = tenant_client.post(
+            "/api/assistant/query",
+            json={"question": "Which tickets are still open?"},
+            headers={CSRF_HEADER_NAME: csrf, "accept": "application/json"},
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert second.json()["detail"] == "AI request limit reached. Please try again later."
+    assert call_count["value"] == 1
+
+    with SessionLocal() as db:
+        rows = list(
+            db.execute(
+                select(AIUsageLog)
+                .where(
+                    AIUsageLog.tenant_id == tenant_id,
+                    AIUsageLog.request_type == ai_usage_module.REQUEST_TYPE_ASSISTANT,
+                )
+                .order_by(AIUsageLog.id.asc())
+            ).scalars()
+        )
+
+    assert len(rows) == 2
+    assert rows[0].user_id == user_id
+    assert rows[0].success is True
+    assert rows[0].error_type is None
+    assert rows[0].counted_toward_limit is True
+    assert rows[1].user_id == user_id
+    assert rows[1].success is False
+    assert rows[1].error_type == ai_usage_module.ERROR_TYPE_RATE_LIMIT_USER
+    assert rows[1].counted_toward_limit is False
+
+
+def test_tenant_ai_assistant_returns_clear_message_when_tenant_rate_limit_reached(
+    tmp_path,
+    monkeypatch,
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ai-assistant-tenant-rate-limit.db", monkeypatch=monkeypatch
+    )
+    monkeypatch.setattr(settings, "openai_api_key", "test-openai-key")
+    _save_platform_ai_settings(
+        SessionLocal,
+        assistant_requests_per_user_per_hour=10,
+        assistant_requests_per_tenant_per_hour=1,
+    )
+
+    tenant_id = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", ai_enabled=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_id,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_id,
+    )
+    second_user_id = _seed_user(
+        SessionLocal,
+        email="ops@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_id,
+    )
+
+    call_count = {"value": 0}
+
+    def fake_openai_request(*, api_key: str, payload: dict[str, object]) -> dict[str, object]:
+        _ = api_key
+        _ = payload
+        call_count["value"] += 1
+        return {"output_text": "There are no open tickets."}
+
+    monkeypatch.setattr(ai_assistant_module, "_post_responses_request", fake_openai_request)
+
+    with _client(app, base_url="https://a.localhost") as first_client:
+        assert _login(first_client, email="a-admin@example.com", password="TestPass123!") == 303
+        first_csrf = _prime_csrf(first_client)
+        first = first_client.post(
+            "/api/assistant/query",
+            json={"question": "Which tickets are still open?"},
+            headers={CSRF_HEADER_NAME: first_csrf, "accept": "application/json"},
+        )
+
+    with _client(app, base_url="https://a.localhost") as second_client:
+        assert _login(second_client, email="ops@example.com", password="TestPass123!") == 303
+        second_csrf = _prime_csrf(second_client)
+        second = second_client.post(
+            "/api/assistant/query",
+            json={"question": "Which tickets are still open?"},
+            headers={CSRF_HEADER_NAME: second_csrf, "accept": "application/json"},
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert second.json()["detail"] == "AI request limit reached. Please try again later."
+    assert call_count["value"] == 1
+
+    with SessionLocal() as db:
+        rows = list(
+            db.execute(
+                select(AIUsageLog)
+                .where(
+                    AIUsageLog.tenant_id == tenant_id,
+                    AIUsageLog.request_type == ai_usage_module.REQUEST_TYPE_ASSISTANT,
+                )
+                .order_by(AIUsageLog.id.asc())
+            ).scalars()
+        )
+
+    assert len(rows) == 2
+    assert rows[0].success is True
+    assert rows[0].counted_toward_limit is True
+    assert rows[1].user_id == second_user_id
+    assert rows[1].success is False
+    assert rows[1].error_type == ai_usage_module.ERROR_TYPE_RATE_LIMIT_TENANT
+    assert rows[1].counted_toward_limit is False
+
+
 def test_ai_assistant_system_prompt_stays_platform_controlled():
     assert ai_assistant_module.build_system_prompt() == ai_assistant_module.AI_ASSISTANT_SYSTEM_PROMPT
 
@@ -5332,6 +5667,212 @@ def test_ai_assistant_payload_uses_tuned_generation_settings():
     assert payload["max_output_tokens"] == 320
     assert payload["reasoning"] == {"effort": "minimal"}
     assert payload["text"] == {"verbosity": "low"}
+    assert payload["instructions"].startswith(ai_assistant_module.AI_ASSISTANT_SYSTEM_PROMPT)
+    assert ai_assistant_module.AI_PROMPT_INJECTION_GUARD in payload["instructions"]
+
+
+def test_dashboard_ai_insights_skip_generation_when_min_refresh_limit_reached(
+    tmp_path,
+    monkeypatch,
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-dashboard-ai-insights-min-refresh.db", monkeypatch=monkeypatch
+    )
+    clock = {"now": datetime(2026, 3, 12, 10, 0, 0)}
+    monkeypatch.setattr(main_module, "utcnow", lambda: clock["now"])
+    monkeypatch.setattr(ai_assistant_module, "utcnow", lambda: clock["now"])
+    monkeypatch.setattr(ai_usage_module, "utcnow", lambda: clock["now"])
+    monkeypatch.setattr(settings, "openai_api_key", "test-openai-key")
+    ai_assistant_module._dashboard_insights_cache.clear()
+    _save_platform_ai_settings(
+        SessionLocal,
+        dashboard_insights_min_refresh_seconds=600,
+        dashboard_insights_max_per_tenant_per_hour=10,
+    )
+
+    tenant_id = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", ai_enabled=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_id,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    user_id = _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_id,
+    )
+
+    with SessionLocal() as db:
+        customer = Customer(tenant_id=tenant_id, account_code="CUST-A", name="Tenant A Customer")
+        vehicle = Vehicle(tenant_id=tenant_id, registration="A123 OPEN")
+        db.add_all([customer, vehicle])
+        db.flush()
+        db.add(
+            Ticket(
+                tenant_id=tenant_id,
+                ticket_no="A-OPEN-1",
+                datetime=clock["now"],
+                status=TicketStatusEnum.OPEN.value,
+                direction=DirectionEnum.INWARD.value,
+                transaction_type=TransactionTypeEnum.WASTEIN.value,
+                customer_id=customer.id,
+                vehicle_id=vehicle.id,
+                net_kg=1250,
+                dont_invoice=False,
+                paid=False,
+            )
+        )
+        db.commit()
+
+    call_count = {"value": 0}
+
+    def fake_openai_request(*, api_key: str, payload: dict[str, object]) -> dict[str, object]:
+        _ = api_key
+        _ = payload
+        call_count["value"] += 1
+        return {"output_text": "- 1 open ticket is still awaiting completion."}
+
+    monkeypatch.setattr(ai_assistant_module, "_post_responses_request", fake_openai_request)
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="a-admin@example.com", password="TestPass123!") == 303
+        first = tenant_client.get("/")
+        ai_assistant_module._dashboard_insights_cache.clear()
+        clock["now"] = clock["now"] + timedelta(seconds=120)
+        second = tenant_client.get("/")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert 'data-dashboard-panel="ai-insights"' in first.text
+    assert 'data-dashboard-panel="ai-insights"' not in second.text
+    assert "Activity Overview" in second.text
+    assert call_count["value"] == 1
+
+    with SessionLocal() as db:
+        rows = list(
+            db.execute(
+                select(AIUsageLog)
+                .where(
+                    AIUsageLog.tenant_id == tenant_id,
+                    AIUsageLog.request_type == ai_usage_module.REQUEST_TYPE_DASHBOARD_INSIGHTS,
+                )
+                .order_by(AIUsageLog.id.asc())
+            ).scalars()
+        )
+
+    assert len(rows) == 2
+    assert rows[0].user_id == user_id
+    assert rows[0].success is True
+    assert rows[0].counted_toward_limit is True
+    assert rows[1].user_id == user_id
+    assert rows[1].success is False
+    assert rows[1].error_type == ai_usage_module.ERROR_TYPE_RATE_LIMIT_MIN_REFRESH
+    assert rows[1].counted_toward_limit is False
+
+
+def test_dashboard_ai_insights_skip_generation_when_hourly_limit_reached(
+    tmp_path,
+    monkeypatch,
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-dashboard-ai-insights-hourly-limit.db", monkeypatch=monkeypatch
+    )
+    clock = {"now": datetime(2026, 3, 12, 10, 0, 0)}
+    monkeypatch.setattr(main_module, "utcnow", lambda: clock["now"])
+    monkeypatch.setattr(ai_assistant_module, "utcnow", lambda: clock["now"])
+    monkeypatch.setattr(ai_usage_module, "utcnow", lambda: clock["now"])
+    monkeypatch.setattr(settings, "openai_api_key", "test-openai-key")
+    ai_assistant_module._dashboard_insights_cache.clear()
+    _save_platform_ai_settings(
+        SessionLocal,
+        dashboard_insights_min_refresh_seconds=60,
+        dashboard_insights_max_per_tenant_per_hour=1,
+    )
+
+    tenant_id = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", ai_enabled=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_id,
+        company_name="Tenant A Co",
+        primary_color="#113355",
+    )
+    user_id = _seed_user(
+        SessionLocal,
+        email="a-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_id,
+    )
+
+    with SessionLocal() as db:
+        customer = Customer(tenant_id=tenant_id, account_code="CUST-A", name="Tenant A Customer")
+        vehicle = Vehicle(tenant_id=tenant_id, registration="A123 OPEN")
+        db.add_all([customer, vehicle])
+        db.flush()
+        db.add(
+            Ticket(
+                tenant_id=tenant_id,
+                ticket_no="A-OPEN-1",
+                datetime=clock["now"],
+                status=TicketStatusEnum.OPEN.value,
+                direction=DirectionEnum.INWARD.value,
+                transaction_type=TransactionTypeEnum.WASTEIN.value,
+                customer_id=customer.id,
+                vehicle_id=vehicle.id,
+                net_kg=1250,
+                dont_invoice=False,
+                paid=False,
+            )
+        )
+        db.commit()
+
+    call_count = {"value": 0}
+
+    def fake_openai_request(*, api_key: str, payload: dict[str, object]) -> dict[str, object]:
+        _ = api_key
+        _ = payload
+        call_count["value"] += 1
+        return {"output_text": "- 1 open ticket is still awaiting completion."}
+
+    monkeypatch.setattr(ai_assistant_module, "_post_responses_request", fake_openai_request)
+
+    with _client(app, base_url="https://a.localhost") as tenant_client:
+        assert _login(tenant_client, email="a-admin@example.com", password="TestPass123!") == 303
+        first = tenant_client.get("/")
+        ai_assistant_module._dashboard_insights_cache.clear()
+        clock["now"] = clock["now"] + timedelta(seconds=120)
+        second = tenant_client.get("/")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert 'data-dashboard-panel="ai-insights"' in first.text
+    assert 'data-dashboard-panel="ai-insights"' not in second.text
+    assert "Activity Overview" in second.text
+    assert call_count["value"] == 1
+
+    with SessionLocal() as db:
+        rows = list(
+            db.execute(
+                select(AIUsageLog)
+                .where(
+                    AIUsageLog.tenant_id == tenant_id,
+                    AIUsageLog.request_type == ai_usage_module.REQUEST_TYPE_DASHBOARD_INSIGHTS,
+                )
+                .order_by(AIUsageLog.id.asc())
+            ).scalars()
+        )
+
+    assert len(rows) == 2
+    assert rows[0].user_id == user_id
+    assert rows[0].success is True
+    assert rows[0].counted_toward_limit is True
+    assert rows[1].user_id == user_id
+    assert rows[1].success is False
+    assert rows[1].error_type == ai_usage_module.ERROR_TYPE_RATE_LIMIT_HOURLY
+    assert rows[1].counted_toward_limit is False
 
 
 def test_ai_assistant_context_supports_open_waste_and_top_customer_queries(tmp_path, monkeypatch):

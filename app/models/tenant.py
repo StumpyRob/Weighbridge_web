@@ -34,4 +34,8 @@ class Tenant(Base):
         server_default=sa.false(),
     )
     ai_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ai_dashboard_insights_override: Mapped[bool | None] = mapped_column(
+        Boolean,
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, sessionmaker, with_loader_criteria
 
 from .config import settings
 from .models import (
+    AIUsageLog,
     Area,
     CompanySetting,
     Container,
@@ -35,6 +36,7 @@ from .models import (
 from .tenancy import current_platform_mode, current_tenant_id, is_tenant_scoped_entity
 
 TENANT_FILTER_MODELS = (
+    AIUsageLog,
     Area,
     CompanySetting,
     Container,
