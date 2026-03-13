@@ -96,7 +96,6 @@ def test_ticket_edit_shows_tooltips_and_no_inline_dont_invoice_hint(client, db_s
     assert 'id="ticket-transaction-type-help"' in response.text
     assert 'id="ticket-walk-in-sale-help"' in response.text
     assert 'id="ticket-po-number-help"' in response.text
-    assert 'id="ticket-readout-kg-help"' in response.text
     assert 'id="ticket-billable-quantity-help"' in response.text
     assert 'id="ticket-unit-rate-help"' in response.text
     assert 'id="ticket-dont-invoice-help"' in response.text

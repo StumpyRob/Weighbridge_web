@@ -157,7 +157,9 @@ def test_customers_list_hides_contact_columns_and_shows_operational_badges(
     assert 'id="customer-pricing-indicator-help"' in response.text
     assert "NET 60" in response.text
     assert "Has special pricing" in response.text
+    assert "Yes (1)" in response.text
     assert response.text.count('class="pricing-indicator"') == 1
+    assert "&#10003;" not in response.text
     assert "Flags" in response.text
     assert 'id="customer-flags-help"' in response.text
     assert "ON STOP" in response.text

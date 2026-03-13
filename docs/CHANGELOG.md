@@ -4,6 +4,23 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.17.0 - 2026-03-13
+
+### RELEASE
+- `v0.17.0` promotes the AI admin work into the release baseline, separating platform AI defaults from tenant AI overrides, adding minimum-safe operational guardrails, and cleaning up several customer and ticket UI flows.
+
+### ADD
+- Add platform-managed AI defaults and tenant AI override controls for model selection and dashboard insights, including clearer admin copy and default-vs-override precedence.
+- Add minimum-safe AI hardening controls including configurable usage thresholds, backend assistant limits, dashboard throttling, graceful fallback handling, and basic AI usage logging.
+
+### FIX
+- Clean up super admin and tenant admin layouts with clearer spacing and tooltip-based help in place of inline notes.
+- Update the customers list to show active pricing overrides as `Yes (x)` instead of a binary tick indicator.
+- Simplify the ticket screen by moving billing details nearer the weights section, normalizing section headings, constraining transaction choices by direction, and removing the unused `Readout (kg)` field.
+
+### TEST
+- Re-run targeted super admin AI settings, customer list, ticket UI, walk-in sale, weights preview, and product-option regression slices after the release cleanup.
+
 ## v0.16.2 - 2026-03-12
 
 ### RELEASE

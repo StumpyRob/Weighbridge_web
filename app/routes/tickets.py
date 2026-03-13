@@ -484,7 +484,6 @@ def ticket_product_defaults(
     if weights_ticket is not None:
         gross_raw = (gross_kg or "").strip()
         tare_raw = (tare_kg or "").strip()
-        readout_raw = (readout_kg or "").strip()
         gross_value = _parse_float(gross_raw)
         tare_value = _parse_float(tare_raw)
         net_value = _parse_float((net_kg or "").strip())
@@ -494,7 +493,6 @@ def ticket_product_defaults(
             ticket=weights_ticket,
             gross_raw=gross_raw,
             tare_raw=tare_raw,
-            readout_raw=readout_raw,
             net_value=net_value,
         )
         weights_form["product_id"] = str(parsed_product_id or weights_ticket.product_id or "")
@@ -523,22 +521,6 @@ def ticket_product_defaults(
             "weights_is_open": weights_is_open,
             "weights_locked": resolved_unit_type == "COUNT",
         },
-    )
-
-
-@router.get("/tickets/mismatch-warning", response_class=HTMLResponse)
-def tickets_mismatch_warning(
-    request: Request,
-    direction: str | None = Query(None),
-    transaction_type: str | None = Query(None),
-) -> HTMLResponse:
-    warning = _direction_transaction_warning(direction, transaction_type)
-    if not warning:
-        return HTMLResponse("", status_code=200)
-    return templates.TemplateResponse(
-        request,
-        "tickets/_mismatch_warning.html",
-        {"request": request, "warning": warning},
     )
 
 
@@ -592,12 +574,36 @@ def _ticket_direction_options() -> list[tuple[str, str]]:
     ]
 
 
-def _ticket_transaction_type_options() -> list[tuple[str, str]]:
-    return [
-        ("WASTEIN", "Waste In"),
-        ("WASTEOUT", "Waste Out"),
-        ("SALE", "Sale"),
+def _ticket_transaction_type_options_by_direction() -> dict[str, list[tuple[str, str]]]:
+    return {
+        "INWARD": [("WASTEIN", "Waste In")],
+        "OUTWARD": [
+            ("WASTEOUT", "Waste Out"),
+            ("SALE", "Sale"),
+        ],
+    }
+
+
+def _ticket_transaction_type_options(
+    direction: str | None = None,
+    selected_transaction_type: str | None = None,
+) -> list[tuple[str, str]]:
+    options_by_direction = _ticket_transaction_type_options_by_direction()
+    all_options = [
+        option
+        for direction_options in options_by_direction.values()
+        for option in direction_options
     ]
+    direction_value = _enum_value_or_text(direction).upper() if direction else ""
+    options = list(options_by_direction.get(direction_value, all_options))
+
+    selected_value = _enum_value_or_text(selected_transaction_type).upper()
+    if selected_value and all(value != selected_value for value, _label in options):
+        for value, label in all_options:
+            if value == selected_value:
+                options.append((value, label))
+                break
+    return options
 
 
 def _load_ticket_options_with_enums(
@@ -605,6 +611,8 @@ def _load_ticket_options_with_enums(
     *,
     transaction_type: str | None = None,
     selected_product_id: int | None = None,
+    direction: str | None = None,
+    selected_transaction_type: str | None = None,
 ) -> dict:
     return {
         **_load_ticket_options(
@@ -613,7 +621,11 @@ def _load_ticket_options_with_enums(
             selected_product_id=selected_product_id,
         ),
         "directions": _ticket_direction_options(),
-        "transaction_types": _ticket_transaction_type_options(),
+        "transaction_types": _ticket_transaction_type_options(
+            direction=direction,
+            selected_transaction_type=selected_transaction_type,
+        ),
+        "transaction_types_by_direction": _ticket_transaction_type_options_by_direction(),
     }
 
 
@@ -1776,6 +1788,8 @@ def tickets_edit(
         db,
         transaction_type=form.get("transaction_type"),
         selected_product_id=ticket.product_id,
+        direction=form.get("direction"),
+        selected_transaction_type=form.get("transaction_type"),
     )
     product_warning = _sales_only_selected_product_warning(
         db, form.get("transaction_type"), ticket.product_id
@@ -1854,9 +1868,6 @@ def tickets_edit(
             "compliance_locked_invoiced_message": COMPLIANCE_LOCKED_INVOICED_MESSAGE,
             "ticket_compliance_hazardous": _is_ticket_compliance_hazardous(ticket),
             "weight_warning": _net_negative(ticket),
-            "direction_warning": _direction_transaction_warning(
-                ticket.direction, ticket.transaction_type
-            ),
             "form": form,
             "vehicle_reg": _ticket_vehicle_reg(db, ticket),
             "can_edit_complete_po": _can_edit_complete_po(ticket, db),
@@ -2605,9 +2616,6 @@ async def tickets_update(
         ticket.direction = payload["direction"]
         ticket.transaction_type = payload["transaction_type"]
         weight_warning = _net_negative_values(payload["gross_kg"], payload["tare_kg"])
-        direction_warning = _direction_transaction_warning(
-            payload["direction"], payload["transaction_type"]
-        )
         lookup_errors = _validate_lookup_fields(ticket, payload, db)
         payload["errors"].extend(lookup_errors)
         _apply_ticket_defaults(db, payload)
@@ -2718,7 +2726,6 @@ async def tickets_update(
                 form=payload["form"],
                 vehicle_reg=payload["vehicle_reg_text"],
                 weight_warning=weight_warning,
-                direction_warning=direction_warning,
                 status_code=400,
             )
 
@@ -2743,7 +2750,6 @@ async def tickets_update(
                 form=payload["form"],
                 vehicle_reg=payload["vehicle_reg_text"],
                 weight_warning=weight_warning,
-                direction_warning=direction_warning,
                 status_code=400,
             )
         unit = getattr(product, "unit", None) if product else None
@@ -2845,9 +2851,6 @@ async def tickets_update(
 
     ticket.direction = payload["direction"]
     ticket.transaction_type = payload["transaction_type"]
-    direction_warning = _direction_transaction_warning(
-        payload["direction"], payload["transaction_type"]
-    )
     weight_warning = _net_negative_values(payload["gross_kg"], payload["tare_kg"])
     payload["errors"].extend(_validate_ticket_entity_references(ticket, payload, db))
     lookup_errors = _validate_lookup_fields(ticket, payload, db)
@@ -2891,7 +2894,6 @@ async def tickets_update(
             form=payload["form"],
             vehicle_reg=payload["vehicle_reg_text"],
             weight_warning=weight_warning,
-            direction_warning=direction_warning,
             status_code=400,
         )
 
@@ -3671,7 +3673,6 @@ async def tickets_swap_weights_preview(
 
     gross_raw = _form_value(form, "gross_kg")
     tare_raw = _form_value(form, "tare_kg")
-    readout_raw = _form_value(form, "readout_kg")
     product_id = (
         _parse_int(_first_non_empty_form_value(form, "product_id"))
         or _parse_int(_first_non_empty_form_value(form, "weights_product_id"))
@@ -3695,7 +3696,6 @@ async def tickets_swap_weights_preview(
             ticket=ticket,
             gross_raw=gross_raw,
             tare_raw=tare_raw,
-            readout_raw=readout_raw,
             net_value=net_value,
         )
         form_data["product_id"] = str(product_id or "")
@@ -3727,7 +3727,6 @@ async def tickets_swap_weights_preview(
             ticket=ticket,
             gross_raw=gross_raw,
             tare_raw=tare_raw,
-            readout_raw=readout_raw,
             net_value=None,
         )
         form_data["product_id"] = str(product_id or "")
@@ -3756,7 +3755,6 @@ async def tickets_swap_weights_preview(
         ticket=ticket,
         gross_raw=swapped_gross,
         tare_raw=swapped_tare,
-        readout_raw=readout_raw,
         net_value=net_value,
     )
     form_data["product_id"] = str(product_id or "")
@@ -4380,7 +4378,6 @@ def _coerce_weights_for_count_product(payload: dict, product: Product | None) ->
         form_data["gross_kg"] = ""
         form_data["tare_kg"] = ""
         form_data["net_kg"] = ""
-        form_data["readout_kg"] = ""
 
 
 def _coerce_mode_fields(payload: dict, product: Product | None) -> None:
@@ -4808,27 +4805,6 @@ def _net_negative_values(gross_kg: float | None, tare_kg: float | None) -> bool:
         return False
 
 
-def _direction_transaction_warning(direction, transaction_type) -> bool:
-    def as_value(value) -> str:
-        if value is None:
-            return ""
-        return value.value if hasattr(value, "value") else str(value)
-
-    direction_value = as_value(direction)
-    transaction_value = as_value(transaction_type)
-    if not direction_value or not transaction_value:
-        return False
-    if direction_value == "OUTWARD" and transaction_value in ("WASTEIN", "GOODSIN"):
-        return True
-    if direction_value == "INWARD" and transaction_value in (
-        "WASTEOUT",
-        "GOODSOUT",
-        "SALE",
-    ):
-        return True
-    return False
-
-
 def _render_vehicle_suggestions(
     request: Request,
     ticket: Ticket,
@@ -4948,7 +4924,6 @@ def _render_ticket_edit(
     form: dict | None = None,
     vehicle_reg: str | None = None,
     weight_warning: bool | None = None,
-    direction_warning: bool | None = None,
     status_code: int = 400,
 ) -> HTMLResponse:
     _ensure_ticket_void_reasons(db)
@@ -4988,6 +4963,8 @@ def _render_ticket_edit(
         db,
         transaction_type=selected_transaction_type,
         selected_product_id=product_id,
+        direction=resolved_form.get("direction"),
+        selected_transaction_type=selected_transaction_type,
     )
     resolved_warnings = list(warnings or [])
     product_warning = _sales_only_selected_product_warning(
@@ -5070,11 +5047,6 @@ def _render_ticket_edit(
             "weight_warning": _net_negative(ticket)
             if weight_warning is None
             else weight_warning,
-            "direction_warning": _direction_transaction_warning(
-                ticket.direction, ticket.transaction_type
-            )
-            if direction_warning is None
-            else direction_warning,
             "form": resolved_form,
             "vehicle_reg": vehicle_reg if vehicle_reg is not None else _ticket_vehicle_reg(db, ticket),
             "can_edit_complete_po": _can_edit_complete_po(ticket, db),
@@ -5150,13 +5122,11 @@ def _weights_form_from_values(
     ticket: Ticket,
     gross_raw: str,
     tare_raw: str,
-    readout_raw: str,
     net_value: float | None,
 ) -> dict:
     form_data = _ticket_to_form(ticket)
     form_data["gross_kg"] = gross_raw
     form_data["tare_kg"] = tare_raw
-    form_data["readout_kg"] = readout_raw
     form_data["net_kg"] = f"{net_value:.0f}" if net_value is not None else ""
     return form_data
 

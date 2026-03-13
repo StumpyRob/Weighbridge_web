@@ -3,7 +3,7 @@ import re
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -134,18 +134,18 @@ def customers_list(
     q: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    has_price_overrides = (
-        select(CustomerProductPrice.id)
+    active_price_override_count = (
+        select(func.count(CustomerProductPrice.id))
         .where(
             CustomerProductPrice.customer_id == Customer.id,
             CustomerProductPrice.is_active.is_(True),
         )
-        .exists()
+        .scalar_subquery()
     )
     query = (
         select(
             Customer,
-            has_price_overrides.label("has_price_overrides"),
+            active_price_override_count.label("active_price_override_count"),
         )
         .order_by(Customer.name)
     )

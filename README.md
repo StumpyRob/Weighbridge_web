@@ -4,9 +4,9 @@ FastAPI starter with SQLAlchemy, Alembic, and Postgres.
 
 ## Latest release
 
-`v0.16.2` is the current release baseline. This release implements the tenant-facing AI chatbot inside the workspace, with a shared assistant drawer, quick prompts, tenant-aware access control, and response-panel polish for day-to-day operator use.
+`v0.17.0` is the current release baseline. This release expands the AI rollout with platform defaults vs tenant overrides, operational AI hardening controls, and a UI cleanup pass across admin, customer, and ticket screens.
 
-Multi-tenant support remains in place, the recent backlog of tenant/UI fixes is closed out, and follow-up work from here is expected to focus on expanding AI capabilities and additional product features rather than core rollout remediation.
+Multi-tenant support remains in place, the recent AI/admin polish is now in the baseline, and follow-up work from here is expected to focus on user permissions and further role-based controls rather than core AI rollout plumbing.
 
 ## Local setup
 

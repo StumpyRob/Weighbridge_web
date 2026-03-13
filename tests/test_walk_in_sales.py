@@ -218,6 +218,56 @@ def test_walk_in_sale_ui_gates_customer_and_logistics_fields(client, db_session)
     ) is not None
 
 
+def test_ticket_edit_filters_transaction_types_by_direction(client, db_session):
+    inward_ticket = Ticket(
+        ticket_no="T-DIR-TYPE-IN-1",
+        datetime=datetime(2026, 2, 17, 11, 10, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    outward_ticket = Ticket(
+        ticket_no="T-DIR-TYPE-OUT-1",
+        datetime=datetime(2026, 2, 17, 11, 20, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.OUTWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEOUT.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([inward_ticket, outward_ticket])
+    db_session.commit()
+
+    inward_response = client.get(f"/tickets/{inward_ticket.id}")
+    outward_response = client.get(f"/tickets/{outward_ticket.id}")
+
+    assert inward_response.status_code == 200
+    assert outward_response.status_code == 200
+    inward_select = re.search(
+        r'<select[^>]*id="transaction_type"[^>]*>(.*?)</select>',
+        inward_response.text,
+        re.S,
+    )
+    outward_select = re.search(
+        r'<select[^>]*id="transaction_type"[^>]*>(.*?)</select>',
+        outward_response.text,
+        re.S,
+    )
+
+    assert inward_select is not None
+    assert outward_select is not None
+    assert 'value="WASTEIN"' in inward_select.group(1)
+    assert 'value="WASTEOUT"' not in inward_select.group(1)
+    assert 'value="SALE"' not in inward_select.group(1)
+    assert 'value="WASTEOUT"' in outward_select.group(1)
+    assert 'value="SALE"' in outward_select.group(1)
+    assert 'value="WASTEIN"' not in outward_select.group(1)
+    assert "Direction and transaction type appear inconsistent. Please check." not in inward_response.text
+    assert "Direction and transaction type appear inconsistent. Please check." not in outward_response.text
+
+
 def test_walk_in_sale_keeps_vehicle_reg_and_yard_editable(client, db_session):
     ticket = Ticket(
         ticket_no="T-WALK-UI-EDITABLE-1",

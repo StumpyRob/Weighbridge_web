@@ -228,7 +228,7 @@
         </div>
         <div class="field">
           <label for="direction">Direction{{ help(help_text.ticket_direction, "ticket-direction-help") }}</label>
-          <select id="direction" name="direction" required hx-get="/tickets/mismatch-warning" hx-trigger="change" hx-target="#mismatch-warning" hx-include="#direction,#transaction_type">
+          <select id="direction" name="direction" required>
             <option value="">Select direction</option>
             {% for value, label in options.directions %}
               <option value="{{ value }}" {% if form.direction == value %}selected{% endif %}>{{ label }}</option>
@@ -237,13 +237,12 @@
         </div>
         <div class="field">
           <label for="transaction_type">Transaction type{{ help(help_text.ticket_transaction_type, "ticket-transaction-type-help") }}</label>
-          <select id="transaction_type" name="transaction_type" required hx-get="/tickets/mismatch-warning" hx-trigger="change" hx-target="#mismatch-warning" hx-include="#direction,#transaction_type">
+          <select id="transaction_type" name="transaction_type" required>
             <option value="">Select transaction</option>
             {% for value, label in options.transaction_types %}
               <option value="{{ value }}" {% if form.transaction_type == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
-          <div id="mismatch-warning"></div>
         </div>
       </div>
     </div>
@@ -258,8 +257,8 @@
       <div class="participants">
         <div class="form-grid">
           <div class="field">
-            <label for="vehicle_reg">Vehicle reg</label>
-            <input type="text" id="vehicle_reg" name="reg" value="{{ vehicle_reg }}" maxlength="{{ limits.REG_MAX }}" class="plate-input" oninput="this.value = this.value.toUpperCase()" hx-get="/tickets/vehicle-suggest" hx-trigger="keyup changed delay:400ms, load" hx-target="#vehicle-suggestions" hx-include="#direction,#customer_id,#haulier_id,#driver_id,#gross_kg,#tare_kg,#readout_kg,#walk_in_sale" hx-vals='{"ticket_id":"{{ ticket.id }}"}' {% if is_locked %}disabled aria-disabled="true"{% endif %} />
+            <label for="vehicle_reg">Vehicle registration</label>
+            <input type="text" id="vehicle_reg" name="reg" value="{{ vehicle_reg }}" maxlength="{{ limits.REG_MAX }}" class="plate-input" oninput="this.value = this.value.toUpperCase()" hx-get="/tickets/vehicle-suggest" hx-trigger="keyup changed delay:400ms, load" hx-target="#vehicle-suggestions" hx-include="#direction,#customer_id,#haulier_id,#driver_id,#gross_kg,#tare_kg,#walk_in_sale" hx-vals='{"ticket_id":"{{ ticket.id }}"}' {% if is_locked %}disabled aria-disabled="true"{% endif %} />
           </div>
           <div class="field" id="customer-field" {% if form.walk_in_sale and form.transaction_type == "SALE" %}style="display:none"{% endif %}>
             <label for="customer_id">Customer</label>
@@ -378,6 +377,105 @@
       <div id="weights-block">
         {% include "tickets/_weights_block.html" %}
       </div>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="frame-header">
+      <h2>Billable and Rate</h2>
+    </div>
+    <div class="frame-body">
+      {% set unit = ticket.product.unit if ticket.product and ticket.product.unit else None %}
+      {% set unit_name = unit.name if unit else "" %}
+      {% set unit_type = unit.unit_type if unit else "" %}
+
+      {% if not is_open %}
+        <div class="form-grid">
+          <div class="field">
+            <label>Billable quantity</label>
+            <div class="readonly">
+              {% if ticket.pricing_billable_qty_snapshot is not none %}
+                {{ "{:.3f}".format(ticket.pricing_billable_qty_snapshot) }}{% if ticket.pricing_unit_name %} {{ ticket.pricing_unit_name }}{% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="field field-secondary">
+            <label>Rate</label>
+            <div class="readonly readonly-secondary">
+              {% if ticket.pricing_unit_price is not none %}
+                {{ "{:.2f}".format(ticket.pricing_unit_price) }}
+              {% else %}
+                —
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="field field-estimated-value">
+            <label class="label-muted">
+              Estimated charge{{ help("Final price confirmed on invoice", "ticket-estimated-charge-help") }}
+            </label>
+            <div class="readonly readonly-muted estimate-value">
+              {% if ticket.total is not none %}
+                {{ "{:.2f}".format(ticket.total) }}
+              {% else %}
+                —
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Billable basis</label>
+            <div class="readonly">{{ ticket.pricing_basis if ticket.pricing_basis else "—" }}</div>
+          </div>
+
+          <div class="field">
+            <label>Quantity</label>
+            <div class="readonly">
+              {{ ticket.pricing_qty_snapshot if ticket.pricing_qty_snapshot is not none else "—" }}
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Unit</label>
+            <div class="readonly">{{ ticket.pricing_unit_name if ticket.pricing_unit_name else (unit_name if unit_name else "—") }}</div>
+          </div>
+        </div>
+
+      {% else %}
+        {% set resolved_unit_type = (unit_type or "")|upper %}
+        <div class="form-grid">
+          {% set qty_value = form.qty %}
+          {% set oob_qty = false %}
+          {% include "tickets/_qty_field.html" %}
+
+          <div class="field">
+            <label>Unit</label>
+            <div class="readonly">{{ unit_name if unit_name else "—" }}</div>
+          </div>
+
+          <div id="pricing-defaults">
+            {% with unit_price=form.unit_price, unit_name=unit_name, price_override_active=price_override_active, price_override_unit_price=price_override_unit_price %}
+              {% include "tickets/_pricing_defaults.html" %}
+            {% endwith %}
+          </div>
+
+          <div class="field field-estimated-value">
+            <label for="total" class="label-muted">
+              Estimated charge{{ help("Final price confirmed on invoice", "ticket-estimated-charge-help") }}
+            </label>
+            <div class="input-prefix">
+              <span class="input-prefix__symbol" aria-hidden="true">£</span>
+              <input type="text" id="total" name="total" value="{{ form.total }}" placeholder="-" class="input-muted input-with-prefix estimate-value" readonly />
+            </div>
+          </div>
+        </div>
+
+        <input type="hidden" id="unit_type" value="{{ unit_type }}" />
+        <input type="hidden" id="unit_name" value="{{ unit_name }}" />
+      {% endif %}
     </div>
   </section>
 
@@ -588,105 +686,6 @@
     </div>
   </section>
 
-  <section class="frame">
-    <div class="frame-header">
-      <h2>Billable and Rate</h2>
-    </div>
-    <div class="frame-body">
-      {% set unit = ticket.product.unit if ticket.product and ticket.product.unit else None %}
-      {% set unit_name = unit.name if unit else "" %}
-      {% set unit_type = unit.unit_type if unit else "" %}
-
-      {% if not is_open %}
-        <div class="form-grid">
-          <div class="field">
-            <label>Billable quantity</label>
-            <div class="readonly">
-              {% if ticket.pricing_billable_qty_snapshot is not none %}
-                {{ "{:.3f}".format(ticket.pricing_billable_qty_snapshot) }}{% if ticket.pricing_unit_name %} {{ ticket.pricing_unit_name }}{% endif %}
-              {% else %}
-                —
-              {% endif %}
-            </div>
-          </div>
-
-          <div class="field field-secondary">
-            <label>Rate</label>
-            <div class="readonly readonly-secondary">
-              {% if ticket.pricing_unit_price is not none %}
-                {{ "{:.2f}".format(ticket.pricing_unit_price) }}
-              {% else %}
-                —
-              {% endif %}
-            </div>
-          </div>
-
-          <div class="field field-estimated-value">
-            <label class="label-muted">
-              Estimated charge{{ help("Final price confirmed on invoice", "ticket-estimated-charge-help") }}
-            </label>
-            <div class="readonly readonly-muted estimate-value">
-              {% if ticket.total is not none %}
-                {{ "{:.2f}".format(ticket.total) }}
-              {% else %}
-                —
-              {% endif %}
-            </div>
-          </div>
-
-          <div class="field">
-            <label>Billable basis</label>
-            <div class="readonly">{{ ticket.pricing_basis if ticket.pricing_basis else "—" }}</div>
-          </div>
-
-          <div class="field">
-            <label>Quantity</label>
-            <div class="readonly">
-              {{ ticket.pricing_qty_snapshot if ticket.pricing_qty_snapshot is not none else "—" }}
-            </div>
-          </div>
-
-          <div class="field">
-            <label>Unit</label>
-            <div class="readonly">{{ ticket.pricing_unit_name if ticket.pricing_unit_name else (unit_name if unit_name else "—") }}</div>
-          </div>
-        </div>
-
-      {% else %}
-        {% set resolved_unit_type = (unit_type or "")|upper %}
-        <div class="form-grid">
-          {% set qty_value = form.qty %}
-          {% set oob_qty = false %}
-          {% include "tickets/_qty_field.html" %}
-
-          <div class="field">
-            <label>Unit</label>
-            <div class="readonly">{{ unit_name if unit_name else "—" }}</div>
-          </div>
-
-          <div id="pricing-defaults">
-            {% with unit_price=form.unit_price, unit_name=unit_name, price_override_active=price_override_active, price_override_unit_price=price_override_unit_price %}
-              {% include "tickets/_pricing_defaults.html" %}
-            {% endwith %}
-          </div>
-
-          <div class="field field-estimated-value">
-            <label for="total" class="label-muted">
-              Estimated charge{{ help("Final price confirmed on invoice", "ticket-estimated-charge-help") }}
-            </label>
-            <div class="input-prefix">
-              <span class="input-prefix__symbol" aria-hidden="true">£</span>
-              <input type="text" id="total" name="total" value="{{ form.total }}" placeholder="-" class="input-muted input-with-prefix estimate-value" readonly />
-            </div>
-          </div>
-        </div>
-
-        <input type="hidden" id="unit_type" value="{{ unit_type }}" />
-        <input type="hidden" id="unit_name" value="{{ unit_name }}" />
-      {% endif %}
-    </div>
-  </section>
-
   <section class="frame compact">
     <div class="frame-header">
       <h2>Flags</h2>
@@ -761,6 +760,8 @@
 
 <script>
   (function () {
+    const transactionTypeOptionsByDirection = {{ options.transaction_types_by_direction | tojson }};
+
     function parseNumber(value) {
       if (value === null || value === undefined) {
         return null;
@@ -779,7 +780,6 @@
       function recalculateTicketValues() {
         const grossInput = document.getElementById("gross_kg");
         const tareInput = document.getElementById("tare_kg");
-        const readoutInput = document.getElementById("readout_kg");
         const netInput = document.getElementById("net_kg");
         const qtyInput = document.getElementById("qty");
         const unitPriceInput = document.getElementById("unit_price");
@@ -833,7 +833,6 @@
         if (
           target.id === "gross_kg" ||
           target.id === "tare_kg" ||
-          target.id === "readout_kg" ||
           target.id === "qty" ||
           target.id === "unit_price"
         ) {
@@ -850,10 +849,6 @@
         }
       });
 
-      // Ensure readout-driven values are calculated on initial bind.
-      if (document.getElementById("readout_kg")) {
-        recalculateTicketValues();
-      }
       recalculateTicketValues();
     }
 
@@ -886,6 +881,61 @@
         });
     }
 
+    function syncTransactionTypeOptions(forceDirectionRule) {
+      const directionSelect = document.getElementById("direction");
+      const transactionTypeSelect = document.getElementById("transaction_type");
+      if (!directionSelect || !transactionTypeSelect) {
+        return;
+      }
+
+      const direction = (directionSelect.value || "").trim().toUpperCase();
+      const previousValue = (transactionTypeSelect.value || "").trim().toUpperCase();
+      const existingLabels = {};
+      Array.from(transactionTypeSelect.options).forEach(function (option) {
+        if (option.value) {
+          existingLabels[option.value] = option.textContent;
+        }
+      });
+
+      const allowedOptions = transactionTypeOptionsByDirection[direction] || [];
+      const nextOptions = allowedOptions.slice();
+      const previousAllowed = nextOptions.some(function (option) {
+        return option[0] === previousValue;
+      });
+      if (!forceDirectionRule && previousValue && !previousAllowed && existingLabels[previousValue]) {
+        nextOptions.push([previousValue, existingLabels[previousValue]]);
+      }
+
+      transactionTypeSelect.innerHTML = "";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Select transaction";
+      transactionTypeSelect.appendChild(placeholder);
+
+      nextOptions.forEach(function (option) {
+        const optionElement = document.createElement("option");
+        optionElement.value = option[0];
+        optionElement.textContent = option[1];
+        transactionTypeSelect.appendChild(optionElement);
+      });
+
+      let nextValue = "";
+      if (
+        nextOptions.some(function (option) {
+          return option[0] === previousValue;
+        })
+      ) {
+        nextValue = previousValue;
+      } else if (forceDirectionRule && direction === "INWARD" && nextOptions.length === 1) {
+        nextValue = nextOptions[0][0];
+      }
+
+      transactionTypeSelect.value = nextValue;
+      if (nextValue !== previousValue) {
+        transactionTypeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }
+
     function applyPricingRules() {
       const unitType = resolvedUnitType();
       const countHint = document.getElementById("pricing-hint-count");
@@ -896,7 +946,6 @@
       const grossInput = document.getElementById("gross_kg");
       const tareInput = document.getElementById("tare_kg");
       const netInput = document.getElementById("net_kg");
-      const readoutInput = document.getElementById("readout_kg");
       const swapButton = document.getElementById("swap-weights-button");
       const countSwapTitle = "Swap weights not available for COUNT products.";
 
@@ -926,10 +975,6 @@
         }
         if (netInput) {
           netInput.value = "";
-        }
-        if (readoutInput) {
-          readoutInput.value = "";
-          readoutInput.readOnly = true;
         }
         if (swapButton) {
           swapButton.disabled = true;
@@ -962,9 +1007,6 @@
         if (tareInput) {
           tareInput.readOnly = false;
         }
-        if (readoutInput) {
-          readoutInput.readOnly = false;
-        }
         if (swapButton) {
           swapButton.disabled = false;
           if (swapButton.title === countSwapTitle) {
@@ -994,9 +1036,6 @@
       }
       if (tareInput) {
         tareInput.readOnly = false;
-      }
-      if (readoutInput) {
-        readoutInput.readOnly = false;
       }
       if (swapButton) {
         swapButton.disabled = false;
@@ -1495,6 +1534,7 @@
     }
 
     function applyTicketRules() {
+      syncTransactionTypeOptions(false);
       syncWalkInSaleUi();
       applySelectedProductMeta();
       applyPricingRules();
@@ -1536,6 +1576,7 @@
       }
       directionSelect.dataset.modeBound = "true";
       directionSelect.addEventListener("change", function () {
+        syncTransactionTypeOptions(true);
         scheduleApplyTicketRules();
       });
     }

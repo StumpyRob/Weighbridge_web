@@ -22,7 +22,6 @@
   <div class="page-header">
     <div>
       <h1>Tenant Management{{ help(help_text.platform_tenant_management, "platform-tenants-title-help") }}</h1>
-      <p class="muted">Create, review, and control tenant access from the platform admin surface.</p>
     </div>
     <div class="actions btn-group">
       <a class="btn btn--primary" href="/platform/tenants/new">Create Tenant</a>
@@ -96,9 +95,8 @@
               <td>{{ tenant.created_at.strftime("%d/%m/%Y") if tenant.created_at else "-" }}</td>
               <td>
                 {% if row.initial_admin_email %}
-                  <div>{{ row.initial_admin_email }}</div>
-                  <div class="muted platform-tenants-row-note">
-                    {{ row.active_user_count }} active of {{ row.user_count }} users
+                  <div>
+                    {{ row.initial_admin_email }}{{ help(row.active_user_count ~ " active of " ~ row.user_count ~ " users in this tenant workspace.") }}
                   </div>
                 {% else %}
                   <span class="status-text">&mdash;</span>

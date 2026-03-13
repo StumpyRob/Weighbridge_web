@@ -486,7 +486,7 @@ def test_sale_weight_product_defaults_lock_qty_without_saving(client, db_session
     assert re.search(r'<input[^>]*name="qty"[^>]*value=""', response.text)
     assert "readonly" not in _input_tag(response.text, "gross_kg")
     assert "readonly" not in _input_tag(response.text, "tare_kg")
-    assert "readonly" not in _input_tag(response.text, "readout_kg")
+    assert 'id="readout_kg"' not in response.text
 
 
 def test_product_defaults_count_product_marks_weights_muted(client, db_session):

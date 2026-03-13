@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_help.html" import help %}
 
 {% block title %}Platform AI Defaults | Weighbridge Web{% endblock %}
 
@@ -34,17 +35,14 @@
 
     <section class="frame">
       <div class="frame-header">
-        <h2>AI Default Settings</h2>
+        <h2>AI Default Settings{{ help(help_text.platform_ai_defaults_scope, "platform-ai-default-settings-help") }}</h2>
       </div>
       <div class="frame-body">
-        <p class="help">
-          This page sets platform defaults only. Tenant Management can override the AI model and dashboard insights per tenant. The core safety/system prompt remains backend-controlled.
-        </p>
         <form method="post" action="/platform/ai-settings" class="ticket-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
 
           <div class="field">
-            <label for="default_ai_model">Default AI model</label>
+            <label for="default_ai_model">Default AI model{{ help(help_text.platform_ai_default_model, "platform-ai-default-model-help") }}</label>
             <select id="default_ai_model" name="default_ai_model">
               {% for model_name in platform_ai_model_options %}
                 <option value="{{ model_name }}" {% if platform_ai_settings.default_ai_model == model_name %}selected{% endif %}>
@@ -52,16 +50,10 @@
                 </option>
               {% endfor %}
             </select>
-            <p class="help">
-              Used when a tenant AI model override is left on platform default. {{ platform_ai_defaults.default_ai_model }} remains the recommended cost-efficient baseline.
-            </p>
-            <p class="help" data-platform-ai-model-warning {% if platform_ai_settings.default_ai_model != "gpt-5" %}hidden{% endif %}>
-              This model is more expensive and should only be used if needed.
-            </p>
           </div>
 
           <div class="field">
-            <label for="ai_temperature">Temperature</label>
+            <label for="ai_temperature">Temperature{{ help(help_text.platform_ai_temperature ~ " Allowed range: " ~ platform_ai_temperature_min ~ " to " ~ platform_ai_temperature_max ~ ".", "platform-ai-temperature-help") }}</label>
             <input
               type="number"
               id="ai_temperature"
@@ -71,16 +63,10 @@
               step="0.1"
               value="{{ '%.2f'|format(platform_ai_settings.ai_temperature) }}"
             />
-            <p class="help">
-              Lower values keep replies more consistent. Allowed range: {{ platform_ai_temperature_min }} to {{ platform_ai_temperature_max }}.
-            </p>
-            <p class="help">
-              Current GPT-5 models use this as safe response-variation guidance rather than a raw API override.
-            </p>
           </div>
 
           <div class="field">
-            <label for="ai_max_output_tokens">Max output tokens</label>
+            <label for="ai_max_output_tokens">Max output tokens{{ help(help_text.platform_ai_max_output_tokens ~ " Allowed range: " ~ platform_ai_max_tokens_min ~ " to " ~ platform_ai_max_tokens_max ~ ".", "platform-ai-max-output-tokens-help") }}</label>
             <input
               type="number"
               id="ai_max_output_tokens"
@@ -90,9 +76,6 @@
               step="10"
               value="{{ platform_ai_settings.ai_max_output_tokens }}"
             />
-            <p class="help">
-              Bounds assistant response length and cost. Allowed range: {{ platform_ai_max_tokens_min }} to {{ platform_ai_max_tokens_max }}.
-            </p>
           </div>
 
           <div class="field checkbox">
@@ -104,14 +87,11 @@
               value="1"
               {% if platform_ai_settings.ai_dashboard_insights_enabled %}checked{% endif %}
             />
-            <label for="ai_dashboard_insights_enabled">Dashboard insights default enabled</label>
+            <label for="ai_dashboard_insights_enabled">Dashboard insights default enabled{{ help(help_text.platform_ai_dashboard_default, "platform-ai-dashboard-default-help") }}</label>
           </div>
-          <p class="help">
-            Sets the default AI Insights panel state for tenant dashboards. Tenant Management can override this per tenant, and a tenant left on platform default falls back to this setting.
-          </p>
 
           <div class="field">
-            <label for="ai_dashboard_cache_ttl_seconds">Dashboard insights cache TTL (seconds)</label>
+            <label for="ai_dashboard_cache_ttl_seconds">Dashboard insights cache TTL (seconds){{ help(help_text.platform_ai_dashboard_cache_ttl ~ " Allowed range: " ~ platform_ai_cache_ttl_min ~ " to " ~ platform_ai_cache_ttl_max ~ " seconds.", "platform-ai-dashboard-cache-ttl-help") }}</label>
             <input
               type="number"
               id="ai_dashboard_cache_ttl_seconds"
@@ -121,13 +101,10 @@
               step="60"
               value="{{ platform_ai_settings.ai_dashboard_cache_ttl_seconds }}"
             />
-            <p class="help">
-              Reuses recent insight results per tenant to reduce repeated OpenAI calls. Allowed range: {{ platform_ai_cache_ttl_min }} to {{ platform_ai_cache_ttl_max }} seconds.
-            </p>
           </div>
 
           <div class="field">
-            <label for="assistant_requests_per_user_per_hour">Assistant requests per user per hour</label>
+            <label for="assistant_requests_per_user_per_hour">Assistant requests per user per hour{{ help(help_text.platform_ai_assistant_user_rate_limit ~ " Allowed range: " ~ assistant_requests_per_user_per_hour_min ~ " to " ~ assistant_requests_per_user_per_hour_max ~ ".", "platform-ai-user-rate-limit-help") }}</label>
             <input
               type="number"
               id="assistant_requests_per_user_per_hour"
@@ -137,13 +114,10 @@
               step="1"
               value="{{ platform_ai_settings.assistant_requests_per_user_per_hour }}"
             />
-            <p class="help">
-              Backend limit for assistant chat usage per signed-in user. Allowed range: {{ assistant_requests_per_user_per_hour_min }} to {{ assistant_requests_per_user_per_hour_max }}.
-            </p>
           </div>
 
           <div class="field">
-            <label for="assistant_requests_per_tenant_per_hour">Assistant requests per tenant per hour</label>
+            <label for="assistant_requests_per_tenant_per_hour">Assistant requests per tenant per hour{{ help(help_text.platform_ai_assistant_tenant_rate_limit ~ " Allowed range: " ~ assistant_requests_per_tenant_per_hour_min ~ " to " ~ assistant_requests_per_tenant_per_hour_max ~ ".", "platform-ai-tenant-rate-limit-help") }}</label>
             <input
               type="number"
               id="assistant_requests_per_tenant_per_hour"
@@ -153,13 +127,10 @@
               step="1"
               value="{{ platform_ai_settings.assistant_requests_per_tenant_per_hour }}"
             />
-            <p class="help">
-              Backend ceiling across all users in one tenant. Allowed range: {{ assistant_requests_per_tenant_per_hour_min }} to {{ assistant_requests_per_tenant_per_hour_max }}.
-            </p>
           </div>
 
           <div class="field">
-            <label for="dashboard_insights_min_refresh_seconds">Dashboard insights minimum refresh (seconds)</label>
+            <label for="dashboard_insights_min_refresh_seconds">Dashboard insights minimum refresh (seconds){{ help(help_text.platform_ai_dashboard_min_refresh ~ " Allowed range: " ~ dashboard_insights_min_refresh_seconds_min ~ " to " ~ dashboard_insights_min_refresh_seconds_max ~ " seconds.", "platform-ai-dashboard-min-refresh-help") }}</label>
             <input
               type="number"
               id="dashboard_insights_min_refresh_seconds"
@@ -169,13 +140,10 @@
               step="60"
               value="{{ platform_ai_settings.dashboard_insights_min_refresh_seconds }}"
             />
-            <p class="help">
-              Minimum time between fresh dashboard insight generations for the same tenant. Allowed range: {{ dashboard_insights_min_refresh_seconds_min }} to {{ dashboard_insights_min_refresh_seconds_max }} seconds.
-            </p>
           </div>
 
           <div class="field">
-            <label for="dashboard_insights_max_per_tenant_per_hour">Dashboard insights max per tenant per hour</label>
+            <label for="dashboard_insights_max_per_tenant_per_hour">Dashboard insights max per tenant per hour{{ help(help_text.platform_ai_dashboard_hourly_limit ~ " Allowed range: " ~ dashboard_insights_max_per_tenant_per_hour_min ~ " to " ~ dashboard_insights_max_per_tenant_per_hour_max ~ ".", "platform-ai-dashboard-hourly-limit-help") }}</label>
             <input
               type="number"
               id="dashboard_insights_max_per_tenant_per_hour"
@@ -185,13 +153,10 @@
               step="1"
               value="{{ platform_ai_settings.dashboard_insights_max_per_tenant_per_hour }}"
             />
-            <p class="help">
-              Caps fresh dashboard insight generations per tenant in a rolling hour. Allowed range: {{ dashboard_insights_max_per_tenant_per_hour_min }} to {{ dashboard_insights_max_per_tenant_per_hour_max }}.
-            </p>
           </div>
 
           <div class="field">
-            <label for="ai_default_response_style">Default response style</label>
+            <label for="ai_default_response_style">Default response style{{ help(help_text.platform_ai_default_response_style, "platform-ai-default-response-style-help") }}</label>
             <select id="ai_default_response_style" name="ai_default_response_style">
               {% for style_name in platform_ai_response_style_options %}
                 <option value="{{ style_name }}" {% if platform_ai_settings.ai_default_response_style == style_name %}selected{% endif %}>
@@ -199,13 +164,10 @@
                 </option>
               {% endfor %}
             </select>
-            <p class="help">
-              Sets the default tone guidance for the assistant. Concise is recommended for most operational users.
-            </p>
           </div>
 
           <div class="field">
-            <label for="ai_default_focus">Default assistant focus</label>
+            <label for="ai_default_focus">Default assistant focus{{ help(help_text.platform_ai_default_focus, "platform-ai-default-focus-help") }}</label>
             <select id="ai_default_focus" name="ai_default_focus">
               {% for focus_name in platform_ai_focus_options %}
                 <option value="{{ focus_name }}" {% if platform_ai_settings.ai_default_focus == focus_name %}selected{% endif %}>
@@ -213,13 +175,10 @@
                 </option>
               {% endfor %}
             </select>
-            <p class="help">
-              Sets the default emphasis for answers. This only tunes assistant behaviour and does not change data access or permissions.
-            </p>
           </div>
 
           <div class="field">
-            <label for="ai_extra_global_instructions">Extra global instructions</label>
+            <label for="ai_extra_global_instructions">Extra global instructions{{ help(help_text.platform_ai_extra_instructions, "platform-ai-extra-instructions-help") }}</label>
             <textarea
               id="ai_extra_global_instructions"
               name="ai_extra_global_instructions"
@@ -227,9 +186,6 @@
               maxlength="{{ platform_ai_extra_instructions_max_chars }}"
               placeholder="Optional short guidance appended after the platform-controlled base prompt."
             >{{ platform_ai_settings.ai_extra_global_instructions }}</textarea>
-            <p class="help">
-              Optional short prompt addendum appended after the core backend prompt. It cannot override safety, read-only, or tenant-isolation rules.
-            </p>
           </div>
 
           <div class="actions btn-group">
@@ -241,12 +197,9 @@
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Reset to Defaults</h2>
+        <h2>Reset to Defaults{{ help(help_text.platform_ai_reset_defaults, "platform-ai-reset-help") }}</h2>
       </div>
       <div class="frame-body">
-        <p class="help">
-          Reset platform AI defaults back to the safe baseline: {{ platform_ai_defaults.default_ai_model }}, temperature {{ '%.2f'|format(platform_ai_defaults.ai_temperature) }}, max output tokens {{ platform_ai_defaults.ai_max_output_tokens }}, dashboard insights default enabled, and the default AI usage limits.
-        </p>
         <form method="post" action="/platform/ai-settings/reset" class="ticket-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
           <div class="actions btn-group">
@@ -262,21 +215,4 @@
       </div>
     </section>
   </div>
-
-  <script>
-    (() => {
-      const modelSelect = document.getElementById("default_ai_model");
-      const modelWarning = document.querySelector("[data-platform-ai-model-warning]");
-      if (!modelSelect || !modelWarning) {
-        return;
-      }
-
-      const syncModelWarning = () => {
-        modelWarning.hidden = modelSelect.value !== "gpt-5";
-      };
-
-      modelSelect.addEventListener("change", syncModelWarning);
-      syncModelWarning();
-    })();
-  </script>
 {% endblock %}

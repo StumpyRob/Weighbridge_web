@@ -1942,13 +1942,13 @@ def test_platform_superadmin_can_update_tenant_ai_settings(tmp_path, monkeypatch
         assert "Tenant AI Overrides" in tenant_detail.text
         assert f'action="/platform/tenants/{tenant_a}/ai-settings"' in tenant_detail.text
         assert "AI assistant enabled" in tenant_detail.text
-        assert "Platform AI Settings sets defaults. This page can override the AI model and dashboard insights for this tenant." in tenant_detail.text
+        assert 'id="tenant-ai-overrides-help"' in tenant_detail.text
         assert "AI model override" in tenant_detail.text
+        assert 'id="tenant-ai-model-override-help"' in tenant_detail.text
         assert "Dashboard insights override" in tenant_detail.text
+        assert 'id="tenant-ai-dashboard-override-help"' in tenant_detail.text
         assert "Use platform default (gpt-5-mini)" in tenant_detail.text
-        assert "Leave this on platform default to fall back to gpt-5-mini." in tenant_detail.text
         assert "Use platform default (Enabled)" in tenant_detail.text
-        assert "gpt-5-mini is recommended for most tenants due to lower cost." in tenant_detail.text
         assert 'option value="gpt-5"' in tenant_detail.text
 
         update_ai = admin_client.post(
@@ -1969,8 +1969,8 @@ def test_platform_superadmin_can_update_tenant_ai_settings(tmp_path, monkeypatch
         assert "AI settings updated." in updated_detail.text
         assert 'value="gpt-5" selected' in updated_detail.text
         assert 'value="disabled"' in updated_detail.text
-        assert "This model is more expensive and should only be used if needed." in updated_detail.text
-        assert "Effective dashboard insights setting: Disabled." in updated_detail.text
+        assert 'id="tenant-ai-model-override-help"' in updated_detail.text
+        assert 'id="tenant-ai-dashboard-override-help"' in updated_detail.text
 
     with SessionLocal() as db:
         tenant = db.get(Tenant, tenant_a)
@@ -2030,16 +2030,18 @@ def test_platform_superadmin_can_update_platform_ai_settings(tmp_path, monkeypat
         assert "Platform-level AI defaults for tenant workspaces. Tenant Management can override these per tenant." in page.text
         assert 'action="/platform/ai-settings"' in page.text
         assert 'action="/platform/ai-settings/reset"' in page.text
-        assert "This page sets platform defaults only." in page.text
+        assert 'id="platform-ai-default-settings-help"' in page.text
         assert "Default AI model" in page.text
+        assert 'id="platform-ai-default-model-help"' in page.text
         assert "Temperature" in page.text
+        assert 'id="platform-ai-temperature-help"' in page.text
         assert "Dashboard insights default enabled" in page.text
         assert "Assistant requests per user per hour" in page.text
         assert "Assistant requests per tenant per hour" in page.text
         assert "Dashboard insights minimum refresh (seconds)" in page.text
         assert "Dashboard insights max per tenant per hour" in page.text
         assert "Extra global instructions" in page.text
-        assert "Current GPT-5 models use this as safe response-variation guidance rather than a raw API override." in page.text
+        assert 'id="platform-ai-reset-help"' in page.text
 
         csrf = _prime_csrf(admin_client)
         update = admin_client.post(
@@ -2075,7 +2077,6 @@ def test_platform_superadmin_can_update_platform_ai_settings(tmp_path, monkeypat
         assert 'value="120"' in saved_page.text
         assert 'value="420"' in saved_page.text
         assert 'value="16"' in saved_page.text
-        assert "This model is more expensive and should only be used if needed." in saved_page.text
         assert "Prioritize overdue invoices when relevant." in saved_page.text
 
     with SessionLocal() as db:
@@ -3280,6 +3281,7 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert "NET 14" in customers_page.text
         assert "NET 30" in customers_page.text
         assert "Ad Hoc" in customers_page.text
+        assert "Yes (" in customers_page.text
         assert customers_page.text.count('class="pricing-indicator"') == 5
 
         vehicles_page = demo_client.get("/vehicles")

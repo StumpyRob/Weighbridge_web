@@ -166,7 +166,7 @@ def test_count_product_swap_preview_returns_400_and_keeps_weights_locked(client,
     assert 'value="4000"' in response.text
     assert 'id="gross_kg"' in response.text
     assert 'id="tare_kg"' in response.text
-    assert 'id="readout_kg"' in response.text
+    assert 'id="readout_kg"' not in response.text
     assert "readonly" in response.text
 
 

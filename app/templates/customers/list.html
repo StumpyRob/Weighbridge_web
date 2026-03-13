@@ -49,7 +49,7 @@
       </tr>
     </thead>
     <tbody>
-      {% for customer, has_price_overrides in rows %}
+      {% for customer, active_price_override_count in rows %}
         <tr data-row-link="/customers/{{ customer.id }}">
           <td class="customer-account-col"><span class="truncate truncate--sm" title="{{ customer.account_code }}">{{ customer.account_code }}</span></td>
           <td class="truncate-col customer-name-col"><a href="/customers/{{ customer.id }}" class="truncate truncate--md" title="{{ customer.name }}">{{ customer.name }}</a></td>
@@ -63,8 +63,8 @@
             {% endif %}
           </td>
           <td class="pricing-col">
-            {% if has_price_overrides %}
-              <span class="pricing-indicator" title="Has special pricing" aria-label="Has special pricing">&#10003;</span>
+            {% if active_price_override_count %}
+              <span class="pricing-indicator" title="Has special pricing">Yes ({{ active_price_override_count }})</span>
             {% else %}
               <span class="customer-terms customer-terms--empty">&mdash;</span>
             {% endif %}
