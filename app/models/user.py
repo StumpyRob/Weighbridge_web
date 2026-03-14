@@ -18,6 +18,7 @@ class User(Base):
     __table_args__ = (
         sa.Index("ix_users_tenant_id", "tenant_id"),
         sa.Index("ix_users_role", "role"),
+        sa.Index("ix_users_email", "email"),
         sa.Index(
             "uq_users_tenant_username",
             "tenant_id",
@@ -37,6 +38,7 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(150), nullable=False)
+    email: Mapped[str] = mapped_column(String(150), nullable=False)
     first_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     last_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id"), nullable=True)
@@ -44,6 +46,24 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    @property
+    def full_name(self) -> str | None:
+        full_name = " ".join(
+            part
+            for part in (
+                str(getattr(self, "first_name", "") or "").strip(),
+                str(getattr(self, "last_name", "") or "").strip(),
+            )
+            if part
+        ).strip()
+        return full_name or None
+
+
+def _normalize_identity_email(value: object) -> str | None:
+    candidate = str(value or "").strip().lower()
+    return candidate or None
+
 
 def _session_platform_user_count(session: Session) -> int:
     return int(
@@ -73,6 +93,13 @@ def _session_platform_superadmin_count(session: Session) -> int:
 def _normalize_user_for_write(target: User) -> None:
     tenant_id = getattr(target, "tenant_id", None)
     normalized = normalize_role(getattr(target, "role", None), default=None)
+    identity_email = (
+        _normalize_identity_email(getattr(target, "email", None))
+        or _normalize_identity_email(getattr(target, "username", None))
+    )
+    if identity_email is not None:
+        target.email = identity_email
+        target.username = identity_email
     first_name = str(getattr(target, "first_name", "") or "").strip()
     last_name = str(getattr(target, "last_name", "") or "").strip()
     target.first_name = first_name or None

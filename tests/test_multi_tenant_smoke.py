@@ -180,12 +180,17 @@ def _seed_user(
     password: str,
     role: str,
     tenant_id: int | None,
+    first_name: str = "",
+    last_name: str = "",
+    is_active: bool = True,
 ) -> int:
     with SessionLocal() as db:
         user = User(
                 **user_identity_kwargs(email=email, role=role),
+                first_name=first_name or None,
+                last_name=last_name or None,
                 password_hash=hash_password(password),
-                is_active=True,
+                is_active=is_active,
                 tenant_id=tenant_id,
             )
         db.add(user)
@@ -1773,8 +1778,11 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         tenant_detail = admin_client.get(f"/platform/tenants/{tenant_a}")
         assert tenant_detail.status_code == 200
         assert "Tenant A" in tenant_detail.text
-        assert "Tenant details, access state, and user summary." in tenant_detail.text
-        assert 'id="platform-tenant-detail-initial-admin-help"' in tenant_detail.text
+        assert "Tenant access, primary admin, and tenant-scoped users." in tenant_detail.text
+        assert "Tenant Summary" in tenant_detail.text
+        assert "Primary Tenant Admin" in tenant_detail.text
+        assert "Users" in tenant_detail.text
+        assert "Maintenance" in tenant_detail.text
         assert 'id="platform-tenant-users-help"' in tenant_detail.text
         assert "tenant-admin@example.com" in tenant_detail.text
         assert 'href="/t/a/login"' in tenant_detail.text
@@ -1782,6 +1790,10 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert f'action="/platform/tenants/{tenant_a}/admin-email"' in tenant_detail.text
         assert f'action="/platform/tenants/{tenant_a}/admin-password"' in tenant_detail.text
         assert f'action="/platform/tenants/{tenant_a}/delete"' in tenant_detail.text
+        assert 'name="first_name"' in tenant_detail.text
+        assert 'name="last_name"' in tenant_detail.text
+        assert 'name="email"' in tenant_detail.text
+        assert 'name="role"' in tenant_detail.text
 
         disable = admin_client.post(
             f"/platform/tenants/{tenant_a}/disable",
@@ -2372,9 +2384,9 @@ def test_platform_superadmin_can_update_demo_tenant_admin_email_and_password(tmp
 
         detail = admin_client.get(f"/platform/tenants/{demo_tenant}")
         assert detail.status_code == 200
-        assert "Tenant Admin Email" in detail.text
-        assert "Tenant Admin Password" in detail.text
-        assert "This also applies to the demo tenant." in detail.text
+        assert "Primary Tenant Admin" in detail.text
+        assert "Primary admin email" in detail.text
+        assert "Reset primary admin password" in detail.text
 
         csrf = _prime_csrf(admin_client)
         updated_email = admin_client.post(
@@ -2503,17 +2515,20 @@ def test_platform_superadmin_can_create_demo_user_and_add_more_tenant_users(tmp_
         assert detail.status_code == 200
         assert "No tenant users." in detail.text
         assert f'action="/platform/tenants/{demo_tenant}/users"' in detail.text
-        assert "Create the first tenant login for this workspace" in detail.text
-        assert "Create one above first." in detail.text
+        assert "Primary Tenant Admin" in detail.text
+        assert "Add User" in detail.text
+        assert "The first active user for this tenant must be a Tenant Admin." in detail.text
 
         csrf = _prime_csrf(admin_client)
         created_admin = admin_client.post(
             f"/platform/tenants/{demo_tenant}/users",
             data={
                 CSRF_FORM_FIELD: csrf,
-                "user_email": "demo-admin@example.com",
-                "user_role": ROLE_TENANT_ADMIN,
-                "user_password": "DemoPass123!",
+                "first_name": "Demi",
+                "last_name": "Admin",
+                "email": "demo-admin@example.com",
+                "role": ROLE_TENANT_ADMIN,
+                "password": "DemoPass123!",
                 "confirm_password": "DemoPass123!",
             },
             follow_redirects=False,
@@ -2524,18 +2539,25 @@ def test_platform_superadmin_can_create_demo_user_and_add_more_tenant_users(tmp_
         created_admin_page = admin_client.get(created_admin.headers["location"])
         assert created_admin_page.status_code == 200
         assert "Tenant user created: demo-admin@example.com." in created_admin_page.text
+        assert "Demi Admin" in created_admin_page.text
         assert "demo-admin@example.com" in created_admin_page.text
-        assert "Tenant Admin Email" in created_admin_page.text
-        assert "Tenant Admin Password" in created_admin_page.text
+        assert "Primary Tenant Admin" in created_admin_page.text
+        assert "Full name" in created_admin_page.text
+        assert "Email" in created_admin_page.text
+        assert "Role" in created_admin_page.text
+        assert "Status" in created_admin_page.text
+        assert "Created" in created_admin_page.text
 
         csrf = _prime_csrf(admin_client)
         created_operator = admin_client.post(
             f"/platform/tenants/{demo_tenant}/users",
             data={
                 CSRF_FORM_FIELD: csrf,
-                "user_email": "demo-ops@example.com",
-                "user_role": ROLE_USER,
-                "user_password": "OperatorPass123!",
+                "first_name": "Opal",
+                "last_name": "Operator",
+                "email": "demo-ops@example.com",
+                "role": ROLE_USER,
+                "password": "OperatorPass123!",
                 "confirm_password": "OperatorPass123!",
             },
             follow_redirects=False,
@@ -2546,8 +2568,10 @@ def test_platform_superadmin_can_create_demo_user_and_add_more_tenant_users(tmp_
         created_operator_page = admin_client.get(created_operator.headers["location"])
         assert created_operator_page.status_code == 200
         assert "Tenant user created: demo-ops@example.com." in created_operator_page.text
+        assert "Opal Operator" in created_operator_page.text
         assert "demo-admin@example.com" in created_operator_page.text
         assert "demo-ops@example.com" in created_operator_page.text
+        assert "Operator" in created_operator_page.text
 
     with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.localhost") as demo_client:
         assert _login(demo_client, email="demo-admin@example.com", password="DemoPass123!") == 303
@@ -2565,6 +2589,14 @@ def test_platform_superadmin_can_create_demo_user_and_add_more_tenant_users(tmp_
             "demo-admin@example.com",
             "demo-ops@example.com",
         ]
+        assert [user.email for user in demo_users] == [
+            "demo-admin@example.com",
+            "demo-ops@example.com",
+        ]
+        assert [user.full_name for user in demo_users] == [
+            "Demi Admin",
+            "Opal Operator",
+        ]
         assert [user.role for user in demo_users] == [
             ROLE_TENANT_ADMIN,
             ROLE_USER,
@@ -2581,12 +2613,73 @@ def test_platform_superadmin_can_create_demo_user_and_add_more_tenant_users(tmp_
             ).scalars()
         )
         assert len(created_events) >= 2
-        created_emails = {
-            str((event.details_json or {}).get("email") or "")
+        created_details = {
+            str((event.details_json or {}).get("email") or ""): event.details_json or {}
             for event in created_events
         }
-        assert "demo-admin@example.com" in created_emails
-        assert "demo-ops@example.com" in created_emails
+        assert created_details["demo-admin@example.com"]["first_name"] == "Demi"
+        assert created_details["demo-admin@example.com"]["last_name"] == "Admin"
+        assert created_details["demo-admin@example.com"]["role"] == ROLE_TENANT_ADMIN
+        assert created_details["demo-ops@example.com"]["first_name"] == "Opal"
+        assert created_details["demo-ops@example.com"]["last_name"] == "Operator"
+        assert created_details["demo-ops@example.com"]["role"] == ROLE_USER
+
+
+def test_platform_tenant_detail_renders_section_structure_and_name_fallbacks(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-detail-users-render.db", monkeypatch=monkeypatch
+    )
+    tenant_id = _seed_tenant(SessionLocal, name="Tenant A", subdomain="a", is_active=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_id,
+        company_name="Tenant A Co",
+        primary_color="#224466",
+    )
+    _seed_user(
+        SessionLocal,
+        email="primary-admin@example.com",
+        password="TenantPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_id,
+        first_name="Priya",
+        last_name="Admin",
+    )
+    _seed_user(
+        SessionLocal,
+        email="legacy-user@example.com",
+        password="TenantPass123!",
+        role=ROLE_USER,
+        tenant_id=tenant_id,
+    )
+    _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+        detail = admin_client.get(f"/platform/tenants/{tenant_id}")
+
+    assert detail.status_code == 200
+    assert "Tenant Summary" in detail.text
+    assert "Primary Tenant Admin" in detail.text
+    assert "Users" in detail.text
+    assert "Tenant AI Overrides" in detail.text
+    assert "Maintenance" in detail.text
+    assert "Full name" in detail.text
+    assert "Email" in detail.text
+    assert "Role" in detail.text
+    assert "Status" in detail.text
+    assert "Created" in detail.text
+    assert "Priya Admin" in detail.text
+    assert "primary-admin@example.com" in detail.text
+    assert detail.text.count("legacy-user@example.com") >= 2
+    assert "Primary admin email" in detail.text
+    assert "Add User" in detail.text
 
 
 def test_legacy_default_tenant_is_renamed_to_demo_and_hidden_from_platform_ui(tmp_path, monkeypatch):

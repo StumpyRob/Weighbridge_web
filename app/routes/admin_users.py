@@ -24,22 +24,13 @@ from ..permissions import PERM_MANAGE_USERS, require_permission
 from ..templating import templates
 from ..tenancy import request_platform_mode
 from ..user_roles import (
-    ROLE_ACCOUNTS,
-    ROLE_OPERATOR,
-    ROLE_READ_ONLY,
     ROLE_TENANT_ADMIN,
+    TENANT_USER_ROLES,
     normalize_role,
     role_label,
 )
 
 router = APIRouter()
-
-_MANAGED_TENANT_ROLES: tuple[str, ...] = (
-    ROLE_TENANT_ADMIN,
-    ROLE_OPERATOR,
-    ROLE_ACCOUNTS,
-    ROLE_READ_ONLY,
-)
 
 
 def _require_tenant_user_admin(request: Request) -> User:
@@ -59,7 +50,7 @@ def _tenant_user_query(tenant_id: int):
     return (
         select(User)
         .where(User.tenant_id == int(tenant_id))
-        .order_by(User.created_at.asc(), User.username.asc(), User.id.asc())
+        .order_by(User.created_at.asc(), User.email.asc(), User.id.asc())
     )
 
 
@@ -68,7 +59,7 @@ def _tenant_users(db: Session, tenant_id: int) -> list[User]:
 
 
 def _role_options() -> list[tuple[str, str]]:
-    return [(role, role_label(role)) for role in _MANAGED_TENANT_ROLES]
+    return [(role, role_label(role)) for role in TENANT_USER_ROLES]
 
 
 def _active_tenant_admin_count(db: Session, tenant_id: int, *, exclude_user_id: int | None = None) -> int:
@@ -193,7 +184,7 @@ async def admin_users_create(
             url=_tenant_user_management_url(tenant_id, error="A valid email address is required."),
             status_code=303,
         )
-    if role not in _MANAGED_TENANT_ROLES:
+    if role not in TENANT_USER_ROLES:
         return RedirectResponse(
             url=_tenant_user_management_url(tenant_id, error="Select a valid tenant role."),
             status_code=303,
@@ -291,7 +282,7 @@ async def admin_users_update(
             url=_tenant_user_management_url(tenant_id, error="A valid email address is required."),
             status_code=303,
         )
-    if role not in _MANAGED_TENANT_ROLES:
+    if role not in TENANT_USER_ROLES:
         return RedirectResponse(
             url=_tenant_user_management_url(tenant_id, error="Select a valid tenant role."),
             status_code=303,

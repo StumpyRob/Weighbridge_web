@@ -426,8 +426,10 @@ def test_tenant_admin_can_manage_workspace_users_and_audit_actions(workspace_env
                 select(User).where(User.tenant_id == workspace_env["tenant_id"], User.username == "nina@acme.example")
             ).scalar_one()
             user_id = int(user.id)
+            assert user.email == "nina@acme.example"
             assert user.first_name == "Nina"
             assert user.last_name == "Newuser"
+            assert user.full_name == "Nina Newuser"
             assert user.role == ROLE_OPERATOR
 
         update_response = client.post(

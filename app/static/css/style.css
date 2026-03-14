@@ -3151,12 +3151,64 @@ details > summary:focus-visible {
   min-width: 360px;
 }
 
-.platform-tenant-detail-users-copy {
+.platform-tenant-detail-users-copy,
+.platform-tenant-detail-section-copy {
   margin-bottom: 1rem;
 }
 
 .platform-tenant-delete-note {
   margin-top: 0;
+}
+
+.platform-tenant-detail-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.platform-tenant-detail-admin-card {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.platform-tenant-detail-user-add {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.platform-tenant-detail-user-add h3,
+.platform-tenant-maintenance-block h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.platform-tenant-maintenance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.platform-tenant-maintenance-block {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.platform-tenant-maintenance-block--danger {
+  border-color: #fecaca;
+  background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
 }
 
 .tenant-form__error {

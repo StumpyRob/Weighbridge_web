@@ -7,46 +7,13 @@
   <div class="page-header">
     <div>
       <h1>{{ tenant.name }}</h1>
-      <p class="muted">Tenant details, access state, and user summary.</p>
+      <p class="muted">Tenant access, primary admin, and tenant-scoped users.</p>
     </div>
     <div class="actions btn-group">
-      {% if tenant.is_active %}
-        <form method="post" action="/platform/tenants/{{ tenant.id }}/disable">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-          <button type="submit" class="btn btn--danger">Disable Tenant</button>
-        </form>
-      {% else %}
-        <form method="post" action="/platform/tenants/{{ tenant.id }}/enable">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-          <button type="submit" class="btn btn--secondary">Enable Tenant</button>
-        </form>
-      {% endif %}
-      {% if delete_allowed %}
-        <form method="post" action="/platform/tenants/{{ tenant.id }}/delete">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-          <button
-            type="submit"
-            class="btn btn--danger"
-            onclick="return window.confirm('Delete this tenant? This permanently removes the tenant, its seeded settings, and uploaded files.');"
-          >
-            Delete Tenant
-          </button>
-        </form>
-      {% endif %}
       <a class="btn btn--secondary" href="{{ open_url }}" target="_blank" rel="noreferrer">Open Tenant</a>
       <a class="btn btn--ghost" href="/platform/tenants">Back to Tenants</a>
     </div>
   </div>
-
-  {% if delete_error %}
-    <div class="alert alert--warning platform-tenant-delete-note">
-      {{ delete_error }}
-    </div>
-  {% elif delete_block_reason %}
-    <div class="alert alert--warning platform-tenant-delete-note">
-      {{ delete_block_reason }}
-    </div>
-  {% endif %}
 
   {% if tenant_created %}
     <div class="notice">
@@ -115,134 +82,115 @@
   {% endif %}
 
   <div class="platform-admin-stack">
-    <section class="card">
-      <div class="invoice-summary-grid">
-        <div class="summary-item">
-          <span class="summary-label">Tenant name</span>
-          <span class="summary-value">{{ tenant.name }}</span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-label">Subdomain</span>
-          <span class="summary-value"><code>{{ tenant.subdomain }}</code></span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-label">Status</span>
-          <span class="summary-value">
-            {% if tenant.is_active %}
-              <span class="status-pill status-open">Active</span>
-            {% else %}
-              <span class="status-pill status-void">Disabled</span>
-            {% endif %}
-          </span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-label">Created</span>
-          <span class="summary-value">{{ tenant.created_at.strftime("%d/%m/%Y") if tenant.created_at else "-" }}</span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-label">Initial admin{{ help(help_text.platform_initial_admin, "platform-tenant-detail-initial-admin-help") }}</span>
-          <span class="summary-value">{{ summary.initial_admin_email or "-" }}</span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-label">Tenant admins</span>
-          <span class="summary-value">{{ summary.tenant_admin_count }}</span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-label">Users</span>
-          <span class="summary-value">{{ summary.user_count }}</span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-label">Active users</span>
-          <span class="summary-value">{{ summary.active_user_count }}</span>
-        </div>
-      </div>
-    </section>
-
     <section class="frame">
       <div class="frame-header">
-        <h2>Add Tenant User</h2>
+        <h2>Tenant Summary</h2>
       </div>
       <div class="frame-body">
-        <p class="muted platform-tenant-detail-users-copy">
-          Create the first tenant login for this workspace, recover the demo tenant after a reset, or add another tenant-scoped user.
-        </p>
-        <form method="post" action="/platform/tenants/{{ tenant.id }}/users" class="ticket-form">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-          <div class="field">
-            <label for="user_email">Tenant user email</label>
-            <input
-              type="email"
-              id="user_email"
-              name="user_email"
-              required
-              autocomplete="email"
-            />
+        <div class="invoice-summary-grid">
+          <div class="summary-item">
+            <span class="summary-label">Tenant name</span>
+            <span class="summary-value">{{ tenant.name }}</span>
           </div>
-          <div class="field">
-            <label for="user_role">Tenant user role</label>
-            <select id="user_role" name="user_role" required>
-              <option value="tenant_admin">Tenant Admin</option>
-              <option value="user">User</option>
-            </select>
-            <p class="help">If this workspace has no tenant admins yet, the first user must be a Tenant Admin.</p>
+          <div class="summary-item">
+            <span class="summary-label">Subdomain</span>
+            <span class="summary-value"><code>{{ tenant.subdomain }}</code></span>
           </div>
-          <div class="field">
-            <label for="user_password">Temporary password</label>
-            <input
-              type="password"
-              id="user_password"
-              name="user_password"
-              required
-              minlength="8"
-              autocomplete="new-password"
-            />
+          <div class="summary-item">
+            <span class="summary-label">Status</span>
+            <span class="summary-value">
+              {% if tenant.is_active %}
+                <span class="status-pill status-open">Active</span>
+              {% else %}
+                <span class="status-pill status-void">Disabled</span>
+              {% endif %}
+            </span>
           </div>
-          <div class="field">
-            <label for="user_confirm_password">Confirm temporary password</label>
-            <input
-              type="password"
-              id="user_confirm_password"
-              name="confirm_password"
-              required
-              minlength="8"
-              autocomplete="new-password"
-            />
+          <div class="summary-item">
+            <span class="summary-label">Created date</span>
+            <span class="summary-value">{{ tenant.created_at.strftime("%d/%m/%Y") if tenant.created_at else "-" }}</span>
           </div>
-          <div class="actions btn-group">
-            <button type="submit" class="btn btn--primary">Create Tenant User</button>
+          <div class="summary-item">
+            <span class="summary-label">Total users</span>
+            <span class="summary-value">{{ summary.user_count }}</span>
           </div>
-        </form>
+          <div class="summary-item">
+            <span class="summary-label">Active users</span>
+            <span class="summary-value">{{ summary.active_user_count }}</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Tenant admins</span>
+            <span class="summary-value">{{ summary.tenant_admin_count }}</span>
+          </div>
+        </div>
       </div>
     </section>
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Tenant Admin Email</h2>
+        <h2>Primary Tenant Admin</h2>
       </div>
       <div class="frame-body">
         {% if primary_admin_email %}
-          <p class="muted platform-tenant-detail-users-copy">
-            Update the primary tenant admin sign-in email shown for this workspace. This also applies to the demo tenant.
+          <p class="muted platform-tenant-detail-section-copy">
+            This is the main login/admin account for the tenant. Update the sign-in email or set a new password directly from here.
           </p>
-          <form method="post" action="/platform/tenants/{{ tenant.id }}/admin-email" class="ticket-form">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-            <div class="field">
-              <label for="admin_email">Primary tenant admin email</label>
-              <input
-                type="email"
-                id="admin_email"
-                name="admin_email"
-                value="{{ primary_admin_email }}"
-                required
-              />
+          <div class="platform-tenant-detail-admin-grid">
+            <div class="platform-tenant-detail-admin-card">
+              <div class="summary-item">
+                <span class="summary-label">Primary admin email</span>
+                <span class="summary-value">{{ primary_admin_email }}</span>
+              </div>
             </div>
-            <div class="actions btn-group">
-              <button type="submit" class="btn btn--primary">Update Email</button>
-            </div>
-          </form>
+            <form method="post" action="/platform/tenants/{{ tenant.id }}/admin-email" class="ticket-form platform-tenant-detail-admin-card">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+              <div class="field">
+                <label for="admin_email">Update primary admin email</label>
+                <input
+                  type="email"
+                  id="admin_email"
+                  name="admin_email"
+                  value="{{ primary_admin_email }}"
+                  required
+                  autocomplete="email"
+                />
+              </div>
+              <div class="actions btn-group">
+                <button type="submit" class="btn btn--primary">Update Email</button>
+              </div>
+            </form>
+            <form method="post" action="/platform/tenants/{{ tenant.id }}/admin-password" class="ticket-form platform-tenant-detail-admin-card">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+              <div class="field">
+                <label for="admin_password">Reset primary admin password</label>
+                <input
+                  type="password"
+                  id="admin_password"
+                  name="admin_password"
+                  required
+                  minlength="8"
+                  autocomplete="new-password"
+                />
+              </div>
+              <div class="field">
+                <label for="confirm_password">Confirm new password</label>
+                <input
+                  type="password"
+                  id="confirm_password"
+                  name="confirm_password"
+                  required
+                  minlength="8"
+                  autocomplete="new-password"
+                />
+              </div>
+              <div class="actions btn-group">
+                <button type="submit" class="btn btn--secondary">Reset Password</button>
+              </div>
+            </form>
+          </div>
         {% else %}
           <div class="alert alert--warning">
-            This tenant does not currently have a tenant user account to update. Create one above first.
+            No primary tenant admin is set yet. Use Add User below and choose the Tenant Admin role first.
           </div>
         {% endif %}
       </div>
@@ -253,12 +201,15 @@
         <h2>Users{{ help(help_text.platform_tenant_users, "platform-tenant-users-help") }}</h2>
       </div>
       <div class="frame-body">
-        <p class="muted platform-tenant-detail-users-copy">Tenant-scoped accounts currently attached to this workspace.</p>
+        <p class="muted platform-tenant-detail-section-copy">
+          Additional tenant-scoped users sign in with email. Use the role selector to grant tenant admin access where needed.
+        </p>
         <div class="table-wrap list-table-wrap">
           <table class="data-table list-table platform-tenants-table">
             <thead>
               <tr>
-                <th>Identity</th>
+                <th>Full name</th>
+                <th>Email</th>
                 <th>Role</th>
                 <th>Status</th>
                 <th>Created</th>
@@ -267,8 +218,9 @@
             <tbody>
               {% for user in users %}
                 <tr>
+                  <td>{{ user.full_name or user.email or user.username }}</td>
                   <td>{{ user.email or user.username }}</td>
-                  <td>{{ user.role }}</td>
+                  <td>{{ user_role_label(user) }}</td>
                   <td>
                     {% if user.is_active %}
                       <span class="status-pill status-open">Active</span>
@@ -280,57 +232,89 @@
                 </tr>
               {% else %}
                 <tr>
-                  <td colspan="4" class="empty">No tenant users.</td>
+                  <td colspan="5" class="empty">No tenant users.</td>
                 </tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
-      </div>
-    </section>
-
-    <section class="frame">
-      <div class="frame-header">
-        <h2>Tenant Admin Password</h2>
-      </div>
-      <div class="frame-body">
-        {% if primary_admin_email %}
-          <p class="muted platform-tenant-detail-users-copy">
-            Set a new password for the primary tenant admin sign-in account. This also applies to the demo tenant.
+        <div class="platform-tenant-detail-user-add">
+          <h3>Add User</h3>
+          <p class="muted platform-tenant-detail-section-copy">
+            Add another tenant-scoped user. If this tenant does not have a tenant admin yet, create that user here with the Tenant Admin role.
           </p>
-          <form method="post" action="/platform/tenants/{{ tenant.id }}/admin-password" class="ticket-form">
+          <form method="post" action="/platform/tenants/{{ tenant.id }}/users" class="ticket-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-            <div class="field">
-              <label for="admin_password">New tenant admin password</label>
-              <input
-                type="password"
-                id="admin_password"
-                name="admin_password"
-                required
-                minlength="8"
-                autocomplete="new-password"
-              />
-            </div>
-            <div class="field">
-              <label for="confirm_password">Confirm new password</label>
-              <input
-                type="password"
-                id="confirm_password"
-                name="confirm_password"
-                required
-                minlength="8"
-                autocomplete="new-password"
-              />
+            <div class="form-grid">
+              <div class="field">
+                <label for="first_name">First name</label>
+                <input
+                  type="text"
+                  id="first_name"
+                  name="first_name"
+                  maxlength="100"
+                  autocomplete="given-name"
+                />
+              </div>
+              <div class="field">
+                <label for="last_name">Last name</label>
+                <input
+                  type="text"
+                  id="last_name"
+                  name="last_name"
+                  maxlength="100"
+                  autocomplete="family-name"
+                />
+              </div>
+              <div class="field">
+                <label for="email">Email</label>
+                <input
+                  type="email"
+                  id="email"
+                  name="email"
+                  required
+                  autocomplete="email"
+                />
+              </div>
+              <div class="field">
+                <label for="role">Role</label>
+                <select id="role" name="role" required>
+                  {% for role_value, role_name in tenant_role_options %}
+                    <option value="{{ role_value }}">{{ role_name }}</option>
+                  {% endfor %}
+                </select>
+                {% if tenant_requires_admin_role %}
+                  <p class="help">The first active user for this tenant must be a Tenant Admin.</p>
+                {% endif %}
+              </div>
+              <div class="field">
+                <label for="password">Temporary password</label>
+                <input
+                  type="password"
+                  id="password"
+                  name="password"
+                  required
+                  minlength="8"
+                  autocomplete="new-password"
+                />
+              </div>
+              <div class="field">
+                <label for="user_confirm_password">Confirm temporary password</label>
+                <input
+                  type="password"
+                  id="user_confirm_password"
+                  name="confirm_password"
+                  required
+                  minlength="8"
+                  autocomplete="new-password"
+                />
+              </div>
             </div>
             <div class="actions btn-group">
-              <button type="submit" class="btn btn--primary">Update Password</button>
+              <button type="submit" class="btn btn--primary">Add User</button>
             </div>
           </form>
-        {% else %}
-          <div class="alert alert--warning">
-            This tenant does not currently have a tenant user account to update. Create one above first.
-          </div>
-        {% endif %}
+        </div>
       </div>
     </section>
 
@@ -400,6 +384,54 @@
         <h2>Maintenance</h2>
       </div>
       <div class="frame-body">
+        <div class="platform-tenant-maintenance-grid">
+          <div class="platform-tenant-maintenance-block">
+            <h3>Tenant access</h3>
+            <p class="muted">Enable or disable sign-in access for this tenant.</p>
+            <div class="actions btn-group">
+              {% if tenant.is_active %}
+                <form method="post" action="/platform/tenants/{{ tenant.id }}/disable">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                  <button type="submit" class="btn btn--danger">Disable Tenant</button>
+                </form>
+              {% else %}
+                <form method="post" action="/platform/tenants/{{ tenant.id }}/enable">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                  <button type="submit" class="btn btn--secondary">Enable Tenant</button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="platform-tenant-maintenance-block platform-tenant-maintenance-block--danger">
+            <h3>Delete tenant</h3>
+            <p class="muted">Permanently remove the tenant, seeded settings, and uploaded files when deletion is allowed.</p>
+            {% if delete_error %}
+              <div class="alert alert--warning platform-tenant-delete-note">
+                {{ delete_error }}
+              </div>
+            {% elif delete_block_reason %}
+              <div class="alert alert--warning platform-tenant-delete-note">
+                {{ delete_block_reason }}
+              </div>
+            {% endif %}
+            <div class="actions btn-group">
+              {% if delete_allowed %}
+                <form method="post" action="/platform/tenants/{{ tenant.id }}/delete">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                  <button
+                    type="submit"
+                    class="btn btn--danger"
+                    onclick="return window.confirm('Delete this tenant? This permanently removes the tenant, its seeded settings, and uploaded files.');"
+                  >
+                    Delete Tenant
+                  </button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
         {% if tenant_is_demo %}
           <div class="platform-maintenance-card" data-demo-reset>
             <p class="muted">

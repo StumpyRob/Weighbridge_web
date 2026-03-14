@@ -200,9 +200,7 @@ def is_admin_user(db: Session, user: User | None) -> bool:
 def user_display_name(user: User | None) -> str:
     if user is None:
         return "System"
-    first_name = str(getattr(user, "first_name", "") or "").strip()
-    last_name = str(getattr(user, "last_name", "") or "").strip()
-    full_name = " ".join(part for part in (first_name, last_name) if part).strip()
+    full_name = str(getattr(user, "full_name", "") or "").strip()
     if full_name:
         return full_name
     email = str(getattr(user, "email", "") or "").strip()

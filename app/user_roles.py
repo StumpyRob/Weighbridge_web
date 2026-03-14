@@ -9,12 +9,16 @@ ROLE_READ_ONLY = "read_only"
 # Backward compatibility for older code/tests that still reference the legacy user role.
 ROLE_USER = ROLE_OPERATOR
 
-VALID_ROLES: tuple[str, ...] = (
-    ROLE_SUPERADMIN,
+TENANT_USER_ROLES: tuple[str, ...] = (
     ROLE_TENANT_ADMIN,
     ROLE_OPERATOR,
     ROLE_ACCOUNTS,
     ROLE_READ_ONLY,
+)
+
+VALID_ROLES: tuple[str, ...] = (
+    ROLE_SUPERADMIN,
+    *TENANT_USER_ROLES,
 )
 
 _ROLE_ALIASES = {

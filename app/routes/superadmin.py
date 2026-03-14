@@ -16,8 +16,6 @@ from ..audit import diff as audit_diff
 from ..audit import log as audit_log
 from ..audit import user_snapshot
 from ..auth import (
-    ROLE_USER,
-    ROLE_TENANT_ADMIN,
     hash_password,
     is_superadmin_user,
     normalize_email,
@@ -106,6 +104,7 @@ from ..tenancy import (
     tenant_external_url_template,
 )
 from ..templating import templates
+from ..user_roles import ROLE_TENANT_ADMIN, TENANT_USER_ROLES, normalize_role, role_label
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -280,8 +279,14 @@ def _user_identity(user: User | None) -> str:
     return str(getattr(user, "email", "") or getattr(user, "username", "") or "").strip()
 
 
-def _normalize_role(value: object) -> str:
-    return str(value or "").strip().lower()
+def _tenant_users(db: Session, tenant_id: int) -> list[User]:
+    return list(
+        db.execute(
+            select(User)
+            .where(User.tenant_id == int(tenant_id))
+            .order_by(User.created_at.asc(), User.email.asc(), User.id.asc())
+        ).scalars()
+    )
 
 
 def _tenant_users_map(db: Session, tenant_ids: list[int]) -> dict[int, list[User]]:
@@ -307,7 +312,11 @@ def _tenant_users_map(db: Session, tenant_ids: list[int]) -> dict[int, list[User
 
 def _tenant_summary(users: list[User]) -> dict[str, object]:
     ordered_users = list(users)
-    tenant_admins = [user for user in ordered_users if _normalize_role(getattr(user, "role", "")) == ROLE_TENANT_ADMIN]
+    tenant_admins = [
+        user
+        for user in ordered_users
+        if normalize_role(getattr(user, "role", None), default="") == ROLE_TENANT_ADMIN
+    ]
     initial_admin = _tenant_primary_admin(ordered_users)
     return {
         "initial_admin_email": _user_identity(initial_admin),
@@ -320,7 +329,17 @@ def _tenant_summary(users: list[User]) -> dict[str, object]:
 def _tenant_primary_admin(users: list[User]) -> User | None:
     ordered_users = list(users)
     for user in ordered_users:
-        if _normalize_role(getattr(user, "role", "")) == ROLE_TENANT_ADMIN:
+        if (
+            normalize_role(getattr(user, "role", None), default="")
+            == ROLE_TENANT_ADMIN
+            and bool(getattr(user, "is_active", False))
+        ):
+            return user
+    for user in ordered_users:
+        if normalize_role(getattr(user, "role", None), default="") == ROLE_TENANT_ADMIN:
+            return user
+    for user in ordered_users:
+        if bool(getattr(user, "is_active", False)):
             return user
     return ordered_users[0] if ordered_users else None
 
@@ -330,6 +349,10 @@ def _user_identity_column():
     if email_col is not None:
         return email_col
     return getattr(User, "username")
+
+
+def _tenant_role_options() -> list[tuple[str, str]]:
+    return [(role, role_label(role)) for role in TENANT_USER_ROLES]
 
 
 def _tenant_open_url(subdomain: str | None) -> str:
@@ -451,6 +474,10 @@ def _tenant_form_context(
 def _form_checkbox_checked(form, key: str) -> bool:
     values = list(form.getlist(key)) if hasattr(form, "getlist") else [form.get(key)]
     return any(str(value or "").strip().lower() in {"1", "true", "on", "yes"} for value in values)
+
+
+def _form_value(form, key: str) -> str:
+    return str(form.get(key, "") or "").strip()
 
 
 def _platform_ai_settings_page_context(
@@ -588,13 +615,7 @@ def tenant_detail(
     tenant = db.get(Tenant, tenant_id)
     if tenant is None:
         return HTMLResponse("Not Found", status_code=404)
-    users = list(
-        db.execute(
-            select(User)
-            .where(User.tenant_id == int(tenant.id))
-            .order_by(User.created_at.asc(), User.username.asc(), User.id.asc())
-        ).scalars()
-    )
+    users = _tenant_users(db, int(tenant.id))
     primary_admin = _tenant_primary_admin(users)
     summary = _tenant_summary(users)
     delete_block_reason = _tenant_delete_block_reason(
@@ -618,6 +639,8 @@ def tenant_detail(
             "tenant_is_demo": is_demo_tenant(tenant),
             "users": users,
             "summary": summary,
+            "tenant_role_options": _tenant_role_options(),
+            "tenant_requires_admin_role": int(summary["tenant_admin_count"]) == 0,
             "primary_admin_email": _user_identity(primary_admin),
             "open_url": _tenant_open_url(tenant.subdomain),
             "delete_allowed": not bool(delete_block_reason),
@@ -855,13 +878,7 @@ async def tenant_update_admin_email(
     if tenant is None:
         return RedirectResponse(url="/platform/tenants?error=Tenant+not+found", status_code=303)
 
-    users = list(
-        db.execute(
-            select(User)
-            .where(User.tenant_id == int(tenant.id))
-            .order_by(User.created_at.asc(), User.username.asc(), User.id.asc())
-        ).scalars()
-    )
+    users = _tenant_users(db, int(tenant.id))
     primary_admin = _tenant_primary_admin(users)
     if primary_admin is None:
         return RedirectResponse(
@@ -954,26 +971,22 @@ async def tenant_create_user(
     if tenant is None:
         return RedirectResponse(url="/platform/tenants?error=Tenant+not+found", status_code=303)
 
-    users = list(
-        db.execute(
-            select(User)
-            .where(User.tenant_id == int(tenant.id))
-            .order_by(User.created_at.asc(), User.username.asc(), User.id.asc())
-        ).scalars()
-    )
+    users = _tenant_users(db, int(tenant.id))
 
     form = await request.form()
-    user_email = normalize_email(form.get("user_email"))
-    user_password = str(form.get("user_password", "")).strip()
-    confirm_password = str(form.get("confirm_password", "")).strip()
-    user_role = str(form.get("user_role", "") or "").strip().lower()
+    first_name = _form_value(form, "first_name")
+    last_name = _form_value(form, "last_name")
+    user_email = normalize_email(form.get("email") or form.get("user_email"))
+    user_password = _form_value(form, "password") or _form_value(form, "user_password")
+    confirm_password = _form_value(form, "confirm_password")
+    user_role = normalize_role(form.get("role") or form.get("user_role"), default=None)
 
     if not validate_email(user_email):
         return RedirectResponse(
             url=f"/platform/tenants/{tenant.id}?{urlencode({'user_error': 'A valid tenant user email is required.'})}",
             status_code=303,
         )
-    if user_role not in {ROLE_TENANT_ADMIN, ROLE_USER}:
+    if user_role not in TENANT_USER_ROLES:
         return RedirectResponse(
             url=f"/platform/tenants/{tenant.id}?{urlencode({'user_error': 'Select a valid tenant user role.'})}",
             status_code=303,
@@ -990,7 +1003,7 @@ async def tenant_create_user(
         )
 
     has_tenant_admin = any(
-        _normalize_role(getattr(user, "role", "")) == ROLE_TENANT_ADMIN
+        normalize_role(getattr(user, "role", None), default="") == ROLE_TENANT_ADMIN
         for user in users
     )
     if not has_tenant_admin and user_role != ROLE_TENANT_ADMIN:
@@ -1017,6 +1030,8 @@ async def tenant_create_user(
 
     tenant_user = User(
         **user_identity_kwargs(email=user_email, role=user_role),
+        first_name=first_name or None,
+        last_name=last_name or None,
         password_hash=hash_password(user_password),
         is_active=True,
         tenant_id=int(tenant.id),
@@ -1032,8 +1047,11 @@ async def tenant_create_user(
             entity_id=tenant_user.id,
             summary=f"Created tenant user for {tenant.name}",
             details={
+                "first_name": first_name or None,
+                "last_name": last_name or None,
                 "email": user_email,
                 "role": user_role,
+                "is_active": True,
             },
             user=current_user,
             tenant_id=tenant.id,
@@ -1046,6 +1064,8 @@ async def tenant_create_user(
             entity_id=tenant.id,
             summary=f"Added tenant user to tenant {tenant.name}",
             details={
+                "created_user_first_name": first_name or None,
+                "created_user_last_name": last_name or None,
                 "created_user_email": user_email,
                 "created_user_role": user_role,
             },
@@ -1082,13 +1102,7 @@ async def tenant_update_admin_password(
     if tenant is None:
         return RedirectResponse(url="/platform/tenants?error=Tenant+not+found", status_code=303)
 
-    users = list(
-        db.execute(
-            select(User)
-            .where(User.tenant_id == int(tenant.id))
-            .order_by(User.created_at.asc(), User.username.asc(), User.id.asc())
-        ).scalars()
-    )
+    users = _tenant_users(db, int(tenant.id))
     primary_admin = _tenant_primary_admin(users)
     if primary_admin is None:
         return RedirectResponse(
