@@ -19,6 +19,7 @@ import app.main as main_module
 import app.services.ai_assistant as ai_assistant_module
 import app.services.ai_assistant_data as ai_assistant_data_module
 import app.services.ai_usage as ai_usage_module
+import app.services.email_service as email_service_module
 import app.services.platform_ai_settings as platform_ai_settings_module
 from app.auth import ROLE_SUPERADMIN, ROLE_TENANT_ADMIN, ROLE_USER, hash_password, user_identity_kwargs
 from app.config import settings
@@ -2237,6 +2238,200 @@ def test_platform_superadmin_can_reset_platform_ai_settings_to_defaults(tmp_path
         ).scalars().first()
         assert audit_event is not None
         assert audit_event.user_id == superadmin_id
+
+
+def test_platform_superadmin_can_update_email_settings_and_send_test_email(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="platform-email-settings.db", monkeypatch=monkeypatch
+    )
+    superadmin_id = _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    deliveries: dict[str, object] = {}
+
+    class _FakeSMTP:
+        def __init__(self, host, port, timeout):
+            deliveries["host"] = host
+            deliveries["port"] = port
+            deliveries["timeout"] = timeout
+
+        def ehlo(self):
+            deliveries["ehlo"] = int(deliveries.get("ehlo", 0)) + 1
+
+        def starttls(self):
+            deliveries["started_tls"] = True
+
+        def login(self, username, password):
+            deliveries["login"] = (username, password)
+
+        def send_message(self, message, from_addr=None, to_addrs=None):
+            deliveries["message"] = message
+            deliveries["from_addr"] = from_addr
+            deliveries["to_addrs"] = to_addrs
+
+        def quit(self):
+            deliveries["quit"] = True
+
+    monkeypatch.setattr(email_service_module.smtplib, "SMTP", _FakeSMTP)
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        _login_platform_superadmin(admin_client)
+
+        page = admin_client.get("/platform/email-settings")
+        assert page.status_code == 200
+        assert ">Platform Email Settings<" in page.text
+        assert 'action="/platform/email-settings"' in page.text
+        assert 'action="/platform/email-settings/test"' in page.text
+        assert 'id="platform-email-settings-scope-help"' in page.text
+        assert 'id="platform-email-smtp-host-help"' in page.text
+        assert 'id="platform-email-test-help"' in page.text
+
+        update = _post_with_csrf(
+            admin_client,
+            "/platform/email-settings",
+            data={
+                "smtp_host": "smtp.mail.test",
+                "smtp_port": "587",
+                "smtp_username": "mailer@example.com",
+                "smtp_password": "smtp-secret",
+                "smtp_security": "starttls",
+                "smtp_from_email": "platform@example.com",
+                "smtp_from_display_name": "Weighbridge Platform",
+                "smtp_reply_to": "reply@example.com",
+            },
+        )
+        assert update.status_code == 303
+        assert update.headers.get("location") == "/platform/email-settings?saved=1"
+
+        saved_page = admin_client.get(update.headers["location"])
+        assert saved_page.status_code == 200
+        assert "Platform email settings updated." in saved_page.text
+        assert 'value="smtp.mail.test"' in saved_page.text
+        assert 'value="platform@example.com"' in saved_page.text
+        assert 'value="Weighbridge Platform"' in saved_page.text
+        assert 'value="reply@example.com"' in saved_page.text
+        assert 'value="smtp-secret"' not in saved_page.text
+
+        test_send = _post_with_csrf(
+            admin_client,
+            "/platform/email-settings/test",
+            data={"test_to": "ops@example.com"},
+        )
+        assert test_send.status_code == 303
+        assert (
+            test_send.headers.get("location")
+            == "/platform/email-settings?test_sent=1&test_to=ops%40example.com"
+        )
+
+        sent_page = admin_client.get(test_send.headers["location"])
+        assert sent_page.status_code == 200
+        assert "Test email sent to ops@example.com." in sent_page.text
+
+    with SessionLocal() as db:
+        row = db.execute(select(PlatformSetting)).scalars().first()
+        assert row is not None
+        assert row.smtp_host == "smtp.mail.test"
+        assert int(row.smtp_port or 0) == 587
+        assert row.smtp_username == "mailer@example.com"
+        assert row.smtp_password == "smtp-secret"
+        assert row.smtp_security == "starttls"
+        assert row.smtp_from_email == "platform@example.com"
+        assert row.smtp_from_display_name == "Weighbridge Platform"
+        assert row.smtp_reply_to == "reply@example.com"
+
+        update_audit = db.execute(
+            select(AuditEvent)
+            .where(
+                AuditEvent.action == "PLATFORM_EMAIL_SETTINGS_UPDATE",
+                AuditEvent.entity_type == "platform_setting",
+                AuditEvent.entity_id == "global",
+            )
+            .order_by(AuditEvent.id.desc())
+            .limit(1)
+        ).scalars().first()
+        assert update_audit is not None
+        assert update_audit.user_id == superadmin_id
+        assert (
+            update_audit.details_json.get("changed", {}).get("smtp_host", {}).get("to")
+            == "smtp.mail.test"
+        )
+
+        test_audit = db.execute(
+            select(AuditEvent)
+            .where(
+                AuditEvent.action == "PLATFORM_TEST_EMAIL",
+                AuditEvent.entity_type == "platform_setting",
+                AuditEvent.entity_id == "global",
+            )
+            .order_by(AuditEvent.id.desc())
+            .limit(1)
+        ).scalars().first()
+        assert test_audit is not None
+        assert test_audit.user_id == superadmin_id
+        assert test_audit.details_json.get("status") == "sent"
+        assert test_audit.details_json.get("test_to") == "ops@example.com"
+
+    assert deliveries.get("host") == "smtp.mail.test"
+    assert deliveries.get("port") == 587
+    assert deliveries.get("started_tls") is True
+    assert deliveries.get("login") == ("mailer@example.com", "smtp-secret")
+    assert deliveries.get("from_addr") == "platform@example.com"
+    assert deliveries.get("to_addrs") == ["ops@example.com"]
+    message = deliveries.get("message")
+    assert message is not None
+    assert message["From"] == "Weighbridge Platform <platform@example.com>"
+    assert message["Reply-To"] == "reply@example.com"
+
+
+def test_platform_test_email_failure_is_reported_and_audited(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="platform-email-test-failure.db", monkeypatch=monkeypatch
+    )
+    superadmin_id = _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        _login_platform_superadmin(admin_client)
+
+        failure = _post_with_csrf(
+            admin_client,
+            "/platform/email-settings/test",
+            data={"test_to": "ops@example.com"},
+        )
+        assert failure.status_code == 303
+        assert failure.headers.get("location") == (
+            "/platform/email-settings?test_error=SMTP+host+is+not+configured.&test_to=ops%40example.com"
+        )
+
+        failed_page = admin_client.get(failure.headers["location"])
+        assert failed_page.status_code == 200
+        assert "SMTP host is not configured." in failed_page.text
+
+    with SessionLocal() as db:
+        test_audit = db.execute(
+            select(AuditEvent)
+            .where(
+                AuditEvent.action == "PLATFORM_TEST_EMAIL",
+                AuditEvent.entity_type == "platform_setting",
+                AuditEvent.entity_id == "global",
+            )
+            .order_by(AuditEvent.id.desc())
+            .limit(1)
+        ).scalars().first()
+        assert test_audit is not None
+        assert test_audit.user_id == superadmin_id
+        assert test_audit.details_json.get("status") == "failed"
+        assert test_audit.details_json.get("error") == "SMTP host is not configured."
 
 
 def test_superadmin_can_delete_empty_tenant_and_delete_blocks_linked_data(tmp_path, monkeypatch):

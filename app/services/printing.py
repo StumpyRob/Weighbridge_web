@@ -260,6 +260,7 @@ def execute_rendered_print(
                 job_id=job.id,
                 subject=email_subject,
                 body=email_body,
+                db=db,
             )
             _apply_job_delivery_success(job)
             db.commit()
@@ -329,6 +330,7 @@ def retry_print_job(db: Session, job: PrintJob) -> PrintExecutionResult:
                 job_id=job.id,
                 subject=None,
                 body=None,
+                db=db,
             )
             _apply_job_delivery_success(job)
             db.commit()

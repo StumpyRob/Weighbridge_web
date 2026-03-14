@@ -77,6 +77,7 @@
             {% if current_user_is_superadmin %}
               <a href="{{ tenant_path('/platform/tenants') }}" class="{% if request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants') %}is-active{% endif %}" {% if request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants') %}aria-current="page"{% endif %}>Tenant Management</a>
               <a href="{{ tenant_path('/platform/ai-settings') }}" class="{% if request.url.path.startswith('/platform/ai-settings') or request.url.path.startswith('/admin/ai-settings') %}is-active{% endif %}" {% if request.url.path.startswith('/platform/ai-settings') or request.url.path.startswith('/admin/ai-settings') %}aria-current="page"{% endif %}>AI Settings</a>
+              <a href="{{ tenant_path('/platform/email-settings') }}" class="{% if request.url.path.startswith('/platform/email-settings') or request.url.path.startswith('/admin/email-settings') %}is-active{% endif %}" {% if request.url.path.startswith('/platform/email-settings') or request.url.path.startswith('/admin/email-settings') %}aria-current="page"{% endif %}>Email Settings</a>
               <a href="{{ tenant_path('/admin/system-status') }}" class="{% if request.url.path.startswith('/admin/system-status') %}is-active{% endif %}" {% if request.url.path.startswith('/admin/system-status') %}aria-current="page"{% endif %}>System Status</a>
             {% endif %}
           {% else %}

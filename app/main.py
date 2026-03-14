@@ -135,6 +135,7 @@ _PLATFORM_ONLY_PREFIXES = (
     "/platform",
     "/admin/tenants",
     "/admin/ai-settings",
+    "/admin/email-settings",
     "/admin/system-status",
     "/admin/dev-mode",
     "/bootstrap",

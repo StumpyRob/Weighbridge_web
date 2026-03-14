@@ -301,6 +301,12 @@ body {
   max-width: 38rem;
 }
 
+.invoice-header-documents {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.85rem;
+}
+
 .tickets-list-header {
   margin-bottom: 0;
 }
@@ -2315,6 +2321,10 @@ details.frame:not([open]) .frame-header {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.field--span-2 {
+  grid-column: span 2;
+}
+
 .field select {
   width: 100%;
   padding: 0.6rem 0.7rem;
@@ -3703,6 +3713,10 @@ details > summary:focus-visible {
 @media (max-width: 900px) {
   :root {
     --flash-toast-top: 112px;
+  }
+
+  .field--span-2 {
+    grid-column: auto;
   }
 
   .invoice-summary-contact,

@@ -58,6 +58,17 @@ from ..models import (
 from ..models.base import utcnow
 from ..seed import seed_print_destinations, seed_print_templates, seed_units
 from ..services.demo_dataset import seed_demo_dataset
+from ..services.email_service import (
+    PLATFORM_EMAIL_AUDIT_FIELDS,
+    SMTP_SECURITY_NONE,
+    SMTP_SECURITY_SSL,
+    SMTP_SECURITY_STARTTLS,
+    get_platform_email_settings as get_platform_email_transport_settings,
+    platform_email_settings_snapshot as platform_email_transport_snapshot,
+    save_platform_email_settings as save_platform_email_transport_settings,
+    send_email,
+    validate_platform_email_settings as validate_platform_email_transport_settings,
+)
 from ..services.system_setup import (
     DEFAULT_YARD_NAME,
     ensure_company_settings_row_exists,
@@ -599,6 +610,55 @@ def _audit_platform_ai_settings_change(
     )
 
 
+def _platform_email_settings_page_context(
+    request: Request,
+    *,
+    settings_state,
+) -> dict[str, object]:
+    return {
+        "request": request,
+        "platform_email_settings": settings_state,
+        "smtp_security_options": (
+            (SMTP_SECURITY_STARTTLS, "STARTTLS"),
+            (SMTP_SECURITY_SSL, "SSL/TLS"),
+            (SMTP_SECURITY_NONE, "None"),
+        ),
+        "saved": request.query_params.get("saved") == "1",
+        "error": request.query_params.get("error", ""),
+        "test_sent": request.query_params.get("test_sent") == "1",
+        "test_error": request.query_params.get("test_error", ""),
+        "test_to": request.query_params.get("test_to", ""),
+    }
+
+
+def _audit_platform_email_settings_change(
+    db: Session,
+    request: Request,
+    *,
+    current_user: User,
+    before,
+    after,
+) -> None:
+    changed = audit_diff(
+        platform_email_transport_snapshot(before),
+        platform_email_transport_snapshot(after),
+        PLATFORM_EMAIL_AUDIT_FIELDS,
+    )
+    if not changed.get("changed"):
+        return
+    audit_log(
+        db,
+        request,
+        action="PLATFORM_EMAIL_SETTINGS_UPDATE",
+        entity_type="platform_setting",
+        entity_id="global",
+        summary="Updated platform email settings",
+        details=changed,
+        user=current_user,
+        tenant_id=None,
+    )
+
+
 @router.get("/platform/tenants", response_class=HTMLResponse)
 @router.get("/admin/tenants", response_class=HTMLResponse)
 def tenants_list(
@@ -833,6 +893,124 @@ def platform_ai_settings_reset_route(
     )
     db.commit()
     return RedirectResponse(url="/platform/ai-settings?reset=1", status_code=303)
+
+
+@router.get("/platform/email-settings", response_class=HTMLResponse)
+@router.get("/admin/email-settings", response_class=HTMLResponse)
+def platform_email_settings_detail(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    _require_platform_superadmin(request, db)
+    return templates.TemplateResponse(
+        request,
+        "admin/platform_email_settings.html",
+        _platform_email_settings_page_context(
+            request,
+            settings_state=get_platform_email_transport_settings(db),
+        ),
+    )
+
+
+@router.post("/platform/email-settings")
+@router.post("/admin/email-settings")
+async def platform_email_settings_update(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+    form = await request.form()
+    try:
+        settings_state = validate_platform_email_transport_settings(
+            smtp_host=form.get("smtp_host"),
+            smtp_port=form.get("smtp_port"),
+            smtp_username=form.get("smtp_username"),
+            smtp_security=form.get("smtp_security"),
+            smtp_from_email=form.get("smtp_from_email"),
+            smtp_from_display_name=form.get("smtp_from_display_name"),
+            smtp_reply_to=form.get("smtp_reply_to"),
+        )
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/platform/email-settings?{urlencode({'error': str(exc)})}",
+            status_code=303,
+        )
+
+    before = get_platform_email_transport_settings(db)
+    saved = save_platform_email_transport_settings(
+        db,
+        settings_state,
+        smtp_password=_form_value(form, "smtp_password") or None,
+        clear_smtp_password=_form_checkbox_checked(form, "clear_smtp_password"),
+    )
+    _audit_platform_email_settings_change(
+        db,
+        request,
+        current_user=current_user,
+        before=before,
+        after=saved,
+    )
+    db.commit()
+    return RedirectResponse(url="/platform/email-settings?saved=1", status_code=303)
+
+
+@router.post("/platform/email-settings/test")
+@router.post("/admin/email-settings/test")
+async def platform_email_settings_send_test(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+    form = await request.form()
+    test_to = normalize_email(form.get("test_to"))
+    if not validate_email(test_to):
+        return RedirectResponse(
+            url=f"/platform/email-settings?{urlencode({'test_error': 'Enter a valid test email address.', 'test_to': test_to})}",
+            status_code=303,
+        )
+
+    result = send_email(
+        subject="Weighbridge Web test email",
+        text_body=(
+            "This is a test email from the platform email settings page.\n\n"
+            "If you received this, outbound email is configured and working."
+        ),
+        html_body=(
+            "<p>This is a test email from the platform email settings page.</p>"
+            "<p>If you received this, outbound email is configured and working.</p>"
+        ),
+        to=[test_to],
+        db=db,
+    )
+    audit_log(
+        db,
+        request,
+        action="PLATFORM_TEST_EMAIL",
+        entity_type="platform_setting",
+        entity_id="global",
+        summary=(
+            f"Sent platform test email to {test_to}"
+            if result.ok
+            else f"Platform test email failed for {test_to}"
+        ),
+        details={
+            "test_to": test_to,
+            "status": "sent" if result.ok else "failed",
+            "error": result.error if not result.ok else None,
+        },
+        user=current_user,
+        tenant_id=None,
+    )
+    db.commit()
+    if result.ok:
+        return RedirectResponse(
+            url=f"/platform/email-settings?{urlencode({'test_sent': '1', 'test_to': test_to})}",
+            status_code=303,
+        )
+    return RedirectResponse(
+        url=f"/platform/email-settings?{urlencode({'test_error': result.error or 'Test email failed.', 'test_to': test_to})}",
+        status_code=303,
+    )
 
 
 @router.post("/platform/tenants/new", response_class=HTMLResponse)

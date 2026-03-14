@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from datetime import date, datetime, time, timedelta
 import logging
 from decimal import Decimal, ROUND_HALF_UP
@@ -10,6 +11,7 @@ from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.orm import Session, joinedload
 
 from ..audit import log as audit_log
+from ..auth import normalize_email, validate_email
 from ..config import settings
 from ..constants import NOTES_MAX
 from ..db import get_db
@@ -19,6 +21,7 @@ from ..permissions import (
     PERM_MARK_INVOICES_PAID,
     PERM_VIEW_INVOICES,
     PERM_VOID_INVOICES,
+    require_any_permission,
     require_permission,
 )
 from ..models import (
@@ -49,6 +52,11 @@ from ..services.credit import (
     INVOICE_OUTSTANDING_EXCLUDED_STATUSES,
     INVOICE_OUTSTANDING_ISSUED_STATUSES,
 )
+from ..services.email_service import (
+    EmailAttachment,
+    get_platform_email_settings,
+    send_email_with_attachment,
+)
 from ..services.printing import (
     DELIVERY_TYPE_EMAIL_PDF,
     DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
@@ -74,6 +82,7 @@ INVOICE_EXCLUSION_MISSING_NET_WEIGHT = "Missing net weight"
 INVOICE_EXCLUSION_ZERO_TOTAL = "Zero total"
 INVOICE_EXCLUSION_UNKNOWN_UNIT_TYPE = "Unknown unit type"
 WASTE_TRANSACTION_TYPES = {"WASTEIN", "WASTEOUT"}
+INVOICE_EMAIL_DEFAULT_BODY = "Please find attached your invoice {invoice_no}."
 
 
 def _voided_by_actor(request: Request) -> str:
@@ -499,6 +508,7 @@ def invoices_detail(
     invoice_id: int,
     request: Request,
     created: int | None = Query(None),
+    email_sent: int | None = Query(None),
     paid: int | None = Query(None),
     voided: int | None = Query(None),
     db: Session = Depends(get_db),
@@ -519,6 +529,7 @@ def invoices_detail(
             invoice,
             errors=[],
             created=created == 1,
+            email_sent=email_sent == 1,
             paid=paid == 1,
             voided=voided == 1,
         ),
@@ -535,47 +546,7 @@ def invoices_download_pdf(
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found.")
-    has_line_items = db.execute(
-        select(InvoiceLine.id).where(InvoiceLine.invoice_id == invoice.id).limit(1)
-    ).first()
-    if not has_line_items:
-        raise HTTPException(status_code=400, detail="Invoice has no line items.")
-
-    renderer_status = check_invoice_pdf_renderer()
-    if not renderer_status.available:
-        detail = renderer_status.detail or "Unknown WeasyPrint dependency error."
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"Renderer unavailable for invoice {invoice.id}. "
-                f"Please contact support. ({detail})"
-            ),
-        )
-
-    invoice_template = _resolve_invoice_pdf_template_for_request(
-        db,
-        strict_mode=_invoice_pdf_strict_mode_enabled(),
-    )
-    try:
-        pdf_bytes = render_invoice_pdf(
-            invoice_id,
-            db,
-            template=invoice_template,
-            allow_builtin_template_fallback=False,
-            base_url=str(request.base_url),
-            allow_fallback=False,
-            include_fallback_warning=False,
-        )
-    except RuntimeError as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"Renderer unavailable for invoice {invoice.id}. "
-                f"Please contact support. ({str(exc)})"
-            ),
-        ) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    pdf_bytes = _render_invoice_pdf_bytes(request, db, invoice)
 
     safe_invoice_no = _safe_invoice_filename_token(invoice.invoice_no)
     filename = f"Invoice-{safe_invoice_no}.pdf"
@@ -775,6 +746,112 @@ async def invoices_print_dispatch(
 
     return RedirectResponse(
         url=f"/invoices/{invoice.id}?invoice_print_sent=1&invoice_print_job_id={result.job.id}",
+        status_code=303,
+    )
+
+
+@router.post("/invoices/{invoice_id}/email", response_class=HTMLResponse)
+async def invoices_send_by_email(
+    invoice_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    require_any_permission(request, PERM_GENERATE_INVOICES, PERM_MARK_INVOICES_PAID)
+    invoice = db.get(Invoice, invoice_id)
+    if not invoice:
+        return templates.TemplateResponse(
+            request,
+            "invoices/not_found.html",
+            {"request": request, "invoice_id": invoice_id},
+            status_code=404,
+        )
+
+    customer = db.get(Customer, invoice.customer_id)
+    form = await request.form()
+    form_data = _invoice_email_form_values(
+        invoice,
+        customer,
+        {
+            "to_email": form.get("to_email"),
+            "cc_email": form.get("cc_email"),
+            "subject": form.get("subject"),
+            "message": form.get("message"),
+        },
+    )
+    to_email = form_data["to_email"]
+    cc_addresses, cc_error = _parse_email_list(form_data["cc_email"], label="CC")
+    subject = form_data["subject"]
+    message = form_data["message"]
+
+    failure_error = _invoice_email_validation_error(
+        db,
+        invoice,
+        to_email=to_email,
+        cc_error=cc_error,
+    )
+    if failure_error:
+        return _invoice_email_failure_response(
+            request,
+            db,
+            invoice,
+            form_data=form_data,
+            recipient=to_email,
+            cc=cc_addresses,
+            subject=subject,
+            error=failure_error,
+        )
+
+    try:
+        pdf_bytes = _render_invoice_pdf_bytes(request, db, invoice)
+    except HTTPException as exc:
+        return _invoice_email_failure_response(
+            request,
+            db,
+            invoice,
+            form_data=form_data,
+            recipient=to_email,
+            cc=cc_addresses,
+            subject=subject,
+            error=str(exc.detail),
+            status_code=400 if exc.status_code < 500 else 500,
+        )
+
+    safe_invoice_no = _safe_invoice_filename_token(invoice.invoice_no)
+    result = send_email_with_attachment(
+        subject=subject,
+        text_body=message,
+        to=to_email,
+        cc=cc_addresses,
+        attachment=EmailAttachment(
+            filename=f"Invoice-{safe_invoice_no}.pdf",
+            content_bytes=pdf_bytes,
+            content_type="application/pdf",
+        ),
+        db=db,
+    )
+    if not result.ok:
+        return _invoice_email_failure_response(
+            request,
+            db,
+            invoice,
+            form_data=form_data,
+            recipient=to_email,
+            cc=cc_addresses,
+            subject=subject,
+            error=result.error or "Email send failed.",
+        )
+
+    _audit_invoice_email_attempt(
+        db,
+        request,
+        invoice,
+        recipient=to_email,
+        cc=cc_addresses,
+        subject=subject,
+    )
+    db.commit()
+    return RedirectResponse(
+        url=f"/invoices/{invoice.id}?email_sent=1",
         status_code=303,
     )
 
@@ -1229,6 +1306,54 @@ def _invoice_pdf_strict_mode_enabled() -> bool:
     return bool(settings.debug)
 
 
+def _render_invoice_pdf_bytes(
+    request: Request,
+    db: Session,
+    invoice: Invoice,
+) -> bytes:
+    has_line_items = db.execute(
+        select(InvoiceLine.id).where(InvoiceLine.invoice_id == invoice.id).limit(1)
+    ).first()
+    if not has_line_items:
+        raise HTTPException(status_code=400, detail="Invoice has no line items.")
+
+    renderer_status = check_invoice_pdf_renderer()
+    if not renderer_status.available:
+        detail = renderer_status.detail or "Unknown WeasyPrint dependency error."
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Renderer unavailable for invoice {invoice.id}. "
+                f"Please contact support. ({detail})"
+            ),
+        )
+
+    invoice_template = _resolve_invoice_pdf_template_for_request(
+        db,
+        strict_mode=_invoice_pdf_strict_mode_enabled(),
+    )
+    try:
+        return render_invoice_pdf(
+            invoice.id,
+            db,
+            template=invoice_template,
+            allow_builtin_template_fallback=False,
+            base_url=str(request.base_url),
+            allow_fallback=False,
+            include_fallback_warning=False,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Renderer unavailable for invoice {invoice.id}. "
+                f"Please contact support. ({str(exc)})"
+            ),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _decimal(value) -> Decimal:
     if value is None:
         return Decimal("0")
@@ -1286,6 +1411,9 @@ def _invoice_detail_context(
     *,
     errors: list[str] | None = None,
     created: bool = False,
+    email_sent: bool = False,
+    invoice_email_form: Mapping[str, object] | None = None,
+    invoice_email_form_open: bool = False,
     paid: bool = False,
     voided: bool = False,
 ) -> dict:
@@ -1342,6 +1470,7 @@ def _invoice_detail_context(
         db,
         invoice.id,
     )
+    email_form_values = _invoice_email_form_values(invoice, customer, invoice_email_form)
     return {
         "request": request,
         "invoice": invoice,
@@ -1358,6 +1487,9 @@ def _invoice_detail_context(
         "void_reasons": _active_void_reasons(db),
         "errors": errors or [],
         "created": created,
+        "email_sent": email_sent,
+        "invoice_email_form": email_form_values,
+        "invoice_email_form_open": invoice_email_form_open,
         "paid": paid,
         "voided": voided,
         **print_actions_context,
@@ -1402,6 +1534,141 @@ def _customer_billing_lines(customer: Customer | None) -> list[str]:
     if country:
         lines.append(country)
     return lines
+
+
+def _invoice_email_default_subject(invoice: Invoice) -> str:
+    return f"Invoice {invoice.invoice_no}"
+
+
+def _invoice_email_default_body(invoice: Invoice) -> str:
+    return INVOICE_EMAIL_DEFAULT_BODY.format(invoice_no=invoice.invoice_no or "")
+
+
+def _invoice_email_validation_error(
+    db: Session,
+    invoice: Invoice,
+    *,
+    to_email: str,
+    cc_error: str | None,
+) -> str | None:
+    if invoice.status == "VOID":
+        return "Void invoices cannot be sent by email."
+    if not validate_email(to_email):
+        return "To email must be a valid email address."
+    if cc_error:
+        return cc_error
+
+    platform_email = get_platform_email_settings(db)
+    if not platform_email.smtp_host:
+        return "SMTP host is not configured."
+    if not platform_email.smtp_from_email:
+        return "From email address is not configured."
+    return None
+
+
+def _invoice_email_form_values(
+    invoice: Invoice,
+    customer: Customer | None,
+    values: Mapping[str, object] | None = None,
+) -> dict[str, str]:
+    defaults = {
+        "to_email": normalize_email(getattr(customer, "invoice_email", None)),
+        "cc_email": "",
+        "subject": _invoice_email_default_subject(invoice),
+        "message": _invoice_email_default_body(invoice),
+    }
+    if values is None:
+        return defaults
+    return {
+        "to_email": normalize_email(values.get("to_email")),
+        "cc_email": str(values.get("cc_email", "") or "").strip(),
+        "subject": str(values.get("subject", "") or "").strip() or defaults["subject"],
+        "message": str(values.get("message", "") or "").strip() or defaults["message"],
+    }
+
+
+def _parse_email_list(raw_value: object, *, label: str) -> tuple[list[str], str | None]:
+    text = str(raw_value or "").replace(";", ",")
+    addresses: list[str] = []
+    for part in text.split(","):
+        address = normalize_email(part)
+        if not address:
+            continue
+        if not validate_email(address):
+            return [], f"{label} includes an invalid email address."
+        addresses.append(address)
+    return addresses, None
+
+
+def _invoice_email_failure_response(
+    request: Request,
+    db: Session,
+    invoice: Invoice,
+    *,
+    form_data: Mapping[str, object],
+    recipient: str,
+    cc: list[str],
+    subject: str,
+    error: str,
+    status_code: int = 400,
+) -> HTMLResponse:
+    _audit_invoice_email_attempt(
+        db,
+        request,
+        invoice,
+        recipient=recipient,
+        cc=cc,
+        subject=subject,
+        error=error,
+    )
+    db.commit()
+    return templates.TemplateResponse(
+        request,
+        "invoices/detail.html",
+        _invoice_detail_context(
+            request,
+            db,
+            invoice,
+            errors=[error],
+            invoice_email_form=form_data,
+            invoice_email_form_open=True,
+        ),
+        status_code=status_code,
+    )
+
+
+def _audit_invoice_email_attempt(
+    db: Session,
+    request: Request,
+    invoice: Invoice,
+    *,
+    recipient: str,
+    cc: list[str],
+    subject: str,
+    error: str | None = None,
+) -> None:
+    sent = error is None
+    audit_log(
+        db,
+        request,
+        action="INVOICE_EMAIL_SENT" if sent else "INVOICE_EMAIL_FAILED",
+        entity_type="invoice",
+        entity_id=invoice.id,
+        summary=(
+            f"Sent invoice {invoice.invoice_no} by email"
+            if sent
+            else f"Failed to send invoice {invoice.invoice_no} by email"
+        ),
+        details={
+            "invoice_id": invoice.id,
+            "invoice_no": invoice.invoice_no,
+            "recipient": recipient,
+            "cc": cc,
+            "subject": subject,
+            "status": "sent" if sent else "failed",
+            "error": error,
+        },
+    )
 
 
 def _ticket_vehicle_registration(

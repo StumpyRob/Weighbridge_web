@@ -13,6 +13,14 @@ class PlatformSetting(Base):
     __tablename__ = "platform_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    smtp_host: Mapped[str | None] = mapped_column(sa.String(255), nullable=True)
+    smtp_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    smtp_username: Mapped[str | None] = mapped_column(sa.String(255), nullable=True)
+    smtp_password: Mapped[str | None] = mapped_column(sa.String(255), nullable=True)
+    smtp_from_email: Mapped[str | None] = mapped_column(sa.String(255), nullable=True)
+    smtp_from_display_name: Mapped[str | None] = mapped_column(sa.String(120), nullable=True)
+    smtp_reply_to: Mapped[str | None] = mapped_column(sa.String(255), nullable=True)
+    smtp_security: Mapped[str | None] = mapped_column(sa.String(16), nullable=True)
     default_ai_model: Mapped[str | None] = mapped_column(sa.String(32), nullable=True)
     ai_temperature: Mapped[float | None] = mapped_column(Float, nullable=True)
     ai_max_output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)

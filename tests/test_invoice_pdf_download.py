@@ -6,7 +6,17 @@ import pytest
 from sqlalchemy import select
 
 import app.services.printing as printing_service
-from app.models import Customer, Invoice, InvoiceLine, PrintDestination, PrintJob, PrintTemplate
+from app.models import (
+    AuditEvent,
+    Customer,
+    Invoice,
+    InvoiceLine,
+    PlatformSetting,
+    PrintDestination,
+    PrintJob,
+    PrintTemplate,
+)
+from app.services.email_service import EmailSendResult
 from app.services.pdf import PdfRendererStatus
 
 
@@ -26,10 +36,17 @@ def stub_invoice_pdf_renderer(monkeypatch):
     )
 
 
-def _create_invoice_with_line(db_session, *, invoice_no: str = "INV-PRINT-1") -> Invoice:
+def _create_invoice_with_line(
+    db_session,
+    *,
+    invoice_no: str = "INV-PRINT-1",
+    invoice_email: str | None = None,
+    status: str = "DRAFT",
+) -> Invoice:
     customer = Customer(
         account_code=f"AC-{invoice_no}",
         name=f"Customer {invoice_no}",
+        invoice_email=invoice_email,
         address_line1="1 Test Street",
         city="Leeds",
         postcode="LS1 1AA",
@@ -42,7 +59,7 @@ def _create_invoice_with_line(db_session, *, invoice_no: str = "INV-PRINT-1") ->
         customer_id=customer.id,
         invoice_date=date(2026, 2, 22),
         due_date=date(2026, 3, 8),
-        status="DRAFT",
+        status=status,
         net_total=Decimal("50.00"),
         vat_total=Decimal("10.00"),
         gross_total=Decimal("60.00"),
@@ -115,8 +132,37 @@ def _create_destination(
     return destination
 
 
+def _configure_platform_email(db_session) -> None:
+    db_session.add(
+        PlatformSetting(
+            smtp_host="smtp.mail.test",
+            smtp_port=587,
+            smtp_from_email="platform@example.com",
+            smtp_from_display_name="Weighbridge Web",
+            smtp_security="starttls",
+        )
+    )
+    db_session.commit()
+
+
+def _invoice_email_audit_event(db_session, *, action: str, invoice_id: int) -> AuditEvent | None:
+    return db_session.execute(
+        select(AuditEvent)
+        .where(
+            AuditEvent.action == action,
+            AuditEvent.entity_type == "invoice",
+            AuditEvent.entity_id == str(invoice_id),
+        )
+        .order_by(AuditEvent.id.desc())
+    ).scalars().first()
+
+
 def test_invoice_detail_documents_frame_groups_invoice_actions(client, db_session):
-    invoice = _create_invoice_with_line(db_session, invoice_no="INV-UI-1")
+    invoice = _create_invoice_with_line(
+        db_session,
+        invoice_no="INV-UI-1",
+        invoice_email="billing@example.com",
+    )
     template = _create_template(
         db_session,
         code="INV_UI_TEMPLATE",
@@ -142,6 +188,12 @@ def test_invoice_detail_documents_frame_groups_invoice_actions(client, db_sessio
     assert "Preview" in response.text
     assert "Download PDF" in response.text
     assert "Print" in response.text
+    assert "Send by Email" in response.text
+    assert 'name="to_email"' in response.text
+    assert 'value="billing@example.com"' in response.text
+    assert response.text.index('name="to_email"') < response.text.index('name="cc_email"')
+    assert response.text.index('name="cc_email"') < response.text.index('name="subject"')
+    assert response.text.index('name="subject"') < response.text.index('name="message"')
     assert "Status:" in response.text
     assert "Date:" in response.text
     assert "Due:" in response.text
@@ -276,3 +328,162 @@ def test_invoice_pdf_download_route_returns_attachment_pdf_headers(client, db_se
     assert response.headers["content-type"].startswith("application/pdf")
     assert response.headers.get("content-disposition", "") == 'attachment; filename="Invoice-INV-PDF-1.pdf"'
     assert response.content.startswith(b"%PDF")
+
+
+def test_invoice_send_by_email_happy_path_attaches_pdf_and_writes_audit(
+    client,
+    db_session,
+    monkeypatch,
+):
+    import app.routes.invoices as invoices_routes
+
+    invoice = _create_invoice_with_line(
+        db_session,
+        invoice_no="INV-SEND-1",
+        invoice_email="billing@example.com",
+    )
+    template = _create_template(
+        db_session,
+        code="INV_SEND_TEMPLATE",
+        content="<html><body>SEND {{ invoice.invoice_no }}</body></html>",
+    )
+    _create_destination(
+        db_session,
+        name="Invoice Send Destination",
+        template_id=template.id,
+        delivery_type="PRINT_LOCAL_BROWSER",
+        delivery_config={},
+    )
+    _configure_platform_email(db_session)
+
+    called: dict[str, object] = {}
+
+    def _fake_send_email_with_attachment(**kwargs):
+        called.update(kwargs)
+        return EmailSendResult(ok=True)
+
+    monkeypatch.setattr(
+        invoices_routes,
+        "send_email_with_attachment",
+        _fake_send_email_with_attachment,
+    )
+
+    response = client.post(
+        f"/invoices/{invoice.id}/email",
+        data={
+            "to_email": "customer@example.com",
+            "cc_email": "accounts@example.com; finance@example.com",
+            "subject": "Invoice INV-SEND-1",
+            "message": "Attached invoice INV-SEND-1.",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/invoices/{invoice.id}?email_sent=1"
+    assert called["to"] == "customer@example.com"
+    assert called["cc"] == ["accounts@example.com", "finance@example.com"]
+    assert called["subject"] == "Invoice INV-SEND-1"
+    assert called["text_body"] == "Attached invoice INV-SEND-1."
+
+    attachment = called["attachment"]
+    assert attachment.filename == "Invoice-INV-SEND-1.pdf"
+    assert attachment.content_type == "application/pdf"
+    assert attachment.content_bytes.startswith(b"%PDF")
+
+    audit_event = _invoice_email_audit_event(
+        db_session,
+        action="INVOICE_EMAIL_SENT",
+        invoice_id=invoice.id,
+    )
+
+    assert audit_event is not None
+    assert audit_event.details_json.get("invoice_no") == "INV-SEND-1"
+    assert audit_event.details_json.get("recipient") == "customer@example.com"
+    assert audit_event.details_json.get("cc") == [
+        "accounts@example.com",
+        "finance@example.com",
+    ]
+    assert audit_event.details_json.get("subject") == "Invoice INV-SEND-1"
+    assert audit_event.details_json.get("status") == "sent"
+
+
+def test_invoice_send_by_email_rejects_invalid_email_and_keeps_page_rendered(
+    client,
+    db_session,
+):
+    invoice = _create_invoice_with_line(db_session, invoice_no="INV-SEND-ERR-1")
+
+    response = client.post(
+        f"/invoices/{invoice.id}/email",
+        data={"to_email": "not-an-email"},
+    )
+
+    assert response.status_code == 400
+    assert "To email must be a valid email address." in response.text
+    assert "Send by Email" in response.text
+
+    audit_event = _invoice_email_audit_event(
+        db_session,
+        action="INVOICE_EMAIL_FAILED",
+        invoice_id=invoice.id,
+    )
+
+    assert audit_event is not None
+    assert audit_event.details_json.get("error") == "To email must be a valid email address."
+
+
+def test_invoice_send_by_email_blocks_void_invoice(client, db_session):
+    invoice = _create_invoice_with_line(
+        db_session,
+        invoice_no="INV-VOID-EMAIL-1",
+        status="VOID",
+    )
+
+    response = client.post(
+        f"/invoices/{invoice.id}/email",
+        data={"to_email": "customer@example.com"},
+    )
+
+    assert response.status_code == 400
+    assert "Void invoices cannot be sent by email." in response.text
+
+    audit_event = _invoice_email_audit_event(
+        db_session,
+        action="INVOICE_EMAIL_FAILED",
+        invoice_id=invoice.id,
+    )
+
+    assert audit_event is not None
+    assert audit_event.details_json.get("error") == "Void invoices cannot be sent by email."
+
+
+def test_invoice_send_by_email_reports_missing_smtp_config(client, db_session, monkeypatch):
+    import app.routes.invoices as invoices_routes
+
+    invoice = _create_invoice_with_line(db_session, invoice_no="INV-SMTP-1")
+    pdf_called = {"value": False}
+
+    def _unexpected_render(*args, **kwargs):
+        pdf_called["value"] = True
+        return b"%PDF-1.4\n%unexpected\n"
+
+    monkeypatch.setattr(invoices_routes, "render_invoice_pdf", _unexpected_render)
+
+    response = client.post(
+        f"/invoices/{invoice.id}/email",
+        data={"to_email": "customer@example.com"},
+    )
+
+    assert response.status_code == 400
+    assert "SMTP host is not configured." in response.text
+    assert pdf_called["value"] is False
+
+    audit_event = _invoice_email_audit_event(
+        db_session,
+        action="INVOICE_EMAIL_FAILED",
+        invoice_id=invoice.id,
+    )
+
+    assert audit_event is not None
+    assert audit_event.details_json.get("error") == "SMTP host is not configured."
