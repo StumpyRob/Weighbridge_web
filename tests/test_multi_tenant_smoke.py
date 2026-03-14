@@ -72,6 +72,7 @@ from app.services.system_setup import (
 )
 from app.templating import templates
 from app.tenancy import current_platform_mode, current_tenant_id
+from app.user_roles import ROLE_ACCOUNTS, ROLE_OPERATOR
 
 
 def _build_app_and_session(
@@ -171,6 +172,22 @@ def _login(
         follow_redirects=False,
     )
     return response.status_code
+
+
+def _login_platform_superadmin(client: TestClient, *, email: str = "superadmin@example.com") -> None:
+    assert _login(
+        client,
+        email=email,
+        password="TestPass123!",
+        next_path="/platform/tenants",
+    ) == 303
+
+
+def _post_with_csrf(client: TestClient, path: str, *, data: dict[str, object] | None = None):
+    payload = {CSRF_FORM_FIELD: _prime_csrf(client)}
+    if data:
+        payload.update(data)
+    return client.post(path, data=payload, follow_redirects=False)
 
 
 def _seed_user(
@@ -2524,7 +2541,7 @@ def test_platform_superadmin_can_create_demo_user_and_add_more_tenant_users(tmp_
     )
 
     with _client(app, base_url="https://admin.localhost") as admin_client:
-        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+        _login_platform_superadmin(admin_client)
 
         detail = admin_client.get(f"/platform/tenants/{demo_tenant}")
         assert detail.status_code == 200
@@ -2541,11 +2558,10 @@ def test_platform_superadmin_can_create_demo_user_and_add_more_tenant_users(tmp_
         assert "Invoicing, payments, and finance/admin tasks" in detail.text
         assert "View-only access. No changes are allowed." in detail.text
 
-        csrf = _prime_csrf(admin_client)
-        created_admin = admin_client.post(
+        created_admin = _post_with_csrf(
+            admin_client,
             f"/platform/tenants/{demo_tenant}/users",
             data={
-                CSRF_FORM_FIELD: csrf,
                 "first_name": "Demi",
                 "last_name": "Admin",
                 "email": "demo-admin@example.com",
@@ -2553,7 +2569,6 @@ def test_platform_superadmin_can_create_demo_user_and_add_more_tenant_users(tmp_
                 "password": "DemoPass123!",
                 "confirm_password": "DemoPass123!",
             },
-            follow_redirects=False,
         )
         assert created_admin.status_code in {302, 303}
         assert created_admin.headers.get("location", "").startswith(f"/platform/tenants/{demo_tenant}?")
@@ -2573,11 +2588,10 @@ def test_platform_superadmin_can_create_demo_user_and_add_more_tenant_users(tmp_
         assert "Status" in created_admin_page.text
         assert "Created" in created_admin_page.text
 
-        csrf = _prime_csrf(admin_client)
-        created_operator = admin_client.post(
+        created_operator = _post_with_csrf(
+            admin_client,
             f"/platform/tenants/{demo_tenant}/users",
             data={
-                CSRF_FORM_FIELD: csrf,
                 "first_name": "Opal",
                 "last_name": "Operator",
                 "email": "demo-ops@example.com",
@@ -2585,7 +2599,6 @@ def test_platform_superadmin_can_create_demo_user_and_add_more_tenant_users(tmp_
                 "password": "OperatorPass123!",
                 "confirm_password": "OperatorPass123!",
             },
-            follow_redirects=False,
         )
         assert created_operator.status_code in {302, 303}
         assert created_operator.headers.get("location", "").startswith(f"/platform/tenants/{demo_tenant}?")
@@ -2650,6 +2663,148 @@ def test_platform_superadmin_can_create_demo_user_and_add_more_tenant_users(tmp_
         assert created_details["demo-ops@example.com"]["role"] == ROLE_USER
 
 
+def test_platform_superadmin_can_edit_disable_and_reset_tenant_users_from_tenant_detail(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-detail-user-manage.db", monkeypatch=monkeypatch
+    )
+    tenant_id = _seed_tenant(SessionLocal, name="Tenant A", subdomain="tenant-a", is_active=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_id,
+        company_name="Tenant A Co",
+        primary_color="#305a7a",
+    )
+    _seed_user(
+        SessionLocal,
+        email="primary-admin@example.com",
+        password="TenantPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_id,
+        first_name="Priya",
+        last_name="Admin",
+    )
+    managed_user_id = _seed_user(
+        SessionLocal,
+        email="operator@example.com",
+        password="OperatorPass123!",
+        role=ROLE_OPERATOR,
+        tenant_id=tenant_id,
+        first_name="Opal",
+        last_name="Operator",
+    )
+    superadmin_id = _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        _login_platform_superadmin(admin_client)
+
+        detail = admin_client.get(f"/platform/tenants/{tenant_id}")
+        assert detail.status_code == 200
+        assert "Actions" in detail.text
+        assert f"/platform/tenants/{tenant_id}?edit_user={managed_user_id}" in detail.text
+        assert f'action="/platform/tenants/{tenant_id}/users/{managed_user_id}/toggle-active"' in detail.text
+        assert f"/platform/tenants/{tenant_id}?reset_user={managed_user_id}" in detail.text
+        assert "Managed above" in detail.text
+
+        edit_page = admin_client.get(f"/platform/tenants/{tenant_id}?edit_user={managed_user_id}")
+        assert edit_page.status_code == 200
+        assert f'id="edit_user_{managed_user_id}_first_name"' in edit_page.text
+        assert f'id="edit_user_{managed_user_id}_last_name"' in edit_page.text
+        assert f'id="edit_user_{managed_user_id}_role"' in edit_page.text
+        assert "Edit User" in edit_page.text
+
+        update_response = _post_with_csrf(
+            admin_client,
+            f"/platform/tenants/{tenant_id}/users/{managed_user_id}/update",
+            data={
+                "first_name": "Avery",
+                "last_name": "Accounts",
+                "role": ROLE_ACCOUNTS,
+            },
+        )
+        assert update_response.status_code in {302, 303}
+        assert update_response.headers.get("location") == f"/platform/tenants/{tenant_id}?user_message=User+updated."
+
+        updated_page = admin_client.get(update_response.headers["location"])
+        assert updated_page.status_code == 200
+        assert "User updated." in updated_page.text
+        assert "Avery Accounts" in updated_page.text
+        assert "Accounts" in updated_page.text
+
+        disable_response = _post_with_csrf(
+            admin_client,
+            f"/platform/tenants/{tenant_id}/users/{managed_user_id}/toggle-active",
+        )
+        assert disable_response.status_code in {302, 303}
+        assert disable_response.headers.get("location") == f"/platform/tenants/{tenant_id}?user_message=User+disabled."
+
+    with _client(app, base_url="https://tenant-a.localhost") as tenant_client:
+        assert _login(tenant_client, email="operator@example.com", password="OperatorPass123!") == 401
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        _login_platform_superadmin(admin_client)
+
+        enable_response = _post_with_csrf(
+            admin_client,
+            f"/platform/tenants/{tenant_id}/users/{managed_user_id}/toggle-active",
+        )
+        assert enable_response.status_code in {302, 303}
+        assert enable_response.headers.get("location") == f"/platform/tenants/{tenant_id}?user_message=User+enabled."
+
+        reset_page = admin_client.get(f"/platform/tenants/{tenant_id}?reset_user={managed_user_id}")
+        assert reset_page.status_code == 200
+        assert f'id="reset_user_{managed_user_id}_password"' in reset_page.text
+        assert f'id="reset_user_{managed_user_id}_confirm_password"' in reset_page.text
+
+        reset_response = _post_with_csrf(
+            admin_client,
+            f"/platform/tenants/{tenant_id}/users/{managed_user_id}/reset-password",
+            data={
+                "password": "ResetPass123!",
+                "confirm_password": "ResetPass123!",
+            },
+        )
+        assert reset_response.status_code in {302, 303}
+        assert reset_response.headers.get("location") == f"/platform/tenants/{tenant_id}?user_message=Password+updated."
+
+        reset_follow = admin_client.get(reset_response.headers["location"])
+        assert reset_follow.status_code == 200
+        assert "Password updated." in reset_follow.text
+
+    with _client(app, base_url="https://tenant-a.localhost") as tenant_client:
+        assert _login(tenant_client, email="operator@example.com", password="OperatorPass123!") == 401
+        assert _login(tenant_client, email="operator@example.com", password="ResetPass123!") == 303
+
+    with SessionLocal() as db:
+        refreshed = db.get(User, managed_user_id)
+        assert refreshed is not None
+        assert refreshed.first_name == "Avery"
+        assert refreshed.last_name == "Accounts"
+        assert refreshed.role == ROLE_ACCOUNTS
+        assert refreshed.is_active is True
+
+        actions = {
+            row.action
+            for row in db.execute(
+                select(AuditEvent).where(
+                    AuditEvent.entity_type == "user",
+                    AuditEvent.entity_id == str(managed_user_id),
+                    AuditEvent.user_id == superadmin_id,
+                )
+            ).scalars()
+        }
+        assert "USER_ROLE_CHANGE" in actions
+        assert "USER_UPDATE" in actions
+        assert "USER_DEACTIVATE" in actions
+        assert "USER_ACTIVATE" in actions
+        assert "USER_PASSWORD_RESET" in actions
+
+
 def test_platform_tenant_detail_renders_section_structure_and_name_fallbacks(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-detail-users-render.db", monkeypatch=monkeypatch
@@ -2707,6 +2862,7 @@ def test_platform_tenant_detail_renders_section_structure_and_name_fallbacks(tmp
     assert "Role" in detail.text
     assert "Status" in detail.text
     assert "Created" in detail.text
+    assert "Actions" in detail.text
     assert "Priya Admin" in detail.text
     assert "primary-admin@example.com" in detail.text
     assert detail.text.count("legacy-user@example.com") >= 2
@@ -2715,6 +2871,18 @@ def test_platform_tenant_detail_renders_section_structure_and_name_fallbacks(tmp
     assert "Operator" in detail.text
     assert "Accounts" in detail.text
     assert "Read Only" in detail.text
+    add_user_start = detail.text.index("<h2>Add User")
+    ai_overrides_start = detail.text.index("<h2>Tenant AI Overrides")
+    add_user_section = detail.text[add_user_start:ai_overrides_start]
+    field_positions = [
+        add_user_section.index('id="first_name"'),
+        add_user_section.index('id="last_name"'),
+        add_user_section.index('id="email"'),
+        add_user_section.index('id="role"'),
+        add_user_section.index('id="password"'),
+        add_user_section.index('id="user_confirm_password"'),
+    ]
+    assert field_positions == sorted(field_positions)
 
 
 def test_legacy_default_tenant_is_renamed_to_demo_and_hidden_from_platform_ui(tmp_path, monkeypatch):

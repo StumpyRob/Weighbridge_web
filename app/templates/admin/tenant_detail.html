@@ -1,6 +1,27 @@
 {% extends "base.html" %}
 {% from "_help.html" import help %}
 
+{% macro tenant_user_action_link(label, href) -%}
+  <a class="btn btn--ghost btn--sm" href="{{ href }}">{{ label }}</a>
+{%- endmacro %}
+
+{% macro tenant_user_inline_row(user, tenant_id, action_url, title, submit_label, submit_class="btn--primary") -%}
+  <tr class="platform-tenant-inline-row">
+    <td colspan="6">
+      <form method="post" action="{{ action_url }}" class="ticket-form platform-tenant-detail-admin-card">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+        <h3>{{ title }}</h3>
+        <p class="muted">{{ user.email or user.username }}</p>
+        {{ caller() }}
+        <div class="actions btn-group">
+          <button type="submit" class="btn {{ submit_class }}">{{ submit_label }}</button>
+          <a class="btn btn--ghost" href="/platform/tenants/{{ tenant_id }}">Cancel</a>
+        </div>
+      </form>
+    </td>
+  </tr>
+{%- endmacro %}
+
 {% block title %}Tenant Details | Weighbridge Web{% endblock %}
 
 {% block content %}
@@ -35,6 +56,12 @@
   {% if user_saved %}
     <div class="notice">
       Tenant user created{% if created_user_email %}: {{ created_user_email }}{% endif %}.
+    </div>
+  {% endif %}
+
+  {% if user_message %}
+    <div class="notice">
+      {{ user_message }}
     </div>
   {% endif %}
 
@@ -253,10 +280,12 @@
                 <th>Role</th>
                 <th>Status</th>
                 <th>Created</th>
+                <th class="actions-col">Actions</th>
               </tr>
             </thead>
             <tbody>
               {% for user in users %}
+                {% set is_primary_user = primary_admin_id and user.id == primary_admin_id %}
                 <tr>
                   <td>{{ user.full_name or user.email or user.username }}</td>
                   <td>{{ user.email or user.username }}</td>
@@ -276,10 +305,100 @@
                     {% endif %}
                   </td>
                   <td>{{ user.created_at.strftime("%d/%m/%Y") if user.created_at else "-" }}</td>
+                  <td class="actions-col">
+                    {% if is_primary_user %}
+                      <span class="muted">Managed above</span>
+                    {% else %}
+                      <div class="actions btn-group">
+                        {{ tenant_user_action_link("Edit", "/platform/tenants/" ~ tenant.id ~ "?edit_user=" ~ user.id) }}
+                        <form method="post" action="/platform/tenants/{{ tenant.id }}/users/{{ user.id }}/toggle-active">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                          <button type="submit" class="btn btn--ghost btn--sm">
+                            {{ "Disable" if user.is_active else "Enable" }}
+                          </button>
+                        </form>
+                        {{ tenant_user_action_link("Reset Password", "/platform/tenants/" ~ tenant.id ~ "?reset_user=" ~ user.id) }}
+                      </div>
+                    {% endif %}
+                  </td>
                 </tr>
+                {% if editing_user_id == user.id and not is_primary_user %}
+                  {% call tenant_user_inline_row(user, tenant.id, "/platform/tenants/" ~ tenant.id ~ "/users/" ~ user.id ~ "/update", "Edit User", "Save") %}
+                    <div class="invoice-summary-grid">
+                      <div class="summary-item">
+                        <span class="summary-label">Email</span>
+                        <span class="summary-value">{{ user.email or user.username }}</span>
+                      </div>
+                      <div class="summary-item">
+                        <span class="summary-label">Created</span>
+                        <span class="summary-value">{{ user.created_at.strftime("%d/%m/%Y") if user.created_at else "-" }}</span>
+                      </div>
+                    </div>
+                    <div class="form-grid form-grid--3">
+                      <div class="field">
+                        <label for="edit_user_{{ user.id }}_first_name">First name</label>
+                        <input
+                          type="text"
+                          id="edit_user_{{ user.id }}_first_name"
+                          name="first_name"
+                          value="{{ user.first_name or '' }}"
+                          maxlength="100"
+                          autocomplete="given-name"
+                        />
+                      </div>
+                      <div class="field">
+                        <label for="edit_user_{{ user.id }}_last_name">Last name</label>
+                        <input
+                          type="text"
+                          id="edit_user_{{ user.id }}_last_name"
+                          name="last_name"
+                          value="{{ user.last_name or '' }}"
+                          maxlength="100"
+                          autocomplete="family-name"
+                        />
+                      </div>
+                      <div class="field">
+                        <label for="edit_user_{{ user.id }}_role">Role</label>
+                        <select id="edit_user_{{ user.id }}_role" name="role" required>
+                          {% for role_value, role_name in tenant_role_options %}
+                            <option value="{{ role_value }}" {% if user.role == role_value %}selected{% endif %}>{{ role_name }}</option>
+                          {% endfor %}
+                        </select>
+                      </div>
+                    </div>
+                  {% endcall %}
+                {% endif %}
+                {% if resetting_user_id == user.id and not is_primary_user %}
+                  {% call tenant_user_inline_row(user, tenant.id, "/platform/tenants/" ~ tenant.id ~ "/users/" ~ user.id ~ "/reset-password", "Reset Password", "Update Password", "btn--secondary") %}
+                    <div class="form-grid form-grid--2">
+                      <div class="field">
+                        <label for="reset_user_{{ user.id }}_password">New password</label>
+                        <input
+                          type="password"
+                          id="reset_user_{{ user.id }}_password"
+                          name="password"
+                          required
+                          minlength="8"
+                          autocomplete="new-password"
+                        />
+                      </div>
+                      <div class="field">
+                        <label for="reset_user_{{ user.id }}_confirm_password">Confirm password</label>
+                        <input
+                          type="password"
+                          id="reset_user_{{ user.id }}_confirm_password"
+                          name="confirm_password"
+                          required
+                          minlength="8"
+                          autocomplete="new-password"
+                        />
+                      </div>
+                    </div>
+                  {% endcall %}
+                {% endif %}
               {% else %}
                 <tr>
-                  <td colspan="5" class="empty">No tenant users.</td>
+                  <td colspan="6" class="empty">No tenant users.</td>
                 </tr>
               {% endfor %}
             </tbody>
@@ -298,7 +417,7 @@
         </p>
         <form method="post" action="/platform/tenants/{{ tenant.id }}/users" class="ticket-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-          <div class="form-grid">
+          <div class="form-grid form-grid--3">
             <div class="field">
               <label for="first_name">First name</label>
               <input

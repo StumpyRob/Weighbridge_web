@@ -12,6 +12,7 @@ from sqlalchemy import delete, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .admin_users import _active_tenant_admin_count, _tenant_user_by_id
 from ..audit import diff as audit_diff
 from ..audit import log as audit_log
 from ..audit import user_snapshot
@@ -23,7 +24,6 @@ from ..auth import (
     user_identity_kwargs,
     validate_email,
 )
-from ..config import settings
 from ..db import get_db
 from ..models import (
     Area,
@@ -355,6 +355,61 @@ def _tenant_role_options() -> list[tuple[str, str]]:
     return [(role, role_label(role)) for role in TENANT_USER_ROLES]
 
 
+def _tenant_detail_url(tenant_id: int, **params: object) -> str:
+    query_params = {
+        str(key): str(value)
+        for key, value in params.items()
+        if value not in (None, "")
+    }
+    if not query_params:
+        return f"/platform/tenants/{tenant_id}"
+    return f"/platform/tenants/{tenant_id}?{urlencode(query_params)}"
+
+
+def _tenant_detail_redirect_response(tenant_id: int, **params: object) -> RedirectResponse:
+    return RedirectResponse(url=_tenant_detail_url(tenant_id, **params), status_code=303)
+
+
+def _platform_tenant_or_redirect(db: Session, tenant_id: int) -> Tenant | RedirectResponse:
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None:
+        return RedirectResponse(url="/platform/tenants?error=Tenant+not+found", status_code=303)
+    return tenant
+
+
+def _platform_tenant_user_target_or_redirect(
+    db: Session,
+    tenant_id: int,
+    user_id: int,
+) -> tuple[Tenant, User] | RedirectResponse:
+    tenant_or_redirect = _platform_tenant_or_redirect(db, tenant_id)
+    if isinstance(tenant_or_redirect, RedirectResponse):
+        return tenant_or_redirect
+
+    tenant = tenant_or_redirect
+    user = _tenant_user_by_id(db, int(tenant.id), user_id)
+    if user is None:
+        return _tenant_detail_redirect_response(tenant.id, user_error="Tenant user not found.")
+
+    primary_admin = _tenant_primary_admin(_tenant_users(db, int(tenant.id)))
+    if primary_admin is not None and int(primary_admin.id) == int(user.id):
+        return _tenant_detail_redirect_response(
+            tenant.id,
+            user_error="Primary tenant admin is managed separately above.",
+        )
+    return tenant, user
+
+
+def _query_param_int(request: Request, key: str) -> int | None:
+    raw_value = str(request.query_params.get(key, "") or "").strip()
+    if not raw_value:
+        return None
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _tenant_open_url(subdomain: str | None) -> str:
     return tenant_external_url(subdomain, path="/login")
 
@@ -642,7 +697,10 @@ def tenant_detail(
             "tenant_role_options": _tenant_role_options(),
             "tenant_requires_admin_role": int(summary["tenant_admin_count"]) == 0,
             "primary_admin": primary_admin,
+            "primary_admin_id": int(primary_admin.id) if primary_admin is not None else None,
             "primary_admin_email": _user_identity(primary_admin),
+            "editing_user_id": _query_param_int(request, "edit_user"),
+            "resetting_user_id": _query_param_int(request, "reset_user"),
             "open_url": _tenant_open_url(tenant.subdomain),
             "delete_allowed": not bool(delete_block_reason),
             "delete_block_reason": delete_block_reason,
@@ -651,6 +709,7 @@ def tenant_detail(
             "demo_reset": request.query_params.get("demo_reset") == "1",
             "demo_reset_error": request.query_params.get("demo_reset_error", ""),
             "user_saved": request.query_params.get("user_saved") == "1",
+            "user_message": request.query_params.get("user_message", ""),
             "created_user_email": request.query_params.get("created_user", ""),
             "user_error": request.query_params.get("user_error", ""),
             "email_saved": request.query_params.get("email_saved") == "1",
@@ -1088,6 +1147,184 @@ async def tenant_create_user(
         ),
         status_code=303,
     )
+
+
+@router.post("/platform/tenants/{tenant_id:int}/users/{user_id:int}/update")
+@router.post("/admin/tenants/{tenant_id:int}/users/{user_id:int}/update")
+async def tenant_update_user(
+    tenant_id: int,
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+    target_or_redirect = _platform_tenant_user_target_or_redirect(db, tenant_id, user_id)
+    if isinstance(target_or_redirect, RedirectResponse):
+        return target_or_redirect
+    tenant, user = target_or_redirect
+
+    form = await request.form()
+    first_name = _form_value(form, "first_name")
+    last_name = _form_value(form, "last_name")
+    user_role = normalize_role(form.get("role"), default=None)
+    current_role = normalize_role(getattr(user, "role", None), default=None)
+    current_is_active = bool(getattr(user, "is_active", False))
+
+    if user_role not in TENANT_USER_ROLES:
+        return _tenant_detail_redirect_response(
+            tenant.id,
+            user_error="Select a valid tenant user role.",
+            edit_user=user.id,
+        )
+
+    removing_last_active_admin = (
+        current_role == ROLE_TENANT_ADMIN
+        and current_is_active
+        and user_role != ROLE_TENANT_ADMIN
+        and _active_tenant_admin_count(db, int(tenant.id), exclude_user_id=int(user.id)) == 0
+    )
+    if removing_last_active_admin:
+        return _tenant_detail_redirect_response(
+            tenant.id,
+            user_error="You must keep at least one active Tenant Admin in the workspace.",
+            edit_user=user.id,
+        )
+
+    identity_before = user_snapshot(user)
+    user.first_name = first_name or None
+    user.last_name = last_name or None
+    user.role = user_role
+
+    if current_role != user_role:
+        audit_log(
+            db,
+            request,
+            action="USER_ROLE_CHANGE",
+            entity_type="user",
+            entity_id=user.id,
+            summary=f"Changed role for {_user_identity(user)}",
+            details={"changed": {"role": {"from": current_role, "to": user_role}}},
+            user=current_user,
+            tenant_id=tenant.id,
+        )
+
+    identity_changes = audit_diff(
+        identity_before,
+        user_snapshot(user),
+        ["first_name", "last_name"],
+    )
+    if identity_changes["changed"]:
+        audit_log(
+            db,
+            request,
+            action="USER_UPDATE",
+            entity_type="user",
+            entity_id=user.id,
+            summary=f"Updated tenant user details for {_user_identity(user)}",
+            details=identity_changes,
+            user=current_user,
+            tenant_id=tenant.id,
+        )
+
+    db.commit()
+    return _tenant_detail_redirect_response(tenant.id, user_message="User updated.")
+
+
+@router.post("/platform/tenants/{tenant_id:int}/users/{user_id:int}/toggle-active")
+@router.post("/admin/tenants/{tenant_id:int}/users/{user_id:int}/toggle-active")
+async def tenant_toggle_user_active(
+    tenant_id: int,
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+    target_or_redirect = _platform_tenant_user_target_or_redirect(db, tenant_id, user_id)
+    if isinstance(target_or_redirect, RedirectResponse):
+        return target_or_redirect
+    tenant, user = target_or_redirect
+
+    current_role = normalize_role(getattr(user, "role", None), default=None)
+    current_is_active = bool(getattr(user, "is_active", False))
+    next_is_active = not current_is_active
+    removing_last_active_admin = (
+        current_role == ROLE_TENANT_ADMIN
+        and current_is_active
+        and not next_is_active
+        and _active_tenant_admin_count(db, int(tenant.id), exclude_user_id=int(user.id)) == 0
+    )
+    if removing_last_active_admin:
+        return _tenant_detail_redirect_response(
+            tenant.id,
+            user_error="You must keep at least one active Tenant Admin in the workspace.",
+        )
+
+    user.is_active = next_is_active
+    audit_log(
+        db,
+        request,
+        action="USER_ACTIVATE" if next_is_active else "USER_DEACTIVATE",
+        entity_type="user",
+        entity_id=user.id,
+        summary=f"{'Activated' if next_is_active else 'Deactivated'} tenant user {_user_identity(user)}",
+        details={"changed": {"is_active": {"from": current_is_active, "to": next_is_active}}},
+        user=current_user,
+        tenant_id=tenant.id,
+    )
+    db.commit()
+
+    return _tenant_detail_redirect_response(
+        tenant.id,
+        user_message="User enabled." if next_is_active else "User disabled.",
+    )
+
+
+@router.post("/platform/tenants/{tenant_id:int}/users/{user_id:int}/reset-password")
+@router.post("/admin/tenants/{tenant_id:int}/users/{user_id:int}/reset-password")
+async def tenant_reset_user_password(
+    tenant_id: int,
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+    target_or_redirect = _platform_tenant_user_target_or_redirect(db, tenant_id, user_id)
+    if isinstance(target_or_redirect, RedirectResponse):
+        return target_or_redirect
+    tenant, user = target_or_redirect
+
+    form = await request.form()
+    password = _form_value(form, "password")
+    confirm_password = _form_value(form, "confirm_password")
+
+    if len(password) < 8:
+        return _tenant_detail_redirect_response(
+            tenant.id,
+            user_error="Tenant user password must be at least 8 characters.",
+            reset_user=user.id,
+        )
+    if password != confirm_password:
+        return _tenant_detail_redirect_response(
+            tenant.id,
+            user_error="Passwords do not match.",
+            reset_user=user.id,
+        )
+
+    user.password_hash = hash_password(password)
+    audit_log(
+        db,
+        request,
+        action="USER_PASSWORD_RESET",
+        entity_type="user",
+        entity_id=user.id,
+        summary=f"Reset password for tenant user {_user_identity(user)}",
+        details={"changed": {"password": {"reset": True}}},
+        user=current_user,
+        tenant_id=tenant.id,
+    )
+    db.commit()
+
+    return _tenant_detail_redirect_response(tenant.id, user_message="Password updated.")
 
 
 @router.post("/platform/tenants/{tenant_id:int}/admin-password")

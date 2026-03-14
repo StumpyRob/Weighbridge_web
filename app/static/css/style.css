@@ -2307,6 +2307,14 @@ details.frame:not([open]) .frame-header {
   gap: 1rem;
 }
 
+.form-grid.form-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-grid.form-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .field select {
   width: 100%;
   padding: 0.6rem 0.7rem;
@@ -3166,6 +3174,12 @@ details > summary:focus-visible {
   align-items: stretch;
 }
 
+@media (min-width: 1080px) {
+  .platform-tenant-detail-admin-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 .platform-tenant-detail-admin-card {
   display: grid;
   gap: 0.85rem;
@@ -3226,6 +3240,12 @@ details > summary:focus-visible {
   white-space: nowrap;
 }
 
+.platform-tenant-inline-row td {
+  padding: 0;
+  white-space: normal;
+  background: #fbfdff;
+}
+
 .platform-tenant-maintenance-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -3251,6 +3271,13 @@ details > summary:focus-visible {
   .platform-tenant-detail-admin-grid,
   .platform-tenant-role-guide,
   .platform-tenant-maintenance-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .form-grid.form-grid--2,
+  .form-grid.form-grid--3 {
     grid-template-columns: 1fr;
   }
 }
