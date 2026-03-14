@@ -3151,7 +3151,6 @@ details > summary:focus-visible {
   min-width: 360px;
 }
 
-.platform-tenant-detail-users-copy,
 .platform-tenant-detail-section-copy {
   margin-bottom: 1rem;
 }
@@ -3162,32 +3161,69 @@ details > summary:focus-visible {
 
 .platform-tenant-detail-admin-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 1rem;
-  align-items: start;
+  align-items: stretch;
 }
 
 .platform-tenant-detail-admin-card {
   display: grid;
   gap: 0.85rem;
+  height: 100%;
   padding: 1rem;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
   background: #f8fafc;
 }
 
-.platform-tenant-detail-user-add {
-  display: grid;
-  gap: 0.85rem;
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid #e5e7eb;
-}
-
-.platform-tenant-detail-user-add h3,
-.platform-tenant-maintenance-block h3 {
+.platform-tenant-detail-admin-card h3,
+.platform-tenant-maintenance-block h3,
+.platform-tenant-role-guide__item h3 {
   margin: 0;
   font-size: 1rem;
+}
+
+.platform-tenant-detail-admin-card > .muted {
+  margin-top: -0.2rem;
+}
+
+.platform-tenant-detail-admin-card .actions {
+  margin-top: auto;
+}
+
+.platform-tenant-detail-admin-summary {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.platform-tenant-role-guide {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.platform-tenant-role-guide__item {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.platform-tenant-role-guide__item p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #4b5563;
+  line-height: 1.4;
+}
+
+.platform-tenant-role-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
 }
 
 .platform-tenant-maintenance-grid {
@@ -3209,6 +3245,14 @@ details > summary:focus-visible {
 .platform-tenant-maintenance-block--danger {
   border-color: #fecaca;
   background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+}
+
+@media (max-width: 640px) {
+  .platform-tenant-detail-admin-grid,
+  .platform-tenant-role-guide,
+  .platform-tenant-maintenance-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .tenant-form__error {

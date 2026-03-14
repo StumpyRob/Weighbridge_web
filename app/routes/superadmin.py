@@ -641,6 +641,7 @@ def tenant_detail(
             "summary": summary,
             "tenant_role_options": _tenant_role_options(),
             "tenant_requires_admin_role": int(summary["tenant_admin_count"]) == 0,
+            "primary_admin": primary_admin,
             "primary_admin_email": _user_identity(primary_admin),
             "open_url": _tenant_open_url(tenant.subdomain),
             "delete_allowed": not bool(delete_block_reason),

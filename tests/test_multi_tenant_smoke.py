@@ -1779,12 +1779,24 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert tenant_detail.status_code == 200
         assert "Tenant A" in tenant_detail.text
         assert "Tenant access, primary admin, and tenant-scoped users." in tenant_detail.text
-        assert "Tenant Summary" in tenant_detail.text
-        assert "Primary Tenant Admin" in tenant_detail.text
-        assert "Users" in tenant_detail.text
-        assert "Maintenance" in tenant_detail.text
+        section_positions = [
+            tenant_detail.text.index("<h2>Tenant Summary"),
+            tenant_detail.text.index("<h2>Primary Tenant Admin"),
+            tenant_detail.text.index("<h2>Users"),
+            tenant_detail.text.index("<h2>Add User"),
+            tenant_detail.text.index("<h2>Tenant AI Overrides"),
+            tenant_detail.text.index("<h2>Maintenance"),
+        ]
+        assert section_positions == sorted(section_positions)
+        assert 'id="platform-primary-tenant-admin-help"' in tenant_detail.text
         assert 'id="platform-tenant-users-help"' in tenant_detail.text
+        assert 'id="platform-add-tenant-user-help"' in tenant_detail.text
+        assert 'id="platform-add-user-role-help"' in tenant_detail.text
         assert "tenant-admin@example.com" in tenant_detail.text
+        assert "Tenant Admin" in tenant_detail.text
+        assert "Operator" in tenant_detail.text
+        assert "Accounts" in tenant_detail.text
+        assert "Read Only" in tenant_detail.text
         assert 'href="/t/a/login"' in tenant_detail.text
         assert f'action="/platform/tenants/{tenant_a}/users"' in tenant_detail.text
         assert f'action="/platform/tenants/{tenant_a}/admin-email"' in tenant_detail.text
@@ -2385,8 +2397,11 @@ def test_platform_superadmin_can_update_demo_tenant_admin_email_and_password(tmp
         detail = admin_client.get(f"/platform/tenants/{demo_tenant}")
         assert detail.status_code == 200
         assert "Primary Tenant Admin" in detail.text
+        assert "Current primary admin" in detail.text
+        assert "Update email" in detail.text
+        assert "Reset password" in detail.text
         assert "Primary admin email" in detail.text
-        assert "Reset primary admin password" in detail.text
+        assert "New password" in detail.text
 
         csrf = _prime_csrf(admin_client)
         updated_email = admin_client.post(
@@ -2517,7 +2532,14 @@ def test_platform_superadmin_can_create_demo_user_and_add_more_tenant_users(tmp_
         assert f'action="/platform/tenants/{demo_tenant}/users"' in detail.text
         assert "Primary Tenant Admin" in detail.text
         assert "Add User" in detail.text
+        assert 'id="platform-tenant-users-help"' in detail.text
+        assert 'id="platform-add-tenant-user-help"' in detail.text
+        assert 'id="platform-add-user-role-help"' in detail.text
         assert "The first active user for this tenant must be a Tenant Admin." in detail.text
+        assert "Full control of the tenant workspace, users, settings, and operational/admin functions." in detail.text
+        assert "Day-to-day weighbridge and ticket operations" in detail.text
+        assert "Invoicing, payments, and finance/admin tasks" in detail.text
+        assert "View-only access. No changes are allowed." in detail.text
 
         csrf = _prime_csrf(admin_client)
         created_admin = admin_client.post(
@@ -2542,6 +2564,9 @@ def test_platform_superadmin_can_create_demo_user_and_add_more_tenant_users(tmp_
         assert "Demi Admin" in created_admin_page.text
         assert "demo-admin@example.com" in created_admin_page.text
         assert "Primary Tenant Admin" in created_admin_page.text
+        assert "Current primary admin" in created_admin_page.text
+        assert "Update email" in created_admin_page.text
+        assert "Reset password" in created_admin_page.text
         assert "Full name" in created_admin_page.text
         assert "Email" in created_admin_page.text
         assert "Role" in created_admin_page.text
@@ -2665,11 +2690,18 @@ def test_platform_tenant_detail_renders_section_structure_and_name_fallbacks(tmp
         detail = admin_client.get(f"/platform/tenants/{tenant_id}")
 
     assert detail.status_code == 200
-    assert "Tenant Summary" in detail.text
-    assert "Primary Tenant Admin" in detail.text
-    assert "Users" in detail.text
-    assert "Tenant AI Overrides" in detail.text
-    assert "Maintenance" in detail.text
+    section_positions = [
+        detail.text.index("<h2>Tenant Summary"),
+        detail.text.index("<h2>Primary Tenant Admin"),
+        detail.text.index("<h2>Users"),
+        detail.text.index("<h2>Add User"),
+        detail.text.index("<h2>Tenant AI Overrides"),
+        detail.text.index("<h2>Maintenance"),
+    ]
+    assert section_positions == sorted(section_positions)
+    assert "Current primary admin" in detail.text
+    assert "Update email" in detail.text
+    assert "Reset password" in detail.text
     assert "Full name" in detail.text
     assert "Email" in detail.text
     assert "Role" in detail.text
@@ -2678,8 +2710,11 @@ def test_platform_tenant_detail_renders_section_structure_and_name_fallbacks(tmp
     assert "Priya Admin" in detail.text
     assert "primary-admin@example.com" in detail.text
     assert detail.text.count("legacy-user@example.com") >= 2
-    assert "Primary admin email" in detail.text
     assert "Add User" in detail.text
+    assert "Tenant Admin" in detail.text
+    assert "Operator" in detail.text
+    assert "Accounts" in detail.text
+    assert "Read Only" in detail.text
 
 
 def test_legacy_default_tenant_is_renamed_to_demo_and_hidden_from_platform_ui(tmp_path, monkeypatch):

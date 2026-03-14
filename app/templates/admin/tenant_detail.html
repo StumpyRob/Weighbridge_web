@@ -4,6 +4,17 @@
 {% block title %}Tenant Details | Weighbridge Web{% endblock %}
 
 {% block content %}
+  {% set role_help_map = {
+    "tenant_admin": help_text.tenant_role_tenant_admin,
+    "operator": help_text.tenant_role_operator,
+    "accounts": help_text.tenant_role_accounts,
+    "read_only": help_text.tenant_role_read_only,
+  } %}
+  {% set primary_admin_name = primary_admin.full_name if primary_admin else "" %}
+  {% set primary_admin_identity = primary_admin_email %}
+  {% if primary_admin %}
+    {% set primary_admin_identity = primary_admin.email or primary_admin.username %}
+  {% endif %}
   <div class="page-header">
     <div>
       <h1>{{ tenant.name }}</h1>
@@ -128,29 +139,48 @@
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Primary Tenant Admin</h2>
+        <h2>Primary Tenant Admin{{ help(help_text.platform_primary_tenant_admin, "platform-primary-tenant-admin-help") }}</h2>
       </div>
       <div class="frame-body">
         {% if primary_admin_email %}
           <p class="muted platform-tenant-detail-section-copy">
-            This is the main login/admin account for the tenant. Update the sign-in email or set a new password directly from here.
+            This is the main sign-in and admin account for the tenant workspace.
           </p>
           <div class="platform-tenant-detail-admin-grid">
             <div class="platform-tenant-detail-admin-card">
-              <div class="summary-item">
-                <span class="summary-label">Primary admin email</span>
-                <span class="summary-value">{{ primary_admin_email }}</span>
+              <h3>Current primary admin</h3>
+              <div class="platform-tenant-detail-admin-summary">
+                <div class="summary-item">
+                  <span class="summary-label">Full name</span>
+                  <span class="summary-value">{{ primary_admin_name or primary_admin_identity }}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Email</span>
+                  <span class="summary-value">{{ primary_admin_identity }}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Status</span>
+                  <span class="summary-value">
+                    {% if primary_admin and primary_admin.is_active %}
+                      <span class="status-pill status-open">Active</span>
+                    {% else %}
+                      <span class="status-pill status-void">Inactive</span>
+                    {% endif %}
+                  </span>
+                </div>
               </div>
             </div>
             <form method="post" action="/platform/tenants/{{ tenant.id }}/admin-email" class="ticket-form platform-tenant-detail-admin-card">
               <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+              <h3>Update email</h3>
+              <p class="muted">Change the email used to sign in as the primary tenant admin.</p>
               <div class="field">
-                <label for="admin_email">Update primary admin email</label>
+                <label for="admin_email">Primary admin email</label>
                 <input
                   type="email"
                   id="admin_email"
                   name="admin_email"
-                  value="{{ primary_admin_email }}"
+                  value="{{ primary_admin_identity }}"
                   required
                   autocomplete="email"
                 />
@@ -161,8 +191,10 @@
             </form>
             <form method="post" action="/platform/tenants/{{ tenant.id }}/admin-password" class="ticket-form platform-tenant-detail-admin-card">
               <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+              <h3>Reset password</h3>
+              <p class="muted">Set a new password directly for the current primary tenant admin.</p>
               <div class="field">
-                <label for="admin_password">Reset primary admin password</label>
+                <label for="admin_password">New password</label>
                 <input
                   type="password"
                   id="admin_password"
@@ -190,7 +222,7 @@
           </div>
         {% else %}
           <div class="alert alert--warning">
-            No primary tenant admin is set yet. Use Add User below and choose the Tenant Admin role first.
+            No primary admin is set yet. Use Add User below and choose the Tenant Admin role first.
           </div>
         {% endif %}
       </div>
@@ -202,8 +234,16 @@
       </div>
       <div class="frame-body">
         <p class="muted platform-tenant-detail-section-copy">
-          Additional tenant-scoped users sign in with email. Use the role selector to grant tenant admin access where needed.
+          Review current tenant users here. Role help is shown below and on each user row.
         </p>
+        <div class="platform-tenant-role-guide" aria-label="Tenant user role guide">
+          {% for role_value, role_name in tenant_role_options %}
+            <div class="platform-tenant-role-guide__item">
+              <h3>{{ role_name }}</h3>
+              <p>{{ role_help_map.get(role_value, "") }}</p>
+            </div>
+          {% endfor %}
+        </div>
         <div class="table-wrap list-table-wrap">
           <table class="data-table list-table platform-tenants-table">
             <thead>
@@ -220,7 +260,14 @@
                 <tr>
                   <td>{{ user.full_name or user.email or user.username }}</td>
                   <td>{{ user.email or user.username }}</td>
-                  <td>{{ user_role_label(user) }}</td>
+                  <td>
+                    <span class="platform-tenant-role-cell">
+                      <span>{{ user_role_label(user) }}</span>
+                      {% if role_help_map.get(user.role) %}
+                        {{ help(role_help_map.get(user.role), "platform-tenant-user-role-help-" ~ user.id) }}
+                      {% endif %}
+                    </span>
+                  </td>
                   <td>
                     {% if user.is_active %}
                       <span class="status-pill status-open">Active</span>
@@ -238,83 +285,89 @@
             </tbody>
           </table>
         </div>
-        <div class="platform-tenant-detail-user-add">
-          <h3>Add User</h3>
-          <p class="muted platform-tenant-detail-section-copy">
-            Add another tenant-scoped user. If this tenant does not have a tenant admin yet, create that user here with the Tenant Admin role.
-          </p>
-          <form method="post" action="/platform/tenants/{{ tenant.id }}/users" class="ticket-form">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-            <div class="form-grid">
-              <div class="field">
-                <label for="first_name">First name</label>
-                <input
-                  type="text"
-                  id="first_name"
-                  name="first_name"
-                  maxlength="100"
-                  autocomplete="given-name"
-                />
-              </div>
-              <div class="field">
-                <label for="last_name">Last name</label>
-                <input
-                  type="text"
-                  id="last_name"
-                  name="last_name"
-                  maxlength="100"
-                  autocomplete="family-name"
-                />
-              </div>
-              <div class="field">
-                <label for="email">Email</label>
-                <input
-                  type="email"
-                  id="email"
-                  name="email"
-                  required
-                  autocomplete="email"
-                />
-              </div>
-              <div class="field">
-                <label for="role">Role</label>
-                <select id="role" name="role" required>
-                  {% for role_value, role_name in tenant_role_options %}
-                    <option value="{{ role_value }}">{{ role_name }}</option>
-                  {% endfor %}
-                </select>
-                {% if tenant_requires_admin_role %}
-                  <p class="help">The first active user for this tenant must be a Tenant Admin.</p>
-                {% endif %}
-              </div>
-              <div class="field">
-                <label for="password">Temporary password</label>
-                <input
-                  type="password"
-                  id="password"
-                  name="password"
-                  required
-                  minlength="8"
-                  autocomplete="new-password"
-                />
-              </div>
-              <div class="field">
-                <label for="user_confirm_password">Confirm temporary password</label>
-                <input
-                  type="password"
-                  id="user_confirm_password"
-                  name="confirm_password"
-                  required
-                  minlength="8"
-                  autocomplete="new-password"
-                />
-              </div>
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Add User{{ help(help_text.platform_add_tenant_user, "platform-add-tenant-user-help") }}</h2>
+      </div>
+      <div class="frame-body">
+        <p class="muted platform-tenant-detail-section-copy">
+          Use email as the sign-in ID for any additional tenant user. Choose the role that matches their day-to-day access.
+        </p>
+        <form method="post" action="/platform/tenants/{{ tenant.id }}/users" class="ticket-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+          <div class="form-grid">
+            <div class="field">
+              <label for="first_name">First name</label>
+              <input
+                type="text"
+                id="first_name"
+                name="first_name"
+                maxlength="100"
+                autocomplete="given-name"
+              />
             </div>
-            <div class="actions btn-group">
-              <button type="submit" class="btn btn--primary">Add User</button>
+            <div class="field">
+              <label for="last_name">Last name</label>
+              <input
+                type="text"
+                id="last_name"
+                name="last_name"
+                maxlength="100"
+                autocomplete="family-name"
+              />
             </div>
-          </form>
-        </div>
+            <div class="field">
+              <label for="email">Email</label>
+              <input
+                type="email"
+                id="email"
+                name="email"
+                required
+                autocomplete="email"
+              />
+            </div>
+            <div class="field">
+              <label for="role">Role{{ help(help_text.platform_tenant_user_role, "platform-add-user-role-help") }}</label>
+              <select id="role" name="role" required>
+                {% for role_value, role_name in tenant_role_options %}
+                  <option value="{{ role_value }}">{{ role_name }}</option>
+                {% endfor %}
+              </select>
+              <p class="help">Tenant Admin can manage users and settings. Other roles keep access narrower.</p>
+              {% if tenant_requires_admin_role %}
+                <p class="help">The first active user for this tenant must be a Tenant Admin.</p>
+              {% endif %}
+            </div>
+            <div class="field">
+              <label for="password">Temporary password</label>
+              <input
+                type="password"
+                id="password"
+                name="password"
+                required
+                minlength="8"
+                autocomplete="new-password"
+              />
+            </div>
+            <div class="field">
+              <label for="user_confirm_password">Confirm temporary password</label>
+              <input
+                type="password"
+                id="user_confirm_password"
+                name="confirm_password"
+                required
+                minlength="8"
+                autocomplete="new-password"
+              />
+            </div>
+          </div>
+          <div class="actions btn-group">
+            <button type="submit" class="btn btn--primary">Add User</button>
+          </div>
+        </form>
       </div>
     </section>
 
