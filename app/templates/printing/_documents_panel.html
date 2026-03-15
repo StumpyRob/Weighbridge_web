@@ -9,6 +9,7 @@
           <div class="documents-group__label">{{ group.label }}</div>
           <div class="documents-group__actions">
             {% with print_actions = group.actions %}
+              {% set document_email_action = group.email_action if group.email_action is defined else None %}
               {% include "printing/_print_actions.html" %}
             {% endwith %}
           </div>

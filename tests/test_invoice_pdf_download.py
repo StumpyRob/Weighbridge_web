@@ -209,6 +209,10 @@ def test_invoice_detail_documents_frame_groups_invoice_actions(client, db_sessio
     assert "Download PDF" in response.text
     assert "Print" in response.text
     assert "Email Invoice" in response.text
+    assert "Edit Email" in response.text
+    assert 'data-document-email-primary-form' in response.text
+    assert 'data-document-email-primary' in response.text
+    assert f'action="/invoices/{invoice.id}/email"' in response.text
     assert 'name="to_email"' in response.text
     assert 'value="billing@example.com"' in response.text
     assert 'value="Invoice INV-UI-1 from Invoice Email Co"' in response.text
@@ -239,6 +243,31 @@ def test_invoice_detail_documents_frame_groups_invoice_actions(client, db_sessio
     assert "Advanced printing" not in response.text
     assert "Preview Invoice" not in response.text
     assert "Print locally (browser)" not in response.text
+
+
+def test_invoice_primary_email_action_opens_form_when_customer_email_missing(client, db_session):
+    invoice = _create_invoice_with_line(db_session, invoice_no="INV-UI-NOEMAIL-1", invoice_email=None)
+    template = _create_template(
+        db_session,
+        code="INV_UI_NOEMAIL_TEMPLATE",
+        content="<html><body>{{ invoice.invoice_no }}</body></html>",
+    )
+    _create_destination(
+        db_session,
+        name="Invoice No Email Destination",
+        template_id=template.id,
+        delivery_type="PRINT_LOCAL_BROWSER",
+        delivery_config={},
+    )
+
+    response = client.get(f"/invoices/{invoice.id}")
+    assert response.status_code == 200
+    assert f'href="/invoices/{invoice.id}?edit_email=1"' in response.text
+    assert 'data-document-email-primary-form' not in response.text
+
+    opened = client.get(f"/invoices/{invoice.id}?edit_email=1")
+    assert opened.status_code == 200
+    assert 'document-email-card" open' in opened.text
 
 
 def test_invoice_send_by_email_uses_tenant_configured_subject_and_body_template(

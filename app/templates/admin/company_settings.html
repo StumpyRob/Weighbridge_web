@@ -49,48 +49,63 @@
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Document Emails</h2>
+        <h2>Document Email Defaults</h2>
       </div>
       <div class="frame-body">
-        <div class="form-grid form-grid--2">
-          <div class="field">
-            <label for="invoice_email_subject_template">Invoice email subject{{ help(help_text.company_document_email_subject_template, "company-invoice-email-subject-template-help") }}</label>
-            <input
-              type="text"
-              id="invoice_email_subject_template"
-              name="invoice_email_subject_template"
-              value="{{ setting.invoice_email_subject_template or '' }}"
-              placeholder="Invoice {invoice_no} from {company_name}"
-            />
-          </div>
-          <div class="field">
-            <label for="ticket_email_subject_template">Ticket email subject{{ help(help_text.company_document_email_subject_template, "company-ticket-email-subject-template-help") }}</label>
-            <input
-              type="text"
-              id="ticket_email_subject_template"
-              name="ticket_email_subject_template"
-              value="{{ setting.ticket_email_subject_template or '' }}"
-              placeholder="Ticket {ticket_no} from {company_name}"
-            />
-          </div>
-          <div class="field field--span-2">
-            <label for="invoice_email_body_template">Invoice email body{{ help(help_text.company_document_email_body_template, "company-invoice-email-body-template-help") }}</label>
-            <textarea
-              id="invoice_email_body_template"
-              name="invoice_email_body_template"
-              rows="4"
-              placeholder="Hello,&#10;&#10;Please find attached invoice {invoice_no}.&#10;&#10;Regards,&#10;{company_name}"
-            >{{ setting.invoice_email_body_template or '' }}</textarea>
-          </div>
-          <div class="field field--span-2">
-            <label for="ticket_email_body_template">Ticket email body{{ help(help_text.company_document_email_body_template, "company-ticket-email-body-template-help") }}</label>
-            <textarea
-              id="ticket_email_body_template"
-              name="ticket_email_body_template"
-              rows="4"
-              placeholder="Hello,&#10;&#10;Please find attached ticket {ticket_no}.&#10;&#10;Regards,&#10;{company_name}"
-            >{{ setting.ticket_email_body_template or '' }}</textarea>
-          </div>
+        <p class="muted platform-tenant-detail-section-copy">
+          These defaults are used when emailing invoices and tickets. Operators can still edit the message before sending.
+        </p>
+        <div class="platform-tenant-detail-admin-grid">
+          <section class="platform-tenant-detail-admin-card">
+            <h3>Invoice</h3>
+            <div class="field">
+              <label for="invoice_email_subject_template">Invoice email subject{{ help(help_text.company_document_email_subject_template, "company-invoice-email-subject-template-help") }}</label>
+              <input
+                type="text"
+                id="invoice_email_subject_template"
+                name="invoice_email_subject_template"
+                value="{{ document_email_templates.invoice_subject }}"
+              />
+            </div>
+            <div class="field">
+              <label for="invoice_email_body_template">Invoice email body{{ help(help_text.company_document_email_body_template, "company-invoice-email-body-template-help") }}</label>
+              <textarea id="invoice_email_body_template" name="invoice_email_body_template" rows="6">{{ document_email_templates.invoice_body }}</textarea>
+            </div>
+            <p class="hint">
+              Supported placeholders for invoice emails:
+              <code>{company_name}</code>,
+              <code>{invoice_no}</code>.
+              Use <code>{ticket_no}</code> on ticket emails.
+            </p>
+            <div class="actions btn-group">
+              <button type="button" class="btn btn--ghost btn--sm" data-document-email-reset="invoice">Reset Invoice Template</button>
+            </div>
+          </section>
+          <section class="platform-tenant-detail-admin-card">
+            <h3>Ticket</h3>
+            <div class="field">
+              <label for="ticket_email_subject_template">Ticket email subject{{ help(help_text.company_document_email_subject_template, "company-ticket-email-subject-template-help") }}</label>
+              <input
+                type="text"
+                id="ticket_email_subject_template"
+                name="ticket_email_subject_template"
+                value="{{ document_email_templates.ticket_subject }}"
+              />
+            </div>
+            <div class="field">
+              <label for="ticket_email_body_template">Ticket email body{{ help(help_text.company_document_email_body_template, "company-ticket-email-body-template-help") }}</label>
+              <textarea id="ticket_email_body_template" name="ticket_email_body_template" rows="6">{{ document_email_templates.ticket_body }}</textarea>
+            </div>
+            <p class="hint">
+              Supported placeholders for ticket emails:
+              <code>{company_name}</code>,
+              <code>{ticket_no}</code>.
+              Use <code>{invoice_no}</code> on invoice emails.
+            </p>
+            <div class="actions btn-group">
+              <button type="button" class="btn btn--ghost btn--sm" data-document-email-reset="ticket">Reset Ticket Template</button>
+            </div>
+          </section>
         </div>
       </div>
     </section>
@@ -274,5 +289,28 @@
       <a class="btn btn--secondary" href="/admin">Back</a>
     </div>
   </form>
+  <script id="company-document-email-defaults" type="application/json">{{ document_email_system_defaults | tojson }}</script>
+  <script>
+    (() => {
+      const defaultsNode = document.getElementById("company-document-email-defaults");
+      if (!defaultsNode) return;
+      let defaults = {};
+      try {
+        defaults = JSON.parse(defaultsNode.textContent || "{}");
+      } catch (_error) {
+        return;
+      }
+      document.querySelectorAll("[data-document-email-reset]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const documentType = button.getAttribute("data-document-email-reset");
+          if (!documentType) return;
+          const subject = document.getElementById(`${documentType}_email_subject_template`);
+          const body = document.getElementById(`${documentType}_email_body_template`);
+          if (subject) subject.value = defaults[`${documentType}_subject`] || "";
+          if (body) body.value = defaults[`${documentType}_body`] || "";
+        });
+      });
+    })();
+  </script>
   <script src="/static/js/company_branding.js?v={{ BUILD_STAMP }}" defer></script>
 {% endblock %}

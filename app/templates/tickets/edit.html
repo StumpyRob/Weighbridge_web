@@ -72,6 +72,16 @@
     {
       "label": "Ticket",
       "actions": print_actions,
+      "email_action": {
+        "label": "Email Ticket",
+        "action_url": "/tickets/" ~ ticket.id ~ "/email",
+        "edit_url": "/tickets/" ~ ticket.id ~ "?edit_email=1",
+        "quick_send_available": ticket_email_form.to_email,
+        "to_email": ticket_email_form.to_email,
+        "cc_email": ticket_email_form.cc_email,
+        "subject": ticket_email_form.subject,
+        "message": ticket_email_form.message,
+      },
       "hint": print_actions.no_default_message if not print_actions.send_enabled else "",
     }
   ] %}
@@ -85,6 +95,7 @@
     ] %}
   {% endif %}
 {% endif %}
+{% set ticket_email_form_open = ticket_email_form_open or request.query_params.get("edit_email") == "1" %}
 <div class="page-header ticket-edit-header">
   <div class="page-header__content">
     <h1>Ticket {{ ticket.ticket_no }}</h1>
@@ -112,6 +123,7 @@
       {% set documents_panel_classes = "documents-panel--header" %}
       {% include "printing/_documents_panel.html" %}
       {% set email_title = "Email Ticket" %}
+      {% set email_summary_title = "Edit Email" %}
       {% set email_button_label = "Email Ticket" %}
       {% set email_action_url = "/tickets/" ~ ticket.id ~ "/email" %}
       {% set email_form = ticket_email_form %}

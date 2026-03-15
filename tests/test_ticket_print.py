@@ -420,12 +420,40 @@ def test_ticket_detail_shows_email_ticket_form_with_defaults(client, db_session)
 
     assert response.status_code == 200
     assert "Email Ticket" in response.text
+    assert "Edit Email" in response.text
+    assert 'data-document-email-primary-form' in response.text
+    assert 'data-document-email-primary' in response.text
+    assert f'action="/tickets/{ticket.id}/email"' in response.text
     assert 'name="to_email"' in response.text
     assert 'value="billing@example.com"' in response.text
     assert 'value="Ticket T-EMAIL-UI-1 from Ticket Email Co"' in response.text
     assert "Please find attached ticket T-EMAIL-UI-1." in response.text
     assert "Ticket Email Co" in response.text
     assert "Uses the configured ticket document output and platform email settings" in response.text
+
+
+def test_ticket_primary_email_action_opens_form_when_customer_email_missing(client, db_session):
+    ticket = _create_complete_sale_ticket(
+        db_session,
+        ticket_no="T-EMAIL-UI-NOEMAIL-1",
+        invoice_email=None,
+    )
+    _set_ticket_browser_destination(
+        db_session,
+        code="TICKET_EMAIL_UI_NOEMAIL",
+        template_format="HTML",
+        content="<html><body>Ticket {{ payload.ticket_no }}</body></html>",
+    )
+
+    response = client.get(f"/tickets/{ticket.id}")
+
+    assert response.status_code == 200
+    assert f'href="/tickets/{ticket.id}?edit_email=1"' in response.text
+    assert 'data-document-email-primary-form' not in response.text
+
+    opened = client.get(f"/tickets/{ticket.id}?edit_email=1")
+    assert opened.status_code == 200
+    assert 'document-email-card" open' in opened.text
 
 
 def test_ticket_send_by_email_uses_tenant_configured_subject_and_body_template(

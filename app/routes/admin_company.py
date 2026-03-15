@@ -130,6 +130,45 @@ def _company_setting_snapshot(setting: CompanySetting | None) -> dict[str, objec
     }
 
 
+def _document_email_system_defaults() -> dict[str, str]:
+    from .invoices import INVOICE_EMAIL_DEFAULT_BODY, INVOICE_EMAIL_DEFAULT_SUBJECT
+    from .tickets import TICKET_EMAIL_DEFAULT_BODY, TICKET_EMAIL_DEFAULT_SUBJECT
+
+    return {
+        "invoice_subject": INVOICE_EMAIL_DEFAULT_SUBJECT,
+        "invoice_body": INVOICE_EMAIL_DEFAULT_BODY,
+        "ticket_subject": TICKET_EMAIL_DEFAULT_SUBJECT,
+        "ticket_body": TICKET_EMAIL_DEFAULT_BODY,
+    }
+
+
+def _document_email_form_templates(
+    setting: CompanySetting | None,
+    *,
+    form_values: dict[str, str] | None = None,
+) -> dict[str, str]:
+    defaults = _document_email_system_defaults()
+    configured = {
+        "invoice_subject": str(
+            getattr(setting, "invoice_email_subject_template", "") or ""
+        ).strip(),
+        "invoice_body": str(
+            getattr(setting, "invoice_email_body_template", "") or ""
+        ).strip(),
+        "ticket_subject": str(
+            getattr(setting, "ticket_email_subject_template", "") or ""
+        ).strip(),
+        "ticket_body": str(
+            getattr(setting, "ticket_email_body_template", "") or ""
+        ).strip(),
+    }
+    values = dict(form_values or {})
+    return {
+        key: values[key] if key in values else (configured[key] or defaults[key])
+        for key in defaults
+    }
+
+
 def _form_checkbox(form, key: str) -> bool:
     values = list(form.getlist(key)) if hasattr(form, "getlist") else [form.get(key)]
     return any(_truthy(value) for value in values)
@@ -160,6 +199,7 @@ def admin_company_settings(
     branding = get_branding(db)
     has_logo_configured = bool(str(getattr(setting, "company_logo_path", "") or "").strip())
     current_user = getattr(getattr(request, "state", None), "current_user", None)
+    document_email_system_defaults = _document_email_system_defaults()
     return templates.TemplateResponse(
         request,
         "admin/company_settings.html",
@@ -171,6 +211,8 @@ def admin_company_settings(
                 "logo_exists": bool(branding.get("logo_exists", False)),
             },
             "has_logo_configured": has_logo_configured,
+            "document_email_templates": _document_email_form_templates(setting),
+            "document_email_system_defaults": document_email_system_defaults,
             "saved": request.query_params.get("saved") == "1",
             "account_saved": request.query_params.get("account_saved") == "1",
             "login_email": _current_login_email(current_user),
@@ -319,6 +361,7 @@ async def admin_company_settings_save(
             show_nav_title=show_nav_title,
         )
         branding = build_ui_branding(form_like)
+        document_email_system_defaults = _document_email_system_defaults()
         return templates.TemplateResponse(
             request,
             "admin/company_settings.html",
@@ -330,6 +373,16 @@ async def admin_company_settings_save(
                     "logo_exists": bool(branding.get("logo_exists", False)),
                 },
                 "has_logo_configured": bool(str(form_logo_value or "").strip()),
+                "document_email_templates": _document_email_form_templates(
+                    form_like,
+                    form_values={
+                        "invoice_subject": invoice_email_subject_template,
+                        "invoice_body": invoice_email_body_template,
+                        "ticket_subject": ticket_email_subject_template,
+                        "ticket_body": ticket_email_body_template,
+                    },
+                ),
+                "document_email_system_defaults": document_email_system_defaults,
                 "saved": False,
                 "account_saved": False,
                 "login_email": login_email or _current_login_email(current_user),

@@ -224,6 +224,23 @@ def test_company_settings_get_does_not_create_row(client, db_session):
     assert len(after_count) == 0
 
 
+def test_company_settings_prefills_document_email_defaults_and_reset_buttons(client):
+    response = client.get("/admin/company")
+
+    assert response.status_code == 200
+    assert "Document Email Defaults" in response.text
+    assert "These defaults are used when emailing invoices and tickets." in response.text
+    assert "Operators can still edit the message before sending." in response.text
+    assert 'value="Invoice {invoice_no} from {company_name}"' in response.text
+    assert 'value="Ticket {ticket_no} from {company_name}"' in response.text
+    assert "Please find attached invoice {invoice_no}." in response.text
+    assert "Please find attached ticket {ticket_no}." in response.text
+    assert "Reset Invoice Template" in response.text
+    assert "Reset Ticket Template" in response.text
+    assert 'data-document-email-reset="invoice"' in response.text
+    assert 'data-document-email-reset="ticket"' in response.text
+
+
 def test_company_settings_saves_document_email_templates(client, db_session):
     response = client.post(
         "/admin/company",
@@ -252,6 +269,10 @@ def test_company_settings_saves_document_email_templates(client, db_session):
     assert 'id="invoice_email_body_template"' in page.text
     assert 'id="ticket_email_subject_template"' in page.text
     assert 'id="ticket_email_body_template"' in page.text
+    assert 'value="Invoice {invoice_no} from {company_name}"' in page.text
+    assert 'value="Ticket {ticket_no} from {company_name}"' in page.text
+    assert "Invoice body {invoice_no} / {company_name}" in page.text
+    assert "Ticket body {ticket_no} / {company_name}" in page.text
     assert 'id="company-invoice-email-subject-template-help"' in page.text
     assert 'id="company-ticket-email-subject-template-help"' in page.text
     assert 'id="company-invoice-email-body-template-help"' in page.text
