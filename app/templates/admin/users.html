@@ -1,5 +1,26 @@
 {% extends "base.html" %}
 
+{% macro workspace_user_action_link(label, href) -%}
+  <a class="btn btn--ghost btn--sm" href="{{ href }}">{{ label }}</a>
+{%- endmacro %}
+
+{% macro workspace_user_inline_row(user, action_url, title, submit_label, submit_class="btn--primary") -%}
+  <tr class="platform-tenant-inline-row">
+    <td colspan="5">
+      <form method="post" action="{{ action_url }}" class="ticket-form platform-tenant-detail-admin-card workspace-users-inline-card">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+        <h3>{{ title }}</h3>
+        <p class="muted">{{ user.email or user.username }}</p>
+        {{ caller() }}
+        <div class="actions btn-group">
+          <button type="submit" class="btn {{ submit_class }}">{{ submit_label }}</button>
+          <a class="btn btn--ghost" href="/admin/users">Cancel</a>
+        </div>
+      </form>
+    </td>
+  </tr>
+{%- endmacro %}
+
 {% block title %}Workspace Users | Weighbridge Web{% endblock %}
 
 {% block content %}
@@ -21,14 +42,14 @@
   {% endif %}
 
   <div class="stacked-frames">
-    <section class="frame">
+    <section class="frame compact">
       <div class="frame-header">
         <h2>Create User</h2>
       </div>
       <div class="frame-body">
         <form class="ticket-form" method="post" action="/admin/users">
           <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-          <div class="form-grid">
+          <div class="form-grid form-grid--3">
             <div class="field">
               <label for="first_name">First name</label>
               <input type="text" id="first_name" name="first_name" maxlength="100" autocomplete="given-name" />
@@ -65,93 +86,36 @@
       </div>
     </section>
 
-    <section class="frame">
+    <section class="frame compact">
       <div class="frame-header">
-        <h2>Existing Users</h2>
+        <h2>Users</h2>
       </div>
       <div class="frame-body">
         <div class="table-wrap list-table-wrap">
-          <table class="data-table list-table">
+          <table class="data-table list-table workspace-users-table">
             <thead>
               <tr>
-                <th>User</th>
+                <th>Name</th>
+                <th>Email</th>
                 <th>Role</th>
                 <th>Status</th>
-                <th>Password</th>
+                <th class="actions-col">Actions</th>
               </tr>
             </thead>
             <tbody>
               {% for user in users %}
+                {% set user_email = user.email or user.username %}
                 <tr>
                   <td>
-                    <form method="post" action="/admin/users/{{ user.id }}/update" class="ticket-form">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-                      <div class="form-grid">
-                        <div class="field">
-                          <label for="user_{{ user.id }}_first_name">First name</label>
-                          <input
-                            type="text"
-                            id="user_{{ user.id }}_first_name"
-                            name="first_name"
-                            value="{{ user.first_name or '' }}"
-                            maxlength="100"
-                            autocomplete="given-name"
-                          />
-                        </div>
-                        <div class="field">
-                          <label for="user_{{ user.id }}_last_name">Last name</label>
-                          <input
-                            type="text"
-                            id="user_{{ user.id }}_last_name"
-                            name="last_name"
-                            value="{{ user.last_name or '' }}"
-                            maxlength="100"
-                            autocomplete="family-name"
-                          />
-                        </div>
-                        <div class="field">
-                          <label for="user_{{ user.id }}_email">Email</label>
-                          <input
-                            type="email"
-                            id="user_{{ user.id }}_email"
-                            name="email"
-                            value="{{ user.email or user.username }}"
-                            required
-                            autocomplete="email"
-                          />
-                        </div>
-                        <div class="field">
-                          <label for="user_{{ user.id }}_role">Role</label>
-                          <select id="user_{{ user.id }}_role" name="role" required>
-                            {% for role_value, role_name in role_options %}
-                              <option value="{{ role_value }}" {% if user.role == role_value or (user.role == 'user' and role_value == 'operator') %}selected{% endif %}>{{ role_name }}</option>
-                            {% endfor %}
-                          </select>
-                        </div>
-                        <div class="field checkbox">
-                          <input type="hidden" name="is_active" value="off" />
-                          <input
-                            type="checkbox"
-                            id="user_{{ user.id }}_is_active"
-                            name="is_active"
-                            value="on"
-                            {% if user.is_active %}checked{% endif %}
-                          />
-                          <label for="user_{{ user.id }}_is_active">Active</label>
-                        </div>
-                      </div>
-                      <div class="actions btn-group">
-                        <button type="submit" class="btn btn--secondary">Save User</button>
-                        {% if current_user_id == user.id %}
-                          <span class="muted">Current user</span>
-                        {% endif %}
-                      </div>
-                    </form>
+                    <div class="workspace-users-name">
+                      <strong>{{ user.full_name or "No name set" }}</strong>
+                      {% if current_user_id == user.id %}
+                        <span class="muted">Current user</span>
+                      {% endif %}
+                    </div>
                   </td>
-                  <td>
-                    <strong>{{ user_role_label(user) }}</strong>
-                    <div class="muted">{{ user_display_name(user) }}</div>
-                  </td>
+                  <td class="workspace-users-email">{{ user_email }}</td>
+                  <td>{{ user_role_label(user) }}</td>
                   <td>
                     {% if user.is_active %}
                       <span class="status-pill status-open">Active</span>
@@ -159,42 +123,104 @@
                       <span class="status-pill status-void">Inactive</span>
                     {% endif %}
                   </td>
-                  <td>
-                    <form method="post" action="/admin/users/{{ user.id }}/reset-password" class="ticket-form">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-                      <div class="form-grid">
-                        <div class="field">
-                          <label for="user_{{ user.id }}_password">New password</label>
-                          <input
-                            type="password"
-                            id="user_{{ user.id }}_password"
-                            name="password"
-                            minlength="8"
-                            required
-                            autocomplete="new-password"
-                          />
-                        </div>
-                        <div class="field">
-                          <label for="user_{{ user.id }}_confirm_password">Confirm password</label>
-                          <input
-                            type="password"
-                            id="user_{{ user.id }}_confirm_password"
-                            name="confirm_password"
-                            minlength="8"
-                            required
-                            autocomplete="new-password"
-                          />
-                        </div>
-                      </div>
-                      <div class="actions btn-group">
-                        <button type="submit" class="btn btn--ghost">Reset Password</button>
-                      </div>
-                    </form>
+                  <td class="actions-col">
+                    <div class="workspace-users-actions">
+                      {{ workspace_user_action_link("Edit", "/admin/users?edit_user=" ~ user.id) }}
+                      <form method="post" action="/admin/users/{{ user.id }}/update">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                        <input type="hidden" name="first_name" value="{{ user.first_name or '' }}" />
+                        <input type="hidden" name="last_name" value="{{ user.last_name or '' }}" />
+                        <input type="hidden" name="email" value="{{ user_email }}" />
+                        <input type="hidden" name="role" value="{{ user.role or '' }}" />
+                        <input type="hidden" name="is_active" value="{{ 'off' if user.is_active else 'on' }}" />
+                        <button type="submit" class="btn btn--ghost btn--sm">
+                          {{ "Deactivate" if user.is_active else "Activate" }}
+                        </button>
+                      </form>
+                      {{ workspace_user_action_link("Reset Password", "/admin/users?reset_user=" ~ user.id) }}
+                    </div>
                   </td>
                 </tr>
+                {% if editing_user_id == user.id %}
+                  {% call workspace_user_inline_row(user, "/admin/users/" ~ user.id ~ "/update", "Edit User", "Save User") %}
+                    <input type="hidden" name="is_active" value="{{ 'on' if user.is_active else 'off' }}" />
+                    <div class="form-grid form-grid--3">
+                      <div class="field">
+                        <label for="edit_user_{{ user.id }}_first_name">First name</label>
+                        <input
+                          type="text"
+                          id="edit_user_{{ user.id }}_first_name"
+                          name="first_name"
+                          value="{{ user.first_name or '' }}"
+                          maxlength="100"
+                          autocomplete="given-name"
+                        />
+                      </div>
+                      <div class="field">
+                        <label for="edit_user_{{ user.id }}_last_name">Last name</label>
+                        <input
+                          type="text"
+                          id="edit_user_{{ user.id }}_last_name"
+                          name="last_name"
+                          value="{{ user.last_name or '' }}"
+                          maxlength="100"
+                          autocomplete="family-name"
+                        />
+                      </div>
+                      <div class="field">
+                        <label for="edit_user_{{ user.id }}_email">Email</label>
+                        <input
+                          type="email"
+                          id="edit_user_{{ user.id }}_email"
+                          name="email"
+                          value="{{ user_email }}"
+                          required
+                          autocomplete="email"
+                        />
+                      </div>
+                      <div class="field">
+                        <label for="edit_user_{{ user.id }}_role">Role</label>
+                        <select id="edit_user_{{ user.id }}_role" name="role" required>
+                          {% for role_value, role_name in role_options %}
+                            <option value="{{ role_value }}" {% if user.role == role_value or (user.role == 'user' and role_value == 'operator') %}selected{% endif %}>{{ role_name }}</option>
+                          {% endfor %}
+                        </select>
+                      </div>
+                    </div>
+                    <p class="muted">Use the row action to activate or deactivate access.</p>
+                  {% endcall %}
+                {% endif %}
+                {% if resetting_user_id == user.id %}
+                  {% call workspace_user_inline_row(user, "/admin/users/" ~ user.id ~ "/reset-password", "Reset Password", "Update Password", "btn--secondary") %}
+                    <div class="form-grid form-grid--2">
+                      <div class="field">
+                        <label for="reset_user_{{ user.id }}_password">New password</label>
+                        <input
+                          type="password"
+                          id="reset_user_{{ user.id }}_password"
+                          name="password"
+                          minlength="8"
+                          required
+                          autocomplete="new-password"
+                        />
+                      </div>
+                      <div class="field">
+                        <label for="reset_user_{{ user.id }}_confirm_password">Confirm password</label>
+                        <input
+                          type="password"
+                          id="reset_user_{{ user.id }}_confirm_password"
+                          name="confirm_password"
+                          minlength="8"
+                          required
+                          autocomplete="new-password"
+                        />
+                      </div>
+                    </div>
+                  {% endcall %}
+                {% endif %}
               {% else %}
                 <tr>
-                  <td colspan="4" class="empty">No users created for this workspace.</td>
+                  <td colspan="5" class="empty">No users created for this workspace.</td>
                 </tr>
               {% endfor %}
             </tbody>

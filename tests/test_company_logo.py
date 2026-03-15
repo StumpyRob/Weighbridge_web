@@ -224,6 +224,40 @@ def test_company_settings_get_does_not_create_row(client, db_session):
     assert len(after_count) == 0
 
 
+def test_company_settings_saves_document_email_templates(client, db_session):
+    response = client.post(
+        "/admin/company",
+        data={
+            "name": "Acme Template Co",
+            "invoice_email_subject_template": "Invoice {invoice_no} from {company_name}",
+            "invoice_email_body_template": "Invoice body {invoice_no} / {company_name}",
+            "ticket_email_subject_template": "Ticket {ticket_no} from {company_name}",
+            "ticket_email_body_template": "Ticket body {ticket_no} / {company_name}",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    setting = db_session.execute(
+        select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1)
+    ).scalar_one()
+    assert setting.invoice_email_subject_template == "Invoice {invoice_no} from {company_name}"
+    assert setting.invoice_email_body_template == "Invoice body {invoice_no} / {company_name}"
+    assert setting.ticket_email_subject_template == "Ticket {ticket_no} from {company_name}"
+    assert setting.ticket_email_body_template == "Ticket body {ticket_no} / {company_name}"
+
+    page = client.get("/admin/company")
+    assert page.status_code == 200
+    assert 'id="invoice_email_subject_template"' in page.text
+    assert 'id="invoice_email_body_template"' in page.text
+    assert 'id="ticket_email_subject_template"' in page.text
+    assert 'id="ticket_email_body_template"' in page.text
+    assert 'id="company-invoice-email-subject-template-help"' in page.text
+    assert 'id="company-ticket-email-subject-template-help"' in page.text
+    assert 'id="company-invoice-email-body-template-help"' in page.text
+    assert 'id="company-ticket-email-body-template-help"' in page.text
+
+
 def test_company_settings_rejects_invalid_hex_colors(client):
     response = client.post(
         "/admin/company",

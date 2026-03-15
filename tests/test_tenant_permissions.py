@@ -442,15 +442,38 @@ def test_backend_rejects_forbidden_posts_and_read_only_ai(workspace_env):
 def test_tenant_admin_can_manage_workspace_users_and_audit_actions(workspace_env):
     client, csrf = _client_for_role(workspace_env, "tenant_admin")
     SessionLocal = workspace_env["SessionLocal"]
+    operator_id = workspace_env["users"]["operator"]["id"]
     try:
         page = client.get("/admin/users")
         assert page.status_code == 200
+        assert "Create User" in page.text
+        assert "Name" in page.text
+        assert "Email" in page.text
+        assert "Role" in page.text
+        assert "Status" in page.text
+        assert "Actions" in page.text
         assert "First name" in page.text
         assert "Last name" in page.text
         assert "Tenant Admin" in page.text
         assert "Operator" in page.text
         assert "Accounts" in page.text
         assert "Read Only" in page.text
+        assert f"/admin/users?edit_user={operator_id}" in page.text
+        assert f"/admin/users?reset_user={operator_id}" in page.text
+        assert f'id="reset_user_{operator_id}_password"' not in page.text
+        assert f'id="edit_user_{operator_id}_first_name"' not in page.text
+
+        edit_page = client.get(f"/admin/users?edit_user={operator_id}")
+        assert edit_page.status_code == 200
+        assert f'id="edit_user_{operator_id}_first_name"' in edit_page.text
+        assert f'id="edit_user_{operator_id}_last_name"' in edit_page.text
+        assert f'id="edit_user_{operator_id}_email"' in edit_page.text
+        assert f'id="edit_user_{operator_id}_role"' in edit_page.text
+
+        reset_page = client.get(f"/admin/users?reset_user={operator_id}")
+        assert reset_page.status_code == 200
+        assert f'id="reset_user_{operator_id}_password"' in reset_page.text
+        assert f'id="reset_user_{operator_id}_confirm_password"' in reset_page.text
 
         create_response = client.post(
             "/admin/users",

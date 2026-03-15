@@ -98,12 +98,18 @@ def _tenant_user_management_url(
     *,
     message: str | None = None,
     error: str | None = None,
+    edit_user: int | None = None,
+    reset_user: int | None = None,
 ) -> str:
     params: dict[str, str] = {}
     if message:
         params["message"] = message
     if error:
         params["error"] = error
+    if edit_user is not None:
+        params["edit_user"] = str(int(edit_user))
+    if reset_user is not None:
+        params["reset_user"] = str(int(reset_user))
     if not params:
         return "/admin/users"
     return f"/admin/users?{urlencode(params)}"
@@ -116,6 +122,14 @@ def _user_form_value(form, key: str) -> str:
 def _checkbox_checked(form, key: str) -> bool:
     values = list(form.getlist(key)) if hasattr(form, "getlist") else [form.get(key)]
     return any(str(value or "").strip().lower() in {"1", "true", "on", "yes"} for value in values)
+
+
+def _query_user_id(request: Request, key: str, *, user_ids: set[int]) -> int | None:
+    try:
+        user_id = int(str(request.query_params.get(key) or "").strip())
+    except ValueError:
+        return None
+    return user_id if user_id in user_ids else None
 
 
 def _existing_user_with_email(
@@ -139,12 +153,15 @@ def _user_management_context(
     *,
     users: list[User],
 ) -> dict[str, object]:
+    user_ids = {int(user.id) for user in users}
     current_user = getattr(getattr(request, "state", None), "current_user", None)
     return {
         "request": request,
         "users": users,
         "role_options": _role_options(),
         "current_user_id": int(getattr(current_user, "id", 0) or 0) or None,
+        "editing_user_id": _query_user_id(request, "edit_user", user_ids=user_ids),
+        "resetting_user_id": _query_user_id(request, "reset_user", user_ids=user_ids),
         "message": request.query_params.get("message", ""),
         "error": request.query_params.get("error", ""),
     }
@@ -266,7 +283,7 @@ async def admin_users_update(
     user = _tenant_user_by_id(db, tenant_id, user_id)
     if user is None:
         return RedirectResponse(
-            url=_tenant_user_management_url(tenant_id, error="User not found."),
+            url=_tenant_user_management_url(tenant_id, error="User not found.", edit_user=user_id),
             status_code=303,
         )
 
@@ -279,17 +296,29 @@ async def admin_users_update(
 
     if not validate_email(email):
         return RedirectResponse(
-            url=_tenant_user_management_url(tenant_id, error="A valid email address is required."),
+            url=_tenant_user_management_url(
+                tenant_id,
+                error="A valid email address is required.",
+                edit_user=user.id,
+            ),
             status_code=303,
         )
     if role not in TENANT_USER_ROLES:
         return RedirectResponse(
-            url=_tenant_user_management_url(tenant_id, error="Select a valid tenant role."),
+            url=_tenant_user_management_url(
+                tenant_id,
+                error="Select a valid tenant role.",
+                edit_user=user.id,
+            ),
             status_code=303,
         )
     if _existing_user_with_email(db, tenant_id=tenant_id, email=email, exclude_user_id=user.id) is not None:
         return RedirectResponse(
-            url=_tenant_user_management_url(tenant_id, error="That email is already in use for this workspace."),
+            url=_tenant_user_management_url(
+                tenant_id,
+                error="That email is already in use for this workspace.",
+                edit_user=user.id,
+            ),
             status_code=303,
         )
 
@@ -306,6 +335,7 @@ async def admin_users_update(
             url=_tenant_user_management_url(
                 tenant_id,
                 error="You must keep at least one active Tenant Admin in the workspace.",
+                edit_user=user.id,
             ),
             status_code=303,
         )
@@ -365,7 +395,11 @@ async def admin_users_update(
     except IntegrityError:
         db.rollback()
         return RedirectResponse(
-            url=_tenant_user_management_url(tenant_id, error="That email is already in use for this workspace."),
+            url=_tenant_user_management_url(
+                tenant_id,
+                error="That email is already in use for this workspace.",
+                edit_user=user.id,
+            ),
             status_code=303,
         )
 
@@ -386,7 +420,7 @@ async def admin_users_reset_password(
     user = _tenant_user_by_id(db, tenant_id, user_id)
     if user is None:
         return RedirectResponse(
-            url=_tenant_user_management_url(tenant_id, error="User not found."),
+            url=_tenant_user_management_url(tenant_id, error="User not found.", reset_user=user_id),
             status_code=303,
         )
 
@@ -395,12 +429,20 @@ async def admin_users_reset_password(
     confirm_password = _user_form_value(form, "confirm_password")
     if len(password) < 8:
         return RedirectResponse(
-            url=_tenant_user_management_url(tenant_id, error="Password must be at least 8 characters."),
+            url=_tenant_user_management_url(
+                tenant_id,
+                error="Password must be at least 8 characters.",
+                reset_user=user.id,
+            ),
             status_code=303,
         )
     if password != confirm_password:
         return RedirectResponse(
-            url=_tenant_user_management_url(tenant_id, error="Passwords do not match."),
+            url=_tenant_user_management_url(
+                tenant_id,
+                error="Passwords do not match.",
+                reset_user=user.id,
+            ),
             status_code=303,
         )
 

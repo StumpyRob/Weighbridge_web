@@ -3267,6 +3267,47 @@ details > summary:focus-visible {
   background: #fbfdff;
 }
 
+.workspace-users-table {
+  table-layout: fixed;
+  min-width: 780px;
+}
+
+.workspace-users-table th,
+.workspace-users-table td {
+  white-space: normal;
+  vertical-align: top;
+}
+
+.workspace-users-table .actions-col {
+  width: 280px;
+}
+
+.workspace-users-name {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.workspace-users-email {
+  color: #374151;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.workspace-users-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: flex-start;
+}
+
+.workspace-users-actions form {
+  margin: 0;
+}
+
+.workspace-users-inline-card {
+  margin: 0.85rem;
+}
+
 .platform-tenant-maintenance-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -3293,6 +3334,14 @@ details > summary:focus-visible {
   .platform-tenant-role-guide,
   .platform-tenant-maintenance-grid {
     grid-template-columns: 1fr;
+  }
+
+  .workspace-users-table {
+    min-width: 640px;
+  }
+
+  .workspace-users-table .actions-col {
+    width: 230px;
   }
 }
 
