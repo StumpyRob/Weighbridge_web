@@ -49,6 +49,54 @@
 
     <section class="frame">
       <div class="frame-header">
+        <h2>Document Emails</h2>
+      </div>
+      <div class="frame-body">
+        <div class="form-grid form-grid--2">
+          <div class="field">
+            <label for="invoice_email_subject_template">Invoice email subject{{ help(help_text.company_document_email_subject_template, "company-invoice-email-subject-template-help") }}</label>
+            <input
+              type="text"
+              id="invoice_email_subject_template"
+              name="invoice_email_subject_template"
+              value="{{ setting.invoice_email_subject_template or '' }}"
+              placeholder="Invoice {invoice_no} from {company_name}"
+            />
+          </div>
+          <div class="field">
+            <label for="ticket_email_subject_template">Ticket email subject{{ help(help_text.company_document_email_subject_template, "company-ticket-email-subject-template-help") }}</label>
+            <input
+              type="text"
+              id="ticket_email_subject_template"
+              name="ticket_email_subject_template"
+              value="{{ setting.ticket_email_subject_template or '' }}"
+              placeholder="Ticket {ticket_no} from {company_name}"
+            />
+          </div>
+          <div class="field field--span-2">
+            <label for="invoice_email_body_template">Invoice email body{{ help(help_text.company_document_email_body_template, "company-invoice-email-body-template-help") }}</label>
+            <textarea
+              id="invoice_email_body_template"
+              name="invoice_email_body_template"
+              rows="4"
+              placeholder="Hello,&#10;&#10;Please find attached invoice {invoice_no}.&#10;&#10;Regards,&#10;{company_name}"
+            >{{ setting.invoice_email_body_template or '' }}</textarea>
+          </div>
+          <div class="field field--span-2">
+            <label for="ticket_email_body_template">Ticket email body{{ help(help_text.company_document_email_body_template, "company-ticket-email-body-template-help") }}</label>
+            <textarea
+              id="ticket_email_body_template"
+              name="ticket_email_body_template"
+              rows="4"
+              placeholder="Hello,&#10;&#10;Please find attached ticket {ticket_no}.&#10;&#10;Regards,&#10;{company_name}"
+            >{{ setting.ticket_email_body_template or '' }}</textarea>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
         <h2>Administrator Sign-In</h2>
       </div>
       <div class="frame-body">

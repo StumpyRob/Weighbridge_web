@@ -8,6 +8,7 @@ from sqlalchemy import select
 import app.services.printing as printing_service
 from app.models import (
     AuditEvent,
+    CompanySetting,
     Customer,
     Invoice,
     InvoiceLine,
@@ -144,6 +145,20 @@ def _configure_platform_email(db_session) -> None:
     db_session.commit()
 
 
+def _upsert_company_setting(db_session, **values) -> CompanySetting:
+    setting = db_session.execute(
+        select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1)
+    ).scalars().first()
+    if setting is None:
+        setting = CompanySetting()
+        db_session.add(setting)
+    for key, value in values.items():
+        setattr(setting, key, value)
+    db_session.commit()
+    db_session.refresh(setting)
+    return setting
+
+
 def _invoice_email_audit_event(db_session, *, action: str, invoice_id: int) -> AuditEvent | None:
     return db_session.execute(
         select(AuditEvent)
@@ -157,6 +172,12 @@ def _invoice_email_audit_event(db_session, *, action: str, invoice_id: int) -> A
 
 
 def test_invoice_detail_documents_frame_groups_invoice_actions(client, db_session):
+    _upsert_company_setting(
+        db_session,
+        name="Invoice Email Co",
+        invoice_email_subject_template="",
+        invoice_email_body_template="",
+    )
     invoice = _create_invoice_with_line(
         db_session,
         invoice_no="INV-UI-1",
@@ -190,11 +211,11 @@ def test_invoice_detail_documents_frame_groups_invoice_actions(client, db_sessio
     assert "Email Invoice" in response.text
     assert 'name="to_email"' in response.text
     assert 'value="billing@example.com"' in response.text
-    assert 'value="Invoice INV-UI-1 from Your Company Name"' in response.text
+    assert 'value="Invoice INV-UI-1 from Invoice Email Co"' in response.text
     assert "Hello," in response.text
     assert "Please find attached invoice INV-UI-1." in response.text
     assert "Regards," in response.text
-    assert "Your Company Name" in response.text
+    assert "Invoice Email Co" in response.text
     assert response.text.index('name="to_email"') < response.text.index('name="cc_email"')
     assert response.text.index('name="cc_email"') < response.text.index('name="subject"')
     assert response.text.index('name="subject"') < response.text.index('name="message"')
@@ -218,6 +239,62 @@ def test_invoice_detail_documents_frame_groups_invoice_actions(client, db_sessio
     assert "Advanced printing" not in response.text
     assert "Preview Invoice" not in response.text
     assert "Print locally (browser)" not in response.text
+
+
+def test_invoice_send_by_email_uses_tenant_configured_subject_and_body_template(
+    client,
+    db_session,
+    monkeypatch,
+):
+    import app.routes.invoices as invoices_routes
+
+    _upsert_company_setting(
+        db_session,
+        name="Template Company",
+        invoice_email_subject_template="Configured {invoice_no} / {company_name}",
+        invoice_email_body_template="Body for {invoice_no} from {company_name}",
+    )
+    invoice = _create_invoice_with_line(
+        db_session,
+        invoice_no="INV-TEMPLATE-1",
+        invoice_email="billing@example.com",
+    )
+    template = _create_template(
+        db_session,
+        code="INV_TEMPLATE_EMAIL",
+        content="<html><body>{{ invoice.invoice_no }}</body></html>",
+    )
+    _create_destination(
+        db_session,
+        name="Invoice Template Destination",
+        template_id=template.id,
+        delivery_type="PRINT_LOCAL_BROWSER",
+        delivery_config={},
+    )
+    _configure_platform_email(db_session)
+
+    called: dict[str, object] = {}
+
+    def _fake_send_email(**kwargs):
+        called.update(kwargs)
+        return EmailSendResult(ok=True)
+
+    monkeypatch.setattr(invoices_routes, "send_email", _fake_send_email)
+
+    detail_response = client.get(f"/invoices/{invoice.id}")
+    assert detail_response.status_code == 200
+    assert 'value="Configured INV-TEMPLATE-1 / Template Company"' in detail_response.text
+    assert "Body for INV-TEMPLATE-1 from Template Company" in detail_response.text
+
+    response = client.post(
+        f"/invoices/{invoice.id}/email",
+        data={"to_email": "customer@example.com"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert called["subject"] == "Configured INV-TEMPLATE-1 / Template Company"
+    assert called["text_body"] == "Body for INV-TEMPLATE-1 from Template Company"
 
 
 def test_invoice_preview_uses_default_destination_template(client, db_session):

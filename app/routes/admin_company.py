@@ -109,6 +109,18 @@ def _company_setting_snapshot(setting: CompanySetting | None) -> dict[str, objec
         "city": str(setting.city or "").strip() or None,
         "postcode": str(setting.postcode or "").strip() or None,
         "country": str(setting.country or "").strip() or None,
+        "invoice_email_subject_template": (
+            str(setting.invoice_email_subject_template or "").strip() or None
+        ),
+        "invoice_email_body_template": (
+            str(setting.invoice_email_body_template or "").strip() or None
+        ),
+        "ticket_email_subject_template": (
+            str(setting.ticket_email_subject_template or "").strip() or None
+        ),
+        "ticket_email_body_template": (
+            str(setting.ticket_email_body_template or "").strip() or None
+        ),
         "navbar_color_hex": str(setting.navbar_color_hex or "").strip() or None,
         "primary_color_hex": str(setting.primary_color_hex or "").strip() or None,
         "nav_logo_height_px": setting.nav_logo_height_px,
@@ -189,6 +201,10 @@ async def admin_company_settings_save(
     city = _trim(form.get("city"))
     postcode = _trim(form.get("postcode"))
     country = _trim(form.get("country"))
+    invoice_email_subject_template = _trim(form.get("invoice_email_subject_template"))
+    invoice_email_body_template = _trim(form.get("invoice_email_body_template"))
+    ticket_email_subject_template = _trim(form.get("ticket_email_subject_template"))
+    ticket_email_body_template = _trim(form.get("ticket_email_body_template"))
     navbar_color_hex = _trim(form.get("navbar_color_hex"))
     primary_color_hex = _trim(form.get("primary_color_hex"))
     nav_logo_height_raw = _trim(form.get("nav_logo_height_px"))
@@ -283,6 +299,10 @@ async def admin_company_settings_save(
             city=city or None,
             postcode=postcode or None,
             country=country or None,
+            invoice_email_subject_template=invoice_email_subject_template or None,
+            invoice_email_body_template=invoice_email_body_template or None,
+            ticket_email_subject_template=ticket_email_subject_template or None,
+            ticket_email_body_template=ticket_email_body_template or None,
             company_logo_path=form_logo_value,
             company_logo_updated_at=setting.company_logo_updated_at,
             navbar_color_hex=navbar_color_hex or setting.navbar_color_hex,
@@ -350,6 +370,10 @@ async def admin_company_settings_save(
     setting.city = city or None
     setting.postcode = postcode or None
     setting.country = country or None
+    setting.invoice_email_subject_template = invoice_email_subject_template or None
+    setting.invoice_email_body_template = invoice_email_body_template or None
+    setting.ticket_email_subject_template = ticket_email_subject_template or None
+    setting.ticket_email_body_template = ticket_email_body_template or None
     setting.navbar_color_hex = normalize_hex_color(
         navbar_color_hex,
         default=(
@@ -391,6 +415,10 @@ async def admin_company_settings_save(
             "city",
             "postcode",
             "country",
+            "invoice_email_subject_template",
+            "invoice_email_body_template",
+            "ticket_email_subject_template",
+            "ticket_email_body_template",
             "navbar_color_hex",
             "primary_color_hex",
             "nav_logo_height_px",

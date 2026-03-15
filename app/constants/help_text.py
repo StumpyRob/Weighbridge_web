@@ -104,6 +104,8 @@ HELP_TEXT.update(
         "company_show_nav_title": "Toggle whether the company name text is shown in the top navigation bar.",
         "company_navbar_color": "Main navigation bar background color (HEX).",
         "company_primary_color": "Primary accent color used for buttons, highlights, and active states.",
+        "company_document_email_subject_template": "Plain-text subject template. Supported placeholders: {company_name}, {invoice_no}, and {ticket_no}. Leave blank to use the built-in default.",
+        "company_document_email_body_template": "Plain-text body template. Supported placeholders: {company_name}, {invoice_no}, and {ticket_no}. Leave blank to use the built-in default.",
     }
 )
 

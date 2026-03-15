@@ -90,6 +90,20 @@ def _create_complete_sale_ticket(
     return ticket
 
 
+def _upsert_company_setting(db_session, **values) -> CompanySetting:
+    setting = db_session.execute(
+        select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1)
+    ).scalars().first()
+    if setting is None:
+        setting = CompanySetting()
+        db_session.add(setting)
+    for key, value in values.items():
+        setattr(setting, key, value)
+    db_session.commit()
+    db_session.refresh(setting)
+    return setting
+
+
 def _ticket_email_audit_event(db_session, *, action: str, ticket_id: int) -> AuditEvent | None:
     return db_session.execute(
         select(AuditEvent)
@@ -384,6 +398,12 @@ def test_ticket_print_a4_route_requires_complete(client, db_session):
 
 
 def test_ticket_detail_shows_email_ticket_form_with_defaults(client, db_session):
+    _upsert_company_setting(
+        db_session,
+        name="Ticket Email Co",
+        ticket_email_subject_template="",
+        ticket_email_body_template="",
+    )
     ticket = _create_complete_sale_ticket(
         db_session,
         ticket_no="T-EMAIL-UI-1",
@@ -402,9 +422,74 @@ def test_ticket_detail_shows_email_ticket_form_with_defaults(client, db_session)
     assert "Email Ticket" in response.text
     assert 'name="to_email"' in response.text
     assert 'value="billing@example.com"' in response.text
-    assert 'value="Ticket T-EMAIL-UI-1 from' in response.text
+    assert 'value="Ticket T-EMAIL-UI-1 from Ticket Email Co"' in response.text
     assert "Please find attached ticket T-EMAIL-UI-1." in response.text
+    assert "Ticket Email Co" in response.text
     assert "Uses the configured ticket document output and platform email settings" in response.text
+
+
+def test_ticket_send_by_email_uses_tenant_configured_subject_and_body_template(
+    client,
+    db_session,
+    monkeypatch,
+):
+    import app.routes.tickets as tickets_routes
+
+    _upsert_company_setting(
+        db_session,
+        name="Ticket Template Co",
+        ticket_email_subject_template="Configured {ticket_no} / {company_name}",
+        ticket_email_body_template="Body for {ticket_no} from {company_name}",
+    )
+    ticket = _create_complete_sale_ticket(
+        db_session,
+        ticket_no="T-EMAIL-TEMPLATE-1",
+        invoice_email="billing@example.com",
+    )
+    _set_ticket_browser_destination(
+        db_session,
+        code="TICKET_EMAIL_TEMPLATE",
+        template_format="HTML",
+        content="<html><body>EMAIL {{ payload.ticket_no }}</body></html>",
+    )
+    db_session.add(
+        PlatformSetting(
+            email_provider="resend",
+            resend_api_key="re_test_api_key",
+            from_email="platform@example.com",
+            from_display_name="Weighbridge Web",
+        )
+    )
+    db_session.commit()
+
+    called: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        tickets_routes,
+        "render_html_pdf_bytes",
+        lambda *_args, **_kwargs: b"%PDF-1.4\n%ticket-template-email\n",
+    )
+
+    def _fake_send_email(**kwargs):
+        called.update(kwargs)
+        return EmailSendResult(ok=True)
+
+    monkeypatch.setattr(tickets_routes, "send_email", _fake_send_email)
+
+    detail_response = client.get(f"/tickets/{ticket.id}")
+    assert detail_response.status_code == 200
+    assert 'value="Configured T-EMAIL-TEMPLATE-1 / Ticket Template Co"' in detail_response.text
+    assert "Body for T-EMAIL-TEMPLATE-1 from Ticket Template Co" in detail_response.text
+
+    response = client.post(
+        f"/tickets/{ticket.id}/email",
+        data={"to_email": "customer@example.com"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert called["subject"] == "Configured T-EMAIL-TEMPLATE-1 / Ticket Template Co"
+    assert called["text_body"] == "Body for T-EMAIL-TEMPLATE-1 from Ticket Template Co"
 
 
 def test_ticket_send_by_email_happy_path_attaches_pdf_and_writes_audit(

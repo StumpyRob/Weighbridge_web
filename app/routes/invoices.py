@@ -24,6 +24,7 @@ from ..permissions import (
     require_permission,
 )
 from ..models import (
+    CompanySetting,
     Customer,
     Invoice,
     InvoiceLine,
@@ -54,6 +55,7 @@ from ..services.credit import (
 from ..services.email_service import (
     EmailAttachment,
     get_platform_email_settings,
+    render_email_template,
     send_email,
 )
 from ..services.printing import (
@@ -762,7 +764,7 @@ async def invoices_send_by_email(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    require_permission(request, PERM_VIEW_INVOICES)
+    require_permission(request, PERM_MARK_INVOICES_PAID)
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         return templates.TemplateResponse(
@@ -1550,14 +1552,46 @@ def _customer_billing_lines(customer: Customer | None) -> list[str]:
     return lines
 
 
-def _invoice_email_default_subject(invoice: Invoice, *, company_name: str) -> str:
+def _invoice_email_default_subject(
+    invoice: Invoice,
+    *,
+    company: CompanySetting | None,
+    company_name: str,
+) -> str:
+    configured_template = str(
+        getattr(company, "invoice_email_subject_template", "") or ""
+    ).strip()
+    if configured_template:
+        return render_email_template(
+            configured_template,
+            placeholders={
+                "company_name": company_name,
+                "invoice_no": invoice.invoice_no or "",
+            },
+        )
     return INVOICE_EMAIL_DEFAULT_SUBJECT.format(
         invoice_no=invoice.invoice_no or "",
         company_name=company_name,
     )
 
 
-def _invoice_email_default_body(invoice: Invoice, *, company_name: str) -> str:
+def _invoice_email_default_body(
+    invoice: Invoice,
+    *,
+    company: CompanySetting | None,
+    company_name: str,
+) -> str:
+    configured_template = str(
+        getattr(company, "invoice_email_body_template", "") or ""
+    ).strip()
+    if configured_template:
+        return render_email_template(
+            configured_template,
+            placeholders={
+                "company_name": company_name,
+                "invoice_no": invoice.invoice_no or "",
+            },
+        )
     return INVOICE_EMAIL_DEFAULT_BODY.format(
         invoice_no=invoice.invoice_no or "",
         company_name=company_name,
@@ -1597,8 +1631,16 @@ def _invoice_email_form_values(
     defaults = {
         "to_email": normalize_email(getattr(customer, "invoice_email", None)),
         "cc_email": "",
-        "subject": _invoice_email_default_subject(invoice, company_name=company_name),
-        "message": _invoice_email_default_body(invoice, company_name=company_name),
+        "subject": _invoice_email_default_subject(
+            invoice,
+            company=company,
+            company_name=company_name,
+        ),
+        "message": _invoice_email_default_body(
+            invoice,
+            company=company,
+            company_name=company_name,
+        ),
     }
     if values is None:
         return defaults

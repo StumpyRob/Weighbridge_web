@@ -339,6 +339,52 @@ def test_role_access_is_limited_to_v1_surfaces(workspace_env, role_key, expected
         client.close()
 
 
+def test_read_only_cannot_use_document_email_actions(workspace_env):
+    client, csrf = _client_for_role(workspace_env, "read_only")
+    SessionLocal = workspace_env["SessionLocal"]
+    ticket_id = workspace_env["ticket_id"]
+    invoice_id = workspace_env["invoice_id"]
+
+    with SessionLocal() as db:
+        db.info["tenant_id"] = workspace_env["tenant_id"]
+        db.info["platform_mode"] = False
+        ticket = db.get(Ticket, ticket_id)
+        assert ticket is not None
+        ticket.status = TicketStatusEnum.COMPLETE.value
+        db.commit()
+
+    try:
+        invoice_page = client.get(f"/invoices/{invoice_id}")
+        assert invoice_page.status_code == 200
+        assert "Email Invoice" not in invoice_page.text
+
+        ticket_page = client.get(f"/tickets/{ticket_id}")
+        assert ticket_page.status_code == 200
+        assert "Email Ticket" not in ticket_page.text
+
+        invoice_response = client.post(
+            f"/invoices/{invoice_id}/email",
+            data={
+                "to_email": "readonly@example.com",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert invoice_response.status_code == 403
+
+        ticket_response = client.post(
+            f"/tickets/{ticket_id}/email",
+            data={
+                "to_email": "readonly@example.com",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert ticket_response.status_code == 403
+    finally:
+        client.close()
+
+
 def test_backend_rejects_forbidden_posts_and_read_only_ai(workspace_env):
     operator_client, operator_csrf = _client_for_role(workspace_env, "operator")
     accounts_client, accounts_csrf = _client_for_role(workspace_env, "accounts")

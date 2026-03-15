@@ -678,18 +678,17 @@ def test_invoice_pdf_html_embeds_uploaded_company_logo_as_data_uri(
     tmp_path,
 ):
     _ensure_default_invoice_destination(db_session)
-    upload_dir = tmp_path / "uploads" / "company"
+    setting = _get_or_create_company_setting(db_session)
+    tenant_id = int(setting.tenant_id or 1)
+    uploads_root = tmp_path / "uploads"
+    upload_dir = uploads_root / "tenants" / str(tenant_id) / "company"
     upload_dir.mkdir(parents=True, exist_ok=True)
     logo_file = upload_dir / "logo-inline.png"
     logo_file.write_bytes(b"\x89PNG\r\n\x1a\nlogo-bytes")
 
-    monkeypatch.setattr(settings, "company_logo_upload_dir", str(upload_dir))
-    db_session.add(
-        CompanySetting(
-            name="Acme Inline Logo Co",
-            company_logo_path="/static/uploads/company/logo-inline.png",
-        )
-    )
+    monkeypatch.setattr(settings, "uploads_dir", str(uploads_root))
+    setting.name = "Acme Inline Logo Co"
+    setting.company_logo_path = "/static/uploads/company/logo-inline.png"
     db_session.commit()
 
     invoice = _make_invoice_with_line(db_session)

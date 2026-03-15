@@ -70,7 +70,12 @@ from ..services.credit import (
     money_decimal,
     outstanding_display_values,
 )
-from ..services.email_service import EmailAttachment, get_platform_email_settings, send_email
+from ..services.email_service import (
+    EmailAttachment,
+    get_platform_email_settings,
+    render_email_template,
+    send_email,
+)
 from ..services.pdf import render_html_pdf_bytes
 from ..services.print_payload import build_ticket_print_payload, build_wtn_payload
 from ..services.print_render import (
@@ -1725,16 +1730,38 @@ def _ticket_email_form_values(
     customer = db.get(Customer, ticket.customer_id) if ticket.customer_id else None
     company = get_company_setting(db)
     company_name = str(getattr(company, "name", "") or "").strip() or "Weighbridge Web"
+    subject_template = str(getattr(company, "ticket_email_subject_template", "") or "").strip()
+    body_template = str(getattr(company, "ticket_email_body_template", "") or "").strip()
     defaults = {
         "to_email": normalize_email(getattr(customer, "invoice_email", None)),
         "cc_email": "",
-        "subject": TICKET_EMAIL_DEFAULT_SUBJECT.format(
-            ticket_no=ticket.ticket_no or "",
-            company_name=company_name,
+        "subject": (
+            render_email_template(
+                subject_template,
+                placeholders={
+                    "company_name": company_name,
+                    "ticket_no": ticket.ticket_no or "",
+                },
+            )
+            if subject_template
+            else TICKET_EMAIL_DEFAULT_SUBJECT.format(
+                ticket_no=ticket.ticket_no or "",
+                company_name=company_name,
+            )
         ),
-        "message": TICKET_EMAIL_DEFAULT_BODY.format(
-            ticket_no=ticket.ticket_no or "",
-            company_name=company_name,
+        "message": (
+            render_email_template(
+                body_template,
+                placeholders={
+                    "company_name": company_name,
+                    "ticket_no": ticket.ticket_no or "",
+                },
+            )
+            if body_template
+            else TICKET_EMAIL_DEFAULT_BODY.format(
+                ticket_no=ticket.ticket_no or "",
+                company_name=company_name,
+            )
         ),
     }
     if values is None:

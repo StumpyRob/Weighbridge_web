@@ -301,10 +301,16 @@ body {
   max-width: 38rem;
 }
 
-.invoice-header-documents {
+.invoice-header-documents,
+.document-action-stack {
   flex-direction: column;
   align-items: stretch;
   gap: 0.85rem;
+}
+
+.document-action-stack {
+  flex: 1 1 40rem;
+  max-width: 44rem;
 }
 
 .tickets-list-header {
@@ -834,6 +840,11 @@ body.js-help-tooltips .help-tooltip {
   .page-header__aside--documents {
     margin-left: 0;
     max-width: none;
+  }
+
+  .document-email-summary .muted {
+    text-align: left;
+    white-space: normal;
   }
 
   .documents-panel--header {
@@ -3689,6 +3700,35 @@ details > summary:focus-visible {
 .invoice-void-disclosure[open] > summary::after,
 .ticket-void-disclosure[open] > summary::after {
   transform: rotate(45deg);
+}
+
+.document-email-card {
+  width: 100%;
+  margin: 0;
+}
+
+.document-email-card__body {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.document-email-summary {
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.document-email-summary .muted {
+  flex: 1 1 14rem;
+  min-width: 0;
+  margin: 0;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.document-email-form__actions {
+  justify-content: flex-end;
 }
 
 .ticket-link-badge {

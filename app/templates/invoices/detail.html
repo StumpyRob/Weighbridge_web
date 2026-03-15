@@ -56,6 +56,7 @@
 
 {% block content %}
 <div class="invoice-detail">
+  {% set can_email_invoice = permissions.mark_invoices_paid and invoice.status != "VOID" %}
   {% set document_groups = [
     {
       "label": "Invoice",
@@ -85,65 +86,18 @@
         </span>
       </div>
     </div>
-    <div class="page-header__aside page-header__aside--documents invoice-header-documents">
+    <div class="page-header__aside page-header__aside--documents document-action-stack">
       {% set documents_panel_classes = "documents-panel--header" %}
       {% include "printing/_documents_panel.html" %}
-      {% if invoice.status != "VOID" %}
-        <details class="card compact invoice-void-disclosure" {% if invoice_email_form_open %}open{% endif %}>
-          <summary class="card-header">
-            <span>Email Invoice</span>
-            <span class="muted">{{ invoice_email_form.to_email or "Enter recipient" }}</span>
-          </summary>
-          <div class="card-body">
-            <form method="post" action="/invoices/{{ invoice.id }}/email" class="ticket-form">
-              <div class="form-grid form-grid--2">
-                <div class="field">
-                  <label for="invoice-email-to">To email</label>
-                  <input
-                    type="email"
-                    id="invoice-email-to"
-                    name="to_email"
-                    value="{{ invoice_email_form.to_email }}"
-                    autocomplete="email"
-                    required
-                  />
-                </div>
-                <div class="field">
-                  <label for="invoice-email-cc">CC</label>
-                  <input
-                    type="text"
-                    id="invoice-email-cc"
-                    name="cc_email"
-                    value="{{ invoice_email_form.cc_email }}"
-                    placeholder="Optional"
-                    autocomplete="off"
-                  />
-                </div>
-                <div class="field field--span-2">
-                  <label for="invoice-email-subject">Subject</label>
-                  <input
-                    type="text"
-                    id="invoice-email-subject"
-                    name="subject"
-                    value="{{ invoice_email_form.subject }}"
-                  />
-                </div>
-                <div class="field field--span-2">
-                  <label for="invoice-email-message">Message</label>
-                  <textarea
-                    id="invoice-email-message"
-                    name="message"
-                    rows="4"
-                  >{{ invoice_email_form.message }}</textarea>
-                </div>
-              </div>
-              <p class="help">Uses the platform email settings and attaches the invoice PDF.</p>
-              <div class="actions btn-group invoice-void-actions">
-                <button type="submit" class="btn btn--primary">Email Invoice</button>
-              </div>
-            </form>
-          </div>
-        </details>
+      {% if can_email_invoice %}
+        {% set email_title = "Email Invoice" %}
+        {% set email_button_label = "Email Invoice" %}
+        {% set email_action_url = "/invoices/" ~ invoice.id ~ "/email" %}
+        {% set email_form = invoice_email_form %}
+        {% set email_form_open = invoice_email_form_open %}
+        {% set email_id_prefix = "invoice-email" %}
+        {% set email_help_text = "Uses the platform email settings and attaches the invoice PDF." %}
+        {% include "printing/_document_email_form.html" %}
       {% endif %}
     </div>
   </div>
