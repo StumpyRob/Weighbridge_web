@@ -1,8 +1,11 @@
 from datetime import datetime
 from decimal import Decimal
 
+from sqlalchemy import select
+
 from app.config import settings
 from app.models import (
+    AuditEvent,
     CompanySetting,
     Container,
     Customer,
@@ -19,7 +22,9 @@ from app.models import (
     TransactionTypeEnum,
     Unit,
     Vehicle,
+    PlatformSetting,
 )
+from app.services.email_service import EmailSendResult
 from app.services.print_payload import build_ticket_print_payload
 
 
@@ -53,6 +58,48 @@ def _set_ticket_browser_destination(
     )
     db_session.add(destination)
     db_session.commit()
+
+
+def _create_complete_sale_ticket(
+    db_session,
+    *,
+    ticket_no: str,
+    invoice_email: str | None = None,
+) -> Ticket:
+    customer = Customer(
+        account_code=f"AC-{ticket_no}",
+        name=f"Customer {ticket_no}",
+        invoice_email=invoice_email,
+    )
+    db_session.add(customer)
+    db_session.flush()
+
+    ticket = Ticket(
+        ticket_no=ticket_no,
+        datetime=datetime(2026, 2, 20, 12, 0, 0),
+        status=TicketStatusEnum.COMPLETE.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        customer_id=customer.id,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+    db_session.refresh(ticket)
+    return ticket
+
+
+def _ticket_email_audit_event(db_session, *, action: str, ticket_id: int) -> AuditEvent | None:
+    return db_session.execute(
+        select(AuditEvent)
+        .where(
+            AuditEvent.action == action,
+            AuditEvent.entity_type == "ticket",
+            AuditEvent.entity_id == str(ticket_id),
+        )
+        .order_by(AuditEvent.id.desc())
+    ).scalars().first()
 
 
 def test_build_ticket_print_payload_sale_fields(db_session):
@@ -102,19 +149,23 @@ def test_build_ticket_print_payload_uses_company_uploaded_logo(
     monkeypatch,
     tmp_path,
 ):
-    upload_dir = tmp_path / "uploads" / "company"
+    company = db_session.execute(
+        select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1)
+    ).scalars().first()
+    if company is None:
+        company = CompanySetting()
+        db_session.add(company)
+    company.name = "Ticket Logo Co"
+    company.company_logo_path = "/static/uploads/company/ticket-logo.png"
+    db_session.flush()
+    tenant_id = int(company.tenant_id or 1)
+
+    uploads_root = tmp_path / "uploads"
+    upload_dir = uploads_root / "tenants" / str(tenant_id) / "company"
     upload_dir.mkdir(parents=True, exist_ok=True)
     logo_file = upload_dir / "ticket-logo.png"
     logo_file.write_bytes(b"\x89PNG\r\n\x1a\nlogo-bytes")
-    monkeypatch.setattr(settings, "company_logo_upload_dir", str(upload_dir))
-
-    db_session.add(
-        CompanySetting(
-            name="Ticket Logo Co",
-            company_logo_path="/static/uploads/company/ticket-logo.png",
-        )
-    )
-    db_session.flush()
+    monkeypatch.setattr(settings, "uploads_dir", str(uploads_root))
 
     ticket = Ticket(
         ticket_no="T-PRINT-LOGO-1",
@@ -330,6 +381,173 @@ def test_ticket_print_a4_route_requires_complete(client, db_session):
     response = client.get(f"/tickets/{ticket.id}/preview")
 
     assert response.status_code == 400
+
+
+def test_ticket_detail_shows_email_ticket_form_with_defaults(client, db_session):
+    ticket = _create_complete_sale_ticket(
+        db_session,
+        ticket_no="T-EMAIL-UI-1",
+        invoice_email="billing@example.com",
+    )
+    _set_ticket_browser_destination(
+        db_session,
+        code="TICKET_EMAIL_UI",
+        template_format="HTML",
+        content="<html><body>Ticket {{ payload.ticket_no }}</body></html>",
+    )
+
+    response = client.get(f"/tickets/{ticket.id}")
+
+    assert response.status_code == 200
+    assert "Email Ticket" in response.text
+    assert 'name="to_email"' in response.text
+    assert 'value="billing@example.com"' in response.text
+    assert 'value="Ticket T-EMAIL-UI-1 from' in response.text
+    assert "Please find attached ticket T-EMAIL-UI-1." in response.text
+    assert "Uses the configured ticket document output and platform email settings" in response.text
+
+
+def test_ticket_send_by_email_happy_path_attaches_pdf_and_writes_audit(
+    client,
+    db_session,
+    monkeypatch,
+):
+    import app.routes.tickets as tickets_routes
+
+    ticket = _create_complete_sale_ticket(
+        db_session,
+        ticket_no="T-EMAIL-SEND-1",
+        invoice_email="billing@example.com",
+    )
+    _set_ticket_browser_destination(
+        db_session,
+        code="TICKET_EMAIL_SEND",
+        template_format="HTML",
+        content="<html><body>EMAIL {{ payload.ticket_no }}</body></html>",
+    )
+    db_session.add(
+        PlatformSetting(
+            email_provider="resend",
+            resend_api_key="re_test_api_key",
+            from_email="platform@example.com",
+            from_display_name="Weighbridge Web",
+        )
+    )
+    db_session.commit()
+
+    pdf_inputs: dict[str, object] = {}
+    called: dict[str, object] = {}
+
+    def _fake_render_html_pdf_bytes(rendered_html, **kwargs):
+        pdf_inputs["rendered_html"] = rendered_html
+        pdf_inputs["kwargs"] = kwargs
+        return b"%PDF-1.4\n%ticket-email-pdf\n"
+
+    def _fake_send_email(**kwargs):
+        called.update(kwargs)
+        return EmailSendResult(ok=True)
+
+    monkeypatch.setattr(
+        tickets_routes,
+        "render_html_pdf_bytes",
+        _fake_render_html_pdf_bytes,
+    )
+    monkeypatch.setattr(
+        tickets_routes,
+        "send_email",
+        _fake_send_email,
+    )
+
+    response = client.post(
+        f"/tickets/{ticket.id}/email",
+        data={
+            "to_email": "customer@example.com",
+            "cc_email": "ops@example.com;accounts@example.com",
+            "subject": "Ticket T-EMAIL-SEND-1",
+            "message": "Attached ticket T-EMAIL-SEND-1.",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/tickets/{ticket.id}?email_sent=1"
+    assert "T-EMAIL-SEND-1" in str(pdf_inputs["rendered_html"])
+    assert called["to"] == "customer@example.com"
+    assert called["cc"] == "ops@example.com;accounts@example.com"
+    assert called["subject"] == "Ticket T-EMAIL-SEND-1"
+    assert called["text_body"] == "Attached ticket T-EMAIL-SEND-1."
+
+    attachments = called["attachments"]
+    assert len(attachments) == 1
+    attachment = attachments[0]
+    assert attachment.filename == "Ticket-T-EMAIL-SEND-1.pdf"
+    assert attachment.content_type == "application/pdf"
+    assert attachment.content_bytes.startswith(b"%PDF")
+
+    audit_event = _ticket_email_audit_event(
+        db_session,
+        action="TICKET_EMAIL_SENT",
+        ticket_id=ticket.id,
+    )
+
+    assert audit_event is not None
+    assert audit_event.details_json.get("ticket_no") == "T-EMAIL-SEND-1"
+    assert audit_event.details_json.get("recipient") == "customer@example.com"
+    assert audit_event.details_json.get("cc") == "ops@example.com;accounts@example.com"
+    assert audit_event.details_json.get("subject") == "Ticket T-EMAIL-SEND-1"
+    assert audit_event.details_json.get("status") == "sent"
+
+
+def test_ticket_send_by_email_reports_missing_resend_config_and_writes_audit(
+    client,
+    db_session,
+    monkeypatch,
+):
+    import app.routes.tickets as tickets_routes
+
+    ticket = _create_complete_sale_ticket(
+        db_session,
+        ticket_no="T-EMAIL-ERR-1",
+        invoice_email="billing@example.com",
+    )
+    _set_ticket_browser_destination(
+        db_session,
+        code="TICKET_EMAIL_ERR",
+        template_format="HTML",
+        content="<html><body>EMAIL {{ payload.ticket_no }}</body></html>",
+    )
+    pdf_called = {"value": False}
+
+    def _unexpected_render_html_pdf_bytes(*args, **kwargs):
+        pdf_called["value"] = True
+        raise AssertionError("PDF rendering should not run")
+
+    monkeypatch.setattr(
+        tickets_routes,
+        "render_html_pdf_bytes",
+        _unexpected_render_html_pdf_bytes,
+    )
+
+    response = client.post(
+        f"/tickets/{ticket.id}/email",
+        data={"to_email": "customer@example.com"},
+    )
+
+    assert response.status_code == 400
+    assert "Ticket email failed." in response.text
+    assert "Resend API key is not configured." in response.text
+    assert "Email Ticket" in response.text
+    assert pdf_called["value"] is False
+
+    audit_event = _ticket_email_audit_event(
+        db_session,
+        action="TICKET_EMAIL_FAILED",
+        ticket_id=ticket.id,
+    )
+
+    assert audit_event is not None
+    assert audit_event.details_json.get("error") == "Resend API key is not configured."
+    assert audit_event.details_json.get("status") == "failed"
 
 
 def test_ticket_receipt_route_returns_200_for_valid_ticket(client, db_session):

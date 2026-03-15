@@ -1,5 +1,6 @@
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from html import escape
 import logging
 import re
 from urllib.parse import urlencode
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..audit import diff as audit_diff
 from ..audit import log as audit_log
+from ..auth import normalize_email, validate_email
 from ..config import settings
 from ..constants import (
     ADDRESS_LINE_MAX,
@@ -68,6 +70,7 @@ from ..services.credit import (
     money_decimal,
     outstanding_display_values,
 )
+from ..services.email_service import EmailAttachment, get_platform_email_settings, send_email
 from ..services.pdf import render_html_pdf_bytes
 from ..services.print_payload import build_ticket_print_payload, build_wtn_payload
 from ..services.print_render import (
@@ -85,7 +88,7 @@ from ..services.printing import (
     replay_print_job,
     render_destination_content,
 )
-from ..services.system_setup import missing_required_lookup_messages
+from ..services.system_setup import get_company_setting, missing_required_lookup_messages
 from ..services.wip_snapshots import ticket_wip_snapshot
 from ..seed import seed_void_reasons
 from ..templating import templates
@@ -129,6 +132,14 @@ PO_UPDATE_ALLOWED_STATUSES = {
 TICKET_SEARCH_MAX_LEN = 100
 PRINT_REQUIRES_COMPLETE_ERROR = "Ticket must be complete to print."
 WTN_SEND_REQUIRES_COMPLETE_ERROR = "Ticket must be complete before sending WTN."
+TICKET_EMAIL_REQUIRES_COMPLETE_ERROR = "Ticket must be complete to email."
+TICKET_EMAIL_DEFAULT_SUBJECT = "Ticket {ticket_no} from {company_name}"
+TICKET_EMAIL_DEFAULT_BODY = (
+    "Hello,\n\n"
+    "Please find attached ticket {ticket_no}.\n\n"
+    "Regards,\n"
+    "{company_name}"
+)
 CREDIT_LIMIT_WARNING_RATIO = Decimal("0.80")
 _TICKET_AUDIT_DIFF_KEYS = (
     "status",
@@ -1699,6 +1710,77 @@ def _ticket_wtn_actions_context(
     }
 
 
+def _rendered_document_html(rendered_content: str, content_type: str) -> str:
+    if content_type == PRINT_CONTENT_TYPE_HTML:
+        return rendered_content
+    return f"<pre>{escape(rendered_content)}</pre>"
+
+
+def _ticket_email_form_values(
+    db: Session,
+    ticket: Ticket,
+    *,
+    values: dict[str, object] | None = None,
+) -> dict[str, str]:
+    customer = db.get(Customer, ticket.customer_id) if ticket.customer_id else None
+    company = get_company_setting(db)
+    company_name = str(getattr(company, "name", "") or "").strip() or "Weighbridge Web"
+    defaults = {
+        "to_email": normalize_email(getattr(customer, "invoice_email", None)),
+        "cc_email": "",
+        "subject": TICKET_EMAIL_DEFAULT_SUBJECT.format(
+            ticket_no=ticket.ticket_no or "",
+            company_name=company_name,
+        ),
+        "message": TICKET_EMAIL_DEFAULT_BODY.format(
+            ticket_no=ticket.ticket_no or "",
+            company_name=company_name,
+        ),
+    }
+    if values is None:
+        return defaults
+    return {
+        "to_email": normalize_email(values.get("to_email")),
+        "cc_email": str(values.get("cc_email", "") or "").strip(),
+        "subject": str(values.get("subject", "") or "").strip() or defaults["subject"],
+        "message": str(values.get("message", "") or "").strip() or defaults["message"],
+    }
+
+
+def _audit_ticket_email_attempt(
+    db: Session,
+    request: Request,
+    ticket: Ticket,
+    *,
+    recipient: str,
+    cc: str,
+    subject: str,
+    error: str | None = None,
+) -> None:
+    sent = error is None
+    audit_log(
+        db,
+        request,
+        action="TICKET_EMAIL_SENT" if sent else "TICKET_EMAIL_FAILED",
+        entity_type="ticket",
+        entity_id=ticket.id,
+        summary=(
+            f"Sent ticket {ticket.ticket_no} by email"
+            if sent
+            else f"Failed to send ticket {ticket.ticket_no} by email"
+        ),
+        details={
+            "ticket_id": ticket.id,
+            "ticket_no": ticket.ticket_no,
+            "recipient": recipient,
+            "cc": cc,
+            "subject": subject,
+            "status": "sent" if sent else "failed",
+            "error": error,
+        },
+    )
+
+
 def _optional_money_decimal(value: object | None) -> Decimal | None:
     if value is None:
         return None
@@ -1839,6 +1921,7 @@ def tickets_edit(
         db,
         ticket=ticket,
     )
+    ticket_email_form = _ticket_email_form_values(db, ticket)
     return templates.TemplateResponse(request, 
         "tickets/edit.html",
         {
@@ -1861,6 +1944,9 @@ def tickets_edit(
             "wtn_failed": request.query_params.get("wtn_failed") == "1",
             "wtn_error_detail": request.query_params.get("wtn_error_detail", ""),
             "wtn_job_id": request.query_params.get("wtn_job_id", ""),
+            "email_sent": request.query_params.get("email_sent") == "1",
+            "ticket_email_failed": False,
+            "ticket_email_error": "",
             "ticket": ticket,
             "ticket_void": ticket_void,
             "ticket_void_reason": ticket_void_reason,
@@ -1900,6 +1986,8 @@ def tickets_edit(
             "product_unit_meta": _load_product_unit_meta(db),
             "enums": _ticket_enums(),
             "receipts_wip_enabled": bool(settings.receipts_wip_enabled),
+            "ticket_email_form": ticket_email_form,
+            "ticket_email_form_open": False,
             **credit_limit_banner_context,
             **print_actions_context,
             **wtn_actions_context,
@@ -2218,11 +2306,135 @@ async def tickets_print_dispatch(
     )
 
 
+@router.post("/tickets/{ticket_id:int}/email")
+async def tickets_email(
+    ticket_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    _require_tickets_manage(request)
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        return templates.TemplateResponse(
+            request,
+            "tickets/not_found.html",
+            {"request": request, "ticket_id": ticket_id},
+            status_code=404,
+        )
+
+    form = await request.form()
+    form_data = _ticket_email_form_values(
+        db,
+        ticket,
+        values={
+            "to_email": form.get("to_email"),
+            "cc_email": form.get("cc_email"),
+            "subject": form.get("subject"),
+            "message": form.get("message"),
+        },
+    )
+    to_email = form_data["to_email"]
+    cc_email = form_data["cc_email"]
+    subject = form_data["subject"]
+    message = form_data["message"]
+
+    error = ""
+    attachment: EmailAttachment | None = None
+    if _status_value(ticket.status) != TicketStatusEnum.COMPLETE.value:
+        error = TICKET_EMAIL_REQUIRES_COMPLETE_ERROR
+    elif not validate_email(to_email):
+        error = "To email must be a valid email address."
+    else:
+        platform_email = get_platform_email_settings(db)
+        if not platform_email.resend_api_key:
+            error = "Resend API key is not configured."
+        elif not platform_email.from_email:
+            error = "From email address is not configured."
+
+    if not error:
+        try:
+            payload = build_ticket_print_payload(db, ticket)
+            destination = _resolve_ticket_print_destination(db, require_default=True)
+            if destination is None:
+                raise ValueError("Printing is not configured. Contact admin.")
+            rendered = render_destination_content(
+                db,
+                payload=payload,
+                destination=destination,
+            )
+            pdf_bytes = render_html_pdf_bytes(
+                _rendered_document_html(
+                    rendered.rendered_content,
+                    rendered.content_type,
+                ),
+                base_url=str(request.base_url),
+                allow_fallback=False,
+                include_fallback_warning=False,
+                enforce_print_safe=rendered.content_type == PRINT_CONTENT_TYPE_HTML,
+                enforce_single_page=rendered.content_type == PRINT_CONTENT_TYPE_HTML,
+            )
+            token = re.sub(r"[^A-Za-z0-9._-]+", "-", str(ticket.ticket_no or "").strip())
+            token = token.strip("-") or f"ticket-{ticket.id}"
+            attachment = EmailAttachment(
+                filename=f"Ticket-{token}.pdf",
+                content_bytes=pdf_bytes,
+                content_type="application/pdf",
+            )
+        except (ValueError, RuntimeError, OSError, NotImplementedError) as exc:
+            error = str(exc) or "Ticket render failed."
+
+    if not error and attachment is not None:
+        result = send_email(
+            subject=subject,
+            text_body=message,
+            to=to_email,
+            cc=cc_email,
+            attachments=[attachment],
+            db=db,
+        )
+        if not result.ok:
+            error = result.error or "Email send failed."
+
+    if error:
+        _audit_ticket_email_attempt(
+            db,
+            request,
+            ticket,
+            recipient=to_email,
+            cc=cc_email,
+            subject=subject,
+            error=error,
+        )
+        db.commit()
+        return _render_ticket_edit(
+            request,
+            ticket,
+            db,
+            errors=[],
+            ticket_email_form=form_data,
+            ticket_email_form_open=True,
+            ticket_email_failed=True,
+            ticket_email_error=error,
+            status_code=400,
+        )
+
+    _audit_ticket_email_attempt(
+        db,
+        request,
+        ticket,
+        recipient=to_email,
+        cc=cc_email,
+        subject=subject,
+    )
+    db.commit()
+    return RedirectResponse(
+        url=f"/tickets/{ticket.id}?email_sent=1",
+        status_code=303,
+    )
+
+
 def _wtn_rendered_html_for_preview(rendered_content: str, content_type: str) -> str:
-    if content_type == PRINT_CONTENT_TYPE_HTML:
-        return rendered_content
-    escaped = rendered_content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    return f"<pre>{escaped}</pre>"
+    return _rendered_document_html(rendered_content, content_type)
 
 
 def _wtn_filename(ticket: Ticket) -> str:
@@ -4966,6 +5178,10 @@ def _render_ticket_edit(
     form: dict | None = None,
     vehicle_reg: str | None = None,
     weight_warning: bool | None = None,
+    ticket_email_form: dict[str, str] | None = None,
+    ticket_email_form_open: bool = False,
+    ticket_email_failed: bool = False,
+    ticket_email_error: str = "",
     status_code: int = 400,
 ) -> HTMLResponse:
     _ensure_ticket_void_reasons(db)
@@ -5040,6 +5256,7 @@ def _render_ticket_edit(
         db,
         ticket=ticket,
     )
+    resolved_ticket_email_form = ticket_email_form or _ticket_email_form_values(db, ticket)
     return templates.TemplateResponse(request, 
         "tickets/edit.html",
         {
@@ -5061,6 +5278,9 @@ def _render_ticket_edit(
             "wtn_failed": False,
             "wtn_error_detail": "",
             "wtn_job_id": "",
+            "email_sent": False,
+            "ticket_email_failed": ticket_email_failed,
+            "ticket_email_error": ticket_email_error,
             "ticket": ticket,
             "ticket_void": ticket_void,
             "ticket_void_reason": ticket_void_reason,
@@ -5104,6 +5324,8 @@ def _render_ticket_edit(
             "product_unit_meta": _load_product_unit_meta(db),
             "enums": _ticket_enums(),
             "receipts_wip_enabled": bool(settings.receipts_wip_enabled),
+            "ticket_email_form": resolved_ticket_email_form,
+            "ticket_email_form_open": ticket_email_form_open,
             **credit_limit_banner_context,
             **print_actions_context,
             **wtn_actions_context,

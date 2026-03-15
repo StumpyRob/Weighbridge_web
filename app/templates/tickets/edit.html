@@ -38,6 +38,21 @@
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}
+  {% if email_sent %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Ticket {{ ticket.ticket_no }} sent by email.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+  {% if ticket_email_failed %}
+    <div class="flash-toast flash-toast--error" data-flash-toast>
+      <div class="flash-toast__content">
+        Ticket email failed.
+        {% if ticket_email_error %} {{ ticket_email_error }}{% endif %}
+      </div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
   {% if form.status == "COMPLETE" and print_missing_default %}
     <div class="flash-toast flash-toast--error" data-flash-toast>
       <div class="flash-toast__content">Printing is not configured. Contact admin.</div>
@@ -96,6 +111,61 @@
     <div class="page-header__aside page-header__aside--documents">
       {% set documents_panel_classes = "documents-panel--header" %}
       {% include "printing/_documents_panel.html" %}
+      <details class="card compact invoice-void-disclosure" {% if ticket_email_form_open %}open{% endif %}>
+        <summary class="card-header">
+          <span>Email Ticket</span>
+          <span class="muted">{{ ticket_email_form.to_email or "Enter recipient" }}</span>
+        </summary>
+        <div class="card-body">
+          <form method="post" action="/tickets/{{ ticket.id }}/email" class="ticket-form">
+            <div class="form-grid form-grid--2">
+              <div class="field">
+                <label for="ticket-email-to">To email</label>
+                <input
+                  type="email"
+                  id="ticket-email-to"
+                  name="to_email"
+                  value="{{ ticket_email_form.to_email }}"
+                  autocomplete="email"
+                  required
+                />
+              </div>
+              <div class="field">
+                <label for="ticket-email-cc">CC</label>
+                <input
+                  type="text"
+                  id="ticket-email-cc"
+                  name="cc_email"
+                  value="{{ ticket_email_form.cc_email }}"
+                  placeholder="Optional"
+                  autocomplete="off"
+                />
+              </div>
+              <div class="field field--span-2">
+                <label for="ticket-email-subject">Subject</label>
+                <input
+                  type="text"
+                  id="ticket-email-subject"
+                  name="subject"
+                  value="{{ ticket_email_form.subject }}"
+                />
+              </div>
+              <div class="field field--span-2">
+                <label for="ticket-email-message">Message</label>
+                <textarea
+                  id="ticket-email-message"
+                  name="message"
+                  rows="4"
+                >{{ ticket_email_form.message }}</textarea>
+              </div>
+            </div>
+            <p class="help">Uses the configured ticket document output and platform email settings to attach a PDF copy.</p>
+            <div class="actions btn-group invoice-void-actions">
+              <button type="submit" class="btn btn--primary">Email Ticket</button>
+            </div>
+          </form>
+        </div>
+      </details>
     </div>
   {% elif is_open and (can_complete_ticket or (allow_dev_preview and can_manage_ticket)) %}
     <div class="actions btn-group ticket-header-actions">
