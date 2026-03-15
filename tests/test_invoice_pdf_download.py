@@ -187,9 +187,14 @@ def test_invoice_detail_documents_frame_groups_invoice_actions(client, db_sessio
     assert "Preview" in response.text
     assert "Download PDF" in response.text
     assert "Print" in response.text
-    assert "Send by Email" in response.text
+    assert "Email Invoice" in response.text
     assert 'name="to_email"' in response.text
     assert 'value="billing@example.com"' in response.text
+    assert 'value="Invoice INV-UI-1 from Your Company Name"' in response.text
+    assert "Hello," in response.text
+    assert "Please find attached invoice INV-UI-1." in response.text
+    assert "Regards," in response.text
+    assert "Your Company Name" in response.text
     assert response.text.index('name="to_email"') < response.text.index('name="cc_email"')
     assert response.text.index('name="cc_email"') < response.text.index('name="subject"')
     assert response.text.index('name="subject"') < response.text.index('name="message"')
@@ -357,14 +362,14 @@ def test_invoice_send_by_email_happy_path_attaches_pdf_and_writes_audit(
 
     called: dict[str, object] = {}
 
-    def _fake_send_email_with_attachment(**kwargs):
+    def _fake_send_email(**kwargs):
         called.update(kwargs)
         return EmailSendResult(ok=True)
 
     monkeypatch.setattr(
         invoices_routes,
-        "send_email_with_attachment",
-        _fake_send_email_with_attachment,
+        "send_email",
+        _fake_send_email,
     )
 
     response = client.post(
@@ -385,7 +390,9 @@ def test_invoice_send_by_email_happy_path_attaches_pdf_and_writes_audit(
     assert called["subject"] == "Invoice INV-SEND-1"
     assert called["text_body"] == "Attached invoice INV-SEND-1."
 
-    attachment = called["attachment"]
+    attachments = called["attachments"]
+    assert len(attachments) == 1
+    attachment = attachments[0]
     assert attachment.filename == "Invoice-INV-SEND-1.pdf"
     assert attachment.content_type == "application/pdf"
     assert attachment.content_bytes.startswith(b"%PDF")
@@ -420,7 +427,7 @@ def test_invoice_send_by_email_rejects_invalid_email_and_keeps_page_rendered(
 
     assert response.status_code == 400
     assert "To email must be a valid email address." in response.text
-    assert "Send by Email" in response.text
+    assert "Email Invoice" in response.text
 
     audit_event = _invoice_email_audit_event(
         db_session,

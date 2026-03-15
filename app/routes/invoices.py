@@ -21,7 +21,6 @@ from ..permissions import (
     PERM_MARK_INVOICES_PAID,
     PERM_VIEW_INVOICES,
     PERM_VOID_INVOICES,
-    require_any_permission,
     require_permission,
 )
 from ..models import (
@@ -55,7 +54,7 @@ from ..services.credit import (
 from ..services.email_service import (
     EmailAttachment,
     get_platform_email_settings,
-    send_email_with_attachment,
+    send_email,
 )
 from ..services.printing import (
     DELIVERY_TYPE_EMAIL_PDF,
@@ -66,6 +65,7 @@ from ..services.printing import (
     PRINT_JOB_STATUS_FAILED,
     execute_rendered_print,
 )
+from ..services.system_setup import get_company_setting
 from ..templating import templates
 
 router = APIRouter()
@@ -82,7 +82,13 @@ INVOICE_EXCLUSION_MISSING_NET_WEIGHT = "Missing net weight"
 INVOICE_EXCLUSION_ZERO_TOTAL = "Zero total"
 INVOICE_EXCLUSION_UNKNOWN_UNIT_TYPE = "Unknown unit type"
 WASTE_TRANSACTION_TYPES = {"WASTEIN", "WASTEOUT"}
-INVOICE_EMAIL_DEFAULT_BODY = "Please find attached your invoice {invoice_no}."
+INVOICE_EMAIL_DEFAULT_SUBJECT = "Invoice {invoice_no} from {company_name}"
+INVOICE_EMAIL_DEFAULT_BODY = (
+    "Hello,\n\n"
+    "Please find attached invoice {invoice_no}.\n\n"
+    "Regards,\n"
+    "{company_name}"
+)
 
 
 def _voided_by_actor(request: Request) -> str:
@@ -756,7 +762,7 @@ async def invoices_send_by_email(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    require_any_permission(request, PERM_GENERATE_INVOICES, PERM_MARK_INVOICES_PAID)
+    require_permission(request, PERM_VIEW_INVOICES)
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         return templates.TemplateResponse(
@@ -769,6 +775,7 @@ async def invoices_send_by_email(
     customer = db.get(Customer, invoice.customer_id)
     form = await request.form()
     form_data = _invoice_email_form_values(
+        db,
         invoice,
         customer,
         {
@@ -817,16 +824,18 @@ async def invoices_send_by_email(
         )
 
     safe_invoice_no = _safe_invoice_filename_token(invoice.invoice_no)
-    result = send_email_with_attachment(
+    result = send_email(
         subject=subject,
         text_body=message,
         to=to_email,
         cc=cc_addresses,
-        attachment=EmailAttachment(
-            filename=f"Invoice-{safe_invoice_no}.pdf",
-            content_bytes=pdf_bytes,
-            content_type="application/pdf",
-        ),
+        attachments=[
+            EmailAttachment(
+                filename=f"Invoice-{safe_invoice_no}.pdf",
+                content_bytes=pdf_bytes,
+                content_type="application/pdf",
+            )
+        ],
         db=db,
     )
     if not result.ok:
@@ -1470,7 +1479,12 @@ def _invoice_detail_context(
         db,
         invoice.id,
     )
-    email_form_values = _invoice_email_form_values(invoice, customer, invoice_email_form)
+    email_form_values = _invoice_email_form_values(
+        db,
+        invoice,
+        customer,
+        invoice_email_form,
+    )
     return {
         "request": request,
         "invoice": invoice,
@@ -1536,12 +1550,18 @@ def _customer_billing_lines(customer: Customer | None) -> list[str]:
     return lines
 
 
-def _invoice_email_default_subject(invoice: Invoice) -> str:
-    return f"Invoice {invoice.invoice_no}"
+def _invoice_email_default_subject(invoice: Invoice, *, company_name: str) -> str:
+    return INVOICE_EMAIL_DEFAULT_SUBJECT.format(
+        invoice_no=invoice.invoice_no or "",
+        company_name=company_name,
+    )
 
 
-def _invoice_email_default_body(invoice: Invoice) -> str:
-    return INVOICE_EMAIL_DEFAULT_BODY.format(invoice_no=invoice.invoice_no or "")
+def _invoice_email_default_body(invoice: Invoice, *, company_name: str) -> str:
+    return INVOICE_EMAIL_DEFAULT_BODY.format(
+        invoice_no=invoice.invoice_no or "",
+        company_name=company_name,
+    )
 
 
 def _invoice_email_validation_error(
@@ -1567,15 +1587,18 @@ def _invoice_email_validation_error(
 
 
 def _invoice_email_form_values(
+    db: Session,
     invoice: Invoice,
     customer: Customer | None,
     values: Mapping[str, object] | None = None,
 ) -> dict[str, str]:
+    company = get_company_setting(db)
+    company_name = str(getattr(company, "name", "") or "").strip() or "Weighbridge Web"
     defaults = {
         "to_email": normalize_email(getattr(customer, "invoice_email", None)),
         "cc_email": "",
-        "subject": _invoice_email_default_subject(invoice),
-        "message": _invoice_email_default_body(invoice),
+        "subject": _invoice_email_default_subject(invoice, company_name=company_name),
+        "message": _invoice_email_default_body(invoice, company_name=company_name),
     }
     if values is None:
         return defaults
