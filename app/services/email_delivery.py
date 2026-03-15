@@ -75,7 +75,6 @@ def send_delivery_email(
             content_type=_attachment_content_type(payload_content_type),
         ),
         db=db,
-        config_overrides=config,
     )
     if not result.ok:
         raise RuntimeError(result.error or "Email send failed.")

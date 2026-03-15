@@ -1,53 +1,43 @@
 from __future__ import annotations
 
+import base64
+
 import app.services.email_service as email_service_module
 from app.models import PlatformSetting
 
 
-def test_send_email_with_attachment_uses_platform_settings_and_attachment(
+def test_send_email_with_attachment_uses_resend_settings_and_attachment(
     db_session,
     monkeypatch,
 ):
     db_session.add(
         PlatformSetting(
-            smtp_host="smtp.mail.test",
-            smtp_port=587,
-            smtp_username="mailer@example.com",
-            smtp_password="smtp-secret",
-            smtp_from_email="platform@example.com",
-            smtp_from_display_name="Weighbridge Platform",
-            smtp_reply_to="reply@example.com",
-            smtp_security="starttls",
+            email_provider="resend",
+            resend_api_key="re_test_api_key",
+            from_email="platform@example.com",
+            from_display_name="Weighbridge Platform",
+            reply_to="reply@example.com",
         )
     )
     db_session.commit()
 
     sent: dict[str, object] = {}
 
-    class _FakeSMTP:
-        def __init__(self, host, port, timeout):
-            sent["host"] = host
-            sent["port"] = port
-            sent["timeout"] = timeout
+    class _FakeResponse:
+        status_code = 200
+        text = '{"id":"email_123"}'
 
-        def ehlo(self):
-            sent["ehlo"] = int(sent.get("ehlo", 0)) + 1
+        def raise_for_status(self) -> None:
+            return None
 
-        def starttls(self):
-            sent["started_tls"] = True
+    def _fake_post(url, *, headers, json, timeout):
+        sent["url"] = url
+        sent["headers"] = headers
+        sent["json"] = json
+        sent["timeout"] = timeout
+        return _FakeResponse()
 
-        def login(self, username, password):
-            sent["login"] = (username, password)
-
-        def send_message(self, message, from_addr=None, to_addrs=None):
-            sent["message"] = message
-            sent["from_addr"] = from_addr
-            sent["to_addrs"] = to_addrs
-
-        def quit(self):
-            sent["quit"] = True
-
-    monkeypatch.setattr(email_service_module.smtplib, "SMTP", _FakeSMTP)
+    monkeypatch.setattr(email_service_module.httpx, "post", _fake_post)
 
     result = email_service_module.send_email_with_attachment(
         subject="Invoice INV-1",
@@ -63,28 +53,21 @@ def test_send_email_with_attachment_uses_platform_settings_and_attachment(
     )
 
     assert result.ok is True
-    assert sent["host"] == "smtp.mail.test"
-    assert sent["port"] == 587
-    assert sent["started_tls"] is True
-    assert sent["login"] == ("mailer@example.com", "smtp-secret")
-    assert sent["from_addr"] == "platform@example.com"
-    assert sent["to_addrs"] == ["customer@example.com"]
+    assert sent["url"] == email_service_module.RESEND_SEND_EMAIL_URL
+    assert sent["headers"] == {"Authorization": "Bearer re_test_api_key"}
+    assert sent["timeout"] == email_service_module.DEFAULT_RESEND_TIMEOUT_SECONDS
 
-    message = sent["message"]
-    assert message["From"] == "Weighbridge Platform <platform@example.com>"
-    assert message["Reply-To"] == "reply@example.com"
+    payload = sent["json"]
+    assert payload["from"] == "Weighbridge Platform <platform@example.com>"
+    assert payload["reply_to"] == "reply@example.com"
+    assert payload["to"] == ["customer@example.com"]
+    assert payload["subject"] == "Invoice INV-1"
+    assert payload["text"] == "Attached invoice INV-1."
+    assert payload["html"] == "<p>Attached invoice INV-1.</p>"
 
-    html_parts = [
-        part
-        for part in message.walk()
-        if part.get_content_type() == "text/html"
-    ]
-    assert html_parts
-    assert "Attached invoice INV-1." in html_parts[0].get_content()
-
-    attachments = list(message.iter_attachments())
+    attachments = payload["attachments"]
     assert len(attachments) == 1
     attachment = attachments[0]
-    assert attachment.get_filename() == "invoice-1.pdf"
-    assert attachment.get_content_type() == "application/pdf"
-    assert attachment.get_payload(decode=True) == b"%PDF-1.4 test"
+    assert attachment["filename"] == "invoice-1.pdf"
+    assert attachment["content_type"] == "application/pdf"
+    assert base64.b64decode(attachment["content"]) == b"%PDF-1.4 test"

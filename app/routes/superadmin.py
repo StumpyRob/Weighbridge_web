@@ -59,10 +59,8 @@ from ..models.base import utcnow
 from ..seed import seed_print_destinations, seed_print_templates, seed_units
 from ..services.demo_dataset import seed_demo_dataset
 from ..services.email_service import (
+    EMAIL_PROVIDER_RESEND,
     PLATFORM_EMAIL_AUDIT_FIELDS,
-    SMTP_SECURITY_NONE,
-    SMTP_SECURITY_SSL,
-    SMTP_SECURITY_STARTTLS,
     get_platform_email_settings as get_platform_email_transport_settings,
     platform_email_settings_snapshot as platform_email_transport_snapshot,
     save_platform_email_settings as save_platform_email_transport_settings,
@@ -618,11 +616,7 @@ def _platform_email_settings_page_context(
     return {
         "request": request,
         "platform_email_settings": settings_state,
-        "smtp_security_options": (
-            (SMTP_SECURITY_STARTTLS, "STARTTLS"),
-            (SMTP_SECURITY_SSL, "SSL/TLS"),
-            (SMTP_SECURITY_NONE, "None"),
-        ),
+        "email_provider_label": settings_state.provider_label,
         "saved": request.query_params.get("saved") == "1",
         "error": request.query_params.get("error", ""),
         "test_sent": request.query_params.get("test_sent") == "1",
@@ -922,13 +916,10 @@ async def platform_email_settings_update(
     form = await request.form()
     try:
         settings_state = validate_platform_email_transport_settings(
-            smtp_host=form.get("smtp_host"),
-            smtp_port=form.get("smtp_port"),
-            smtp_username=form.get("smtp_username"),
-            smtp_security=form.get("smtp_security"),
-            smtp_from_email=form.get("smtp_from_email"),
-            smtp_from_display_name=form.get("smtp_from_display_name"),
-            smtp_reply_to=form.get("smtp_reply_to"),
+            email_provider=form.get("email_provider") or EMAIL_PROVIDER_RESEND,
+            from_email=form.get("from_email"),
+            from_display_name=form.get("from_display_name"),
+            reply_to=form.get("reply_to"),
         )
     except ValueError as exc:
         return RedirectResponse(
@@ -940,8 +931,7 @@ async def platform_email_settings_update(
     saved = save_platform_email_transport_settings(
         db,
         settings_state,
-        smtp_password=_form_value(form, "smtp_password") or None,
-        clear_smtp_password=_form_checkbox_checked(form, "clear_smtp_password"),
+        resend_api_key=_form_value(form, "resend_api_key") or None,
     )
     _audit_platform_email_settings_change(
         db,

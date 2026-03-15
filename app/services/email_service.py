@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import asdict, dataclass
-from email.message import EmailMessage
 from email.utils import formataddr
 import logging
-import smtplib
-from typing import Any, Mapping
+from typing import Any
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,52 +15,49 @@ from ..models import PlatformSetting
 
 logger = logging.getLogger(__name__)
 
-SMTP_SECURITY_NONE = "none"
-SMTP_SECURITY_STARTTLS = "starttls"
-SMTP_SECURITY_SSL = "ssl"
-SMTP_SECURITY_OPTIONS = (
-    SMTP_SECURITY_STARTTLS,
-    SMTP_SECURITY_SSL,
-    SMTP_SECURITY_NONE,
-)
-DEFAULT_SMTP_PORT = 587
-DEFAULT_SMTP_TIMEOUT_SECONDS = 20
+EMAIL_PROVIDER_RESEND = "resend"
+SUPPORTED_EMAIL_PROVIDERS = (EMAIL_PROVIDER_RESEND,)
+DEFAULT_RESEND_TIMEOUT_SECONDS = 20
+RESEND_SEND_EMAIL_URL = "https://api.resend.com/emails"
 PLATFORM_EMAIL_AUDIT_FIELDS = (
-    "smtp_host",
-    "smtp_port",
-    "smtp_username",
-    "smtp_security",
-    "smtp_from_email",
-    "smtp_from_display_name",
-    "smtp_reply_to",
-    "smtp_password_configured",
+    "email_provider",
+    "resend_api_key_configured",
+    "from_email",
+    "from_display_name",
+    "reply_to",
 )
 
 
 @dataclass(frozen=True)
 class PlatformEmailSettingsState:
-    smtp_host: str = ""
-    smtp_port: int = DEFAULT_SMTP_PORT
-    smtp_username: str = ""
-    smtp_password: str = ""
-    smtp_security: str = SMTP_SECURITY_STARTTLS
-    smtp_from_email: str = ""
-    smtp_from_display_name: str = ""
-    smtp_reply_to: str = ""
+    email_provider: str = EMAIL_PROVIDER_RESEND
+    resend_api_key: str = ""
+    from_email: str = ""
+    from_display_name: str = ""
+    reply_to: str = ""
 
     @property
-    def smtp_password_configured(self) -> bool:
-        return bool(self.smtp_password)
+    def resend_api_key_configured(self) -> bool:
+        return bool(self.resend_api_key)
+
+    @property
+    def provider_label(self) -> str:
+        return "Resend"
 
     @property
     def is_ready(self) -> bool:
-        return bool(self.smtp_host and self.smtp_from_email)
+        return bool(
+            self.email_provider == EMAIL_PROVIDER_RESEND
+            and self.resend_api_key
+            and self.from_email
+        )
 
     def snapshot(self) -> dict[str, object]:
         data = asdict(self)
-        data.pop("smtp_password", None)
-        data["smtp_password_configured"] = self.smtp_password_configured
+        data.pop("resend_api_key", None)
+        data["resend_api_key_configured"] = self.resend_api_key_configured
         return data
+
 
 @dataclass(frozen=True)
 class EmailAttachment:
@@ -85,25 +82,20 @@ def _clean_text(value: object) -> str:
     return str(value or "").strip()
 
 
-def _coerce_port(value: object, *, default: int) -> int:
-    text = _clean_text(value)
-    if not text:
-        return default
-    try:
-        port = int(text)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("SMTP port must be a whole number.") from exc
-    if port < 1 or port > 65535:
-        raise ValueError("SMTP port must be between 1 and 65535.")
-    return port
-
-def _coerce_security_mode(value: object, *, default: str) -> str:
+def _coerce_email_provider(value: object, *, default: str) -> str:
     normalized = _clean_text(value).lower()
     if not normalized:
         return default
-    if normalized not in SMTP_SECURITY_OPTIONS:
-        raise ValueError("Select a valid SMTP security mode.")
+    if normalized not in SUPPORTED_EMAIL_PROVIDERS:
+        raise ValueError("Email provider must be resend.")
     return normalized
+
+
+def _read_email_provider(value: object, *, default: str) -> str:
+    try:
+        return _coerce_email_provider(value, default=default)
+    except ValueError:
+        return default
 
 
 def _coerce_optional_email(value: object, *, label: str) -> str:
@@ -115,30 +107,34 @@ def _coerce_optional_email(value: object, *, label: str) -> str:
     return normalized
 
 
+def _read_optional_email(value: object, *, default: str = "") -> str:
+    normalized = normalize_email(value)
+    if not normalized:
+        return default
+    if not validate_email(normalized):
+        return default
+    return normalized
+
+
 def platform_email_settings_defaults() -> PlatformEmailSettingsState:
-    return PlatformEmailSettingsState(
-        smtp_security=SMTP_SECURITY_STARTTLS,
-    )
+    return PlatformEmailSettingsState(email_provider=EMAIL_PROVIDER_RESEND)
 
 
 def validate_platform_email_settings(**values: object) -> PlatformEmailSettingsState:
     defaults = platform_email_settings_defaults()
     return PlatformEmailSettingsState(
-        smtp_host=_clean_text(values.get("smtp_host")),
-        smtp_port=_coerce_port(values.get("smtp_port"), default=defaults.smtp_port),
-        smtp_username=_clean_text(values.get("smtp_username")),
-        smtp_password="",
-        smtp_security=_coerce_security_mode(
-            values.get("smtp_security"),
-            default=defaults.smtp_security,
+        email_provider=_coerce_email_provider(
+            values.get("email_provider"),
+            default=defaults.email_provider,
         ),
-        smtp_from_email=_coerce_optional_email(
-            values.get("smtp_from_email"),
+        resend_api_key="",
+        from_email=_coerce_optional_email(
+            values.get("from_email"),
             label="From email address",
         ),
-        smtp_from_display_name=_clean_text(values.get("smtp_from_display_name")),
-        smtp_reply_to=_coerce_optional_email(
-            values.get("smtp_reply_to"),
+        from_display_name=_clean_text(values.get("from_display_name")),
+        reply_to=_coerce_optional_email(
+            values.get("reply_to"),
             label="Reply-to address",
         ),
     )
@@ -151,25 +147,22 @@ def get_platform_email_settings(db: Session) -> PlatformEmailSettingsState:
         return defaults
 
     return PlatformEmailSettingsState(
-        smtp_host=_clean_text(getattr(row, "smtp_host", None)) or defaults.smtp_host,
-        smtp_port=_coerce_port(getattr(row, "smtp_port", None), default=defaults.smtp_port),
-        smtp_username=_clean_text(getattr(row, "smtp_username", None)) or defaults.smtp_username,
-        smtp_password=str(getattr(row, "smtp_password", None) or "") or defaults.smtp_password,
-        smtp_security=_coerce_security_mode(
-            getattr(row, "smtp_security", None),
-            default=defaults.smtp_security,
+        email_provider=_read_email_provider(
+            getattr(row, "email_provider", None),
+            default=defaults.email_provider,
         ),
-        smtp_from_email=_coerce_optional_email(
-            getattr(row, "smtp_from_email", None) or defaults.smtp_from_email,
-            label="From email address",
+        resend_api_key=str(getattr(row, "resend_api_key", None) or ""),
+        from_email=_read_optional_email(
+            getattr(row, "from_email", None),
+            default=defaults.from_email,
         ),
-        smtp_from_display_name=(
-            _clean_text(getattr(row, "smtp_from_display_name", None))
-            or defaults.smtp_from_display_name
+        from_display_name=(
+            _clean_text(getattr(row, "from_display_name", None))
+            or defaults.from_display_name
         ),
-        smtp_reply_to=_coerce_optional_email(
-            getattr(row, "smtp_reply_to", None) or defaults.smtp_reply_to,
-            label="Reply-to address",
+        reply_to=_read_optional_email(
+            getattr(row, "reply_to", None),
+            default=defaults.reply_to,
         ),
     )
 
@@ -178,61 +171,27 @@ def save_platform_email_settings(
     db: Session,
     settings_state: PlatformEmailSettingsState,
     *,
-    smtp_password: str | None = None,
-    clear_smtp_password: bool = False,
+    resend_api_key: str | None = None,
 ) -> PlatformEmailSettingsState:
     row = _platform_setting_row(db)
     if row is None:
         row = PlatformSetting()
         db.add(row)
 
-    row.smtp_host = settings_state.smtp_host or None
-    row.smtp_port = int(settings_state.smtp_port)
-    row.smtp_username = settings_state.smtp_username or None
-    row.smtp_from_email = settings_state.smtp_from_email or None
-    row.smtp_from_display_name = settings_state.smtp_from_display_name or None
-    row.smtp_reply_to = settings_state.smtp_reply_to or None
-    row.smtp_security = settings_state.smtp_security or None
-    if clear_smtp_password:
-        row.smtp_password = None
-    elif smtp_password is not None:
-        row.smtp_password = smtp_password or None
+    row.email_provider = settings_state.email_provider or EMAIL_PROVIDER_RESEND
+    row.from_email = settings_state.from_email or None
+    row.from_display_name = settings_state.from_display_name or None
+    row.reply_to = settings_state.reply_to or None
+    if resend_api_key is not None:
+        row.resend_api_key = resend_api_key or None
     db.flush()
     return get_platform_email_settings(db)
 
 
-def platform_email_settings_snapshot(settings_state: PlatformEmailSettingsState) -> dict[str, object]:
+def platform_email_settings_snapshot(
+    settings_state: PlatformEmailSettingsState,
+) -> dict[str, object]:
     return settings_state.snapshot()
-
-def _resolve_transport_settings(
-    db: Session | None,
-    *,
-    config_overrides: Mapping[str, Any] | None = None,
-) -> PlatformEmailSettingsState:
-    overrides = config_overrides or {}
-    base = get_platform_email_settings(db) if db is not None else platform_email_settings_defaults()
-    return PlatformEmailSettingsState(
-        smtp_host=_clean_text(overrides.get("smtp_host")) or base.smtp_host,
-        smtp_port=_coerce_port(overrides.get("smtp_port"), default=base.smtp_port),
-        smtp_username=_clean_text(overrides.get("smtp_username")) or base.smtp_username,
-        smtp_password=str(overrides.get("smtp_password") or "") or base.smtp_password,
-        smtp_security=_coerce_security_mode(
-            overrides.get("smtp_security"),
-            default=base.smtp_security,
-        ),
-        smtp_from_email=_coerce_optional_email(
-            overrides.get("from_email") or base.smtp_from_email,
-            label="From email address",
-        ),
-        smtp_from_display_name=(
-            _clean_text(overrides.get("from_display_name"))
-            or base.smtp_from_display_name
-        ),
-        smtp_reply_to=_coerce_optional_email(
-            overrides.get("reply_to") or base.smtp_reply_to,
-            label="Reply-to address",
-        ),
-    )
 
 
 def _parse_recipients(raw: Any) -> list[str]:
@@ -252,34 +211,46 @@ def _validate_recipients(addresses: list[str], *, label: str) -> None:
             raise ValueError(f"{label} includes an invalid email address.")
 
 
-def _attachment_parts(content_type: str) -> tuple[str, str]:
-    raw = _clean_text(content_type).lower()
-    if "/" not in raw:
-        return "application", "octet-stream"
-    maintype, subtype = raw.split("/", 1)
-    maintype = maintype or "application"
-    subtype = subtype or "octet-stream"
-    return maintype, subtype
+def _format_from_header(settings_state: PlatformEmailSettingsState) -> str:
+    if settings_state.from_display_name:
+        return formataddr((settings_state.from_display_name, settings_state.from_email))
+    return settings_state.from_email
+
+
+def _attachment_payloads(
+    attachments: list[EmailAttachment] | None,
+) -> list[dict[str, str]]:
+    payloads: list[dict[str, str]] = []
+    for attachment in attachments or []:
+        payloads.append(
+            {
+                "filename": attachment.filename,
+                "content": base64.b64encode(attachment.content_bytes).decode("ascii"),
+                "content_type": _clean_text(attachment.content_type)
+                or "application/octet-stream",
+            }
+        )
+    return payloads
 
 
 def _friendly_error(exc: Exception) -> str:
-    if isinstance(exc, smtplib.SMTPAuthenticationError):
-        return "SMTP authentication failed."
-    if isinstance(exc, smtplib.SMTPConnectError):
-        return "SMTP connection failed."
-    if isinstance(exc, smtplib.SMTPRecipientsRefused):
-        return "SMTP rejected the recipient address."
-    if isinstance(exc, smtplib.SMTPServerDisconnected):
-        return "SMTP server disconnected unexpectedly."
-    if isinstance(exc, TimeoutError):
-        return "SMTP connection timed out."
+    if isinstance(exc, httpx.TimeoutException):
+        return "Email request timed out."
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = int(getattr(getattr(exc, "response", None), "status_code", 0) or 0)
+        if status_code in {401, 403}:
+            return "Resend API authentication failed."
+        if status_code == 422:
+            return "Resend rejected the email payload."
+        if status_code == 429:
+            return "Resend rate limit exceeded."
+        if status_code >= 500:
+            return "Resend service is unavailable."
+        if status_code >= 400:
+            return "Resend rejected the email request."
+    if isinstance(exc, httpx.RequestError):
+        return "Email service request failed."
     return "Email send failed."
-
-
-def _format_from_header(settings_state: PlatformEmailSettingsState) -> str:
-    if settings_state.smtp_from_display_name:
-        return formataddr((settings_state.smtp_from_display_name, settings_state.smtp_from_email))
-    return settings_state.smtp_from_email
 
 
 def send_email(
@@ -292,9 +263,8 @@ def send_email(
     cc: list[str] | tuple[str, ...] | str | None = None,
     bcc: list[str] | tuple[str, ...] | str | None = None,
     attachments: list[EmailAttachment] | None = None,
-    config_overrides: Mapping[str, Any] | None = None,
 ) -> EmailSendResult:
-    transport = PlatformEmailSettingsState()
+    transport = platform_email_settings_defaults()
     try:
         to_addresses = _parse_recipients(to)
         cc_addresses = _parse_recipients(cc)
@@ -305,76 +275,70 @@ def send_email(
         _validate_recipients(cc_addresses, label="Cc")
         _validate_recipients(bcc_addresses, label="Bcc")
 
-        transport = _resolve_transport_settings(db, config_overrides=config_overrides)
-        if not transport.smtp_host:
-            raise ValueError("SMTP host is not configured.")
-        if not transport.smtp_from_email:
+        if db is None:
+            transport = platform_email_settings_defaults()
+        else:
+            transport = get_platform_email_settings(db)
+
+        if transport.email_provider != EMAIL_PROVIDER_RESEND:
+            raise ValueError("Email provider must be resend.")
+        if not transport.resend_api_key:
+            raise ValueError("Resend API key is not configured.")
+        if not transport.from_email:
             raise ValueError("From email address is not configured.")
 
-        message = EmailMessage()
-        message["Subject"] = _clean_text(subject) or "Weighbridge Web email"
-        message["From"] = _format_from_header(transport)
-        message["To"] = ", ".join(to_addresses)
+        payload: dict[str, object] = {
+            "from": _format_from_header(transport),
+            "to": to_addresses,
+            "subject": _clean_text(subject) or "Weighbridge Web email",
+            "text": str(text_body or "").strip() or " ",
+        }
         if cc_addresses:
-            message["Cc"] = ", ".join(cc_addresses)
-        if transport.smtp_reply_to:
-            message["Reply-To"] = transport.smtp_reply_to
-
-        resolved_text_body = str(text_body or "").strip() or " "
-        message.set_content(resolved_text_body)
+            payload["cc"] = cc_addresses
+        if bcc_addresses:
+            payload["bcc"] = bcc_addresses
+        if transport.reply_to:
+            payload["reply_to"] = transport.reply_to
         if html_body:
-            message.add_alternative(str(html_body), subtype="html")
+            payload["html"] = str(html_body)
+        attachment_payloads = _attachment_payloads(attachments)
+        if attachment_payloads:
+            payload["attachments"] = attachment_payloads
 
-        for attachment in attachments or []:
-            maintype, subtype = _attachment_parts(attachment.content_type)
-            message.add_attachment(
-                attachment.content_bytes,
-                maintype=maintype,
-                subtype=subtype,
-                filename=attachment.filename,
-            )
-
-        recipients = to_addresses + cc_addresses + bcc_addresses
-        smtp_client: smtplib.SMTP
-        if transport.smtp_security == SMTP_SECURITY_SSL:
-            smtp_client = smtplib.SMTP_SSL(
-                transport.smtp_host,
-                transport.smtp_port,
-                timeout=DEFAULT_SMTP_TIMEOUT_SECONDS,
-            )
-        else:
-            smtp_client = smtplib.SMTP(
-                transport.smtp_host,
-                transport.smtp_port,
-                timeout=DEFAULT_SMTP_TIMEOUT_SECONDS,
-            )
-
-        try:
-            smtp_client.ehlo()
-            if transport.smtp_security == SMTP_SECURITY_STARTTLS:
-                smtp_client.starttls()
-                smtp_client.ehlo()
-            if transport.smtp_username:
-                smtp_client.login(transport.smtp_username, transport.smtp_password)
-            smtp_client.send_message(
-                message,
-                from_addr=transport.smtp_from_email,
-                to_addrs=recipients,
-            )
-        finally:
-            try:
-                smtp_client.quit()
-            except Exception:
-                pass
+        response = httpx.post(
+            RESEND_SEND_EMAIL_URL,
+            headers={"Authorization": f"Bearer {transport.resend_api_key}"},
+            json=payload,
+            timeout=DEFAULT_RESEND_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
         return EmailSendResult(ok=True)
     except ValueError as exc:
         return EmailSendResult(ok=False, error=str(exc))
+    except httpx.HTTPStatusError as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        response_text = _clean_text(getattr(getattr(exc, "response", None), "text", ""))[:500]
+        logger.warning(
+            "Outbound email send rejected: provider=%s status=%s from_email=%s response=%s",
+            transport.email_provider,
+            status_code,
+            transport.from_email,
+            response_text,
+        )
+        return EmailSendResult(ok=False, error=_friendly_error(exc))
+    except httpx.RequestError as exc:
+        logger.warning(
+            "Outbound email send request failed: provider=%s from_email=%s error=%s",
+            transport.email_provider,
+            transport.from_email,
+            exc.__class__.__name__,
+        )
+        return EmailSendResult(ok=False, error=_friendly_error(exc))
     except Exception as exc:
         logger.exception(
-            "Outbound email send failed: host=%s port=%s security=%s",
-            transport.smtp_host,
-            transport.smtp_port,
-            transport.smtp_security,
+            "Outbound email send failed: provider=%s from_email=%s",
+            transport.email_provider,
+            transport.from_email,
         )
         return EmailSendResult(ok=False, error=_friendly_error(exc))
 
@@ -389,7 +353,6 @@ def send_email_with_attachment(
     html_body: str | None = None,
     cc: list[str] | tuple[str, ...] | str | None = None,
     bcc: list[str] | tuple[str, ...] | str | None = None,
-    config_overrides: Mapping[str, Any] | None = None,
 ) -> EmailSendResult:
     return send_email(
         subject=subject,
@@ -400,5 +363,4 @@ def send_email_with_attachment(
         bcc=bcc,
         attachments=[attachment],
         db=db,
-        config_overrides=config_overrides,
     )

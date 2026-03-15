@@ -1559,9 +1559,9 @@ def _invoice_email_validation_error(
         return cc_error
 
     platform_email = get_platform_email_settings(db)
-    if not platform_email.smtp_host:
-        return "SMTP host is not configured."
-    if not platform_email.smtp_from_email:
+    if not platform_email.resend_api_key:
+        return "Resend API key is not configured."
+    if not platform_email.from_email:
         return "From email address is not configured."
     return None
 

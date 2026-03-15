@@ -7,7 +7,7 @@
   <div class="page-header">
     <div>
       <h1>Platform Email Settings</h1>
-      <p class="muted">Platform-level SMTP transport and sender identity for outbound emails.</p>
+      <p class="muted">Platform-level Resend transport and sender identity for outbound emails.</p>
     </div>
     <div class="actions btn-group">
       <a class="btn btn--ghost" href="/platform/tenants">Back to Tenants</a>
@@ -46,28 +46,24 @@
       <div class="frame-body">
         <div class="invoice-summary-grid">
           <div class="card">
-            <div class="summary-label">SMTP ready</div>
+            <div class="summary-label">Provider</div>
+            <strong>{{ platform_email_settings.provider_label }}</strong>
+          </div>
+          <div class="card">
+            <div class="summary-label">Ready</div>
             <strong>{{ "Yes" if platform_email_settings.is_ready else "No" }}</strong>
           </div>
           <div class="card">
-            <div class="summary-label">Security</div>
-            <strong>{{ platform_email_settings.smtp_security.upper() if platform_email_settings.smtp_security else "Not set" }}</strong>
-          </div>
-          <div class="card">
-            <div class="summary-label">Password stored</div>
-            <strong>{{ "Yes" if platform_email_settings.smtp_password_configured else "No" }}</strong>
-          </div>
-          <div class="card">
-            <div class="summary-label">SMTP host</div>
-            <strong>{{ platform_email_settings.smtp_host or "Not set" }}</strong>
-          </div>
-          <div class="card">
-            <div class="summary-label">SMTP username</div>
-            <strong>{{ platform_email_settings.smtp_username or "Not set" }}</strong>
+            <div class="summary-label">API key stored</div>
+            <strong>{{ "Yes" if platform_email_settings.resend_api_key_configured else "No" }}</strong>
           </div>
           <div class="card">
             <div class="summary-label">From email</div>
-            <strong>{{ platform_email_settings.smtp_from_email or "Not set" }}</strong>
+            <strong>{{ platform_email_settings.from_email or "Not set" }}</strong>
+          </div>
+          <div class="card">
+            <div class="summary-label">Reply-to</div>
+            <strong>{{ platform_email_settings.reply_to or "Not set" }}</strong>
           </div>
         </div>
       </div>
@@ -75,54 +71,33 @@
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Email Transport{{ help(help_text.platform_email_settings_scope, "platform-email-transport-help") }}</h2>
+        <h2>Email Provider{{ help(help_text.platform_email_settings_scope, "platform-email-provider-scope-help") }}</h2>
       </div>
       <div class="frame-body">
         <form method="post" action="/platform/email-settings" class="ticket-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+          <input type="hidden" name="email_provider" value="{{ platform_email_settings.email_provider }}" />
 
-          <div class="form-grid form-grid--3">
+          <div class="form-grid form-grid--2">
             <div class="field">
-              <label for="smtp_host">SMTP host{{ help(help_text.platform_email_smtp_host, "platform-email-smtp-host-help") }}</label>
-              <input type="text" id="smtp_host" name="smtp_host" value="{{ platform_email_settings.smtp_host }}" spellcheck="false" autocomplete="off" />
+              <label for="email_provider_display">Provider{{ help(help_text.platform_email_provider, "platform-email-provider-help") }}</label>
+              <input type="text" id="email_provider_display" value="{{ email_provider_label }}" readonly />
             </div>
             <div class="field">
-              <label for="smtp_port">SMTP port{{ help(help_text.platform_email_smtp_port, "platform-email-smtp-port-help") }}</label>
-              <input type="number" id="smtp_port" name="smtp_port" min="1" max="65535" value="{{ platform_email_settings.smtp_port }}" />
+              <label for="resend_api_key">Resend API key{{ help(help_text.platform_email_resend_api_key, "platform-email-api-key-help") }}</label>
+              <input type="password" id="resend_api_key" name="resend_api_key" value="" autocomplete="new-password" />
             </div>
             <div class="field">
-              <label for="smtp_security">Security{{ help(help_text.platform_email_security, "platform-email-security-help") }}</label>
-              <select id="smtp_security" name="smtp_security">
-                {% for mode_value, mode_label in smtp_security_options %}
-                  <option value="{{ mode_value }}" {% if platform_email_settings.smtp_security == mode_value %}selected{% endif %}>{{ mode_label }}</option>
-                {% endfor %}
-              </select>
+              <label for="from_email">From email address{{ help(help_text.platform_email_from_email, "platform-email-from-email-help") }}</label>
+              <input type="email" id="from_email" name="from_email" value="{{ platform_email_settings.from_email }}" autocomplete="email" />
             </div>
             <div class="field">
-              <label for="smtp_username">SMTP username{{ help(help_text.platform_email_smtp_username, "platform-email-smtp-username-help") }}</label>
-              <input type="text" id="smtp_username" name="smtp_username" value="{{ platform_email_settings.smtp_username }}" autocomplete="username" />
+              <label for="from_display_name">From display name{{ help(help_text.platform_email_from_display_name, "platform-email-from-display-name-help") }}</label>
+              <input type="text" id="from_display_name" name="from_display_name" value="{{ platform_email_settings.from_display_name }}" />
             </div>
             <div class="field">
-              <label for="smtp_password">SMTP password{{ help(help_text.platform_email_smtp_password, "platform-email-smtp-password-help") }}</label>
-              <input type="password" id="smtp_password" name="smtp_password" value="" autocomplete="new-password" />
-              <p class="hint">Leave blank to keep the current saved password.</p>
-            </div>
-            <div class="field checkbox">
-              <input type="hidden" name="clear_smtp_password" value="0" />
-              <input type="checkbox" id="clear_smtp_password" name="clear_smtp_password" value="1" />
-              <label for="clear_smtp_password">Clear saved SMTP password</label>
-            </div>
-            <div class="field">
-              <label for="smtp_from_email">From email address{{ help(help_text.platform_email_from_email, "platform-email-from-email-help") }}</label>
-              <input type="email" id="smtp_from_email" name="smtp_from_email" value="{{ platform_email_settings.smtp_from_email }}" autocomplete="email" />
-            </div>
-            <div class="field">
-              <label for="smtp_from_display_name">From display name{{ help(help_text.platform_email_from_display_name, "platform-email-from-display-name-help") }}</label>
-              <input type="text" id="smtp_from_display_name" name="smtp_from_display_name" value="{{ platform_email_settings.smtp_from_display_name }}" />
-            </div>
-            <div class="field">
-              <label for="smtp_reply_to">Reply-to address{{ help(help_text.platform_email_reply_to, "platform-email-reply-to-help") }}</label>
-              <input type="email" id="smtp_reply_to" name="smtp_reply_to" value="{{ platform_email_settings.smtp_reply_to }}" autocomplete="email" />
+              <label for="reply_to">Reply-to address{{ help(help_text.platform_email_reply_to, "platform-email-reply-to-help") }}</label>
+              <input type="email" id="reply_to" name="reply_to" value="{{ platform_email_settings.reply_to }}" autocomplete="email" />
             </div>
           </div>
 
@@ -151,7 +126,6 @@
                 autocomplete="email"
                 required
               />
-              <p class="hint">Sends a simple email using the current platform mail settings.</p>
             </div>
           </div>
           <div class="actions btn-group">

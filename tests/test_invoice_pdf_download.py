@@ -135,11 +135,10 @@ def _create_destination(
 def _configure_platform_email(db_session) -> None:
     db_session.add(
         PlatformSetting(
-            smtp_host="smtp.mail.test",
-            smtp_port=587,
-            smtp_from_email="platform@example.com",
-            smtp_from_display_name="Weighbridge Web",
-            smtp_security="starttls",
+            email_provider="resend",
+            resend_api_key="re_test_api_key",
+            from_email="platform@example.com",
+            from_display_name="Weighbridge Web",
         )
     )
     db_session.commit()
@@ -458,10 +457,10 @@ def test_invoice_send_by_email_blocks_void_invoice(client, db_session):
     assert audit_event.details_json.get("error") == "Void invoices cannot be sent by email."
 
 
-def test_invoice_send_by_email_reports_missing_smtp_config(client, db_session, monkeypatch):
+def test_invoice_send_by_email_reports_missing_resend_config(client, db_session, monkeypatch):
     import app.routes.invoices as invoices_routes
 
-    invoice = _create_invoice_with_line(db_session, invoice_no="INV-SMTP-1")
+    invoice = _create_invoice_with_line(db_session, invoice_no="INV-RESEND-1")
     pdf_called = {"value": False}
 
     def _unexpected_render(*args, **kwargs):
@@ -476,7 +475,7 @@ def test_invoice_send_by_email_reports_missing_smtp_config(client, db_session, m
     )
 
     assert response.status_code == 400
-    assert "SMTP host is not configured." in response.text
+    assert "Resend API key is not configured." in response.text
     assert pdf_called["value"] is False
 
     audit_event = _invoice_email_audit_event(
@@ -486,4 +485,4 @@ def test_invoice_send_by_email_reports_missing_smtp_config(client, db_session, m
     )
 
     assert audit_event is not None
-    assert audit_event.details_json.get("error") == "SMTP host is not configured."
+    assert audit_event.details_json.get("error") == "Resend API key is not configured."

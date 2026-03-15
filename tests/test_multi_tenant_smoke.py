@@ -2254,30 +2254,21 @@ def test_platform_superadmin_can_update_email_settings_and_send_test_email(tmp_p
 
     deliveries: dict[str, object] = {}
 
-    class _FakeSMTP:
-        def __init__(self, host, port, timeout):
-            deliveries["host"] = host
-            deliveries["port"] = port
-            deliveries["timeout"] = timeout
+    class _FakeResponse:
+        status_code = 200
+        text = '{"id":"email_123"}'
 
-        def ehlo(self):
-            deliveries["ehlo"] = int(deliveries.get("ehlo", 0)) + 1
+        def raise_for_status(self) -> None:
+            return None
 
-        def starttls(self):
-            deliveries["started_tls"] = True
+    def _fake_post(url, *, headers, json, timeout):
+        deliveries["url"] = url
+        deliveries["headers"] = headers
+        deliveries["json"] = json
+        deliveries["timeout"] = timeout
+        return _FakeResponse()
 
-        def login(self, username, password):
-            deliveries["login"] = (username, password)
-
-        def send_message(self, message, from_addr=None, to_addrs=None):
-            deliveries["message"] = message
-            deliveries["from_addr"] = from_addr
-            deliveries["to_addrs"] = to_addrs
-
-        def quit(self):
-            deliveries["quit"] = True
-
-    monkeypatch.setattr(email_service_module.smtplib, "SMTP", _FakeSMTP)
+    monkeypatch.setattr(email_service_module.httpx, "post", _fake_post)
 
     with _client(app, base_url="https://admin.localhost") as admin_client:
         _login_platform_superadmin(admin_client)
@@ -2288,21 +2279,18 @@ def test_platform_superadmin_can_update_email_settings_and_send_test_email(tmp_p
         assert 'action="/platform/email-settings"' in page.text
         assert 'action="/platform/email-settings/test"' in page.text
         assert 'id="platform-email-settings-scope-help"' in page.text
-        assert 'id="platform-email-smtp-host-help"' in page.text
+        assert 'id="platform-email-api-key-help"' in page.text
         assert 'id="platform-email-test-help"' in page.text
 
         update = _post_with_csrf(
             admin_client,
             "/platform/email-settings",
             data={
-                "smtp_host": "smtp.mail.test",
-                "smtp_port": "587",
-                "smtp_username": "mailer@example.com",
-                "smtp_password": "smtp-secret",
-                "smtp_security": "starttls",
-                "smtp_from_email": "platform@example.com",
-                "smtp_from_display_name": "Weighbridge Platform",
-                "smtp_reply_to": "reply@example.com",
+                "email_provider": "resend",
+                "resend_api_key": "re_test_api_key",
+                "from_email": "platform@example.com",
+                "from_display_name": "Weighbridge Platform",
+                "reply_to": "reply@example.com",
             },
         )
         assert update.status_code == 303
@@ -2311,11 +2299,11 @@ def test_platform_superadmin_can_update_email_settings_and_send_test_email(tmp_p
         saved_page = admin_client.get(update.headers["location"])
         assert saved_page.status_code == 200
         assert "Platform email settings updated." in saved_page.text
-        assert 'value="smtp.mail.test"' in saved_page.text
+        assert 'value="resend"' in saved_page.text
         assert 'value="platform@example.com"' in saved_page.text
         assert 'value="Weighbridge Platform"' in saved_page.text
         assert 'value="reply@example.com"' in saved_page.text
-        assert 'value="smtp-secret"' not in saved_page.text
+        assert 'value="re_test_api_key"' not in saved_page.text
 
         test_send = _post_with_csrf(
             admin_client,
@@ -2335,14 +2323,11 @@ def test_platform_superadmin_can_update_email_settings_and_send_test_email(tmp_p
     with SessionLocal() as db:
         row = db.execute(select(PlatformSetting)).scalars().first()
         assert row is not None
-        assert row.smtp_host == "smtp.mail.test"
-        assert int(row.smtp_port or 0) == 587
-        assert row.smtp_username == "mailer@example.com"
-        assert row.smtp_password == "smtp-secret"
-        assert row.smtp_security == "starttls"
-        assert row.smtp_from_email == "platform@example.com"
-        assert row.smtp_from_display_name == "Weighbridge Platform"
-        assert row.smtp_reply_to == "reply@example.com"
+        assert row.email_provider == "resend"
+        assert row.resend_api_key == "re_test_api_key"
+        assert row.from_email == "platform@example.com"
+        assert row.from_display_name == "Weighbridge Platform"
+        assert row.reply_to == "reply@example.com"
 
         update_audit = db.execute(
             select(AuditEvent)
@@ -2357,8 +2342,12 @@ def test_platform_superadmin_can_update_email_settings_and_send_test_email(tmp_p
         assert update_audit is not None
         assert update_audit.user_id == superadmin_id
         assert (
-            update_audit.details_json.get("changed", {}).get("smtp_host", {}).get("to")
-            == "smtp.mail.test"
+            update_audit.details_json.get("changed", {}).get("from_email", {}).get("to")
+            == "platform@example.com"
+        )
+        assert (
+            update_audit.details_json.get("changed", {}).get("resend_api_key_configured", {}).get("to")
+            is True
         )
 
         test_audit = db.execute(
@@ -2376,16 +2365,16 @@ def test_platform_superadmin_can_update_email_settings_and_send_test_email(tmp_p
         assert test_audit.details_json.get("status") == "sent"
         assert test_audit.details_json.get("test_to") == "ops@example.com"
 
-    assert deliveries.get("host") == "smtp.mail.test"
-    assert deliveries.get("port") == 587
-    assert deliveries.get("started_tls") is True
-    assert deliveries.get("login") == ("mailer@example.com", "smtp-secret")
-    assert deliveries.get("from_addr") == "platform@example.com"
-    assert deliveries.get("to_addrs") == ["ops@example.com"]
-    message = deliveries.get("message")
-    assert message is not None
-    assert message["From"] == "Weighbridge Platform <platform@example.com>"
-    assert message["Reply-To"] == "reply@example.com"
+    assert deliveries.get("url") == email_service_module.RESEND_SEND_EMAIL_URL
+    assert deliveries.get("headers") == {"Authorization": "Bearer re_test_api_key"}
+    assert deliveries.get("timeout") == email_service_module.DEFAULT_RESEND_TIMEOUT_SECONDS
+    payload = deliveries.get("json")
+    assert payload is not None
+    assert payload["from"] == "Weighbridge Platform <platform@example.com>"
+    assert payload["reply_to"] == "reply@example.com"
+    assert payload["to"] == ["ops@example.com"]
+    assert payload["subject"] == "Weighbridge Web test email"
+    assert "platform email settings page" in payload["text"]
 
 
 def test_platform_test_email_failure_is_reported_and_audited(tmp_path, monkeypatch):
@@ -2410,12 +2399,12 @@ def test_platform_test_email_failure_is_reported_and_audited(tmp_path, monkeypat
         )
         assert failure.status_code == 303
         assert failure.headers.get("location") == (
-            "/platform/email-settings?test_error=SMTP+host+is+not+configured.&test_to=ops%40example.com"
+            "/platform/email-settings?test_error=Resend+API+key+is+not+configured.&test_to=ops%40example.com"
         )
 
         failed_page = admin_client.get(failure.headers["location"])
         assert failed_page.status_code == 200
-        assert "SMTP host is not configured." in failed_page.text
+        assert "Resend API key is not configured." in failed_page.text
 
     with SessionLocal() as db:
         test_audit = db.execute(
@@ -2431,7 +2420,7 @@ def test_platform_test_email_failure_is_reported_and_audited(tmp_path, monkeypat
         assert test_audit is not None
         assert test_audit.user_id == superadmin_id
         assert test_audit.details_json.get("status") == "failed"
-        assert test_audit.details_json.get("error") == "SMTP host is not configured."
+        assert test_audit.details_json.get("error") == "Resend API key is not configured."
 
 
 def test_superadmin_can_delete_empty_tenant_and_delete_blocks_linked_data(tmp_path, monkeypatch):
