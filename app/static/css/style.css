@@ -722,18 +722,24 @@ body.js-help-tooltips .help-tooltip {
 
 .documents-panel--header .documents-panel__groups {
   gap: 0.35rem;
-  justify-items: end;
+  justify-items: stretch;
 }
 
 .documents-panel--header .documents-group {
-  grid-template-columns: max-content max-content;
-  gap: 0.4rem 0.75rem;
-  justify-content: end;
-  justify-items: end;
+  grid-template-columns: minmax(8.5rem, 10.5rem) max-content;
+  gap: 0.4rem 0.95rem;
+  justify-content: start;
+  justify-items: start;
 }
 
 .documents-panel--header .documents-group__actions {
-  justify-self: end;
+  justify-self: start;
+}
+
+.documents-panel--header .documents-group__label {
+  justify-self: start;
+  text-align: left;
+  padding-right: 0.2rem;
 }
 
 .documents-panel--header .documents-group .print-actions {
@@ -742,7 +748,7 @@ body.js-help-tooltips .help-tooltip {
 
 .documents-panel--header .documents-group .print-actions__form,
 .documents-panel--header .documents-group .print-actions__row {
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .documents-panel__groups {
@@ -4646,6 +4652,11 @@ body.assistant-panel-open {
 
 .company-logo-preview-meta code {
   overflow-wrap: anywhere;
+}
+
+.company-settings-form .frame-body {
+  display: grid;
+  gap: 0.75rem;
 }
 
 @media (max-width: 960px) {
