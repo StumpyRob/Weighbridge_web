@@ -238,21 +238,21 @@ PRODUCT_GROUPS = (
     ("GNS", "General Sales", "Retail counter and sundry sales", "4400"),
 )
 PRODUCTS = (
-    ("AGG20", "Recycled Aggregate 20mm", True, "AGG", "Tonnes", "14.50", "Inert Waste Bay 1", False),
-    ("TOPSOIL", "Screened Topsoil", True, "REC", "Tonnes", "18.00", "Inert Waste Bay 2", False),
-    ("TOPM3", "Screened Topsoil (m3)", True, "REC", "m3", "32.00", "Inert Waste Bay 2", False),
-    ("BUILDSAND", "Building Sand", True, "AGG", "Tonnes", "12.25", "Inert Waste Bay 2", False),
-    ("TYPE1", "MOT Type 1", True, "AGG", "Tonnes", "11.80", "Inert Waste Bay 1", False),
-    ("MIXEDW", "Mixed Builders Waste", False, "WST", "Tonnes", "102.00", "Riverside Landfill", True),
-    ("CLAYSOIL", "Clay and Soil Disposal", False, "WST", "Tonnes", "76.00", "Hazardous Bay 1", True),
-    ("WOODW", "Wood Waste Disposal", False, "WST", "Tonnes", "88.00", "Wood/Timber Bay 1", False),
-    ("BAG50", "50kg Bagged Aggregate", True, "HRE", "Each", "4.75", "Inert Waste Bay 1", False),
-    ("PALLET", "Pallet Collection", True, "HRE", "Each", "22.00", "Inert Waste Bay 2", False),
-    ("EARDEF", "Ear Defenders", True, "GNS", "Each", "8.95", "Inert Waste Bay 1", False),
-    ("HIVIS", "High Vis Vest", True, "GNS", "Each", "5.50", "Inert Waste Bay 1", False),
-    ("LOADDEL", "Loose Load Delivery", True, "HRE", "Load", "68.50", "Inert Waste Bay 2", False),
-    ("SKIP8", "8 Yard Skip Exchange", False, "HRE", "Each", "265.00", "Riverside Landfill", True),
-    ("BALES", "Compacted Bale Removal", False, "WST", "Load", "38.00", "Wood/Timber Bay 1", False),
+    ("AGG20", "Recycled Aggregate 20mm", "sale", True, "AGG", "Tonnes", "14.50", "Inert Waste Bay 1", False),
+    ("TOPSOIL", "Screened Topsoil", "sale", True, "REC", "Tonnes", "18.00", "Inert Waste Bay 2", False),
+    ("TOPM3", "Screened Topsoil (m3)", "sale", True, "REC", "m3", "32.00", "Inert Waste Bay 2", False),
+    ("BUILDSAND", "Building Sand", "sale", True, "AGG", "Tonnes", "12.25", "Inert Waste Bay 2", False),
+    ("TYPE1", "MOT Type 1", "sale", True, "AGG", "Tonnes", "11.80", "Inert Waste Bay 1", False),
+    ("MIXEDW", "Mixed Builders Waste", "waste", False, "WST", "Tonnes", "102.00", "Riverside Landfill", True),
+    ("CLAYSOIL", "Clay and Soil Disposal", "waste", False, "WST", "Tonnes", "76.00", "Hazardous Bay 1", True),
+    ("WOODW", "Wood Waste Disposal", "waste", False, "WST", "Tonnes", "88.00", "Wood/Timber Bay 1", False),
+    ("BAG50", "50kg Bagged Aggregate", "sale", True, "HRE", "Each", "4.75", "Inert Waste Bay 1", False),
+    ("PALLET", "Pallet Collection", "sale", True, "HRE", "Each", "22.00", "Inert Waste Bay 2", False),
+    ("EARDEF", "Ear Defenders", "sale", True, "GNS", "Each", "8.95", "Inert Waste Bay 1", False),
+    ("HIVIS", "High Vis Vest", "sale", True, "GNS", "Each", "5.50", "Inert Waste Bay 1", False),
+    ("LOADDEL", "Loose Load Delivery", "sale", True, "HRE", "Load", "68.50", "Inert Waste Bay 2", False),
+    ("SKIP8", "8 Yard Skip Exchange", "waste", False, "HRE", "Each", "265.00", "Riverside Landfill", True),
+    ("BALES", "Compacted Bale Removal", "waste", False, "WST", "Load", "38.00", "Wood/Timber Bay 1", False),
 )
 DEMO_WASTE_PRODUCT_EWC = {
     "MIXEDW": ("170904", "Mixed construction and demolition waste", False),
@@ -582,7 +582,7 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
     }
 
     products: dict[str, tuple[Product, Unit]] = {}
-    for code, description, sales_only, group_code, unit_name, price, destination_name, final_disposal in PRODUCTS:
+    for code, description, product_type, sales_only, group_code, unit_name, price, destination_name, final_disposal in PRODUCTS:
         unit = units[unit_name]
         product_ewc = None
         product_tax_rate = zero_tax_rate if code in DEMO_ZERO_RATED_PRODUCT_CODES else standard_tax_rate
@@ -592,6 +592,7 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
             tenant_id=tenant_id,
             code=code,
             description=description,
+            product_type=product_type,
             sales_only=bool(sales_only),
             group_id=product_groups[group_code].id,
             unit_id=unit.id,

@@ -29,6 +29,7 @@ class Product(Base):
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), nullable=False, default=1)
     code: Mapped[str] = mapped_column(String(CODE_MAX), nullable=False)
     description: Mapped[str] = mapped_column(String(DESC_MAX), nullable=False)
+    product_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     sales_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("product_groups.id"))
     product_group: Mapped[ProductGroup | None] = relationship("ProductGroup")

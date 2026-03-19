@@ -4,6 +4,29 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.17.1 - 2026-03-19
+
+### RELEASE
+- `v0.17.1` hardens ticket product selection by introducing explicit product transaction types (`sale` vs `waste`) and applying those rules end-to-end in ticket product options and save validation.
+
+### ADD
+- Add `products.product_type` with migration `0f1a2b3c4d5e_add_product_type_to_products.py`, including a safe backfill for existing rows.
+- Add product type handling in product create/update parsing so explicit form values are persisted and sensible defaults are applied when older forms omit the field.
+- Add explicit `product_type` values in demo tenant reset seed products so demo data no longer depends on migration backfill for classification.
+- Add marketing demo credentials under the landing page demo button (`demo@demo.com` / `password`).
+- Add tooltip-based help rendering for the edit-email attachment help text in the shared document email form header.
+
+### FIX
+- Filter ticket product dropdown options by transaction type (`SALE` -> sale products, `WASTEIN/WASTEOUT` -> waste products), with type-specific empty-state messages.
+- Block transaction-type mismatches consistently during pricing/default resolution and ticket save validation (sale tickets cannot use waste-only products; waste tickets cannot use sale-only products).
+- Update product field HTMX refresh wiring so transaction-type switches do not preserve stale product selections.
+- Align shared document action buttons to the right in header layouts and constrain action frame width while keeping responsive mobile behavior.
+- Frame Company Settings address fields as a dedicated section and tighten Document Email Defaults card embedding/layout consistency.
+
+### TEST
+- Expand `tests/test_ticket_product_usage_rules.py` to cover sale/waste type rejection, transaction-type-driven option filtering, HTMX include behavior, and empty dropdown messaging.
+- Re-run targeted demo reset and ticket product usage regression slices.
+
 ## v0.17.0 - 2026-03-13
 
 ### RELEASE

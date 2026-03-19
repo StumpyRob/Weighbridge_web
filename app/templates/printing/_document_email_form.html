@@ -1,6 +1,13 @@
+{% from "_help.html" import help %}
+
 <details class="card compact document-email-card" {% if email_form_open %}open{% endif %}>
   <summary class="card-header document-email-summary">
-    <span>{{ email_summary_title or email_title }}</span>
+    <span class="document-email-summary__title">
+      <span>{{ email_summary_title or email_title }}</span>
+      {% if email_help_text %}
+        {{ help(email_help_text, email_id_prefix ~ "-help") }}
+      {% endif %}
+    </span>
     <span class="muted">{{ email_form.to_email or "Enter recipient" }}</span>
   </summary>
   <div class="card-body document-email-card__body">
@@ -46,7 +53,6 @@
           >{{ email_form.message }}</textarea>
         </div>
       </div>
-      <p class="help">{{ email_help_text }}</p>
       <div class="actions btn-group document-email-form__actions">
         <button type="submit" class="btn btn--primary">{{ email_button_label }}</button>
       </div>

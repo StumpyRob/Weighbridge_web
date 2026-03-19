@@ -5,7 +5,7 @@
   hx-trigger="change from:#transaction_type"
   hx-target="#product-field"
   hx-swap="outerHTML"
-  hx-include="#transaction_type,#product_id"
+  hx-include="#transaction_type"
   hx-vals='{"ticket_id":"{{ ticket_id }}"}'
 >
   <label for="product_id">Product</label>
@@ -17,7 +17,9 @@
     hx-target="#pricing-defaults"
     hx-include="#weights-form,#qty,#transaction_type,#customer_id"
   >
-    <option value="">Select product</option>
+    <option value="">
+      {{ "Select product" if options.products else (product_empty_option_label or "No products available.") }}
+    </option>
     {% for id, label in options.products %}
       {% set product_meta = product_unit_meta.get(id|string, {}) if product_unit_meta is defined else {} %}
       <option

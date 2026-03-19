@@ -55,7 +55,7 @@
         <p class="muted platform-tenant-detail-section-copy">
           These defaults are used when emailing invoices and tickets. Operators can still edit the message before sending.
         </p>
-        <div class="platform-tenant-detail-admin-grid">
+        <div class="platform-tenant-detail-admin-grid company-document-email-grid">
           <section class="platform-tenant-detail-admin-card">
             <h3>Invoice</h3>
             <div class="field">
@@ -130,30 +130,37 @@
       </div>
     </section>
 
-    <div class="field">
-      <label for="address_line1">Address line 1</label>
-      <input type="text" id="address_line1" name="address_line1" maxlength="{{ limits.ADDRESS_LINE_MAX }}" value="{{ setting.address_line1 or '' }}" />
-    </div>
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Address</h2>
+      </div>
+      <div class="frame-body">
+        <div class="field">
+          <label for="address_line1">Address line 1</label>
+          <input type="text" id="address_line1" name="address_line1" maxlength="{{ limits.ADDRESS_LINE_MAX }}" value="{{ setting.address_line1 or '' }}" />
+        </div>
 
-    <div class="field">
-      <label for="address_line2">Address line 2</label>
-      <input type="text" id="address_line2" name="address_line2" maxlength="{{ limits.ADDRESS_LINE_MAX }}" value="{{ setting.address_line2 or '' }}" />
-    </div>
+        <div class="field">
+          <label for="address_line2">Address line 2</label>
+          <input type="text" id="address_line2" name="address_line2" maxlength="{{ limits.ADDRESS_LINE_MAX }}" value="{{ setting.address_line2 or '' }}" />
+        </div>
 
-    <div class="field">
-      <label for="city">City</label>
-      <input type="text" id="city" name="city" maxlength="{{ limits.ADDRESS_LINE_MAX }}" value="{{ setting.city or '' }}" />
-    </div>
+        <div class="field">
+          <label for="city">City</label>
+          <input type="text" id="city" name="city" maxlength="{{ limits.ADDRESS_LINE_MAX }}" value="{{ setting.city or '' }}" />
+        </div>
 
-    <div class="field">
-      <label for="postcode">Postcode</label>
-      <input type="text" id="postcode" name="postcode" maxlength="{{ limits.POSTCODE_MAX }}" value="{{ setting.postcode or '' }}" />
-    </div>
+        <div class="field">
+          <label for="postcode">Postcode</label>
+          <input type="text" id="postcode" name="postcode" maxlength="{{ limits.POSTCODE_MAX }}" value="{{ setting.postcode or '' }}" />
+        </div>
 
-    <div class="field">
-      <label for="country">Country</label>
-      <input type="text" id="country" name="country" maxlength="{{ limits.ADDRESS_LINE_MAX }}" value="{{ setting.country or '' }}" />
-    </div>
+        <div class="field">
+          <label for="country">Country</label>
+          <input type="text" id="country" name="country" maxlength="{{ limits.ADDRESS_LINE_MAX }}" value="{{ setting.country or '' }}" />
+        </div>
+      </div>
+    </section>
 
     <section class="frame">
       <div class="frame-header">

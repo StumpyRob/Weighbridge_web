@@ -261,11 +261,90 @@ def test_sale_ticket_allows_sales_only_product_with_correct_pricing(client, db_s
     assert Decimal(str(ticket.total)) == Decimal("29.98")
 
 
+def test_sale_ticket_save_rejects_waste_only_product(client, db_session):
+    unit = Unit(name="Usage Rule Unit 6B", unit_type="COUNT", is_active=True)
+    waste_product = Product(
+        code="P-USAGE-WASTE-SALE-1",
+        description="Waste Only Sale Block",
+        product_type="waste",
+        sales_only=False,
+        unit=unit,
+        unit_price=Decimal("14.99"),
+    )
+    ticket = Ticket(
+        ticket_no="T-USAGE-SALE-BLOCK-1",
+        datetime=datetime(2026, 2, 10, 11, 10, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([unit, waste_product, ticket])
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "save",
+            "datetime": "2026-02-10T11:10",
+            "direction": "INWARD",
+            "transaction_type": "SALE",
+            "product_id": str(waste_product.id),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "This product is waste-only and cannot be used on sale tickets." in response.text
+    db_session.refresh(ticket)
+    assert ticket.product_id is None
+
+
+def test_waste_ticket_save_rejects_sale_product_type(client, db_session):
+    unit = Unit(name="Usage Rule Unit 6C", unit_type="COUNT", is_active=True)
+    sale_product = Product(
+        code="P-USAGE-SALE-WASTE-1",
+        description="Sale Product Waste Block",
+        product_type="sale",
+        sales_only=False,
+        unit=unit,
+        unit_price=Decimal("11.25"),
+    )
+    ticket = Ticket(
+        ticket_no="T-USAGE-WASTE-BLOCK-1",
+        datetime=datetime(2026, 2, 10, 11, 20, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([unit, sale_product, ticket])
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "save",
+            "datetime": "2026-02-10T11:20",
+            "direction": "INWARD",
+            "transaction_type": "WASTEIN",
+            "product_id": str(sale_product.id),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "This product is sales-only and cannot be used on waste tickets." in response.text
+    db_session.refresh(ticket)
+    assert ticket.product_id is None
+
+
 def test_transaction_type_change_refreshes_product_options_without_save(client, db_session):
     unit = Unit(name="Usage Rule Unit 7", unit_type="COUNT", is_active=True)
     sales_only_product = Product(
         code="P-USAGE-SALES-7",
         description="Live Retail Product",
+        product_type="sale",
         sales_only=True,
         unit=unit,
         unit_price=Decimal("14.99"),
@@ -273,6 +352,7 @@ def test_transaction_type_change_refreshes_product_options_without_save(client, 
     waste_product = Product(
         code="P-USAGE-WASTE-7",
         description="Live Waste Product",
+        product_type="waste",
         sales_only=False,
         unit=unit,
         unit_price=Decimal("100.00"),
@@ -293,6 +373,8 @@ def test_transaction_type_change_refreshes_product_options_without_save(client, 
     assert page.status_code == 200
     assert 'hx-get="/tickets/product-options"' in page.text
     assert 'hx-trigger="change from:#transaction_type"' in page.text
+    assert 'hx-include="#transaction_type"' in page.text
+    assert 'hx-include="#transaction_type,#product_id"' not in page.text
 
     sale_options = client.get(
         "/tickets/product-options"
@@ -312,3 +394,38 @@ def test_transaction_type_change_refreshes_product_options_without_save(client, 
     assert "Live Retail Product" in sale_options.text
     assert "Live Retail Product" not in waste_options.text
     assert "Live Waste Product" in waste_options.text
+    assert "Live Waste Product" not in sale_options.text
+
+
+def test_product_options_empty_state_message_when_no_type_matches(client, db_session):
+    unit = Unit(name="Usage Rule Unit 8", unit_type="COUNT", is_active=True)
+    waste_product = Product(
+        code="P-USAGE-WASTE-8",
+        description="Only Waste Product",
+        product_type="waste",
+        sales_only=False,
+        unit=unit,
+        unit_price=Decimal("55.00"),
+    )
+    ticket = Ticket(
+        ticket_no="T-USAGE-EMPTY-1",
+        datetime=datetime(2026, 2, 10, 12, 0, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.OUTWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([unit, waste_product, ticket])
+    db_session.commit()
+
+    response = client.get(
+        "/tickets/product-options"
+        f"?ticket_id={ticket.id}"
+        "&transaction_type=SALE"
+        "&product_id="
+    )
+
+    assert response.status_code == 200
+    assert "No sale products available." in response.text
+    assert "Only Waste Product" not in response.text

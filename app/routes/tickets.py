@@ -12,7 +12,7 @@ from fastapi.responses import (
     RedirectResponse,
     Response,
 )
-from sqlalchemy import case, func, or_, select, text
+from sqlalchemy import and_, case, func, or_, select, text
 from sqlalchemy.orm import Session, joinedload
 
 from ..audit import diff as audit_diff
@@ -121,6 +121,12 @@ SALES_ONLY_WASTE_ERROR = (
 SALES_ONLY_WASTE_WARNING = (
     "Selected product is sales-only and cannot be used on waste tickets."
 )
+WASTE_ONLY_SALE_ERROR = "This product is waste-only and cannot be used on sale tickets."
+WASTE_ONLY_SALE_WARNING = (
+    "Selected product is waste-only and cannot be used on sale tickets."
+)
+PRODUCT_TYPE_SALE = "sale"
+PRODUCT_TYPE_WASTE = "waste"
 VOID_REASON_TYPE_TICKET = "TICKET"
 PO_NUMBER_MAX_LENGTH = PO_NUMBER_MAX
 PO_REQUIRED_INVOICE_BANNER = (
@@ -486,11 +492,15 @@ def ticket_product_defaults(
             {"request": request, "error": INACTIVE_PRODUCT_UNIT_ERROR},
             status_code=400,
         )
-    if _is_waste_transaction((transaction_type or "").strip().upper()) and product.sales_only:
+    product_mismatch_error = _product_transaction_mismatch_error(
+        product,
+        (transaction_type or "").strip().upper(),
+    )
+    if product_mismatch_error:
         return templates.TemplateResponse(
             request,
             "tickets/_product_defaults_error.html",
-            {"request": request, "error": SALES_ONLY_WASTE_ERROR},
+            {"request": request, "error": product_mismatch_error},
             status_code=400,
         )
 
@@ -600,6 +610,7 @@ def tickets_product_options(
             "options": options,
             "product_unit_meta": _load_product_unit_meta(db),
             "product_usage_warning": product_usage_warning,
+            "product_empty_option_label": _product_option_empty_label(transaction_type),
             "oob_product_warning": True,
         },
     )
@@ -845,7 +856,6 @@ def _load_ticket_options(
         return [(str(row.id), label_fn(row)) for row in rows]
 
     resolved_transaction_type = _enum_value_or_text(transaction_type).upper()
-    show_sales_only = not _is_waste_transaction(resolved_transaction_type)
     products_stmt = (
         select(Product)
         .options(joinedload(Product.unit))
@@ -853,19 +863,16 @@ def _load_ticket_options(
         .where(Unit.is_active.is_(True))
         .order_by(Product.description)
     )
-    if not show_sales_only:
-        products_stmt = products_stmt.where(Product.sales_only.is_(False))
+    product_filter = _product_filter_for_transaction(resolved_transaction_type)
+    if product_filter is not None:
+        products_stmt = products_stmt.where(product_filter)
     product_rows = db.execute(products_stmt).scalars().all()
     product_options = as_options(product_rows, lambda row: row.description)
     selected_product_id_str = str(selected_product_id or "")
     has_selected_product = any(
         option_id == selected_product_id_str for option_id, _ in product_options
     )
-    if (
-        selected_product_id
-        and not has_selected_product
-        and not show_sales_only
-    ):
+    if selected_product_id and not has_selected_product:
         selected_product = (
             db.execute(
                 select(Product)
@@ -875,15 +882,25 @@ def _load_ticket_options(
             .scalars()
             .first()
         )
-        if (
-            selected_product
-            and selected_product.sales_only
-            and _product_has_active_unit(selected_product)
-        ):
+        if selected_product and _product_has_active_unit(selected_product):
+            selected_label = selected_product.description
+            mismatch_warning = _product_transaction_mismatch_error(
+                selected_product,
+                resolved_transaction_type,
+                warning=True,
+            )
+            if mismatch_warning == SALES_ONLY_WASTE_WARNING:
+                selected_label = f"{selected_label} (sales only)"
+            elif mismatch_warning == WASTE_ONLY_SALE_WARNING:
+                selected_label = f"{selected_label} (waste only)"
+            elif mismatch_warning:
+                selected_label = (
+                    f"{selected_label} (not available for this transaction type)"
+                )
             product_options = [
                 (
                     str(selected_product.id),
-                    f"{selected_product.description} (sales only)",
+                    selected_label,
                 )
             ] + product_options
 
@@ -1038,14 +1055,14 @@ def _sales_only_selected_product_warning(
 ) -> str | None:
     if not selected_product_id:
         return None
-    if not _is_waste_transaction(_enum_value_or_text(transaction_type).upper()):
-        return None
     selected_product = db.get(Product, selected_product_id)
     if not selected_product:
         return None
-    if selected_product.sales_only:
-        return SALES_ONLY_WASTE_WARNING
-    return None
+    return _product_transaction_mismatch_error(
+        selected_product,
+        _enum_value_or_text(transaction_type),
+        warning=True,
+    )
 
 
 def _normalize_registration(value: str | None) -> str:
@@ -2010,6 +2027,9 @@ def tickets_edit(
             "price_override_active": price_override_active,
             "price_override_unit_price": price_override_unit_price,
             "options": options,
+            "product_empty_option_label": _product_option_empty_label(
+                form.get("transaction_type")
+            ),
             "product_unit_meta": _load_product_unit_meta(db),
             "enums": _ticket_enums(),
             "receipts_wip_enabled": bool(settings.receipts_wip_enabled),
@@ -4693,10 +4713,8 @@ def _apply_ticket_pricing(
     ticket.total = None
     ticket.pricing_basis = None
     pricing_info = {"basis": None, "billable_qty": None, "net_kg": None}
-    if (
-        product is not None
-        and product.sales_only
-        and _is_waste_transaction(payload.get("transaction_type"))
+    if product is not None and not _product_matches_transaction_type(
+        product, payload.get("transaction_type")
     ):
         return pricing_info
 
@@ -4757,8 +4775,12 @@ def _validate_product_ewc(payload: dict, db: Session) -> Product | None:
     if not _product_has_active_unit(product):
         payload["errors"].append(INACTIVE_PRODUCT_UNIT_ERROR)
         return None
-    if _is_waste_transaction(payload.get("transaction_type")) and product.sales_only:
-        payload["errors"].append(SALES_ONLY_WASTE_ERROR)
+    product_mismatch_error = _product_transaction_mismatch_error(
+        product,
+        payload.get("transaction_type"),
+    )
+    if product_mismatch_error:
+        payload["errors"].append(product_mismatch_error)
         return None
     return product
 
@@ -4934,6 +4956,91 @@ def _is_waste_transaction(transaction_type: str | None) -> bool:
         TransactionTypeEnum.WASTEIN.value,
         TransactionTypeEnum.WASTEOUT.value,
     )
+
+
+def _normalize_product_type(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in (PRODUCT_TYPE_SALE, PRODUCT_TYPE_WASTE):
+        return normalized
+    return ""
+
+
+def _required_product_type_for_transaction(
+    transaction_type: str | None,
+) -> str | None:
+    normalized = _enum_value_or_text(transaction_type).upper()
+    if normalized == TransactionTypeEnum.SALE.value:
+        return PRODUCT_TYPE_SALE
+    if _is_waste_transaction(normalized):
+        return PRODUCT_TYPE_WASTE
+    return None
+
+
+def _product_filter_for_transaction(transaction_type: str | None):
+    required_type = _required_product_type_for_transaction(transaction_type)
+    if required_type == PRODUCT_TYPE_SALE:
+        return or_(
+            func.lower(Product.product_type) == PRODUCT_TYPE_SALE,
+            Product.product_type.is_(None),
+        )
+    if required_type == PRODUCT_TYPE_WASTE:
+        return or_(
+            func.lower(Product.product_type) == PRODUCT_TYPE_WASTE,
+            and_(Product.product_type.is_(None), Product.sales_only.is_(False)),
+        )
+    return None
+
+
+def _product_matches_transaction_type(
+    product: Product | None,
+    transaction_type: str | None,
+) -> bool:
+    if product is None:
+        return False
+    required_type = _required_product_type_for_transaction(transaction_type)
+    if required_type is None:
+        return True
+    product_type = _normalize_product_type(getattr(product, "product_type", None))
+    if product_type:
+        return product_type == required_type
+    if required_type == PRODUCT_TYPE_SALE:
+        # Legacy rows without product_type should remain usable on sale tickets.
+        return True
+    return not bool(getattr(product, "sales_only", False))
+
+
+def _product_transaction_mismatch_error(
+    product: Product | None,
+    transaction_type: str | None,
+    *,
+    warning: bool = False,
+) -> str | None:
+    if product is None:
+        return None
+    required_type = _required_product_type_for_transaction(transaction_type)
+    if required_type is None:
+        return None
+    product_type = _normalize_product_type(getattr(product, "product_type", None))
+    if product_type == required_type:
+        return None
+    if required_type == PRODUCT_TYPE_WASTE:
+        if product_type == PRODUCT_TYPE_SALE or (
+            not product_type and bool(getattr(product, "sales_only", False))
+        ):
+            return SALES_ONLY_WASTE_WARNING if warning else SALES_ONLY_WASTE_ERROR
+        return None
+    if required_type == PRODUCT_TYPE_SALE and product_type == PRODUCT_TYPE_WASTE:
+        return WASTE_ONLY_SALE_WARNING if warning else WASTE_ONLY_SALE_ERROR
+    return None
+
+
+def _product_option_empty_label(transaction_type: str | None) -> str:
+    required_type = _required_product_type_for_transaction(transaction_type)
+    if required_type == PRODUCT_TYPE_SALE:
+        return "No sale products available."
+    if required_type == PRODUCT_TYPE_WASTE:
+        return "No waste products available."
+    return "No products available."
 
 
 def _apply_ticket_ewc_snapshot(ticket: Ticket, snapshot: dict[str, object]) -> None:

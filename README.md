@@ -4,9 +4,9 @@ FastAPI starter with SQLAlchemy, Alembic, and Postgres.
 
 ## Latest release
 
-`v0.17.0` is the current release baseline. This release expands the AI rollout with platform defaults vs tenant overrides, operational AI hardening controls, and a UI cleanup pass across admin, customer, and ticket screens.
+`v0.17.1` is the current release baseline. This release adds explicit transaction-type product classification (`sale` vs `waste`) and enforces ticket product filtering/validation so sale tickets cannot use waste products and waste tickets cannot use sale products.
 
-Multi-tenant support remains in place, the recent AI/admin polish is now in the baseline, and follow-up work from here is expected to focus on user permissions and further role-based controls rather than core AI rollout plumbing.
+It also includes UI polish updates for the marketing demo CTA credentials, Company Settings document-email/address framing, and document action/header alignment on edit-email screens.
 
 ## Local setup
 

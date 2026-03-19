@@ -297,24 +297,24 @@ body {
   margin-left: auto;
   display: flex;
   justify-content: flex-end;
-  flex: 1 1 31rem;
+  flex: 0 1 auto;
   min-width: 0;
-  width: min(100%, 38rem);
-  max-width: 100%;
+  width: auto;
+  max-width: min(100%, 42rem);
 }
 
 .invoice-header-documents,
 .document-action-stack {
   flex-direction: column;
-  align-items: stretch;
+  align-items: flex-end;
   gap: 0.85rem;
 }
 
 .document-action-stack {
-  flex: 1 1 40rem;
+  flex: 0 1 auto;
   min-width: 0;
-  width: 100%;
-  max-width: 100%;
+  width: auto;
+  max-width: min(100%, 42rem);
 }
 
 .tickets-list-header {
@@ -715,17 +715,34 @@ body.js-help-tooltips .help-tooltip {
 }
 
 .documents-panel--header {
-  width: 100%;
-  margin: 0;
+  width: auto;
+  max-width: 100%;
+  margin: 0 0 0 auto;
 }
 
 .documents-panel--header .documents-panel__groups {
   gap: 0.35rem;
+  justify-items: end;
 }
 
 .documents-panel--header .documents-group {
-  grid-template-columns: minmax(0, 9.75rem) minmax(0, 1fr);
-  gap: 0.4rem 0.85rem;
+  grid-template-columns: max-content max-content;
+  gap: 0.4rem 0.75rem;
+  justify-content: end;
+  justify-items: end;
+}
+
+.documents-panel--header .documents-group__actions {
+  justify-self: end;
+}
+
+.documents-panel--header .documents-group .print-actions {
+  width: auto;
+}
+
+.documents-panel--header .documents-group .print-actions__form,
+.documents-panel--header .documents-group .print-actions__row {
+  justify-content: flex-end;
 }
 
 .documents-panel__groups {
@@ -869,6 +886,12 @@ body.js-help-tooltips .help-tooltip {
     max-width: none;
   }
 
+  .document-action-stack {
+    width: 100%;
+    max-width: none;
+    align-items: stretch;
+  }
+
   .document-email-summary .muted {
     text-align: left;
     white-space: normal;
@@ -876,6 +899,20 @@ body.js-help-tooltips .help-tooltip {
 
   .documents-panel--header {
     width: 100%;
+    margin-left: 0;
+  }
+
+  .documents-panel--header .documents-group {
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+    justify-items: stretch;
+  }
+
+  .documents-panel--header .documents-group .print-actions,
+  .documents-panel--header .documents-group .print-actions__form,
+  .documents-panel--header .documents-group .print-actions__row {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .ticket-header-actions {
@@ -3228,6 +3265,16 @@ details > summary:focus-visible {
   }
 }
 
+.platform-tenant-detail-admin-grid.company-document-email-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+@media (min-width: 1080px) {
+  .platform-tenant-detail-admin-grid.company-document-email-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .platform-tenant-detail-admin-card {
   display: grid;
   gap: 0.85rem;
@@ -3797,6 +3844,12 @@ details > summary:focus-visible {
   padding: 0.75rem 1rem;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+.document-email-summary__title {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
 }
 
 .document-email-card:not([open]) .document-email-summary {

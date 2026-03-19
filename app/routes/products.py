@@ -50,6 +50,9 @@ PRODUCT_SEARCH_MAX_LEN = 100
 PRODUCT_GROUP_NAME_MAX_LEN = NAME_MAX
 PRODUCT_GROUP_DESCRIPTION_MAX_LEN = DESC_MAX
 NOMINAL_CODE_MAX_LEN = NOMINAL_CODE_MAX
+PRODUCT_TYPE_SALE = "sale"
+PRODUCT_TYPE_WASTE = "waste"
+PRODUCT_TYPES = (PRODUCT_TYPE_SALE, PRODUCT_TYPE_WASTE)
 
 
 def _require_products_view(request: Request) -> None:
@@ -195,6 +198,7 @@ async def products_create(
     product = Product(
         code=payload["code"],
         description=payload["description"],
+        product_type=payload["product_type"],
         sales_only=payload["sales_only"],
         group_id=payload["group_id"],
         unit_id=payload["unit_id"],
@@ -1048,6 +1052,7 @@ async def products_update(
 
     product.code = payload["code"]
     product.description = payload["description"]
+    product.product_type = payload["product_type"]
     product.sales_only = payload["sales_only"]
     product.group_id = payload["group_id"]
     product.unit_id = payload["unit_id"]
@@ -1287,6 +1292,20 @@ def _parse_product_form(form) -> dict:
     group_id = _parse_int(group_id_raw)
     nominal_code = _normalize_nominal_code(value("nominal_code"))
     sale_type = _normalize_sale_type(value("sale_type"))
+    product_type_raw = value("product_type")
+    sales_only = value("sales_only") == "on"
+    ewc_code_id = _parse_int(value("ewc_code_id"))
+    is_hazardous = value("is_hazardous") == "on"
+    final_disposal_wip = value("final_disposal_wip") == "on"
+    used_on_site_wip = value("used_on_site_wip") == "on"
+    product_type = _resolve_product_type(
+        product_type_raw=product_type_raw,
+        sales_only=sales_only,
+        ewc_code_id=ewc_code_id,
+        is_hazardous=is_hazardous,
+        final_disposal_wip=final_disposal_wip,
+        used_on_site_wip=used_on_site_wip,
+    )
     validate_no_html_fields(
         {
             "Code": code,
@@ -1327,7 +1346,8 @@ def _parse_product_form(form) -> dict:
             "group_id": group_id_raw,
             "nominal_code": nominal_code,
             "effective_nominal_code": nominal_code,
-            "sales_only": "on" if value("sales_only") == "on" else "",
+            "sales_only": "on" if sales_only else "",
+            "product_type": product_type,
             "sale_type": sale_type,
             "unit_id": value("unit_id"),
             "tax_rate_id": value("tax_rate_id"),
@@ -1340,7 +1360,7 @@ def _parse_product_form(form) -> dict:
             "max_qty": value("max_qty"),
             "excess_trigger": value("excess_trigger"),
             "excess_price": value("excess_price"),
-            "ewc_code_id": value("ewc_code_id"),
+            "ewc_code_id": str(ewc_code_id or ""),
             "ewc_code_label": value("ewc_code_label"),
             "default_destination_id": value("default_destination_id"),
             "is_hazardous": value("is_hazardous"),
@@ -1352,7 +1372,8 @@ def _parse_product_form(form) -> dict:
         "description": description,
         "group_id": group_id,
         "nominal_code": nominal_code or None,
-        "sales_only": value("sales_only") == "on",
+        "sales_only": sales_only,
+        "product_type": product_type,
         "unit_id": _parse_int(value("unit_id")),
         "tax_rate_id": _parse_int(value("tax_rate_id")),
         "nominal_code_id": _parse_int(value("nominal_code_id")),
@@ -1364,12 +1385,12 @@ def _parse_product_form(form) -> dict:
         "max_qty": _parse_float(value("max_qty")),
         "excess_trigger": _parse_float(value("excess_trigger")),
         "excess_price": _parse_decimal(value("excess_price")),
-        "ewc_code_id": _parse_int(value("ewc_code_id")),
+        "ewc_code_id": ewc_code_id,
         "ewc_code_label": value("ewc_code_label"),
         "default_destination_id": _parse_int(value("default_destination_id")),
-        "is_hazardous": value("is_hazardous") == "on",
-        "final_disposal_wip": value("final_disposal_wip") == "on",
-        "used_on_site_wip": value("used_on_site_wip") == "on",
+        "is_hazardous": is_hazardous,
+        "final_disposal_wip": final_disposal_wip,
+        "used_on_site_wip": used_on_site_wip,
     }
 
 
@@ -1381,6 +1402,7 @@ def _empty_form() -> dict:
         "nominal_code": "",
         "effective_nominal_code": "",
         "sales_only": "",
+        "product_type": PRODUCT_TYPE_SALE,
         "sale_type": "",
         "unit_id": "",
         "tax_rate_id": "",
@@ -1413,6 +1435,8 @@ def _product_to_form(product: Product) -> dict:
         "nominal_code": product.nominal_code or "",
         "effective_nominal_code": effective_nominal_code,
         "sales_only": "on" if product.sales_only else "",
+        "product_type": _normalize_product_type(product.product_type)
+        or PRODUCT_TYPE_SALE,
         "sale_type": sale_type,
         "unit_id": str(product.unit_id or ""),
         "tax_rate_id": str(product.tax_rate_id or ""),
@@ -1800,6 +1824,32 @@ def _normalize_unit_type(raw: str | None) -> str:
 
 def _normalize_sale_type(raw: str | None) -> str:
     return str(raw or "").strip().upper()
+
+
+def _normalize_product_type(raw: str | None) -> str:
+    value = str(raw or "").strip().lower()
+    if value in PRODUCT_TYPES:
+        return value
+    return ""
+
+
+def _resolve_product_type(
+    *,
+    product_type_raw: str | None,
+    sales_only: bool,
+    ewc_code_id: int | None,
+    is_hazardous: bool,
+    final_disposal_wip: bool,
+    used_on_site_wip: bool,
+) -> str:
+    normalized = _normalize_product_type(product_type_raw)
+    if normalized:
+        return normalized
+    if sales_only:
+        return PRODUCT_TYPE_SALE
+    if ewc_code_id is not None or is_hazardous or final_disposal_wip or used_on_site_wip:
+        return PRODUCT_TYPE_WASTE
+    return PRODUCT_TYPE_SALE
 
 
 def _normalize_product_group_name(raw: str | None) -> str:
