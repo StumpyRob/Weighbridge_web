@@ -94,15 +94,20 @@
       <tbody>
         {% for item in items %}
           {% set can_edit = not (entity_singular == "Unit" and item.unit_type == "WEIGHT") %}
-          {% set is_weight_default = entity_singular == "Unit" and item.unit_type == "WEIGHT" and (item.name|string|lower in ["kg", "tonnes", "tonne"]) %}
-          <tr{% if can_edit %} data-row-link="{{ base_path }}/{{ item.id }}/edit"{% endif %}{% if is_weight_default %} class="lookup-row--system-default"{% endif %}>
+          {% set is_system_weight = entity_singular == "Unit" and item.unit_type == "WEIGHT" and (item.name|string|lower in ["kg", "tonnes", "tonne"]) %}
+          <tr{% if can_edit %} data-row-link="{{ base_path }}/{{ item.id }}/edit"{% endif %}{% if is_system_weight %} class="lookup-row--system-default"{% endif %}>
             <td class="truncate-col">
               <span class="truncate truncate--md" title="{{ item.name }}">{{ item.name }}</span>
+              {% if is_system_weight %}
+                <span class="status-pill status-info">System (weight)</span>
+              {% endif %}
             </td>
             {% if entity_singular == "Unit" %}
               <td class="type-col{% if item.unit_type == 'WEIGHT' %} type-col--system{% endif %}">
-                {% if item.unit_type == "WEIGHT" %}
+                {% if is_system_weight %}
                   Weight (system)
+                {% elif item.unit_type == "WEIGHT" %}
+                  Weight
                 {% else %}
                   Count
                 {% endif %}
@@ -118,7 +123,11 @@
             <td class="actions-col">
               <div class="actions btn-group lookup-actions">
                 {% if not can_edit %}
-                  &nbsp;
+                  {% if is_system_weight %}
+                    <span class="status-pill status-info">System</span>
+                  {% else %}
+                    &nbsp;
+                  {% endif %}
                 {% else %}
                   <a class="btn btn--ghost btn--sm" href="{{ base_path }}/{{ item.id }}/edit">Open</a>
                   {% if permissions.manage_lookups %}

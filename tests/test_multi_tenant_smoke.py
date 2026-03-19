@@ -5612,10 +5612,10 @@ def test_tenant_ai_assistant_ui_renders_for_enabled_tenant(tmp_path, monkeypatch
     assert "Overdue invoices" in dashboard.text
     assert "Recent tickets" in dashboard.text
     assert "Top customer today" in dashboard.text
-    assert 'data-assistant-followups' in dashboard.text
-    assert "Show open tickets" in dashboard.text
-    assert "Show unpaid invoices" in dashboard.text
-    assert "Show today's weight" in dashboard.text
+    assert 'data-assistant-followups' not in dashboard.text
+    assert "Show open tickets" not in dashboard.text
+    assert "Show unpaid invoices" not in dashboard.text
+    assert "Show today's weight" not in dashboard.text
     assert "/static/js/assistant_panel.js" in dashboard.text
 
 

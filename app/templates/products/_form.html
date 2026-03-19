@@ -45,6 +45,7 @@
           <option value="{{ id }}" {% if form.unit_id == id %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
+      <p class="hint">KG and Tonnes are system-defined weight units and are not selectable here.</p>
       {% if not options.units %}
         <p class="help">No units configured. Please add units in Products &gt; Units.</p>
       {% endif %}
@@ -52,6 +53,7 @@
     <div class="field" id="unit-weight-wrap" {% if form.sale_type != "WEIGHT" %}style="display:none"{% endif %}>
       <label>Unit</label>
       <div class="readonly">Priced per tonne</div>
+      <p class="hint">This product uses weighbridge weight (kg) and is billed in tonnes.</p>
     </div>
     <div class="field">
       <label for="tax_rate_id">Tax rate</label>
