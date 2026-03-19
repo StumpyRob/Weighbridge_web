@@ -42,99 +42,16 @@
   {% endif %}
 
   <form class="ticket-form" method="post" action="/admin/company" enctype="multipart/form-data">
-    <div class="field">
-      <label for="name">Company name</label>
-      <input type="text" id="name" name="name" maxlength="{{ limits.NAME_MAX }}" value="{{ setting.name or '' }}" />
-    </div>
-
     <section class="frame">
       <div class="frame-header">
-        <h2>Document Email Defaults</h2>
-      </div>
-      <div class="frame-body">
-        <p class="muted platform-tenant-detail-section-copy">
-          These defaults are used when emailing invoices and tickets. Operators can still edit the message before sending.
-        </p>
-        <div class="platform-tenant-detail-admin-grid company-document-email-grid">
-          <section class="platform-tenant-detail-admin-card">
-            <h3>Invoice</h3>
-            <div class="field">
-              <label for="invoice_email_subject_template">Invoice email subject{{ help(help_text.company_document_email_subject_template, "company-invoice-email-subject-template-help") }}</label>
-              <input
-                type="text"
-                id="invoice_email_subject_template"
-                name="invoice_email_subject_template"
-                value="{{ document_email_templates.invoice_subject }}"
-              />
-            </div>
-            <div class="field">
-              <label for="invoice_email_body_template">Invoice email body{{ help(help_text.company_document_email_body_template, "company-invoice-email-body-template-help") }}</label>
-              <textarea id="invoice_email_body_template" name="invoice_email_body_template" rows="6">{{ document_email_templates.invoice_body }}</textarea>
-            </div>
-            <p class="hint">
-              Supported placeholders for invoice emails:
-              <code>{company_name}</code>,
-              <code>{invoice_no}</code>.
-              Use <code>{ticket_no}</code> on ticket emails.
-            </p>
-            <div class="actions btn-group">
-              <button type="button" class="btn btn--ghost btn--sm" data-document-email-reset="invoice">Reset Invoice Template</button>
-            </div>
-          </section>
-          <section class="platform-tenant-detail-admin-card">
-            <h3>Ticket</h3>
-            <div class="field">
-              <label for="ticket_email_subject_template">Ticket email subject{{ help(help_text.company_document_email_subject_template, "company-ticket-email-subject-template-help") }}</label>
-              <input
-                type="text"
-                id="ticket_email_subject_template"
-                name="ticket_email_subject_template"
-                value="{{ document_email_templates.ticket_subject }}"
-              />
-            </div>
-            <div class="field">
-              <label for="ticket_email_body_template">Ticket email body{{ help(help_text.company_document_email_body_template, "company-ticket-email-body-template-help") }}</label>
-              <textarea id="ticket_email_body_template" name="ticket_email_body_template" rows="6">{{ document_email_templates.ticket_body }}</textarea>
-            </div>
-            <p class="hint">
-              Supported placeholders for ticket emails:
-              <code>{company_name}</code>,
-              <code>{ticket_no}</code>.
-              Use <code>{invoice_no}</code> on invoice emails.
-            </p>
-            <div class="actions btn-group">
-              <button type="button" class="btn btn--ghost btn--sm" data-document-email-reset="ticket">Reset Ticket Template</button>
-            </div>
-          </section>
-        </div>
-      </div>
-    </section>
-
-    <section class="frame">
-      <div class="frame-header">
-        <h2>Administrator Sign-In</h2>
+        <h2>Company Details</h2>
       </div>
       <div class="frame-body">
         <div class="field">
-          <label for="login_email">Sign-in email</label>
-          <input
-            type="email"
-            id="login_email"
-            name="login_email"
-            value="{{ login_email or '' }}"
-            autocomplete="username"
-            required
-          />
-          <p class="hint">Used to sign in to this workspace.</p>
+          <label for="name">Company name</label>
+          <input type="text" id="name" name="name" maxlength="{{ limits.NAME_MAX }}" value="{{ setting.name or '' }}" />
         </div>
-      </div>
-    </section>
 
-    <section class="frame">
-      <div class="frame-header">
-        <h2>Address</h2>
-      </div>
-      <div class="frame-body">
         <div class="field">
           <label for="address_line1">Address line 1</label>
           <input type="text" id="address_line1" name="address_line1" maxlength="{{ limits.ADDRESS_LINE_MAX }}" value="{{ setting.address_line1 or '' }}" />
@@ -164,13 +81,86 @@
 
     <section class="frame">
       <div class="frame-header">
+        <h2>Document Email Defaults</h2>
+      </div>
+      <div class="frame-body">
+        <p class="muted platform-tenant-detail-section-copy">
+          These defaults are used when emailing invoices and tickets. Operators can still edit the message before sending.
+        </p>
+        <div class="platform-tenant-detail-admin-grid company-document-email-grid">
+          <section class="platform-tenant-detail-admin-card">
+            <h3>
+              Invoice{{ help(help_text.company_invoice_email_placeholders, "company-invoice-email-placeholders-help") }}
+            </h3>
+            <div class="field">
+              <label for="invoice_email_subject_template">Invoice email subject{{ help(help_text.company_document_email_subject_template, "company-invoice-email-subject-template-help") }}</label>
+              <input
+                type="text"
+                id="invoice_email_subject_template"
+                name="invoice_email_subject_template"
+                value="{{ document_email_templates.invoice_subject }}"
+              />
+            </div>
+            <div class="field">
+              <label for="invoice_email_body_template">Invoice email body{{ help(help_text.company_document_email_body_template, "company-invoice-email-body-template-help") }}</label>
+              <textarea id="invoice_email_body_template" name="invoice_email_body_template" rows="6">{{ document_email_templates.invoice_body }}</textarea>
+            </div>
+            <div class="actions btn-group">
+              <button type="button" class="btn btn--ghost btn--sm" data-document-email-reset="invoice">Reset Invoice Template</button>
+            </div>
+          </section>
+          <section class="platform-tenant-detail-admin-card">
+            <h3>
+              Ticket{{ help(help_text.company_ticket_email_placeholders, "company-ticket-email-placeholders-help") }}
+            </h3>
+            <div class="field">
+              <label for="ticket_email_subject_template">Ticket email subject{{ help(help_text.company_document_email_subject_template, "company-ticket-email-subject-template-help") }}</label>
+              <input
+                type="text"
+                id="ticket_email_subject_template"
+                name="ticket_email_subject_template"
+                value="{{ document_email_templates.ticket_subject }}"
+              />
+            </div>
+            <div class="field">
+              <label for="ticket_email_body_template">Ticket email body{{ help(help_text.company_document_email_body_template, "company-ticket-email-body-template-help") }}</label>
+              <textarea id="ticket_email_body_template" name="ticket_email_body_template" rows="6">{{ document_email_templates.ticket_body }}</textarea>
+            </div>
+            <div class="actions btn-group">
+              <button type="button" class="btn btn--ghost btn--sm" data-document-email-reset="ticket">Reset Ticket Template</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Administrator Sign-In</h2>
+      </div>
+      <div class="frame-body">
+        <div class="field">
+          <label for="login_email">Sign-in email{{ help(help_text.company_login_email, "company-login-email-help") }}</label>
+          <input
+            type="email"
+            id="login_email"
+            name="login_email"
+            value="{{ login_email or '' }}"
+            autocomplete="username"
+            required
+          />
+        </div>
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
         <h2>Logo</h2>
       </div>
       <div class="frame-body">
         <div class="field">
           <label for="company_logo_file">Company logo (PNG/JPG){{ help(help_text.company_logo_upload, "company-logo-upload-help") }}</label>
           <input type="file" id="company_logo_file" name="company_logo_file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" />
-          <p class="hint">Max 2MB. Uploading a file replaces the current logo.</p>
         </div>
         <div class="field">
           <label>Current logo preview</label>
@@ -199,7 +189,6 @@
             step="1"
             value="{{ setting.nav_logo_height_px if setting.nav_logo_height_px is not none else 34 }}"
           />
-          <p class="hint">Controls logo height in the top navigation bar (20-80px).</p>
         </div>
 
         <div class="field checkbox">
@@ -256,7 +245,6 @@
             />
           </div>
           <p class="hint company-color-error" data-color-error-for="navbar_color_hex" hidden>Invalid hex</p>
-          <p class="hint">Used for the top navigation background.</p>
         </div>
 
         <div class="field">
@@ -282,7 +270,6 @@
             />
           </div>
           <p class="hint company-color-error" data-color-error-for="primary_color_hex" hidden>Invalid hex</p>
-          <p class="hint">Used for primary actions and navigation highlights.</p>
         </div>
       </div>
     </section>

@@ -45,6 +45,7 @@ def test_product_create_rejects_overlong_description(client, db_session):
             "code": "P-LIMIT-1",
             "description": "D" * (DESC_MAX + 1),
             "sale_type": "WEIGHT",
+            "product_type": "sale",
             "tax_rate_id": str(tax_rate.id),
             "unit_price": "1.00",
             "group_id": "",

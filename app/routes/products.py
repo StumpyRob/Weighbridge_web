@@ -1293,19 +1293,12 @@ def _parse_product_form(form) -> dict:
     nominal_code = _normalize_nominal_code(value("nominal_code"))
     sale_type = _normalize_sale_type(value("sale_type"))
     product_type_raw = value("product_type")
+    product_type = _normalize_product_type(product_type_raw)
     sales_only = value("sales_only") == "on"
     ewc_code_id = _parse_int(value("ewc_code_id"))
     is_hazardous = value("is_hazardous") == "on"
     final_disposal_wip = value("final_disposal_wip") == "on"
     used_on_site_wip = value("used_on_site_wip") == "on"
-    product_type = _resolve_product_type(
-        product_type_raw=product_type_raw,
-        sales_only=sales_only,
-        ewc_code_id=ewc_code_id,
-        is_hazardous=is_hazardous,
-        final_disposal_wip=final_disposal_wip,
-        used_on_site_wip=used_on_site_wip,
-    )
     validate_no_html_fields(
         {
             "Code": code,
@@ -1327,6 +1320,10 @@ def _parse_product_form(form) -> dict:
         errors.append("Sale type is required.")
     elif sale_type not in SALE_TYPES:
         errors.append("Sale type must be WEIGHT or COUNT.")
+    if not product_type_raw:
+        errors.append("Product type is required.")
+    elif not product_type:
+        errors.append("Product type must be sale or waste.")
     unit_price_raw = value("unit_price")
     if not unit_price_raw:
         errors.append("Unit price is required.")
@@ -1402,7 +1399,7 @@ def _empty_form() -> dict:
         "nominal_code": "",
         "effective_nominal_code": "",
         "sales_only": "",
-        "product_type": PRODUCT_TYPE_SALE,
+        "product_type": "",
         "sale_type": "",
         "unit_id": "",
         "tax_rate_id": "",
@@ -1428,6 +1425,15 @@ def _product_to_form(product: Product) -> dict:
     unit_type = product.unit.unit_type if product.unit else None
     sale_type = "WEIGHT" if unit_type == "WEIGHT" else "COUNT"
     effective_nominal_code = product_effective_nominal_code(product) or ""
+    product_type = _normalize_product_type(product.product_type)
+    if not product_type:
+        product_type = _legacy_product_type(
+            sales_only=bool(product.sales_only),
+            ewc_code_id=product.ewc_code_id,
+            is_hazardous=bool(product.is_hazardous),
+            final_disposal_wip=bool(product.final_disposal_wip),
+            used_on_site_wip=bool(product.used_on_site_wip),
+        )
     return {
         "code": product.code or "",
         "description": product.description or "",
@@ -1435,8 +1441,7 @@ def _product_to_form(product: Product) -> dict:
         "nominal_code": product.nominal_code or "",
         "effective_nominal_code": effective_nominal_code,
         "sales_only": "on" if product.sales_only else "",
-        "product_type": _normalize_product_type(product.product_type)
-        or PRODUCT_TYPE_SALE,
+        "product_type": product_type,
         "sale_type": sale_type,
         "unit_id": str(product.unit_id or ""),
         "tax_rate_id": str(product.tax_rate_id or ""),
@@ -1833,18 +1838,14 @@ def _normalize_product_type(raw: str | None) -> str:
     return ""
 
 
-def _resolve_product_type(
+def _legacy_product_type(
     *,
-    product_type_raw: str | None,
     sales_only: bool,
     ewc_code_id: int | None,
     is_hazardous: bool,
     final_disposal_wip: bool,
     used_on_site_wip: bool,
 ) -> str:
-    normalized = _normalize_product_type(product_type_raw)
-    if normalized:
-        return normalized
     if sales_only:
         return PRODUCT_TYPE_SALE
     if ewc_code_id is not None or is_hazardous or final_disposal_wip or used_on_site_wip:

@@ -59,6 +59,7 @@ def test_product_description_rejects_script_payload(client, db_session):
             "code": "P-XSS-1",
             "description": "<script>alert(1)</script>",
             "sale_type": "COUNT",
+            "product_type": "sale",
             "unit_id": str(unit.id),
             "tax_rate_id": str(tax_rate.id),
             "unit_price": "10.00",

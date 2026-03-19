@@ -1,5 +1,6 @@
 HELP_TEXT = {
     "product_group": "Optional grouping used for reporting and default nominal-code fallback.",
+    "product_type": "Required single choice that controls ticket availability: sale products for SALE tickets, waste products for WASTE IN/OUT tickets.",
     "product_nominal_code": "Leave blank to inherit the Product Group default nominal code.",
     "product_ewc_code": "Select the waste code used for compliance and reporting.",
     "product_default_destination": "Auto-fills destination on new tickets when this product is selected.",
@@ -98,14 +99,17 @@ HELP_TEXT.update(
 
 HELP_TEXT.update(
     {
-        "company_logo_upload": "Upload the logo used in document headers and (optionally) the top navigation bar.",
-        "company_nav_logo_size": "Controls logo height in the top navigation bar.",
+        "company_logo_upload": "Upload the logo used in document headers and (optionally) the top navigation bar. Max size: 2MB. Uploading a file replaces the current logo.",
+        "company_nav_logo_size": "Controls logo height in the top navigation bar (20-80px).",
         "company_show_nav_logo": "Toggle whether the logo is shown in the top navigation bar.",
         "company_show_nav_title": "Toggle whether the company name text is shown in the top navigation bar.",
         "company_navbar_color": "Main navigation bar background color (HEX).",
         "company_primary_color": "Primary accent color used for buttons, highlights, and active states.",
+        "company_login_email": "Used to sign in to this workspace.",
         "company_document_email_subject_template": "Plain-text subject template. Supported placeholders: {company_name}, {invoice_no}, and {ticket_no}. Leave blank to use the built-in default.",
         "company_document_email_body_template": "Plain-text body template. Supported placeholders: {company_name}, {invoice_no}, and {ticket_no}. Leave blank to use the built-in default.",
+        "company_invoice_email_placeholders": "Supported placeholders for invoice emails: {company_name}, {invoice_no}. Use {ticket_no} on ticket emails.",
+        "company_ticket_email_placeholders": "Supported placeholders for ticket emails: {company_name}, {ticket_no}. Use {invoice_no} on invoice emails.",
     }
 )
 

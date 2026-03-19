@@ -6586,6 +6586,7 @@ def test_new_tenant_creation_flow_seeds_usable_baseline_and_requires_user_creati
                 "code": "SEED-PROD-1",
                 "description": "Seeded Product",
                 "sale_type": "WEIGHT",
+                "product_type": "sale",
                 "unit_price": "12.50",
                 CSRF_FORM_FIELD: csrf,
             },

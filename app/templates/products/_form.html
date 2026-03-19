@@ -29,6 +29,14 @@
         <option value="WEIGHT" {% if form.sale_type == "WEIGHT" %}selected{% endif %}>Weight</option>
       </select>
     </div>
+    <div class="field">
+      <label for="product_type">Product type{{ help(help_text.product_type, "product-type-help") }}</label>
+      <select id="product_type" name="product_type" required>
+        <option value="" {% if not form.product_type %}selected{% endif %}>Select product type</option>
+        <option value="sale" {% if form.product_type == "sale" %}selected{% endif %}>Sale</option>
+        <option value="waste" {% if form.product_type == "waste" %}selected{% endif %}>Waste</option>
+      </select>
+    </div>
     <div class="field" id="unit-count-wrap" {% if form.sale_type == "WEIGHT" %}style="display:none"{% endif %}>
       <label for="unit_id">Unit</label>
       <select id="unit_id" name="unit_id" required {% if form.sale_type == "WEIGHT" %}disabled{% endif %}>
