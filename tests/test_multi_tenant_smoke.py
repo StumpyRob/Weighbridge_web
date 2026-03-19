@@ -3821,6 +3821,111 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert_demo_dataset_counts(db)
 
 
+def test_platform_superadmin_reset_demo_deletes_tenant_ai_usage_logs_before_users(
+    tmp_path, monkeypatch
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-demo-reset-ai-usage.db", monkeypatch=monkeypatch
+    )
+
+    demo_tenant = _seed_tenant(
+        SessionLocal,
+        name="Demo",
+        subdomain=settings.effective_demo_tenant_subdomain,
+        is_active=True,
+        is_demo=True,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=demo_tenant,
+        company_name="Demo Co",
+        primary_color="#6b2d2d",
+    )
+    other_tenant = _seed_tenant(SessionLocal, name="Tenant B", subdomain="b", is_active=True)
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=other_tenant,
+        company_name="Tenant B",
+        primary_color="#2a4f74",
+    )
+
+    demo_user_id = _seed_user(
+        SessionLocal,
+        email="demo-admin@example.com",
+        password="DemoPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=demo_tenant,
+    )
+    other_user_id = _seed_user(
+        SessionLocal,
+        email="tenant-b-admin@example.com",
+        password="TenantBPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=other_tenant,
+    )
+    _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                AIUsageLog(
+                    tenant_id=demo_tenant,
+                    user_id=demo_user_id,
+                    request_type=ai_usage_module.REQUEST_TYPE_ASSISTANT,
+                    success=True,
+                    counted_toward_limit=True,
+                ),
+                AIUsageLog(
+                    tenant_id=other_tenant,
+                    user_id=other_user_id,
+                    request_type=ai_usage_module.REQUEST_TYPE_ASSISTANT,
+                    success=True,
+                    counted_toward_limit=True,
+                ),
+            ]
+        )
+        db.commit()
+        assert (
+            db.execute(select(func.count(AIUsageLog.id)).where(AIUsageLog.tenant_id == demo_tenant)).scalar_one()
+            == 1
+        )
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+        csrf = _prime_csrf(admin_client)
+        reset = admin_client.post(
+            f"/platform/tenants/{demo_tenant}/reset-demo",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "confirmation_text": "DEMO",
+            },
+            follow_redirects=False,
+        )
+        assert reset.status_code in {302, 303}
+        assert reset.headers.get("location") == f"/platform/tenants/{demo_tenant}?demo_reset=1"
+
+    with SessionLocal() as db:
+        assert (
+            db.execute(select(func.count(User.id)).where(User.tenant_id == demo_tenant)).scalar_one()
+            == 0
+        )
+        assert (
+            db.execute(select(func.count(AIUsageLog.id)).where(AIUsageLog.tenant_id == demo_tenant)).scalar_one()
+            == 0
+        )
+        assert (
+            db.execute(select(func.count(AIUsageLog.id)).where(AIUsageLog.tenant_id == other_tenant)).scalar_one()
+            == 1
+        )
+        assert db.get(User, other_user_id) is not None
+
+
 def test_non_superadmin_cannot_delete_tenant(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-delete-scope.db", monkeypatch=monkeypatch

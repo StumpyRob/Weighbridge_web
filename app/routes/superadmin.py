@@ -26,6 +26,7 @@ from ..auth import (
 )
 from ..db import get_db
 from ..models import (
+    AIUsageLog,
     Area,
     AuditEvent,
     CompanySetting,
@@ -484,6 +485,7 @@ def _reset_demo_tenant_data(
     shutil.rmtree(tenant_upload_dir, ignore_errors=True)
 
     db.execute(delete(AuditEvent).where(AuditEvent.tenant_id == str(tenant_id)))
+    db.execute(delete(AIUsageLog).where(AIUsageLog.tenant_id == tenant_id))
     for model in _DELETE_CASCADE_MODELS:
         db.execute(delete(model).where(model.tenant_id == tenant_id))
     db.execute(delete(User).where(User.tenant_id == tenant_id))
