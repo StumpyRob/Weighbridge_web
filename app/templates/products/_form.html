@@ -439,24 +439,22 @@
     <div class="field checkbox">
       <input
         type="checkbox"
-        id="final_disposal_wip"
-        name="final_disposal_wip"
-        {% if form.final_disposal_wip %}checked{% endif %}
+        id="final_disposal"
+        name="final_disposal"
+        {% if form.final_disposal %}checked{% endif %}
       />
-      <label for="final_disposal_wip">
-        Final disposal <span class="badge badge--muted" title="Stored only - not enforced yet">WIP</span>
-      </label>
+      <label for="final_disposal">Final disposal</label>
+      {{ help(help_text.product_final_disposal, "product-final-disposal-help") }}
     </div>
     <div class="field checkbox">
       <input
         type="checkbox"
-        id="used_on_site_wip"
-        name="used_on_site_wip"
-        {% if form.used_on_site_wip %}checked{% endif %}
+        id="used_on_site"
+        name="used_on_site"
+        {% if form.used_on_site %}checked{% endif %}
       />
-      <label for="used_on_site_wip">
-        Used on site <span class="badge badge--muted" title="Stored only - not enforced yet">WIP</span>
-      </label>
+      <label for="used_on_site">Used on site</label>
+      {{ help(help_text.product_used_on_site, "product-used-on-site-help") }}
     </div>
   </div>
 </section>

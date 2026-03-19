@@ -23,9 +23,15 @@ def product_wip_snapshot(product: Product | None) -> dict[str, object]:
             "final_disposal_wip": False,
             "used_on_site_wip": False,
         }
+    final_disposal = bool(getattr(product, "final_disposal", False)) or bool(
+        getattr(product, "final_disposal_wip", False)
+    )
+    used_on_site = bool(getattr(product, "used_on_site", False)) or bool(
+        getattr(product, "used_on_site_wip", False)
+    )
     return {
-        "final_disposal_wip": bool(product.final_disposal_wip),
-        "used_on_site_wip": bool(product.used_on_site_wip),
+        "final_disposal_wip": final_disposal,
+        "used_on_site_wip": used_on_site,
     }
 
 

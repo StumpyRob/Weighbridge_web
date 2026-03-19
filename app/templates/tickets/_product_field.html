@@ -1,3 +1,8 @@
+{% if oob_product_operation_hints is not defined %}{% set oob_product_operation_hints = false %}{% endif %}
+{% if product_operation is not defined %}
+  {% set product_operation = {"final_disposal": false, "used_on_site": false, "destination_required": false} %}
+{% endif %}
+
 <div
   class="field"
   id="product-field"
@@ -38,3 +43,5 @@
 {% if oob_product_warning %}
   {% include "tickets/_product_usage_warning.html" %}
 {% endif %}
+
+{% include "tickets/_product_operation_hints.html" %}

@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app.config import Settings
 from app.models import (
     Customer,
+    Destination,
     DirectionEnum,
     Invoice,
     InvoiceLine,
@@ -128,7 +129,9 @@ def test_ticket_complete_stores_wip_snapshot_values(client, db_session):
         final_disposal_wip=True,
         used_on_site_wip=False,
     )
+    destination = Destination(name="WIP Snapshot Destination")
     db_session.add_all([customer, unit, product])
+    db_session.add(destination)
     db_session.flush()
 
     ticket = Ticket(
@@ -154,6 +157,7 @@ def test_ticket_complete_stores_wip_snapshot_values(client, db_session):
             "transaction_type": "SALE",
             "customer_id": str(customer.id),
             "product_id": str(product.id),
+            "destination_id": str(destination.id),
             "qty": "1",
             "unit_price": "5.00",
             "po_number": "",

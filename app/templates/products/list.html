@@ -76,7 +76,7 @@
         {% if product_type_value not in ["sale", "waste"] %}
           {% if product.sales_only %}
             {% set product_type_value = "sale" %}
-          {% elif product.ewc_code_id or product.is_hazardous or product.final_disposal_wip or product.used_on_site_wip %}
+          {% elif product.ewc_code_id or product.is_hazardous or product.final_disposal or product.used_on_site or product.final_disposal_wip or product.used_on_site_wip %}
             {% set product_type_value = "waste" %}
           {% else %}
             {% set product_type_value = "sale" %}

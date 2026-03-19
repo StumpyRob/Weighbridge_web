@@ -1,0 +1,8 @@
+<div id="ticket-product-operation-hints"{% if oob_product_operation_hints %} hx-swap-oob="outerHTML"{% endif %}>
+  {% if product_operation and product_operation.destination_required %}
+    <div class="hint">Final disposal product selected. Capture destination site/company before completion.</div>
+  {% endif %}
+  {% if product_operation and product_operation.used_on_site %}
+    <div class="hint">Used on site product selected. Internal-use flow; disposal transfer paperwork is not required by this flag.</div>
+  {% endif %}
+</div>

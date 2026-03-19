@@ -550,7 +550,7 @@
           </select>
         </div>
         <div class="field" id="logistics-destination-field" {% if form.walk_in_sale and form.transaction_type == "SALE" %}style="display:none"{% endif %}>
-          <label for="destination_id">Destination</label>
+          <label for="destination_id">Destination site/company</label>
           <select id="destination_id" name="destination_id" {% if form.walk_in_sale and form.transaction_type == "SALE" %}disabled aria-disabled="true"{% endif %}>
             <option value="">Select destination</option>
             {% for id, label in options.destinations %}

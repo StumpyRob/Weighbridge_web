@@ -125,6 +125,9 @@ WASTE_ONLY_SALE_ERROR = "This product is waste-only and cannot be used on sale t
 WASTE_ONLY_SALE_WARNING = (
     "Selected product is waste-only and cannot be used on sale tickets."
 )
+FINAL_DISPOSAL_DESTINATION_ERROR = (
+    "Destination site/company is required to complete tickets for final disposal products."
+)
 PRODUCT_TYPE_SALE = "sale"
 PRODUCT_TYPE_WASTE = "waste"
 VOID_REASON_TYPE_TICKET = "TICKET"
@@ -568,6 +571,8 @@ def ticket_product_defaults(
             "weights_form": weights_form,
             "weights_is_open": weights_is_open,
             "weights_locked": resolved_unit_type == "COUNT",
+            "product_operation": _product_operation_context(product),
+            "oob_product_operation_hints": True,
         },
     )
 
@@ -612,6 +617,8 @@ def tickets_product_options(
             "product_usage_warning": product_usage_warning,
             "product_empty_option_label": _product_option_empty_label(transaction_type),
             "oob_product_warning": True,
+            "product_operation": _load_product_operation_context(db, parsed_product_id),
+            "oob_product_operation_hints": True,
         },
     )
 
@@ -1973,6 +1980,7 @@ def tickets_edit(
             "errors": [],
             "warnings": [],
             "product_usage_warning": product_warning,
+            "product_operation": _load_product_operation_context(db, ticket.product_id),
             "saved": request.query_params.get("saved") == "1",
             "completed": request.query_params.get("completed") == "1",
             "voided": request.query_params.get("voided") == "1",
@@ -2914,6 +2922,7 @@ async def tickets_update(
         _coerce_mode_fields(payload, product)
         weight_warning = _net_negative_values(payload["gross_kg"], payload["tare_kg"])
         _apply_destination_default(ticket, payload, product)
+        _validate_final_disposal_destination_on_complete(payload, product)
         haulier = _validate_carrier_licence(payload, db, errors=payload["errors"])
         is_waste_tx = _is_waste_transaction(payload.get("transaction_type"))
         _resolve_waste_producer_snapshot(
@@ -5043,6 +5052,55 @@ def _product_option_empty_label(transaction_type: str | None) -> str:
     return "No products available."
 
 
+def _is_product_final_disposal(product: Product | None) -> bool:
+    if product is None:
+        return False
+    return bool(getattr(product, "final_disposal", False)) or bool(
+        getattr(product, "final_disposal_wip", False)
+    )
+
+
+def _is_product_used_on_site(product: Product | None) -> bool:
+    if product is None:
+        return False
+    return bool(getattr(product, "used_on_site", False)) or bool(
+        getattr(product, "used_on_site_wip", False)
+    )
+
+
+def _product_operation_context(product: Product | None) -> dict[str, bool]:
+    final_disposal = _is_product_final_disposal(product)
+    used_on_site = _is_product_used_on_site(product)
+    return {
+        "final_disposal": final_disposal,
+        "used_on_site": used_on_site,
+        "destination_required": final_disposal and not used_on_site,
+    }
+
+
+def _load_product_operation_context(
+    db: Session,
+    product_id: int | None,
+) -> dict[str, bool]:
+    if not product_id:
+        return _product_operation_context(None)
+    product = db.get(Product, product_id)
+    return _product_operation_context(product)
+
+
+def _validate_final_disposal_destination_on_complete(
+    payload: dict,
+    product: Product | None,
+) -> None:
+    if not _product_operation_context(product).get("destination_required"):
+        return
+    if payload.get("destination_id"):
+        return
+    if _is_waste_transaction(payload.get("transaction_type")):
+        return
+    payload["errors"].append(FINAL_DISPOSAL_DESTINATION_ERROR)
+
+
 def _apply_ticket_ewc_snapshot(ticket: Ticket, snapshot: dict[str, object]) -> None:
     ticket.ewc_code_6 = snapshot.get("ewc_code_6")
     ticket.ewc_code_display = snapshot.get("ewc_code_display")
@@ -5398,6 +5456,7 @@ def _render_ticket_edit(
             "errors": errors,
             "warnings": resolved_warnings,
             "product_usage_warning": product_warning,
+            "product_operation": _load_product_operation_context(db, product_id),
             "saved": False,
             "completed": False,
             "printed": False,

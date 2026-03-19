@@ -212,8 +212,10 @@ async def products_create(
         excess_trigger=payload["excess_trigger"],
         excess_price=payload["excess_price"],
         is_hazardous=payload["is_hazardous"],
-        final_disposal_wip=payload["final_disposal_wip"],
-        used_on_site_wip=payload["used_on_site_wip"],
+        final_disposal=payload["final_disposal"],
+        used_on_site=payload["used_on_site"],
+        final_disposal_wip=payload["final_disposal"],
+        used_on_site_wip=payload["used_on_site"],
         ewc_code_id=payload["ewc_code_id"],
         default_destination_id=payload["default_destination_id"],
     )
@@ -1065,8 +1067,10 @@ async def products_update(
     product.excess_trigger = payload["excess_trigger"]
     product.excess_price = payload["excess_price"]
     product.is_hazardous = payload["is_hazardous"]
-    product.final_disposal_wip = payload["final_disposal_wip"]
-    product.used_on_site_wip = payload["used_on_site_wip"]
+    product.final_disposal = payload["final_disposal"]
+    product.used_on_site = payload["used_on_site"]
+    product.final_disposal_wip = payload["final_disposal"]
+    product.used_on_site_wip = payload["used_on_site"]
     product.ewc_code_id = payload["ewc_code_id"]
     product.default_destination_id = payload["default_destination_id"]
     product.updated_at = utcnow()
@@ -1294,8 +1298,10 @@ def _parse_product_form(form) -> dict:
     product_type = _normalize_product_type(product_type_raw)
     ewc_code_id = _parse_int(value("ewc_code_id"))
     is_hazardous = value("is_hazardous") == "on"
-    final_disposal_wip = value("final_disposal_wip") == "on"
-    used_on_site_wip = value("used_on_site_wip") == "on"
+    final_disposal_raw = value("final_disposal") or value("final_disposal_wip")
+    used_on_site_raw = value("used_on_site") or value("used_on_site_wip")
+    final_disposal = final_disposal_raw == "on"
+    used_on_site = used_on_site_raw == "on"
     validate_no_html_fields(
         {
             "Code": code,
@@ -1357,8 +1363,8 @@ def _parse_product_form(form) -> dict:
             "ewc_code_label": value("ewc_code_label"),
             "default_destination_id": value("default_destination_id"),
             "is_hazardous": value("is_hazardous"),
-            "final_disposal_wip": value("final_disposal_wip"),
-            "used_on_site_wip": value("used_on_site_wip"),
+            "final_disposal": "on" if final_disposal else "",
+            "used_on_site": "on" if used_on_site else "",
         },
         "sale_type": sale_type,
         "code": code,
@@ -1381,8 +1387,8 @@ def _parse_product_form(form) -> dict:
         "ewc_code_label": value("ewc_code_label"),
         "default_destination_id": _parse_int(value("default_destination_id")),
         "is_hazardous": is_hazardous,
-        "final_disposal_wip": final_disposal_wip,
-        "used_on_site_wip": used_on_site_wip,
+        "final_disposal": final_disposal,
+        "used_on_site": used_on_site,
     }
 
 
@@ -1410,8 +1416,8 @@ def _empty_form() -> dict:
         "ewc_code_label": "",
         "default_destination_id": "",
         "is_hazardous": "",
-        "final_disposal_wip": "",
-        "used_on_site_wip": "",
+        "final_disposal": "",
+        "used_on_site": "",
     }
 
 
@@ -1420,13 +1426,15 @@ def _product_to_form(product: Product) -> dict:
     sale_type = "WEIGHT" if unit_type == "WEIGHT" else "COUNT"
     effective_nominal_code = product_effective_nominal_code(product) or ""
     product_type = _normalize_product_type(product.product_type)
+    final_disposal = bool(product.final_disposal) or bool(product.final_disposal_wip)
+    used_on_site = bool(product.used_on_site) or bool(product.used_on_site_wip)
     if not product_type:
         product_type = _legacy_product_type(
             sales_only=bool(product.sales_only),
             ewc_code_id=product.ewc_code_id,
             is_hazardous=bool(product.is_hazardous),
-            final_disposal_wip=bool(product.final_disposal_wip),
-            used_on_site_wip=bool(product.used_on_site_wip),
+            final_disposal=final_disposal,
+            used_on_site=used_on_site,
         )
     return {
         "code": product.code or "",
@@ -1455,8 +1463,8 @@ def _product_to_form(product: Product) -> dict:
         ),
         "default_destination_id": str(product.default_destination_id or ""),
         "is_hazardous": "on" if product.is_hazardous else "",
-        "final_disposal_wip": "on" if product.final_disposal_wip else "",
-        "used_on_site_wip": "on" if product.used_on_site_wip else "",
+        "final_disposal": "on" if final_disposal else "",
+        "used_on_site": "on" if used_on_site else "",
     }
 
 
@@ -1836,12 +1844,12 @@ def _legacy_product_type(
     sales_only: bool,
     ewc_code_id: int | None,
     is_hazardous: bool,
-    final_disposal_wip: bool,
-    used_on_site_wip: bool,
+    final_disposal: bool,
+    used_on_site: bool,
 ) -> str:
     if sales_only:
         return PRODUCT_TYPE_SALE
-    if ewc_code_id is not None or is_hazardous or final_disposal_wip or used_on_site_wip:
+    if ewc_code_id is not None or is_hazardous or final_disposal or used_on_site:
         return PRODUCT_TYPE_WASTE
     return PRODUCT_TYPE_SALE
 
@@ -1854,8 +1862,10 @@ def _is_waste_product(product: Product) -> bool:
         sales_only=bool(getattr(product, "sales_only", False)),
         ewc_code_id=getattr(product, "ewc_code_id", None),
         is_hazardous=bool(getattr(product, "is_hazardous", False)),
-        final_disposal_wip=bool(getattr(product, "final_disposal_wip", False)),
-        used_on_site_wip=bool(getattr(product, "used_on_site_wip", False)),
+        final_disposal=bool(getattr(product, "final_disposal", False))
+        or bool(getattr(product, "final_disposal_wip", False)),
+        used_on_site=bool(getattr(product, "used_on_site", False))
+        or bool(getattr(product, "used_on_site_wip", False)),
     ) == PRODUCT_TYPE_WASTE
 
 

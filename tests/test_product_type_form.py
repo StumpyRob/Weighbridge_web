@@ -142,3 +142,80 @@ def test_product_save_requires_valid_single_product_type_value(client, db_sessio
         .first()
         is None
     )
+
+
+def test_product_create_persists_operational_flags(client, db_session):
+    tax_rate = TaxRate(
+        code="TYPE-TEST VAT 4",
+        description="Product type test VAT 4",
+        rate_percent=Decimal("0.20"),
+        is_active=True,
+    )
+    db_session.add(tax_rate)
+    db_session.commit()
+
+    response = client.post(
+        "/products/new",
+        data={
+            "code": "P-TYPE-FLAGS-1",
+            "description": "Final Disposal Product",
+            "sale_type": "WEIGHT",
+            "product_type": "waste",
+            "tax_rate_id": str(tax_rate.id),
+            "unit_price": "75.00",
+            "final_disposal": "on",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    product = db_session.execute(
+        select(Product).where(Product.code == "P-TYPE-FLAGS-1")
+    ).scalar_one()
+    assert product.final_disposal is True
+    assert product.used_on_site is False
+    # Keep legacy snapshot fields aligned for compatibility.
+    assert product.final_disposal_wip is True
+    assert product.used_on_site_wip is False
+
+
+def test_product_edit_updates_operational_flags(client, db_session):
+    tax_rate = TaxRate(
+        code="TYPE-TEST VAT 5",
+        description="Product type test VAT 5",
+        rate_percent=Decimal("0.20"),
+        is_active=True,
+    )
+    product = Product(
+        code="P-TYPE-FLAGS-2",
+        description="Operational Flag Product",
+        product_type="waste",
+        final_disposal=True,
+        used_on_site=False,
+        final_disposal_wip=True,
+        used_on_site_wip=False,
+        unit_price=Decimal("60.00"),
+    )
+    db_session.add_all([tax_rate, product])
+    db_session.commit()
+
+    response = client.post(
+        f"/products/{product.id}",
+        data={
+            "code": "P-TYPE-FLAGS-2",
+            "description": "Operational Flag Product Updated",
+            "sale_type": "WEIGHT",
+            "product_type": "waste",
+            "tax_rate_id": str(tax_rate.id),
+            "unit_price": "60.00",
+            "used_on_site": "on",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    db_session.refresh(product)
+    assert product.final_disposal is False
+    assert product.used_on_site is True
+    assert product.final_disposal_wip is False
+    assert product.used_on_site_wip is True

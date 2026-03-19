@@ -4,9 +4,9 @@ FastAPI starter with SQLAlchemy, Alembic, and Postgres.
 
 ## Latest release
 
-`v0.17.1` is the current release baseline. This release adds explicit transaction-type product classification (`sale` vs `waste`) and enforces ticket product filtering/validation so sale tickets cannot use waste products and waste tickets cannot use sale products.
+`v0.18` is the current release baseline. This release makes Product `Final disposal` and `Used on site` operational flags in product maintenance and ticket workflows.
 
-It also includes UI polish updates for the marketing demo CTA credentials, Company Settings document-email/address framing, and document action/header alignment on edit-email screens.
+It keeps scope lean: destination site/company capture now uses existing ticket destination data (with completion enforcement for final-disposal products unless marked used-on-site), adds clear ticket hints for both flags, and keeps legacy snapshot compatibility without schema changes.
 
 ## Local setup
 

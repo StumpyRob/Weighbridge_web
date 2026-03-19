@@ -6,6 +6,8 @@ HELP_TEXT = {
     "product_ewc_code": "Select the waste code used for compliance and reporting.",
     "product_default_destination": "Auto-fills destination on new tickets when this product is selected.",
     "product_hazardous": "Marks product as hazardous for default compliance behaviour.",
+    "product_final_disposal": "Marks this as a disposal/end-destination product. Tickets should capture destination site/company.",
+    "product_used_on_site": "Marks this as internal use on your own site (not a disposal transfer).",
     "customer_invoice_frequency": "Used to suggest invoice date ranges when generating invoices.",
     "customer_payment_terms_days": "Days from invoice date used to calculate due date.",
     "customer_payment_terms": "Free-text payment terms shown on invoices.",
