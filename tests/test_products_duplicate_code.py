@@ -38,7 +38,6 @@ def test_products_create_duplicate_code_returns_friendly_error(client, db_sessio
             "ewc_code_label": "",
             "default_destination_id": "",
             "is_hazardous": "",
-            "sales_only": "",
         },
     )
 
@@ -88,7 +87,6 @@ def test_products_edit_duplicate_code_returns_friendly_error(client, db_session)
             "ewc_code_label": "",
             "default_destination_id": "",
             "is_hazardous": "",
-            "sales_only": "",
         },
     )
 

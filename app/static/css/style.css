@@ -1225,7 +1225,7 @@ body.js-help-tooltips .help-tooltip {
   width: 270px;
 }
 
-.products-table .products-col-sales-only {
+.products-table .products-col-product-type {
   width: 120px;
 }
 
@@ -1274,6 +1274,12 @@ body.js-help-tooltips .help-tooltip {
   background: #eff6ff;
   border-color: #bfdbfe;
   color: #1d4ed8;
+}
+
+.product-flag--waste {
+  background: #fee2e2;
+  border-color: #fecaca;
+  color: #991b1b;
 }
 
 .product-flag--weight {

@@ -40,7 +40,7 @@ def test_product_edit_uses_tooltips_and_removes_old_nominal_helper(client, db_se
     assert 'id="product-nominal-code-help"' in response.text
     assert 'id="product-ewc-code-help"' in response.text
     assert 'id="product-default-destination-help"' in response.text
-    assert 'id="product-sales-only-help"' in response.text
+    assert 'id="product-sales-only-help"' not in response.text
     assert 'id="product-hazardous-help"' in response.text
     assert "Leave blank to inherit the Product Group default nominal code." in response.text
     assert "If blank, will use Product Group default (if set)." not in response.text

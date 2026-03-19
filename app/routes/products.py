@@ -199,7 +199,6 @@ async def products_create(
         code=payload["code"],
         description=payload["description"],
         product_type=payload["product_type"],
-        sales_only=payload["sales_only"],
         group_id=payload["group_id"],
         unit_id=payload["unit_id"],
         tax_rate_id=payload["tax_rate_id"],
@@ -1045,7 +1044,7 @@ async def products_update(
         "code": product.code,
         "description": product.description,
         "unit_type": before_unit.unit_type if before_unit else None,
-        "is_waste": not bool(product.sales_only),
+        "is_waste": _is_waste_product(product),
         "ewc_code_id": product.ewc_code_id,
         "unit_price": product.unit_price,
     }
@@ -1053,7 +1052,6 @@ async def products_update(
     product.code = payload["code"]
     product.description = payload["description"]
     product.product_type = payload["product_type"]
-    product.sales_only = payload["sales_only"]
     product.group_id = payload["group_id"]
     product.unit_id = payload["unit_id"]
     product.tax_rate_id = payload["tax_rate_id"]
@@ -1077,7 +1075,7 @@ async def products_update(
         "code": product.code,
         "description": product.description,
         "unit_type": after_unit.unit_type if after_unit else None,
-        "is_waste": not bool(product.sales_only),
+        "is_waste": _is_waste_product(product),
         "ewc_code_id": product.ewc_code_id,
         "unit_price": product.unit_price,
     }
@@ -1294,7 +1292,6 @@ def _parse_product_form(form) -> dict:
     sale_type = _normalize_sale_type(value("sale_type"))
     product_type_raw = value("product_type")
     product_type = _normalize_product_type(product_type_raw)
-    sales_only = value("sales_only") == "on"
     ewc_code_id = _parse_int(value("ewc_code_id"))
     is_hazardous = value("is_hazardous") == "on"
     final_disposal_wip = value("final_disposal_wip") == "on"
@@ -1343,7 +1340,6 @@ def _parse_product_form(form) -> dict:
             "group_id": group_id_raw,
             "nominal_code": nominal_code,
             "effective_nominal_code": nominal_code,
-            "sales_only": "on" if sales_only else "",
             "product_type": product_type,
             "sale_type": sale_type,
             "unit_id": value("unit_id"),
@@ -1369,7 +1365,6 @@ def _parse_product_form(form) -> dict:
         "description": description,
         "group_id": group_id,
         "nominal_code": nominal_code or None,
-        "sales_only": sales_only,
         "product_type": product_type,
         "unit_id": _parse_int(value("unit_id")),
         "tax_rate_id": _parse_int(value("tax_rate_id")),
@@ -1398,7 +1393,6 @@ def _empty_form() -> dict:
         "group_id": "",
         "nominal_code": "",
         "effective_nominal_code": "",
-        "sales_only": "",
         "product_type": "",
         "sale_type": "",
         "unit_id": "",
@@ -1440,7 +1434,6 @@ def _product_to_form(product: Product) -> dict:
         "group_id": str(product.group_id or ""),
         "nominal_code": product.nominal_code or "",
         "effective_nominal_code": effective_nominal_code,
-        "sales_only": "on" if product.sales_only else "",
         "product_type": product_type,
         "sale_type": sale_type,
         "unit_id": str(product.unit_id or ""),
@@ -1851,6 +1844,19 @@ def _legacy_product_type(
     if ewc_code_id is not None or is_hazardous or final_disposal_wip or used_on_site_wip:
         return PRODUCT_TYPE_WASTE
     return PRODUCT_TYPE_SALE
+
+
+def _is_waste_product(product: Product) -> bool:
+    product_type = _normalize_product_type(getattr(product, "product_type", None))
+    if product_type:
+        return product_type == PRODUCT_TYPE_WASTE
+    return _legacy_product_type(
+        sales_only=bool(getattr(product, "sales_only", False)),
+        ewc_code_id=getattr(product, "ewc_code_id", None),
+        is_hazardous=bool(getattr(product, "is_hazardous", False)),
+        final_disposal_wip=bool(getattr(product, "final_disposal_wip", False)),
+        used_on_site_wip=bool(getattr(product, "used_on_site_wip", False)),
+    ) == PRODUCT_TYPE_WASTE
 
 
 def _normalize_product_group_name(raw: str | None) -> str:

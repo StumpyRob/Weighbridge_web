@@ -48,7 +48,7 @@
     <colgroup>
       <col class="products-col-code" />
       <col class="products-col-description" />
-      <col class="products-col-sales-only" />
+      <col class="products-col-product-type" />
       <col class="products-col-basis" />
       <col class="products-col-unit" />
       <col class="products-col-unit-price" />
@@ -59,7 +59,7 @@
       <tr>
         <th class="code-col">Code</th>
         <th class="description-col truncate-col">Description</th>
-        <th class="sales-only-col">Sales only</th>
+        <th class="product-type-col">Product type</th>
         <th class="basis-col">Basis</th>
         <th class="unit-col">Unit</th>
         <th class="unit-price-col numeric-col num">Unit price</th>
@@ -72,6 +72,16 @@
         {% set product_description = product.description or "" %}
         {% set unit_name = product.unit.name if product.unit and product.unit.name else "" %}
         {% set unit_type = (product.unit.unit_type if product.unit and product.unit.unit_type else "")|upper %}
+        {% set product_type_value = (product.product_type or "")|lower %}
+        {% if product_type_value not in ["sale", "waste"] %}
+          {% if product.sales_only %}
+            {% set product_type_value = "sale" %}
+          {% elif product.ewc_code_id or product.is_hazardous or product.final_disposal_wip or product.used_on_site_wip %}
+            {% set product_type_value = "waste" %}
+          {% else %}
+            {% set product_type_value = "sale" %}
+          {% endif %}
+        {% endif %}
         <tr data-row-link="/products/{{ product.id }}">
           <td>
             <a href="/products/{{ product.id }}" class="truncate truncate--sm" title="{{ product.code }}">{{ product.code }}</a>
@@ -81,11 +91,11 @@
               {{ product_description[:28] ~ ('...' if product_description|length > 28 else '') }}
             </span>
           </td>
-          <td class="sales-only-col">
-            {% if product.sales_only %}
-              <span class="product-flag product-flag--sale">Sales only</span>
+          <td class="product-type-col">
+            {% if product_type_value == "waste" %}
+              <span class="product-flag product-flag--waste">Waste</span>
             {% else %}
-              <span class="product-flag product-flag--empty">&mdash;</span>
+              <span class="product-flag product-flag--sale">Sale</span>
             {% endif %}
           </td>
           <td class="basis-col">

@@ -38,7 +38,7 @@ def test_products_list_renders_unit_and_tax_labels_not_raw_ids(client, db_sessio
     assert response.status_code == 200
     assert "unit_id" not in response.text
     assert "tax_rate_id" not in response.text
-    assert "<th class=\"sales-only-col\">Sales only</th>" in response.text
+    assert "<th class=\"product-type-col\">Product type</th>" in response.text
     assert "<th class=\"basis-col\">Basis</th>" in response.text
 
     row_match = re.search(
@@ -50,7 +50,7 @@ def test_products_list_renders_unit_and_tax_labels_not_raw_ids(client, db_sessio
     row_html = row_match.group(0)
 
     assert unit.name in row_html
-    assert "Sales only" in row_html
+    assert "Sale" in row_html
     assert "Count" in row_html
     assert 'class="product-flag product-flag--count"' in row_html
     assert "20%" in row_html

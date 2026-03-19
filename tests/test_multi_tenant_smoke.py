@@ -3774,7 +3774,7 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
 
         products_page = demo_client.get("/products")
         assert products_page.status_code == 200
-        assert "Sales only" in products_page.text
+        assert "Product type" in products_page.text
         assert "Basis" in products_page.text
         assert "Recycled Aggregate 20mm" in products_page.text
         assert "Screened Topsoil (m3)" in products_page.text

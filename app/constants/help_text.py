@@ -4,7 +4,6 @@ HELP_TEXT = {
     "product_nominal_code": "Leave blank to inherit the Product Group default nominal code.",
     "product_ewc_code": "Select the waste code used for compliance and reporting.",
     "product_default_destination": "Auto-fills destination on new tickets when this product is selected.",
-    "product_sales_only": "Restricts this product to SALE transactions only.",
     "product_hazardous": "Marks product as hazardous for default compliance behaviour.",
     "customer_invoice_frequency": "Used to suggest invoice date ranges when generating invoices.",
     "customer_payment_terms_days": "Days from invoice date used to calculate due date.",
