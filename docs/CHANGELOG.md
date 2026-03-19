@@ -4,6 +4,22 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.17.2 - 2026-03-19
+
+### RELEASE
+- `v0.17.2` is a UI polish and operational stability release focused on print/document action layout consistency, demo reset safety, and cleaner product/unit guidance.
+
+### FIX
+- Prevent demo reset FK failures by deleting tenant-scoped AI usage logs before tenant users are removed.
+- Remove the AI Assistant `Try next...` follow-up block from the drawer UI.
+- Align ticket/invoice document action header rows so labels line up cleanly, with clearer spacing between titles and action buttons.
+- Refine product/unit UI messaging by moving KG/Tonnes guidance into tooltip help and trimming redundant inline helper text.
+- Keep system weight unit presentation cleaner in lookups (retain `Weight (system)` type indicator while removing extra row badges).
+- Improve Company Settings section readability by increasing spacing rhythm between stacked fields.
+
+### TEST
+- Re-run targeted reset-demo, print/documents-panel, company-settings, product-form, and units-list regression slices after UI/stability updates.
+
 ## v0.17.1 - 2026-03-19
 
 ### RELEASE

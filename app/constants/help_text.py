@@ -1,6 +1,7 @@
 HELP_TEXT = {
     "product_group": "Optional grouping used for reporting and default nominal-code fallback.",
     "product_type": "Required single choice that controls ticket availability: sale products for SALE tickets, waste products for WASTE IN/OUT tickets.",
+    "product_unit": "KG and Tonnes are system-defined weight units and are not selectable here.",
     "product_nominal_code": "Leave blank to inherit the Product Group default nominal code.",
     "product_ewc_code": "Select the waste code used for compliance and reporting.",
     "product_default_destination": "Auto-fills destination on new tickets when this product is selected.",

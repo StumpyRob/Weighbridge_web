@@ -38,14 +38,13 @@
       </select>
     </div>
     <div class="field" id="unit-count-wrap" {% if form.sale_type == "WEIGHT" %}style="display:none"{% endif %}>
-      <label for="unit_id">Unit</label>
+      <label for="unit_id">Unit{{ help(help_text.product_unit, "product-unit-help") }}</label>
       <select id="unit_id" name="unit_id" required {% if form.sale_type == "WEIGHT" %}disabled{% endif %}>
         <option value="">Select unit</option>
         {% for id, label in options.units %}
           <option value="{{ id }}" {% if form.unit_id == id %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
-      <p class="hint">KG and Tonnes are system-defined weight units and are not selectable here.</p>
       {% if not options.units %}
         <p class="help">No units configured. Please add units in Products &gt; Units.</p>
       {% endif %}
