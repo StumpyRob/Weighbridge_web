@@ -4,7 +4,7 @@ HELP_TEXT = {
     "product_unit": "KG and Tonnes are system-defined weight units and are not selectable here.",
     "product_nominal_code": "Leave blank to inherit the Product Group default nominal code.",
     "product_ewc_code": "Select the waste code used for compliance and reporting.",
-    "product_default_destination": "Auto-fills destination on new tickets when this product is selected.",
+    "product_default_destination": "Prefills the destination on tickets when this product is selected. This can be overridden on the ticket if needed.",
     "product_hazardous": "Marks product as hazardous for default compliance behaviour.",
     "product_final_disposal": "Marks this as a disposal/end-destination product. Tickets should capture destination site/company.",
     "product_used_on_site": "Marks this as internal use on your own site (not a disposal transfer).",

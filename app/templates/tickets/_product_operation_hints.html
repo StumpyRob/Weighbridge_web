@@ -1,8 +1,15 @@
-<div id="ticket-product-operation-hints"{% if oob_ticket_operation_hints %} hx-swap-oob="outerHTML"{% endif %}>
-  {% if ticket_operation and ticket_operation.destination_required %}
+{% set show_destination_hint = ticket_operation and ticket_operation.destination_required %}
+{% set show_used_on_site_hint = ticket_operation and ticket_operation.used_on_site %}
+
+<div
+  id="ticket-product-operation-hints"
+  {% if oob_ticket_operation_hints %}hx-swap-oob="outerHTML"{% endif %}
+  {% if not show_destination_hint and not show_used_on_site_hint %}style="display:none"{% endif %}
+>
+  {% if show_destination_hint %}
     <div class="hint">Final disposal selected on this ticket. Capture destination site/company before completion.</div>
   {% endif %}
-  {% if ticket_operation and ticket_operation.used_on_site %}
+  {% if show_used_on_site_hint %}
     <div class="hint">Used on site selected on this ticket. Internal-use flow; disposal transfer paperwork is not required by this flag.</div>
   {% endif %}
 </div>
