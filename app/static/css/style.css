@@ -2408,6 +2408,36 @@ details.frame:not([open]) .frame-header {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.ticket-material-grid {
+  grid-template-columns: minmax(0, 1.8fr) minmax(260px, 1fr);
+  align-items: start;
+}
+
+.ticket-material-grid__flags-column {
+  min-width: 0;
+}
+
+.ticket-operation-flags {
+  display: grid;
+  gap: 0.35rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+  padding: 0.55rem 0.75rem;
+}
+
+.ticket-operation-flags .field.checkbox {
+  margin: 0;
+}
+
+.ticket-operation-flags .field.checkbox + .field.checkbox {
+  margin-top: 0.1rem;
+}
+
+.ticket-operation-flags .field.checkbox label {
+  margin-bottom: 0;
+}
+
 .field--span-2 {
   grid-column: span 2;
 }

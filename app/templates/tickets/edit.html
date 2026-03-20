@@ -407,11 +407,15 @@
       <h2>Material</h2>
     </div>
     <div class="frame-body">
-        <div class="form-grid">
-          {% set ticket_id = ticket.id %}
-          {% set oob_product_warning = false %}
-          {% include "tickets/_product_field.html" %}
-          {% include "tickets/_operation_flags.html" %}
+        <div class="form-grid form-grid--2 ticket-material-grid">
+          <div class="ticket-material-grid__product-column">
+            {% set ticket_id = ticket.id %}
+            {% set oob_product_warning = false %}
+            {% include "tickets/_product_field.html" %}
+          </div>
+          <div class="ticket-material-grid__flags-column">
+            {% include "tickets/_operation_flags.html" %}
+          </div>
         </div>
       </div>
   </section>
@@ -1580,6 +1584,7 @@
       syncTransactionTypeOptions(false);
       syncWalkInSaleUi();
       applySelectedProductMeta();
+      enforceTicketOperationExclusivity();
       syncTicketOperationMirrors();
       applyPricingRules();
       syncEwcUi();
@@ -1649,12 +1654,32 @@
       }
     }
 
+    function enforceTicketOperationExclusivity(changedFlagId) {
+      const finalDisposal = document.getElementById("final_disposal");
+      const usedOnSite = document.getElementById("used_on_site");
+      if (!finalDisposal || !usedOnSite) {
+        return;
+      }
+      if (changedFlagId === "final_disposal" && finalDisposal.checked) {
+        usedOnSite.checked = false;
+        return;
+      }
+      if (changedFlagId === "used_on_site" && usedOnSite.checked) {
+        finalDisposal.checked = false;
+        return;
+      }
+      if (finalDisposal.checked && usedOnSite.checked) {
+        usedOnSite.checked = false;
+      }
+    }
+
     function bindTicketOperationFlags() {
       const finalDisposal = document.getElementById("final_disposal");
       const usedOnSite = document.getElementById("used_on_site");
       if (finalDisposal && finalDisposal.dataset.bound !== "true") {
         finalDisposal.dataset.bound = "true";
         finalDisposal.addEventListener("change", function () {
+          enforceTicketOperationExclusivity("final_disposal");
           syncTicketOperationMirrors();
           scheduleApplyTicketRules();
         });
@@ -1662,10 +1687,12 @@
       if (usedOnSite && usedOnSite.dataset.bound !== "true") {
         usedOnSite.dataset.bound = "true";
         usedOnSite.addEventListener("change", function () {
+          enforceTicketOperationExclusivity("used_on_site");
           syncTicketOperationMirrors();
           scheduleApplyTicketRules();
         });
       }
+      enforceTicketOperationExclusivity();
       syncTicketOperationMirrors();
     }
 

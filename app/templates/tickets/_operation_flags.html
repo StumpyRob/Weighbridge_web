@@ -1,7 +1,11 @@
 {% from "_help.html" import help %}
 {% if oob_operation_flags is not defined %}{% set oob_operation_flags = false %}{% endif %}
 
-<div id="ticket-operation-flags" {% if oob_operation_flags %}hx-swap-oob="outerHTML"{% endif %}>
+<div
+  id="ticket-operation-flags"
+  class="ticket-operation-flags"
+  {% if oob_operation_flags %}hx-swap-oob="outerHTML"{% endif %}
+>
   <div class="field checkbox">
     <input
       type="checkbox"
@@ -11,7 +15,7 @@
       {% if ticket_operation_form.final_disposal %}checked{% endif %}
     />
     <label for="final_disposal">
-      Final disposal{{ help("Movement-level flags for this ticket. Product flags are defaults only.", "ticket-final-disposal-scope-help") }}
+      Final disposal{{ help("Marks this ticket as disposal to its final destination. Capture the destination site/company before completion.", "ticket-final-disposal-scope-help") }}
     </label>
   </div>
   <div class="field checkbox">
@@ -23,7 +27,7 @@
       {% if ticket_operation_form.used_on_site %}checked{% endif %}
     />
     <label for="used_on_site">
-      Used on site{{ help("Movement-level flags for this ticket. Product flags are defaults only.", "ticket-used-on-site-scope-help") }}
+      Used on site{{ help("Marks this ticket as material kept or used internally on your own site. Destination is not required for this flag.", "ticket-used-on-site-scope-help") }}
     </label>
   </div>
   <input

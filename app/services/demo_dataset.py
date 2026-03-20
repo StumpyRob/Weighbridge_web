@@ -202,6 +202,7 @@ DEMO_CUSTOMER_PRICE_OVERRIDES = (
     ("CUST024", "HIVIS", "4.60"),
 )
 DEMO_ZERO_RATED_PRODUCT_CODES = frozenset({"EARDEF", "HIVIS"})
+DEMO_USED_ON_SITE_PRODUCT_CODES = frozenset({"PALLET", "EARDEF"})
 HAULIERS = (
     ("Atlas Haulage", "CBDU482761"),
     ("Pennine Bulk Logistics", "CBDU173954"),
@@ -586,6 +587,7 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
         unit = units[unit_name]
         product_ewc = None
         product_tax_rate = zero_tax_rate if code in DEMO_ZERO_RATED_PRODUCT_CODES else standard_tax_rate
+        used_on_site = code in DEMO_USED_ON_SITE_PRODUCT_CODES
         if code in DEMO_WASTE_PRODUCT_EWC:
             product_ewc = demo_ewc_codes[DEMO_WASTE_PRODUCT_EWC[code][0]]
         product = Product(
@@ -605,6 +607,8 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
             is_hazardous=bool(product_ewc.hazardous) if product_ewc else False,
             final_disposal=bool(final_disposal),
             final_disposal_wip=bool(final_disposal),
+            used_on_site=bool(used_on_site),
+            used_on_site_wip=bool(used_on_site),
             ewc_code=product_ewc,
             default_destination_id=destinations[destination_name].id,
         )
@@ -676,6 +680,24 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
         customer = customers[customer_code]
         vehicle = vehicles[registration]
         product, unit = products[product_code]
+        product_final_disposal = bool(product.final_disposal) or bool(
+            product.final_disposal_wip
+        )
+        product_used_on_site = bool(product.used_on_site) or bool(
+            product.used_on_site_wip
+        )
+        if product_used_on_site:
+            destination_id = None
+        else:
+            if destination_name is None:
+                raise RuntimeError(
+                    f"Demo ticket {ticket_number} requires destination_name for product {product_code}."
+                )
+            destination_id = destinations[destination_name].id
+        if product_final_disposal and destination_id is None:
+            raise RuntimeError(
+                f"Demo ticket {ticket_number} requires destination for final disposal product {product_code}."
+            )
         ticket_date = _resolve_demo_seed_date(day_key, today=today, days=days)
         ticket_no = _demo_ticket_no(ticket_number, year=ticket_date.year)
         ticket_numbers_by_year[ticket_date.year] = max(
@@ -748,8 +770,10 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
             carrier_licence_number=hauliers[haulier_name].carrier_licence_number,
             driver_id=drivers[driver_name].id,
             container_id=containers[container_name].id if container_name else None,
-            destination_id=destinations[destination_name].id,
+            destination_id=destination_id,
             yard_id=yard.id,
+            final_disposal=product_final_disposal,
+            used_on_site=product_used_on_site,
             gross_kg=gross_kg,
             tare_kg=tare_kg,
             net_kg=net_kg,
