@@ -93,6 +93,8 @@ class Ticket(Base):
     walk_in: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     walk_in_sale: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
+    final_disposal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    used_on_site: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     ewc_code_6: Mapped[str | None] = mapped_column(String(6), nullable=True)
     ewc_code_display: Mapped[str | None] = mapped_column(String(10), nullable=True)
     ewc_description: Mapped[str | None] = mapped_column(Text, nullable=True)

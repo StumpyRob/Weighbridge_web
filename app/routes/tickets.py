@@ -473,6 +473,15 @@ def ticket_product_defaults(
 
     parsed_ticket_id = _parse_int(str(ticket_id).strip()) if ticket_id else None
     parsed_customer_id = _parse_int(str(customer_id).strip()) if customer_id else None
+    apply_product_defaults = (
+        _parse_bool_text(request.query_params.get("apply_product_defaults")) is True
+    )
+    requested_final_disposal = _parse_bool_text(
+        request.query_params.get("ticket_final_disposal_value")
+    )
+    requested_used_on_site = _parse_bool_text(
+        request.query_params.get("ticket_used_on_site_value")
+    )
 
     if not parsed_product_id:
         return HTMLResponse("", status_code=204)
@@ -549,6 +558,14 @@ def ticket_product_defaults(
         weights_form["product_id"] = str(parsed_product_id or weights_ticket.product_id or "")
         weights_is_open = _is_open_ticket(weights_ticket)
 
+    final_disposal_value, used_on_site_value = _resolve_ticket_operation_flag_values(
+        product=product,
+        ticket=weights_ticket,
+        apply_product_defaults=apply_product_defaults,
+        requested_final_disposal=requested_final_disposal,
+        requested_used_on_site=requested_used_on_site,
+    )
+
     return templates.TemplateResponse(request, 
         "tickets/_product_defaults.html",
         {
@@ -571,8 +588,16 @@ def ticket_product_defaults(
             "weights_form": weights_form,
             "weights_is_open": weights_is_open,
             "weights_locked": resolved_unit_type == "COUNT",
-            "product_operation": _product_operation_context(product),
-            "oob_product_operation_hints": True,
+            "ticket_operation_form": _ticket_operation_form_values(
+                final_disposal=final_disposal_value,
+                used_on_site=used_on_site_value,
+            ),
+            "ticket_operation": _ticket_operation_context(
+                final_disposal=final_disposal_value,
+                used_on_site=used_on_site_value,
+            ),
+            "oob_operation_flags": True,
+            "oob_ticket_operation_hints": True,
         },
     )
 
@@ -596,6 +621,18 @@ def tickets_product_options(
         parsed_product_id = _parse_int(str(product_id).strip())
 
     parsed_ticket_id = _parse_int(str(ticket_id).strip()) if ticket_id else None
+    requested_final_disposal = _parse_bool_text(
+        request.query_params.get("ticket_final_disposal_value")
+    )
+    requested_used_on_site = _parse_bool_text(
+        request.query_params.get("ticket_used_on_site_value")
+    )
+    ticket_operation = _resolve_ticket_operation_context(
+        db=db,
+        ticket_id=parsed_ticket_id,
+        requested_final_disposal=requested_final_disposal,
+        requested_used_on_site=requested_used_on_site,
+    )
     form_data = {"product_id": str(parsed_product_id or "")}
     options = _load_ticket_options_with_enums(
         db,
@@ -617,8 +654,8 @@ def tickets_product_options(
             "product_usage_warning": product_usage_warning,
             "product_empty_option_label": _product_option_empty_label(transaction_type),
             "oob_product_warning": True,
-            "product_operation": _load_product_operation_context(db, parsed_product_id),
-            "oob_product_operation_hints": True,
+            "ticket_operation": ticket_operation,
+            "oob_ticket_operation_hints": True,
         },
     )
 
@@ -1980,7 +2017,11 @@ def tickets_edit(
             "errors": [],
             "warnings": [],
             "product_usage_warning": product_warning,
-            "product_operation": _load_product_operation_context(db, ticket.product_id),
+            "ticket_operation": _ticket_operation_context_from_form(form),
+            "ticket_operation_form": _ticket_operation_form_values(
+                final_disposal=_form_value_enabled(form.get("final_disposal")),
+                used_on_site=_form_value_enabled(form.get("used_on_site")),
+            ),
             "saved": request.query_params.get("saved") == "1",
             "completed": request.query_params.get("completed") == "1",
             "voided": request.query_params.get("voided") == "1",
@@ -2922,7 +2963,6 @@ async def tickets_update(
         _coerce_mode_fields(payload, product)
         weight_warning = _net_negative_values(payload["gross_kg"], payload["tare_kg"])
         _apply_destination_default(ticket, payload, product)
-        _validate_final_disposal_destination_on_complete(payload, product)
         haulier = _validate_carrier_licence(payload, db, errors=payload["errors"])
         is_waste_tx = _is_waste_transaction(payload.get("transaction_type"))
         _resolve_waste_producer_snapshot(
@@ -4134,6 +4174,8 @@ def _apply_ticket_updates(ticket: Ticket, payload: dict) -> None:
     ticket.vehicle_reg_text = payload["vehicle_reg_text"]
     ticket.walk_in = payload["walk_in"]
     ticket.walk_in_sale = payload["walk_in_sale"]
+    ticket.final_disposal = bool(payload.get("final_disposal"))
+    ticket.used_on_site = bool(payload.get("used_on_site"))
     ticket.product_id = payload["product_id"]
     ticket.haulier_id = payload["haulier_id"]
     ticket.driver_id = payload["driver_id"]
@@ -4179,6 +4221,8 @@ def _parse_ticket_form(
     vehicle_reg_text = _normalize_reg_text(_form_value(form, "reg"))
     walk_in = _form_value(form, "walk_in") == "on"
     walk_in_sale = _form_value(form, "walk_in_sale") == "on"
+    final_disposal = _form_value(form, "final_disposal") == "on"
+    used_on_site = _form_value(form, "used_on_site") == "on"
     product_id_raw = _first_non_empty_form_value(form, "product_id")
     product_id = _parse_int(product_id_raw)
     same_as_customer_present = bool(
@@ -4301,6 +4345,8 @@ def _parse_ticket_form(
         "vehicle_reg_text": vehicle_reg_text,
         "walk_in": "on" if walk_in else "",
         "walk_in_sale": "on" if walk_in_sale else "",
+        "final_disposal": "on" if final_disposal else "",
+        "used_on_site": "on" if used_on_site else "",
         "product_id": product_id_raw,
         "haulier_id": _form_value(form, "haulier_id"),
         "driver_id": _form_value(form, "driver_id"),
@@ -4353,6 +4399,8 @@ def _parse_ticket_form(
         "vehicle_reg_text": vehicle_reg_text,
         "walk_in": walk_in,
         "walk_in_sale": walk_in_sale,
+        "final_disposal": final_disposal,
+        "used_on_site": used_on_site,
         "product_id": product_id,
         "haulier_id": _parse_int(_form_value(form, "haulier_id")),
         "driver_id": _parse_int(_form_value(form, "driver_id")),
@@ -4456,6 +4504,8 @@ def _ticket_to_form(ticket: Ticket) -> dict:
         "vehicle_reg_text": ticket.vehicle_reg_text or "",
         "walk_in": "on" if ticket.walk_in else "",
         "walk_in_sale": "on" if ticket.walk_in_sale else "",
+        "final_disposal": "on" if ticket.final_disposal else "",
+        "used_on_site": "on" if ticket.used_on_site else "",
         "product_id": str(ticket.product_id or ""),
         "haulier_id": str(ticket.haulier_id or ""),
         "driver_id": str(ticket.driver_id or ""),
@@ -4514,6 +4564,22 @@ def _ticket_contains_like_pattern(value: str) -> str:
 
 def _form_value(form, key: str) -> str:
     return str(form.get(key, "")).strip()
+
+
+def _parse_bool_text(value: str | None) -> bool | None:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off", ""}:
+        return False
+    return None
+
+
+def _form_value_enabled(value: object | None) -> bool:
+    normalized = str(value or "").strip().lower()
+    return normalized in {"1", "true", "yes", "on"}
 
 
 def _first_non_empty_form_value(form, key: str) -> str:
@@ -4699,6 +4765,8 @@ def _apply_destination_default(
     ticket: Ticket, payload: dict, product: Product | None
 ) -> None:
     if payload.get("destination_id") is not None:
+        return
+    if payload.get("used_on_site"):
         return
     if ticket.destination_id is not None:
         return
@@ -4934,6 +5002,9 @@ def _validate_required_on_complete(payload: dict) -> None:
     transaction_type = payload.get("transaction_type")
     is_waste_tx = _is_waste_transaction(transaction_type)
     is_sale = transaction_type == TransactionTypeEnum.SALE.value
+    used_on_site = bool(payload.get("used_on_site"))
+    final_disposal = bool(payload.get("final_disposal"))
+    destination_required_for_movement = final_disposal and not used_on_site
 
     if not payload.get("direction"):
         payload["errors"].append("Direction is required.")
@@ -4947,7 +5018,7 @@ def _validate_required_on_complete(payload: dict) -> None:
             )
         if not payload.get("product_id"):
             payload["errors"].append("Product is required to complete a ticket.")
-        if not payload.get("destination_id"):
+        if not used_on_site and not payload.get("destination_id"):
             payload["errors"].append(
                 "Destination is required to complete a waste ticket."
             )
@@ -4958,6 +5029,13 @@ def _validate_required_on_complete(payload: dict) -> None:
             )
         if not payload.get("product_id"):
             payload["errors"].append("Product is required to complete a ticket.")
+
+    if (
+        destination_required_for_movement
+        and not payload.get("destination_id")
+        and not is_waste_tx
+    ):
+        payload["errors"].append(FINAL_DISPOSAL_DESTINATION_ERROR)
 
 
 def _is_waste_transaction(transaction_type: str | None) -> bool:
@@ -5052,7 +5130,7 @@ def _product_option_empty_label(transaction_type: str | None) -> str:
     return "No products available."
 
 
-def _is_product_final_disposal(product: Product | None) -> bool:
+def _is_product_final_disposal_default(product: Product | None) -> bool:
     if product is None:
         return False
     return bool(getattr(product, "final_disposal", False)) or bool(
@@ -5060,7 +5138,7 @@ def _is_product_final_disposal(product: Product | None) -> bool:
     )
 
 
-def _is_product_used_on_site(product: Product | None) -> bool:
+def _is_product_used_on_site_default(product: Product | None) -> bool:
     if product is None:
         return False
     return bool(getattr(product, "used_on_site", False)) or bool(
@@ -5068,37 +5146,78 @@ def _is_product_used_on_site(product: Product | None) -> bool:
     )
 
 
-def _product_operation_context(product: Product | None) -> dict[str, bool]:
-    final_disposal = _is_product_final_disposal(product)
-    used_on_site = _is_product_used_on_site(product)
+def _ticket_operation_context(*, final_disposal: bool, used_on_site: bool) -> dict[str, bool]:
     return {
-        "final_disposal": final_disposal,
-        "used_on_site": used_on_site,
-        "destination_required": final_disposal and not used_on_site,
+        "final_disposal": bool(final_disposal),
+        "used_on_site": bool(used_on_site),
+        "destination_required": bool(final_disposal) and not bool(used_on_site),
     }
 
 
-def _load_product_operation_context(
+def _ticket_operation_form_values(*, final_disposal: bool, used_on_site: bool) -> dict[str, str]:
+    return {
+        "final_disposal": "on" if final_disposal else "",
+        "used_on_site": "on" if used_on_site else "",
+    }
+
+
+def _ticket_operation_context_from_form(form: dict[str, object] | None) -> dict[str, bool]:
+    if form is None:
+        return _ticket_operation_context(final_disposal=False, used_on_site=False)
+    return _ticket_operation_context(
+        final_disposal=_form_value_enabled(form.get("final_disposal")),
+        used_on_site=_form_value_enabled(form.get("used_on_site")),
+    )
+
+
+def _resolve_ticket_operation_context(
+    *,
     db: Session,
-    product_id: int | None,
+    ticket_id: int | None,
+    requested_final_disposal: bool | None,
+    requested_used_on_site: bool | None,
 ) -> dict[str, bool]:
-    if not product_id:
-        return _product_operation_context(None)
-    product = db.get(Product, product_id)
-    return _product_operation_context(product)
+    final_disposal = requested_final_disposal
+    used_on_site = requested_used_on_site
+    if (final_disposal is None or used_on_site is None) and ticket_id:
+        ticket = db.get(Ticket, ticket_id)
+        if ticket is not None:
+            if final_disposal is None:
+                final_disposal = bool(ticket.final_disposal)
+            if used_on_site is None:
+                used_on_site = bool(ticket.used_on_site)
+    return _ticket_operation_context(
+        final_disposal=bool(final_disposal),
+        used_on_site=bool(used_on_site),
+    )
 
 
-def _validate_final_disposal_destination_on_complete(
-    payload: dict,
+def _resolve_ticket_operation_flag_values(
+    *,
     product: Product | None,
-) -> None:
-    if not _product_operation_context(product).get("destination_required"):
-        return
-    if payload.get("destination_id"):
-        return
-    if _is_waste_transaction(payload.get("transaction_type")):
-        return
-    payload["errors"].append(FINAL_DISPOSAL_DESTINATION_ERROR)
+    ticket: Ticket | None,
+    apply_product_defaults: bool,
+    requested_final_disposal: bool | None,
+    requested_used_on_site: bool | None,
+) -> tuple[bool, bool]:
+    default_final_disposal = _is_product_final_disposal_default(product)
+    default_used_on_site = _is_product_used_on_site_default(product)
+    if apply_product_defaults:
+        return default_final_disposal, default_used_on_site
+
+    final_disposal = requested_final_disposal
+    used_on_site = requested_used_on_site
+    if ticket is not None:
+        if final_disposal is None:
+            final_disposal = bool(ticket.final_disposal)
+        if used_on_site is None:
+            used_on_site = bool(ticket.used_on_site)
+
+    if final_disposal is None:
+        final_disposal = default_final_disposal
+    if used_on_site is None:
+        used_on_site = default_used_on_site
+    return bool(final_disposal), bool(used_on_site)
 
 
 def _apply_ticket_ewc_snapshot(ticket: Ticket, snapshot: dict[str, object]) -> None:
@@ -5456,7 +5575,11 @@ def _render_ticket_edit(
             "errors": errors,
             "warnings": resolved_warnings,
             "product_usage_warning": product_warning,
-            "product_operation": _load_product_operation_context(db, product_id),
+            "ticket_operation": _ticket_operation_context_from_form(resolved_form),
+            "ticket_operation_form": _ticket_operation_form_values(
+                final_disposal=_form_value_enabled(resolved_form.get("final_disposal")),
+                used_on_site=_form_value_enabled(resolved_form.get("used_on_site")),
+            ),
             "saved": False,
             "completed": False,
             "printed": False,

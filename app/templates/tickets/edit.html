@@ -314,7 +314,7 @@
               hx-get="/tickets/product-defaults"
               hx-trigger="change"
               hx-target="#pricing-defaults"
-              hx-include="#weights-form,#qty,#transaction_type,#product_id,#customer_id"
+              hx-include="#weights-form,#qty,#transaction_type,#product_id,#customer_id,#ticket_final_disposal_value,#ticket_used_on_site_value"
               hx-vals='{"ticket_id":"{{ ticket.id }}"}'
               {% if is_locked or (form.walk_in_sale and form.transaction_type == "SALE") %}disabled aria-disabled="true"{% endif %}
             >
@@ -411,6 +411,7 @@
           {% set ticket_id = ticket.id %}
           {% set oob_product_warning = false %}
           {% include "tickets/_product_field.html" %}
+          {% include "tickets/_operation_flags.html" %}
         </div>
       </div>
   </section>
@@ -1579,6 +1580,7 @@
       syncTransactionTypeOptions(false);
       syncWalkInSaleUi();
       applySelectedProductMeta();
+      syncTicketOperationMirrors();
       applyPricingRules();
       syncEwcUi();
       runRecalculateTicketValues();
@@ -1632,6 +1634,39 @@
       walkInInput.addEventListener("change", function () {
         scheduleApplyTicketRules();
       });
+    }
+
+    function syncTicketOperationMirrors() {
+      const finalDisposal = document.getElementById("final_disposal");
+      const usedOnSite = document.getElementById("used_on_site");
+      const finalMirror = document.getElementById("ticket_final_disposal_value");
+      const usedMirror = document.getElementById("ticket_used_on_site_value");
+      if (finalMirror) {
+        finalMirror.value = finalDisposal && finalDisposal.checked ? "1" : "0";
+      }
+      if (usedMirror) {
+        usedMirror.value = usedOnSite && usedOnSite.checked ? "1" : "0";
+      }
+    }
+
+    function bindTicketOperationFlags() {
+      const finalDisposal = document.getElementById("final_disposal");
+      const usedOnSite = document.getElementById("used_on_site");
+      if (finalDisposal && finalDisposal.dataset.bound !== "true") {
+        finalDisposal.dataset.bound = "true";
+        finalDisposal.addEventListener("change", function () {
+          syncTicketOperationMirrors();
+          scheduleApplyTicketRules();
+        });
+      }
+      if (usedOnSite && usedOnSite.dataset.bound !== "true") {
+        usedOnSite.dataset.bound = "true";
+        usedOnSite.addEventListener("change", function () {
+          syncTicketOperationMirrors();
+          scheduleApplyTicketRules();
+        });
+      }
+      syncTicketOperationMirrors();
     }
 
     function bindUnsavedChangesGuard() {
@@ -1785,6 +1820,7 @@
     bindTransactionTypeSync();
     bindDirectionSync();
     bindWalkInSync();
+    bindTicketOperationFlags();
     bindUnsavedChangesGuard();
     bindProducerToggle();
     bindEwcField();
@@ -1805,6 +1841,7 @@
         bindProductMetaSync();
         bindDirectionSync();
         bindWalkInSync();
+        bindTicketOperationFlags();
         bindEwcField();
         applyTicketRules();
         return;
@@ -1812,6 +1849,7 @@
       if (event.target.id === "weights-block" || event.target.id === "pricing-defaults") {
         applyDefaultDestination();
         bindWalkInSync();
+        bindTicketOperationFlags();
         bindEwcField();
         applyTicketRules();
       }
@@ -1832,6 +1870,7 @@
         bindProductMetaSync();
         bindDirectionSync();
         bindWalkInSync();
+        bindTicketOperationFlags();
         bindEwcField();
         applyTicketRules();
       }
@@ -1848,6 +1887,7 @@
         bindProductMetaSync();
         bindDirectionSync();
         bindWalkInSync();
+        bindTicketOperationFlags();
         bindEwcField();
         scheduleApplyTicketRules();
       }

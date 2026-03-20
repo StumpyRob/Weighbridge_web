@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from decimal import Decimal
 
@@ -373,8 +374,10 @@ def test_transaction_type_change_refreshes_product_options_without_save(client, 
     assert page.status_code == 200
     assert 'hx-get="/tickets/product-options"' in page.text
     assert 'hx-trigger="change from:#transaction_type"' in page.text
-    assert 'hx-include="#transaction_type"' in page.text
-    assert 'hx-include="#transaction_type,#product_id"' not in page.text
+    assert (
+        'hx-include="#transaction_type,#ticket_final_disposal_value,#ticket_used_on_site_value"'
+        in page.text
+    )
 
     sale_options = client.get(
         "/tickets/product-options"
@@ -464,6 +467,7 @@ def test_final_disposal_sale_requires_destination_to_complete(client, db_session
             "transaction_type": "SALE",
             "customer_id": str(customer.id),
             "product_id": str(final_disposal_product.id),
+            "final_disposal": "on",
             "qty": "1",
             "unit_price": "45.00",
         },
@@ -479,9 +483,8 @@ def test_final_disposal_sale_requires_destination_to_complete(client, db_session
     assert ticket.destination_id is None
 
 
-def test_final_disposal_sale_uses_product_default_destination(client, db_session):
+def test_product_defaults_flow_operation_flags_from_product(client, db_session):
     unit = Unit(name="Usage Rule Unit 10", unit_type="COUNT", is_active=True)
-    customer = Customer(account_code="C-USAGE-FINAL-2", name="Final Disposal Customer 2")
     destination = Destination(name="Final Disposal Site")
     final_disposal_product = Product(
         code="P-USAGE-FINAL-2",
@@ -502,28 +505,113 @@ def test_final_disposal_sale_uses_product_default_destination(client, db_session
         dont_invoice=False,
         paid=False,
     )
-    db_session.add_all([unit, customer, destination, final_disposal_product, ticket])
+    db_session.add_all([unit, destination, final_disposal_product, ticket])
+    db_session.commit()
+
+    response = client.get(
+        "/tickets/product-defaults"
+        f"?product_id={final_disposal_product.id}"
+        f"&ticket_id={ticket.id}"
+        "&transaction_type=SALE"
+        "&gross_kg=&tare_kg=&net_kg=&readout_kg=&qty=&unit_price="
+        "&apply_product_defaults=1"
+    )
+
+    assert response.status_code == 200
+    assert 'id="default_destination_id"' in response.text
+    assert f'value="{destination.id}"' in response.text
+    assert re.search(r'id="ticket_final_disposal_value"[^>]*value="1"', response.text)
+    assert re.search(r'id="ticket_used_on_site_value"[^>]*value="0"', response.text)
+    assert re.search(r'id="final_disposal"[^>]*checked', response.text)
+
+
+def test_ticket_operation_override_is_preserved_on_defaults_refresh(client, db_session):
+    unit = Unit(name="Usage Rule Unit 10B", unit_type="COUNT", is_active=True)
+    final_disposal_product = Product(
+        code="P-USAGE-FINAL-2B",
+        description="Final Disposal Product Override",
+        product_type="sale",
+        unit=unit,
+        unit_price=Decimal("40.00"),
+        final_disposal=True,
+        used_on_site=False,
+    )
+    ticket = Ticket(
+        ticket_no="T-USAGE-FINAL-2B",
+        datetime=datetime(2026, 2, 10, 12, 50, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.OUTWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([unit, final_disposal_product, ticket])
+    db_session.commit()
+
+    response = client.get(
+        "/tickets/product-defaults"
+        f"?product_id={final_disposal_product.id}"
+        f"&ticket_id={ticket.id}"
+        "&transaction_type=SALE"
+        "&gross_kg=&tare_kg=&net_kg=&readout_kg=&qty=&unit_price="
+        "&ticket_final_disposal_value=0"
+        "&ticket_used_on_site_value=1"
+    )
+
+    assert response.status_code == 200
+    assert re.search(r'id="ticket_final_disposal_value"[^>]*value="0"', response.text)
+    assert re.search(r'id="ticket_used_on_site_value"[^>]*value="1"', response.text)
+    assert (
+        "Used on site selected on this ticket. Internal-use flow; disposal transfer paperwork is not required by this flag."
+        in response.text
+    )
+
+
+def test_operator_can_override_ticket_operation_flags_on_save(client, db_session):
+    unit = Unit(name="Usage Rule Unit 10C", unit_type="COUNT", is_active=True)
+    customer = Customer(account_code="C-USAGE-FINAL-3", name="Final Disposal Customer 3")
+    final_disposal_product = Product(
+        code="P-USAGE-FINAL-3",
+        description="Final Disposal Product Override Save",
+        product_type="sale",
+        unit=unit,
+        unit_price=Decimal("20.00"),
+        final_disposal=True,
+        used_on_site=False,
+    )
+    ticket = Ticket(
+        ticket_no="T-USAGE-FINAL-3",
+        datetime=datetime(2026, 2, 10, 12, 55, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.OUTWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([unit, customer, final_disposal_product, ticket])
     db_session.commit()
 
     response = client.post(
         f"/tickets/{ticket.id}",
         data={
-            "action": "complete",
-            "datetime": "2026-02-10T12:45",
+            "action": "save",
+            "datetime": "2026-02-10T12:55",
             "direction": "OUTWARD",
             "transaction_type": "SALE",
             "customer_id": str(customer.id),
             "product_id": str(final_disposal_product.id),
+            "final_disposal": "",
+            "used_on_site": "on",
             "qty": "1",
-            "unit_price": "50.00",
+            "unit_price": "20.00",
         },
         follow_redirects=False,
     )
 
     assert response.status_code == 303
     db_session.refresh(ticket)
-    assert _status_value(ticket.status) == TicketStatusEnum.COMPLETE.value
-    assert ticket.destination_id == destination.id
+    assert ticket.final_disposal is False
+    assert ticket.used_on_site is True
 
 
 def test_used_on_site_product_not_forced_to_capture_destination(client, db_session):
@@ -559,6 +647,8 @@ def test_used_on_site_product_not_forced_to_capture_destination(client, db_sessi
             "transaction_type": "SALE",
             "customer_id": str(customer.id),
             "product_id": str(used_on_site_product.id),
+            "final_disposal": "on",
+            "used_on_site": "on",
             "qty": "1",
             "unit_price": "35.00",
         },
@@ -587,6 +677,7 @@ def test_used_on_site_hint_is_visible_on_ticket_edit(client, db_session):
         status=TicketStatusEnum.OPEN.value,
         direction=DirectionEnum.OUTWARD.value,
         transaction_type=TransactionTypeEnum.SALE.value,
+        used_on_site=True,
         dont_invoice=False,
         paid=False,
     )
@@ -600,6 +691,46 @@ def test_used_on_site_hint_is_visible_on_ticket_edit(client, db_session):
 
     assert response.status_code == 200
     assert (
-        "Used on site product selected. Internal-use flow; disposal transfer paperwork is not required by this flag."
+        "Used on site selected on this ticket. Internal-use flow; disposal transfer paperwork is not required by this flag."
+        in response.text
+    )
+
+
+def test_product_defaults_refresh_uses_ticket_saved_operation_flags(client, db_session):
+    unit = Unit(name="Usage Rule Unit 13", unit_type="COUNT", is_active=True)
+    product = Product(
+        code="P-USAGE-SITE-3",
+        description="Ticket Flag Compatibility Product",
+        product_type="sale",
+        unit=unit,
+        unit_price=Decimal("25.00"),
+        final_disposal=False,
+        used_on_site=False,
+    )
+    ticket = Ticket(
+        ticket_no="T-USAGE-SITE-3",
+        datetime=datetime(2026, 2, 10, 13, 20, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.OUTWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        final_disposal=True,
+        used_on_site=False,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([unit, product, ticket])
+    db_session.commit()
+
+    response = client.get(
+        "/tickets/product-defaults"
+        f"?product_id={product.id}"
+        f"&ticket_id={ticket.id}"
+        "&transaction_type=SALE"
+        "&gross_kg=&tare_kg=&net_kg=&readout_kg=&qty=&unit_price="
+    )
+
+    assert response.status_code == 200
+    assert (
+        "Final disposal selected on this ticket. Capture destination site/company before completion."
         in response.text
     )

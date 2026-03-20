@@ -1,6 +1,6 @@
-{% if oob_product_operation_hints is not defined %}{% set oob_product_operation_hints = false %}{% endif %}
-{% if product_operation is not defined %}
-  {% set product_operation = {"final_disposal": false, "used_on_site": false, "destination_required": false} %}
+{% if oob_ticket_operation_hints is not defined %}{% set oob_ticket_operation_hints = false %}{% endif %}
+{% if ticket_operation is not defined %}
+  {% set ticket_operation = {"final_disposal": false, "used_on_site": false, "destination_required": false} %}
 {% endif %}
 
 <div
@@ -10,7 +10,7 @@
   hx-trigger="change from:#transaction_type"
   hx-target="#product-field"
   hx-swap="outerHTML"
-  hx-include="#transaction_type"
+  hx-include="#transaction_type,#ticket_final_disposal_value,#ticket_used_on_site_value"
   hx-vals='{"ticket_id":"{{ ticket_id }}"}'
 >
   <label for="product_id">Product</label>
@@ -20,7 +20,8 @@
     hx-get="/tickets/product-defaults"
     hx-trigger="change"
     hx-target="#pricing-defaults"
-    hx-include="#weights-form,#qty,#transaction_type,#customer_id"
+    hx-include="#weights-form,#qty,#transaction_type,#customer_id,#ticket_final_disposal_value,#ticket_used_on_site_value"
+    hx-vals='{"ticket_id":"{{ ticket_id }}","apply_product_defaults":"1"}'
   >
     <option value="">
       {{ "Select product" if options.products else (product_empty_option_label or "No products available.") }}

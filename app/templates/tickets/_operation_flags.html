@@ -1,0 +1,37 @@
+{% if oob_operation_flags is not defined %}{% set oob_operation_flags = false %}{% endif %}
+
+<div id="ticket-operation-flags" {% if oob_operation_flags %}hx-swap-oob="outerHTML"{% endif %}>
+  <div class="field checkbox">
+    <input
+      type="checkbox"
+      id="final_disposal"
+      name="final_disposal"
+      value="on"
+      {% if ticket_operation_form.final_disposal %}checked{% endif %}
+    />
+    <label for="final_disposal">Final disposal (this ticket)</label>
+  </div>
+  <div class="field checkbox">
+    <input
+      type="checkbox"
+      id="used_on_site"
+      name="used_on_site"
+      value="on"
+      {% if ticket_operation_form.used_on_site %}checked{% endif %}
+    />
+    <label for="used_on_site">Used on site (this ticket)</label>
+  </div>
+  <input
+    type="hidden"
+    id="ticket_final_disposal_value"
+    name="ticket_final_disposal_value"
+    value="{{ '1' if ticket_operation_form.final_disposal else '0' }}"
+  />
+  <input
+    type="hidden"
+    id="ticket_used_on_site_value"
+    name="ticket_used_on_site_value"
+    value="{{ '1' if ticket_operation_form.used_on_site else '0' }}"
+  />
+  <div class="hint">Movement-level flags for this ticket. Product flags are defaults only.</div>
+</div>

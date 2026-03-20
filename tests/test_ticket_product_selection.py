@@ -244,7 +244,10 @@ def test_edit_page_product_change_hx_include_excludes_unit_price(client, db_sess
         response.text,
     )
     assert match is not None
-    assert match.group(1) == "#weights-form,#qty,#transaction_type,#customer_id"
+    assert (
+        match.group(1)
+        == "#weights-form,#qty,#transaction_type,#customer_id,#ticket_final_disposal_value,#ticket_used_on_site_value"
+    )
     assert "#unit_price" not in match.group(1)
 
 
