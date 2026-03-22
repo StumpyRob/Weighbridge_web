@@ -1,9 +1,12 @@
+import base64
+import binascii
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from html import escape
 import logging
 import re
 from urllib.parse import urlencode
+import zlib
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import (
@@ -155,6 +158,8 @@ TICKET_EMAIL_DEFAULT_BODY = (
     "{company_name}"
 )
 CREDIT_LIMIT_WARNING_RATIO = Decimal("0.80")
+WTN_SIGNATURE_DATA_URL_PREFIX = "data:image/png;base64,"
+WTN_SIGNATURE_MAX_BYTES = 500_000
 _TICKET_AUDIT_DIFF_KEYS = (
     "status",
     "product_id",
@@ -2039,6 +2044,8 @@ def tickets_edit(
             "wtn_failed": request.query_params.get("wtn_failed") == "1",
             "wtn_error_detail": request.query_params.get("wtn_error_detail", ""),
             "wtn_job_id": request.query_params.get("wtn_job_id", ""),
+            "wtn_signature_saved": request.query_params.get("wtn_signature_saved")
+            == "1",
             "email_sent": request.query_params.get("email_sent") == "1",
             "ticket_email_failed": False,
             "ticket_email_error": "",
@@ -2542,6 +2549,174 @@ def _wtn_filename(ticket: Ticket) -> str:
     return f"{token}-wtn.pdf"
 
 
+def _normalize_png_data_url(value: str | None) -> tuple[str, bytes] | None:
+    raw_value = str(value or "").strip()
+    if not raw_value or not raw_value.startswith(WTN_SIGNATURE_DATA_URL_PREFIX):
+        return None
+    encoded = raw_value[len(WTN_SIGNATURE_DATA_URL_PREFIX) :].strip()
+    if not encoded:
+        return None
+    try:
+        decoded = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    if not decoded.startswith(b"\x89PNG\r\n\x1a\n"):
+        return None
+    if len(decoded) > WTN_SIGNATURE_MAX_BYTES:
+        return None
+    return f"{WTN_SIGNATURE_DATA_URL_PREFIX}{encoded}", decoded
+
+
+def _paeth_predictor(a: int, b: int, c: int) -> int:
+    p = a + b - c
+    pa = abs(p - a)
+    pb = abs(p - b)
+    pc = abs(p - c)
+    if pa <= pb and pa <= pc:
+        return a
+    if pb <= pc:
+        return b
+    return c
+
+
+def _unfilter_png_row(
+    row: bytearray,
+    *,
+    prev_row: bytearray | None,
+    filter_type: int,
+    bytes_per_pixel: int,
+) -> bool:
+    row_len = len(row)
+    if filter_type == 0:
+        return True
+    if filter_type == 1:  # Sub
+        for idx in range(row_len):
+            left = row[idx - bytes_per_pixel] if idx >= bytes_per_pixel else 0
+            row[idx] = (row[idx] + left) & 0xFF
+        return True
+    if filter_type == 2:  # Up
+        for idx in range(row_len):
+            up = prev_row[idx] if prev_row is not None else 0
+            row[idx] = (row[idx] + up) & 0xFF
+        return True
+    if filter_type == 3:  # Average
+        for idx in range(row_len):
+            left = row[idx - bytes_per_pixel] if idx >= bytes_per_pixel else 0
+            up = prev_row[idx] if prev_row is not None else 0
+            row[idx] = (row[idx] + ((left + up) // 2)) & 0xFF
+        return True
+    if filter_type == 4:  # Paeth
+        for idx in range(row_len):
+            left = row[idx - bytes_per_pixel] if idx >= bytes_per_pixel else 0
+            up = prev_row[idx] if prev_row is not None else 0
+            up_left = (
+                prev_row[idx - bytes_per_pixel]
+                if prev_row is not None and idx >= bytes_per_pixel
+                else 0
+            )
+            row[idx] = (row[idx] + _paeth_predictor(left, up, up_left)) & 0xFF
+        return True
+    return False
+
+
+def _png_has_visible_ink(png_bytes: bytes) -> bool:
+    if not png_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        return False
+    cursor = 8
+    width = 0
+    height = 0
+    color_type = -1
+    saw_ihdr = False
+    compressed_parts: list[bytes] = []
+
+    while cursor + 8 <= len(png_bytes):
+        chunk_length = int.from_bytes(png_bytes[cursor : cursor + 4], "big")
+        chunk_type = png_bytes[cursor + 4 : cursor + 8]
+        cursor += 8
+        if cursor + chunk_length + 4 > len(png_bytes):
+            return False
+        chunk_data = png_bytes[cursor : cursor + chunk_length]
+        cursor += chunk_length
+        cursor += 4  # CRC
+
+        if chunk_type == b"IHDR":
+            if chunk_length != 13:
+                return False
+            width = int.from_bytes(chunk_data[0:4], "big")
+            height = int.from_bytes(chunk_data[4:8], "big")
+            bit_depth = int(chunk_data[8])
+            color_type = int(chunk_data[9])
+            compression = int(chunk_data[10])
+            filter_method = int(chunk_data[11])
+            interlace = int(chunk_data[12])
+            if (
+                width <= 0
+                or height <= 0
+                or bit_depth != 8
+                or color_type not in (2, 6)
+                or compression != 0
+                or filter_method != 0
+                or interlace != 0
+            ):
+                return False
+            saw_ihdr = True
+        elif chunk_type == b"IDAT":
+            compressed_parts.append(chunk_data)
+        elif chunk_type == b"IEND":
+            break
+
+    if not saw_ihdr or not compressed_parts:
+        return False
+    try:
+        decompressed = zlib.decompress(b"".join(compressed_parts))
+    except zlib.error:
+        return False
+
+    channels = 3 if color_type == 2 else 4
+    row_bytes = width * channels
+    expected_length = (row_bytes + 1) * height
+    if len(decompressed) != expected_length:
+        return False
+
+    previous_row: bytearray | None = None
+    offset = 0
+    for _ in range(height):
+        filter_type = int(decompressed[offset])
+        offset += 1
+        row = bytearray(decompressed[offset : offset + row_bytes])
+        offset += row_bytes
+        if len(row) != row_bytes:
+            return False
+        if not _unfilter_png_row(
+            row,
+            prev_row=previous_row,
+            filter_type=filter_type,
+            bytes_per_pixel=channels,
+        ):
+            return False
+
+        if color_type == 2:
+            for idx in range(0, row_bytes, 3):
+                red = row[idx]
+                green = row[idx + 1]
+                blue = row[idx + 2]
+                if red < 250 or green < 250 or blue < 250:
+                    return True
+        else:
+            for idx in range(0, row_bytes, 4):
+                red = row[idx]
+                green = row[idx + 1]
+                blue = row[idx + 2]
+                alpha = row[idx + 3]
+                if alpha == 0:
+                    continue
+                if alpha < 250 or red < 250 or green < 250 or blue < 250:
+                    return True
+        previous_row = row
+
+    return False
+
+
 @router.get("/tickets/{ticket_id:int}/wtn/preview", response_class=HTMLResponse)
 def tickets_wtn_preview(
     ticket_id: int,
@@ -2657,6 +2832,112 @@ def tickets_wtn_pdf(
             "Pragma": "no-cache",
             "Expires": "0",
         },
+    )
+
+
+@router.post("/tickets/{ticket_id:int}/wtn/signature")
+async def tickets_wtn_signature_save(
+    ticket_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    _require_tickets_manage(request)
+    ticket = db.get(Ticket, ticket_id)
+    if ticket is None:
+        return templates.TemplateResponse(
+            request,
+            "tickets/not_found.html",
+            {"request": request, "ticket_id": ticket_id},
+            status_code=404,
+        )
+
+    status_value = _status_value(ticket.status)
+    transaction_type_value = _enum_value_or_text(ticket.transaction_type)
+    if (
+        status_value != TicketStatusEnum.COMPLETE.value
+        or not _is_waste_transaction(transaction_type_value)
+    ):
+        return _render_ticket_edit(
+            request,
+            ticket,
+            db,
+            errors=["WTN signatures are only available for complete waste tickets."],
+            status_code=400,
+        )
+
+    form = await request.form()
+    signature_data_url = str(form.get("signature_data_url") or "").strip()
+    _ = str(form.get("blank_signature_data_url") or "").strip()
+    signer_name_input = str(form.get("signer_name") or "").strip()
+
+    signer_name: str | None = None
+    if signer_name_input:
+        signer_errors: list[str] = []
+        validate_no_html(signer_name_input, "Signer name", signer_errors)
+        if len(signer_name_input) > NAME_MAX:
+            signer_errors.append(f"Signer name must be {NAME_MAX} characters or fewer.")
+        if signer_errors:
+            return _render_ticket_edit(
+                request,
+                ticket,
+                db,
+                errors=signer_errors,
+                status_code=400,
+            )
+        signer_name = signer_name_input
+
+    normalized_signature = _normalize_png_data_url(signature_data_url)
+    if normalized_signature is None:
+        return _render_ticket_edit(
+            request,
+            ticket,
+            db,
+            errors=["Signature image is invalid. Please capture and save again."],
+            status_code=400,
+        )
+    normalized_data_url, normalized_png_bytes = normalized_signature
+    if not _png_has_visible_ink(normalized_png_bytes):
+        return _render_ticket_edit(
+            request,
+            ticket,
+            db,
+            errors=["Signature cannot be blank."],
+            status_code=400,
+        )
+
+    replacing_existing = bool(str(ticket.wtn_signature_data_uri or "").strip())
+    ticket.wtn_signature_data_uri = normalized_data_url
+    ticket.wtn_signature_signed_at = utcnow()
+    ticket.wtn_signature_signer_name = signer_name
+    signed_at_iso = (
+        ticket.wtn_signature_signed_at.isoformat()
+        if ticket.wtn_signature_signed_at is not None
+        else ""
+    )
+    audit_log(
+        db,
+        request,
+        action="TICKET_WTN_SIGNATURE_SAVED",
+        entity_type="ticket",
+        entity_id=ticket.id,
+        summary=(
+            f"Replaced WTN signature for ticket {ticket.ticket_no}"
+            if replacing_existing
+            else f"Saved WTN signature for ticket {ticket.ticket_no}"
+        ),
+        details={
+            "ticket_id": ticket.id,
+            "ticket_no": ticket.ticket_no,
+            "operation": "replace" if replacing_existing else "save",
+            "signer_name": signer_name or None,
+            "signed_at": signed_at_iso,
+        },
+    )
+    db.add(ticket)
+    db.commit()
+    return RedirectResponse(
+        url=f"/tickets/{ticket.id}?wtn_signature_saved=1",
+        status_code=303,
     )
 
 
@@ -5600,6 +5881,7 @@ def _render_ticket_edit(
             "wtn_failed": False,
             "wtn_error_detail": "",
             "wtn_job_id": "",
+            "wtn_signature_saved": False,
             "email_sent": False,
             "ticket_email_failed": ticket_email_failed,
             "ticket_email_error": ticket_email_error,

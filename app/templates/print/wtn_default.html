@@ -175,6 +175,16 @@
         background: #f8fafc;
         min-height: 100px;
         margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+
+      .signature-image {
+        max-width: 100%;
+        max-height: 92px;
+        object-fit: contain;
       }
 
       .print-name-row {
@@ -198,6 +208,11 @@
         border-bottom: 1px solid #94a3b8;
         height: 1em;
         margin-left: 2px;
+      }
+
+      .signature-print-name {
+        color: #0f172a;
+        font-weight: 500;
       }
 
       .date-row {
@@ -228,6 +243,12 @@
         font-family: 'JetBrains Mono', 'SF Mono', monospace;
         color: #64748b;
         margin: 0 2px;
+      }
+
+      .signature-signed-meta {
+        margin-top: 6px;
+        font-size: 9px;
+        color: #475569;
       }
 
       .notes-section {
@@ -281,6 +302,9 @@
     {% set company_name_value = company_name or (company.name if company else "") or "Your Company Name" %}
     {% set company_lines_value = company_lines or (company.lines if company else []) or [] %}
     {% set logo_src = p.logo_data_uri or "" %}
+    {% set signature_src = p.wtn_signature_data_uri or "" %}
+    {% set signature_signed_at = p.wtn_signature_signed_at or "" %}
+    {% set signature_signer_name = p.wtn_signature_signer_name or "" %}
 
     <div class="header">
       <div class="company-section">
@@ -388,19 +412,34 @@
 
       <div class="signature-item">
         <div class="signature-label">RECEIVER SIGNATURE</div>
-        <div class="signature-area"></div>
+        <div class="signature-area">
+          {% if signature_src %}
+            <img src="{{ signature_src }}" alt="Captured signature" class="signature-image" />
+          {% endif %}
+        </div>
         <div class="print-name-row">
           <span class="print-name-label">Print name:</span>
-          <span class="print-name-line"></span>
+          {% if signature_signer_name %}
+            <span class="signature-print-name">{{ signature_signer_name }}</span>
+          {% else %}
+            <span class="print-name-line"></span>
+          {% endif %}
         </div>
         <div class="date-row">
           <span class="date-label">Date:</span>
-          <span class="date-digits">__</span>
-          <span class="date-slash">/</span>
-          <span class="date-digits">__</span>
-          <span class="date-slash">/</span>
-          <span class="date-digits">____</span>
+          {% if signature_signed_at %}
+            <span class="detail-value">{{ signature_signed_at }}</span>
+          {% else %}
+            <span class="date-digits">__</span>
+            <span class="date-slash">/</span>
+            <span class="date-digits">__</span>
+            <span class="date-slash">/</span>
+            <span class="date-digits">____</span>
+          {% endif %}
         </div>
+        {% if signature_signed_at %}
+          <div class="signature-signed-meta">Captured electronically.</div>
+        {% endif %}
       </div>
     </div>
 

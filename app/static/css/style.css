@@ -850,6 +850,90 @@ body.js-help-tooltips .help-tooltip {
   gap: 0.35rem;
 }
 
+.wtn-signature-tools {
+  margin-top: 0.35rem;
+  width: min(36rem, 100%);
+  border: 1px solid #d7dee7;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 0.7rem 0.8rem 0.8rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.wtn-signature-tools__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+.wtn-signature-tools__header h3 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.wtn-signature-tools__preview-wrap {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0.35rem;
+  min-height: 3.2rem;
+  display: flex;
+  align-items: center;
+}
+
+.wtn-signature-tools__preview {
+  display: block;
+  max-width: 100%;
+  max-height: 110px;
+  object-fit: contain;
+}
+
+.wtn-signature-tools__meta {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.wtn-signature-dialog {
+  width: min(44rem, calc(100% - 2rem));
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  padding: 0;
+}
+
+.wtn-signature-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.wtn-signature-dialog form {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1rem;
+}
+
+.wtn-signature-dialog h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.wtn-signature-dialog__canvas {
+  width: 100%;
+  height: 220px;
+  border: 1px solid #9ca3af;
+  border-radius: 8px;
+  background: #ffffff;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.wtn-signature-dialog__error {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 0.84rem;
+}
+
 @media (max-width: 640px) {
   .print-actions {
     width: 100%;
@@ -938,6 +1022,10 @@ body.js-help-tooltips .help-tooltip {
   .ticket-print-receipt-link {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .wtn-signature-tools {
+    width: 100%;
   }
 }
 

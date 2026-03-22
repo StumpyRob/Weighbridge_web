@@ -38,6 +38,12 @@
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}
+  {% if wtn_signature_saved %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">WTN signature saved.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
   {% if email_sent %}
     <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
       <div class="flash-toast__content">Ticket {{ ticket.ticket_no }} sent by email.</div>
@@ -131,6 +137,73 @@
       {% set email_id_prefix = "ticket-email" %}
       {% set email_help_text = "Uses the configured ticket document output and platform email settings to attach a PDF copy." %}
       {% include "printing/_document_email_form.html" %}
+      {% if show_wtn_actions %}
+        <section class="wtn-signature-tools" data-wtn-signature-root>
+          <div class="wtn-signature-tools__header">
+            <h3>WTN Signature</h3>
+            {% if ticket.wtn_signature_signed_at %}
+              <span class="muted">Captured {{ ticket.wtn_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}</span>
+            {% else %}
+              <span class="muted">No signature captured yet.</span>
+            {% endif %}
+          </div>
+
+          {% if ticket.wtn_signature_data_uri %}
+            <div class="wtn-signature-tools__preview-wrap">
+              <img
+                src="{{ ticket.wtn_signature_data_uri }}"
+                alt="Saved WTN signature"
+                class="wtn-signature-tools__preview"
+              />
+            </div>
+          {% endif %}
+
+          {% if ticket.wtn_signature_signer_name %}
+            <p class="wtn-signature-tools__meta muted">
+              Signer: {{ ticket.wtn_signature_signer_name }}
+            </p>
+          {% endif %}
+
+          <div class="actions btn-group">
+            <button type="button" class="btn btn--secondary" data-wtn-signature-open>
+              {% if ticket.wtn_signature_data_uri %}Replace Signature{% else %}Capture Signature{% endif %}
+            </button>
+          </div>
+
+          <dialog class="wtn-signature-dialog" data-wtn-signature-dialog>
+            <form method="post" action="/tickets/{{ ticket.id }}/wtn/signature" data-wtn-signature-form>
+              <h3>Capture WTN Signature</h3>
+              {% if ticket.wtn_signature_data_uri %}
+                <p class="muted">Saving will replace the existing signature on this WTN.</p>
+              {% endif %}
+              <canvas
+                class="wtn-signature-dialog__canvas"
+                width="600"
+                height="220"
+                data-wtn-signature-canvas
+              ></canvas>
+              <input type="hidden" name="signature_data_url" value="" data-wtn-signature-data />
+              <input type="hidden" name="blank_signature_data_url" value="" data-wtn-signature-blank />
+              <div class="field">
+                <label for="wtn_signer_name">Signer name (optional)</label>
+                <input
+                  type="text"
+                  id="wtn_signer_name"
+                  name="signer_name"
+                  maxlength="{{ limits.NAME_MAX }}"
+                  value="{{ ticket.wtn_signature_signer_name or '' }}"
+                />
+              </div>
+              <p class="wtn-signature-dialog__error" data-wtn-signature-error hidden></p>
+              <div class="actions btn-group">
+                <button type="button" class="btn btn--secondary" data-wtn-signature-clear>Clear</button>
+                <button type="submit" class="btn btn--primary">Save Signature</button>
+                <button type="button" class="btn btn--ghost" data-wtn-signature-cancel>Cancel</button>
+              </div>
+            </form>
+          </dialog>
+        </section>
+      {% endif %}
     </div>
   {% elif is_open and (can_complete_ticket or (allow_dev_preview and can_manage_ticket)) %}
     <div class="actions btn-group ticket-header-actions">
@@ -1918,6 +1991,175 @@
         bindEwcField();
         scheduleApplyTicketRules();
       }
+    });
+  })();
+</script>
+<script>
+  (function () {
+    const root = document.querySelector("[data-wtn-signature-root]");
+    if (!root) {
+      return;
+    }
+
+    const openButton = root.querySelector("[data-wtn-signature-open]");
+    const dialog = root.querySelector("[data-wtn-signature-dialog]");
+    const form = root.querySelector("[data-wtn-signature-form]");
+    const canvas = root.querySelector("[data-wtn-signature-canvas]");
+    const clearButton = root.querySelector("[data-wtn-signature-clear]");
+    const cancelButton = root.querySelector("[data-wtn-signature-cancel]");
+    const dataInput = root.querySelector("[data-wtn-signature-data]");
+    const blankInput = root.querySelector("[data-wtn-signature-blank]");
+    const errorMessage = root.querySelector("[data-wtn-signature-error]");
+
+    if (
+      !openButton ||
+      !dialog ||
+      !form ||
+      !canvas ||
+      !clearButton ||
+      !cancelButton ||
+      !dataInput ||
+      !blankInput
+    ) {
+      return;
+    }
+
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) {
+      return;
+    }
+
+    let drawing = false;
+    let hasStroke = false;
+    let blankDataUrl = "";
+
+    function hideError() {
+      if (!errorMessage) {
+        return;
+      }
+      errorMessage.hidden = true;
+      errorMessage.textContent = "";
+    }
+
+    function showError(message) {
+      if (!errorMessage) {
+        return;
+      }
+      errorMessage.textContent = message;
+      errorMessage.hidden = false;
+    }
+
+    function resizeCanvas() {
+      const bounds = canvas.getBoundingClientRect();
+      const ratio = Math.max(window.devicePixelRatio || 1, 1);
+      const width = Math.max(Math.floor(bounds.width * ratio), 1);
+      const height = Math.max(Math.floor(bounds.height * ratio), 1);
+      canvas.width = width;
+      canvas.height = height;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, bounds.width, bounds.height);
+      context.lineJoin = "round";
+      context.lineCap = "round";
+      context.strokeStyle = "#0f172a";
+      context.lineWidth = 2.2;
+      hasStroke = false;
+      blankDataUrl = canvas.toDataURL("image/png");
+      blankInput.value = blankDataUrl;
+      dataInput.value = "";
+      hideError();
+    }
+
+    function pointFromEvent(event) {
+      const bounds = canvas.getBoundingClientRect();
+      return {
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      };
+    }
+
+    function beginStroke(event) {
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+      const point = pointFromEvent(event);
+      drawing = true;
+      hasStroke = true;
+      hideError();
+      context.beginPath();
+      context.moveTo(point.x, point.y);
+      if (canvas.setPointerCapture) {
+        canvas.setPointerCapture(event.pointerId);
+      }
+      event.preventDefault();
+    }
+
+    function moveStroke(event) {
+      if (!drawing) {
+        return;
+      }
+      const point = pointFromEvent(event);
+      context.lineTo(point.x, point.y);
+      context.stroke();
+      event.preventDefault();
+    }
+
+    function endStroke(event) {
+      if (!drawing) {
+        return;
+      }
+      drawing = false;
+      if (canvas.releasePointerCapture) {
+        try {
+          canvas.releasePointerCapture(event.pointerId);
+        } catch (_error) {
+        }
+      }
+      context.closePath();
+      event.preventDefault();
+    }
+
+    function openDialog() {
+      if (typeof dialog.showModal === "function") {
+        dialog.showModal();
+      } else {
+        dialog.setAttribute("open", "open");
+      }
+      window.setTimeout(resizeCanvas, 0);
+    }
+
+    function closeDialog() {
+      hideError();
+      if (typeof dialog.close === "function") {
+        dialog.close();
+      } else {
+        dialog.removeAttribute("open");
+      }
+    }
+
+    openButton.addEventListener("click", openDialog);
+    cancelButton.addEventListener("click", closeDialog);
+    clearButton.addEventListener("click", resizeCanvas);
+    window.addEventListener("resize", function () {
+      if (dialog.hasAttribute("open")) {
+        resizeCanvas();
+      }
+    });
+
+    canvas.addEventListener("pointerdown", beginStroke);
+    canvas.addEventListener("pointermove", moveStroke);
+    canvas.addEventListener("pointerup", endStroke);
+    canvas.addEventListener("pointercancel", endStroke);
+    canvas.addEventListener("pointerleave", endStroke);
+
+    form.addEventListener("submit", function (event) {
+      if (!hasStroke) {
+        event.preventDefault();
+        showError("Signature cannot be blank.");
+        return;
+      }
+      dataInput.value = canvas.toDataURL("image/png");
+      blankInput.value = blankDataUrl || "";
     });
   })();
 </script>

@@ -95,6 +95,12 @@ class Ticket(Base):
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
     final_disposal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     used_on_site: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    wtn_signature_data_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    wtn_signature_signed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    wtn_signature_signer_name: Mapped[str | None] = mapped_column(
+        String(NAME_MAX),
+        nullable=True,
+    )
     ewc_code_6: Mapped[str | None] = mapped_column(String(6), nullable=True)
     ewc_code_display: Mapped[str | None] = mapped_column(String(10), nullable=True)
     ewc_description: Mapped[str | None] = mapped_column(Text, nullable=True)

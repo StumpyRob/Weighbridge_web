@@ -52,6 +52,10 @@ PRINT_PAYLOAD_KEYS: tuple[str, ...] = (
     "transaction_type",
     "final_disposal",
     "used_on_site",
+    "wtn_signature_data_uri",
+    "wtn_signature_signed_at",
+    "wtn_signature_signed_at_iso",
+    "wtn_signature_signer_name",
     "is_complete",
     "is_sale",
     "is_waste",
@@ -318,6 +322,10 @@ def _empty_payload(document_type: str) -> dict[str, Any]:
         "transaction_type": "",
         "final_disposal": False,
         "used_on_site": False,
+        "wtn_signature_data_uri": "",
+        "wtn_signature_signed_at": "",
+        "wtn_signature_signed_at_iso": "",
+        "wtn_signature_signer_name": "",
         "is_complete": False,
         "is_sale": False,
         "is_waste": False,
@@ -385,6 +393,10 @@ def _sample_ticket_payload() -> dict[str, Any]:
             "transaction_type": "SALE",
             "final_disposal": False,
             "used_on_site": False,
+            "wtn_signature_data_uri": "",
+            "wtn_signature_signed_at": "",
+            "wtn_signature_signed_at_iso": "",
+            "wtn_signature_signer_name": "",
             "is_sale": True,
             "customer_name": "Sample Customer",
             "customer_account_code": "C-SAMPLE",
@@ -471,6 +483,10 @@ def _sample_wtn_payload() -> dict[str, Any]:
             "status": "COMPLETE",
             "final_disposal": False,
             "used_on_site": False,
+            "wtn_signature_data_uri": "",
+            "wtn_signature_signed_at": "",
+            "wtn_signature_signed_at_iso": "",
+            "wtn_signature_signer_name": "",
             "is_complete": True,
             "is_waste": True,
             "customer_name": "Sample Producer",
@@ -531,6 +547,18 @@ def _build_ticket_payload_from_ticket(db: Session, ticket: Ticket) -> dict[str, 
             "transaction_type": transaction_type,
             "final_disposal": bool(ticket.final_disposal),
             "used_on_site": bool(ticket.used_on_site),
+            "wtn_signature_data_uri": _text(ticket.wtn_signature_data_uri),
+            "wtn_signature_signed_at": (
+                _format_dt(ticket.wtn_signature_signed_at)
+                if ticket.wtn_signature_signed_at
+                else ""
+            ),
+            "wtn_signature_signed_at_iso": (
+                ticket.wtn_signature_signed_at.isoformat()
+                if ticket.wtn_signature_signed_at
+                else ""
+            ),
+            "wtn_signature_signer_name": _text(ticket.wtn_signature_signer_name),
             "is_complete": status == TicketStatusEnum.COMPLETE.value,
             "is_sale": transaction_type == "SALE",
             "is_waste": transaction_type.startswith("WASTE"),
@@ -763,6 +791,18 @@ def _build_wtn_payload_from_ticket(db: Session, ticket: Ticket) -> dict[str, Any
             "status": _enum_value(ticket.status),
             "final_disposal": bool(ticket.final_disposal),
             "used_on_site": bool(ticket.used_on_site),
+            "wtn_signature_data_uri": _text(ticket.wtn_signature_data_uri),
+            "wtn_signature_signed_at": (
+                _format_dt(ticket.wtn_signature_signed_at)
+                if ticket.wtn_signature_signed_at
+                else ""
+            ),
+            "wtn_signature_signed_at_iso": (
+                ticket.wtn_signature_signed_at.isoformat()
+                if ticket.wtn_signature_signed_at
+                else ""
+            ),
+            "wtn_signature_signer_name": _text(ticket.wtn_signature_signer_name),
             "is_complete": _enum_value(ticket.status) == TicketStatusEnum.COMPLETE.value,
             "is_waste": True,
             "customer_name": customer_name,
@@ -872,6 +912,10 @@ def print_payload_variable_docs() -> list[dict[str, str]]:
         "transaction_type": "Ticket transaction type.",
         "final_disposal": "Ticket-level final disposal flag.",
         "used_on_site": "Ticket-level used-on-site flag.",
+        "wtn_signature_data_uri": "Saved WTN signature PNG data URI.",
+        "wtn_signature_signed_at": "WTN signature captured at (display format).",
+        "wtn_signature_signed_at_iso": "WTN signature captured at (ISO datetime).",
+        "wtn_signature_signer_name": "Optional WTN signature signer name.",
         "is_complete": "True when source document is complete.",
         "is_sale": "True for sale transactions.",
         "is_waste": "True for waste transactions.",

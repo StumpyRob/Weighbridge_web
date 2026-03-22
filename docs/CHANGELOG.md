@@ -4,6 +4,33 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.19 - 2026-03-22
+
+### RELEASE
+- `v0.19` introduces browser-based WTN signature capture on tickets, with WTN preview/PDF rendering from the saved ticket signature.
+
+### ADD
+- Add ticket-level WTN signature storage fields and migration:
+  - `wtn_signature_data_uri`
+  - `wtn_signature_signed_at`
+  - `wtn_signature_signer_name` (optional)
+- Add browser signature capture flow on complete waste tickets from the ticket document area:
+  - Capture Signature
+  - Clear
+  - Save Signature
+  - Cancel
+- Add WTN payload variables for signature fields and expose them in print payload variable docs.
+- Render saved signature, signer name, and signed timestamp in the default WTN template (preview and PDF paths).
+
+### FIX
+- Harden server-side blank-signature validation so blank detection is enforced by server-side PNG pixel analysis, not client-provided hidden fields.
+- Add ticket audit events for WTN signature save/replace with ticket reference, operation type, signer name, and signed timestamp.
+
+### TEST
+- Add/extend WTN signature tests for save success, blank-signature rejection, WTN preview signature rendering, and WTN PDF signature rendering.
+- Add audit regression coverage for WTN signature save and replace events.
+- Re-run targeted WTN, audit-log, and unified print payload regression slices.
+
 ## v0.18.2 - 2026-03-22
 
 ### RELEASE

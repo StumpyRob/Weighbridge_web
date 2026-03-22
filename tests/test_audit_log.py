@@ -22,6 +22,15 @@ from app.models import (
 from app.seed import seed_payment_methods
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD
 
+SIGNATURE_DATA_URL = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAD0lEQVR4nGP4DwQMDAz/ARruBPywhCTXAAAAAElFTkSuQmCC"
+)
+BLANK_SIGNATURE_DATA_URL = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAC0lEQVR4nGP4DwUAI+UH+Yo0eLMAAAAASUVORK5CYII="
+)
+
 
 def _csrf_from_cookie(client) -> str:
     csrf = str(client.cookies.get(CSRF_COOKIE_NAME) or "")
@@ -215,6 +224,68 @@ def test_ticket_save_operation_flag_changes_are_audited(client, db_session):
     changed = (event.details_json or {}).get("changed", {})
     assert changed.get("final_disposal") == {"from": True, "to": False}
     assert changed.get("used_on_site") == {"from": False, "to": True}
+
+
+def test_ticket_wtn_signature_save_and_replace_are_audited(client, db_session):
+    ticket = Ticket(
+        ticket_no="T-AUD-WTN-SIGN-1",
+        datetime=datetime(2026, 3, 22, 12, 0, 0),
+        status=TicketStatusEnum.COMPLETE.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        ewc_code_display="17 09 04",
+        ewc_description="Audit WTN signature",
+        net_kg=Decimal("1200.000"),
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    first = client.post(
+        f"/tickets/{ticket.id}/wtn/signature",
+        data={
+            "signature_data_url": SIGNATURE_DATA_URL,
+            "blank_signature_data_url": BLANK_SIGNATURE_DATA_URL,
+            "signer_name": "First Signer",
+        },
+        follow_redirects=False,
+    )
+    assert first.status_code == 303
+
+    second = client.post(
+        f"/tickets/{ticket.id}/wtn/signature",
+        data={
+            "signature_data_url": SIGNATURE_DATA_URL,
+            "blank_signature_data_url": BLANK_SIGNATURE_DATA_URL,
+            "signer_name": "Second Signer",
+        },
+        follow_redirects=False,
+    )
+    assert second.status_code == 303
+
+    events = db_session.execute(
+        select(AuditEvent)
+        .where(
+            AuditEvent.action == "TICKET_WTN_SIGNATURE_SAVED",
+            AuditEvent.entity_type == "ticket",
+            AuditEvent.entity_id == str(ticket.id),
+        )
+        .order_by(AuditEvent.id.asc())
+    ).scalars().all()
+    assert len(events) == 2
+
+    first_details = events[0].details_json or {}
+    assert first_details.get("ticket_id") == ticket.id
+    assert first_details.get("ticket_no") == ticket.ticket_no
+    assert first_details.get("operation") == "save"
+    assert first_details.get("signer_name") == "First Signer"
+    assert first_details.get("signed_at")
+
+    second_details = events[1].details_json or {}
+    assert second_details.get("operation") == "replace"
+    assert second_details.get("signer_name") == "Second Signer"
+    assert second_details.get("signed_at")
 
 
 def test_customer_create_creates_audit_event(client, db_session):
