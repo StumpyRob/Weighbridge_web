@@ -89,6 +89,8 @@ def test_build_wtn_payload_returns_expected_keys(db_session):
         haulier_id=haulier.id,
         destination_id=destination.id,
         yard_id=yard.id,
+        final_disposal=True,
+        used_on_site=False,
         ewc_code_display="17 09 04",
         ewc_description="Mixed construction waste",
         net_kg=Decimal("12340.000"),
@@ -112,6 +114,8 @@ def test_build_wtn_payload_returns_expected_keys(db_session):
     assert payload["quantity_tonnes"] == 12.34
     assert payload["origin_site"] == "Main Yard"
     assert payload["destination_site"] == "WTN Destination"
+    assert payload["final_disposal"] is True
+    assert payload["used_on_site"] is False
     assert payload["send_ready"] is True
     assert payload["send_blockers"] == []
 

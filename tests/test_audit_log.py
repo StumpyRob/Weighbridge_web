@@ -154,6 +154,69 @@ def test_ticket_complete_logs_exactly_one_event_on_repeat_attempt(client, db_ses
     assert int(count) == 1
 
 
+def test_ticket_save_operation_flag_changes_are_audited(client, db_session):
+    customer = Customer(account_code="C-AUD-TKT-3", name="Audit Ticket Customer 3")
+    unit = Unit(name="Audit Ticket Unit 3", unit_type="COUNT", is_active=True)
+    product = Product(
+        code="P-AUD-TKT-3",
+        description="Audit Ticket Product 3",
+        unit=unit,
+        unit_price=Decimal("25.00"),
+    )
+    db_session.add_all([customer, unit, product])
+    db_session.flush()
+    ticket = Ticket(
+        ticket_no="T-AUD-SAVE-1",
+        datetime=datetime(2026, 3, 3, 12, 0, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.OUTWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        customer_id=customer.id,
+        product_id=product.id,
+        final_disposal=True,
+        used_on_site=False,
+        qty=Decimal("1"),
+        unit_price=Decimal("25.00"),
+        total=Decimal("25.00"),
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "save",
+            "datetime": "2026-03-03T12:00",
+            "direction": "OUTWARD",
+            "transaction_type": "SALE",
+            "customer_id": str(customer.id),
+            "product_id": str(product.id),
+            "final_disposal": "",
+            "used_on_site": "on",
+            "qty": "1",
+            "unit_price": "25.00",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    event = db_session.execute(
+        select(AuditEvent)
+        .where(
+            AuditEvent.action == "UPDATE",
+            AuditEvent.entity_type == "ticket",
+            AuditEvent.entity_id == str(ticket.id),
+        )
+        .order_by(AuditEvent.id.desc())
+        .limit(1)
+    ).scalar_one()
+    changed = (event.details_json or {}).get("changed", {})
+    assert changed.get("final_disposal") == {"from": True, "to": False}
+    assert changed.get("used_on_site") == {"from": False, "to": True}
+
+
 def test_customer_create_creates_audit_event(client, db_session):
     response = client.post(
         "/customers/new",

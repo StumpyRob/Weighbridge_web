@@ -1,3 +1,4 @@
+{% from "_help.html" import help %}
 {% if oob_ticket_operation_hints is not defined %}{% set oob_ticket_operation_hints = false %}{% endif %}
 {% if ticket_operation is not defined %}
   {% set ticket_operation = {"final_disposal": false, "used_on_site": false, "destination_required": false} %}
@@ -13,7 +14,7 @@
   hx-include="#transaction_type,#ticket_final_disposal_value,#ticket_used_on_site_value"
   hx-vals='{"ticket_id":"{{ ticket_id }}"}'
 >
-  <label for="product_id">Product</label>
+  <label for="product_id">Product{{ help(help_text.ticket_product, "ticket-product-help") }}</label>
   <select
     id="product_id"
     name="product_id"

@@ -2420,10 +2420,13 @@ details.frame:not([open]) .frame-header {
 .ticket-operation-flags {
   display: grid;
   gap: 0.35rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #f9fafb;
-  padding: 0.55rem 0.75rem;
+}
+
+.ticket-operation-flags__title {
+  margin: 0 0 0.1rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #4b5563;
 }
 
 .ticket-operation-flags .field.checkbox {

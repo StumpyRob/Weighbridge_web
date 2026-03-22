@@ -4,6 +4,25 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.18.2 - 2026-03-22
+
+### RELEASE
+- `v0.18.2` is a ticket operation-flags stabilization and output-variable patch release, with focused UI polish and audit/payload coverage updates.
+
+### FIX
+- Remove the framed card styling around ticket operation flag checkboxes and add a clear `Operation flags` section title for consistency with the rest of the ticket page.
+- Add a product-field tooltip clarifying that product options are filtered by direction and transaction type.
+- Add a weights-section tooltip clarifying that all weights are measured in kilograms.
+- Normalize `Active` status pills to use the green active styling across customer overrides, admin users/tenants, product groups, and printing admin lists.
+- Include ticket-level `final_disposal` and `used_on_site` in ticket audit diff tracking so save changes to those flags are captured in audit events.
+- Expose ticket-level `final_disposal` and `used_on_site` in ticket print/PDF and WTN payload variables and document them in print payload variable docs.
+- Expose `{final_disposal}` and `{used_on_site}` placeholders for ticket email templates and wire default ticket email rendering to populate those values.
+
+### TEST
+- Add audit regression coverage for ticket save updates to `final_disposal` and `used_on_site`.
+- Extend ticket print/WTN/unified payload tests to assert ticket-level operation flags are present in payload output.
+- Extend ticket email template rendering tests to assert ticket-level operation flag placeholders resolve correctly.
+
 ## v0.17.2 - 2026-03-19
 
 ### RELEASE

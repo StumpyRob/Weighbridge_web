@@ -138,7 +138,7 @@
             <span class="summary-label">Status</span>
             <span class="summary-value">
               {% if tenant.is_active %}
-                <span class="status-pill status-open">Active</span>
+                <span class="status-pill status-active">Active</span>
               {% else %}
                 <span class="status-pill status-void">Disabled</span>
               {% endif %}
@@ -189,7 +189,7 @@
                   <span class="summary-label">Status</span>
                   <span class="summary-value">
                     {% if primary_admin and primary_admin.is_active %}
-                      <span class="status-pill status-open">Active</span>
+                      <span class="status-pill status-active">Active</span>
                     {% else %}
                       <span class="status-pill status-void">Inactive</span>
                     {% endif %}
@@ -299,7 +299,7 @@
                   </td>
                   <td>
                     {% if user.is_active %}
-                      <span class="status-pill status-open">Active</span>
+                      <span class="status-pill status-active">Active</span>
                     {% else %}
                       <span class="status-pill status-void">Inactive</span>
                     {% endif %}

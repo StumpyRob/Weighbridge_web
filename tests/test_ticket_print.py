@@ -138,6 +138,8 @@ def test_build_ticket_print_payload_sale_fields(db_session):
         customer_id=customer.id,
         vehicle_id=vehicle.id,
         product_id=product.id,
+        final_disposal=True,
+        used_on_site=False,
         qty=Decimal("2.000"),
         unit_price=Decimal("12.50"),
         total=Decimal("25.00"),
@@ -155,6 +157,8 @@ def test_build_ticket_print_payload_sale_fields(db_session):
     assert payload["customer_name"] == "Print Sale Customer"
     assert payload["vehicle_reg"] == "PRINT123"
     assert payload["product_code"] == "P-PRINT-SALE"
+    assert payload["final_disposal"] is True
+    assert payload["used_on_site"] is False
     assert "logo_data_uri" in payload
 
 
@@ -218,6 +222,8 @@ def test_build_ticket_print_payload_waste_fields(db_session):
         driver_id=driver.id,
         container_id=container.id,
         destination_id=destination.id,
+        final_disposal=False,
+        used_on_site=True,
         gross_kg=Decimal("21000.000"),
         tare_kg=Decimal("8000.000"),
         net_kg=Decimal("13000.000"),
@@ -239,6 +245,8 @@ def test_build_ticket_print_payload_waste_fields(db_session):
     assert payload["driver_name"] == "Print Driver"
     assert payload["destination_name"] == "Print Destination"
     assert payload["ewc_code"] == "17 09 04"
+    assert payload["final_disposal"] is False
+    assert payload["used_on_site"] is True
 
 
 def test_build_ticket_print_payload_walk_in_fields(db_session):
@@ -466,14 +474,17 @@ def test_ticket_send_by_email_uses_tenant_configured_subject_and_body_template(
     _upsert_company_setting(
         db_session,
         name="Ticket Template Co",
-        ticket_email_subject_template="Configured {ticket_no} / {company_name}",
-        ticket_email_body_template="Body for {ticket_no} from {company_name}",
+        ticket_email_subject_template="Configured {ticket_no} / {company_name} / FD:{final_disposal} / UOS:{used_on_site}",
+        ticket_email_body_template="Body for {ticket_no} from {company_name} (final disposal: {final_disposal}, used on site: {used_on_site})",
     )
     ticket = _create_complete_sale_ticket(
         db_session,
         ticket_no="T-EMAIL-TEMPLATE-1",
         invoice_email="billing@example.com",
     )
+    ticket.final_disposal = True
+    ticket.used_on_site = False
+    db_session.commit()
     _set_ticket_browser_destination(
         db_session,
         code="TICKET_EMAIL_TEMPLATE",
@@ -506,8 +517,14 @@ def test_ticket_send_by_email_uses_tenant_configured_subject_and_body_template(
 
     detail_response = client.get(f"/tickets/{ticket.id}")
     assert detail_response.status_code == 200
-    assert 'value="Configured T-EMAIL-TEMPLATE-1 / Ticket Template Co"' in detail_response.text
-    assert "Body for T-EMAIL-TEMPLATE-1 from Ticket Template Co" in detail_response.text
+    assert (
+        'value="Configured T-EMAIL-TEMPLATE-1 / Ticket Template Co / FD:Yes / UOS:No"'
+        in detail_response.text
+    )
+    assert (
+        "Body for T-EMAIL-TEMPLATE-1 from Ticket Template Co (final disposal: Yes, used on site: No)"
+        in detail_response.text
+    )
 
     response = client.post(
         f"/tickets/{ticket.id}/email",
@@ -516,8 +533,14 @@ def test_ticket_send_by_email_uses_tenant_configured_subject_and_body_template(
     )
 
     assert response.status_code == 303
-    assert called["subject"] == "Configured T-EMAIL-TEMPLATE-1 / Ticket Template Co"
-    assert called["text_body"] == "Body for T-EMAIL-TEMPLATE-1 from Ticket Template Co"
+    assert (
+        called["subject"]
+        == "Configured T-EMAIL-TEMPLATE-1 / Ticket Template Co / FD:Yes / UOS:No"
+    )
+    assert (
+        called["text_body"]
+        == "Body for T-EMAIL-TEMPLATE-1 from Ticket Template Co (final disposal: Yes, used on site: No)"
+    )
 
 
 def test_ticket_send_by_email_happy_path_attaches_pdf_and_writes_audit(

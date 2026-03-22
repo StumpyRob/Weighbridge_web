@@ -52,6 +52,8 @@ def test_unified_payload_ticket_invoice_wtn_sources(db_session):
         transaction_type=TransactionTypeEnum.SALE.value,
         customer_id=customer.id,
         product_id=product.id,
+        final_disposal=False,
+        used_on_site=True,
         qty=Decimal("2.000"),
         unit_price=Decimal("10.00"),
         total=Decimal("20.00"),
@@ -69,6 +71,8 @@ def test_unified_payload_ticket_invoice_wtn_sources(db_session):
         transaction_type=TransactionTypeEnum.WASTEIN.value,
         customer_id=customer.id,
         product_id=product.id,
+        final_disposal=True,
+        used_on_site=False,
         ewc_code_display="17 09 04",
         ewc_description="Mixed construction waste",
         gross_kg=Decimal("4000.000"),
@@ -116,10 +120,14 @@ def test_unified_payload_ticket_invoice_wtn_sources(db_session):
 
     assert ticket_payload["ticket_no"] == "T-PAYLOAD-SALE"
     assert ticket_payload["total"] == 20.0
+    assert ticket_payload["final_disposal"] is False
+    assert ticket_payload["used_on_site"] is True
     assert invoice_payload["invoice_no"] == "INV-PAYLOAD-1"
     assert invoice_payload["gross_total"] == 24.0
     assert isinstance(invoice_payload["line_items"], list)
     assert wtn_payload["wtn_no"].startswith("WTN-T-PAYLOAD-WASTE")
+    assert wtn_payload["final_disposal"] is True
+    assert wtn_payload["used_on_site"] is False
     assert isinstance(wtn_payload["send_ready"], bool)
     assert isinstance(wtn_payload["send_blockers"], list)
 

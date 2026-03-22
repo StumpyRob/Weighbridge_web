@@ -159,6 +159,8 @@ _TICKET_AUDIT_DIFF_KEYS = (
     "status",
     "product_id",
     "customer_id",
+    "final_disposal",
+    "used_on_site",
     "net_kg",
     "qty",
     "unit_price",
@@ -1793,16 +1795,19 @@ def _ticket_email_form_values(
     company_name = str(getattr(company, "name", "") or "").strip() or "Weighbridge Web"
     subject_template = str(getattr(company, "ticket_email_subject_template", "") or "").strip()
     body_template = str(getattr(company, "ticket_email_body_template", "") or "").strip()
+    placeholders = {
+        "company_name": company_name,
+        "ticket_no": ticket.ticket_no or "",
+        "final_disposal": "Yes" if bool(ticket.final_disposal) else "No",
+        "used_on_site": "Yes" if bool(ticket.used_on_site) else "No",
+    }
     defaults = {
         "to_email": normalize_email(getattr(customer, "invoice_email", None)),
         "cc_email": "",
         "subject": (
             render_email_template(
                 subject_template,
-                placeholders={
-                    "company_name": company_name,
-                    "ticket_no": ticket.ticket_no or "",
-                },
+                placeholders=placeholders,
             )
             if subject_template
             else TICKET_EMAIL_DEFAULT_SUBJECT.format(
@@ -1813,10 +1818,7 @@ def _ticket_email_form_values(
         "message": (
             render_email_template(
                 body_template,
-                placeholders={
-                    "company_name": company_name,
-                    "ticket_no": ticket.ticket_no or "",
-                },
+                placeholders=placeholders,
             )
             if body_template
             else TICKET_EMAIL_DEFAULT_BODY.format(
@@ -4150,6 +4152,8 @@ def _ticket_audit_snapshot(ticket: Ticket) -> tuple:
         ticket.unit_price,
         ticket.total,
         ticket.po_number,
+        bool(ticket.final_disposal),
+        bool(ticket.used_on_site),
         bool(ticket.dont_invoice),
     )
 
@@ -4159,6 +4163,8 @@ def _ticket_audit_values(ticket: Ticket) -> dict[str, object]:
         "status": _status_value(ticket.status),
         "product_id": ticket.product_id,
         "customer_id": ticket.customer_id,
+        "final_disposal": bool(ticket.final_disposal),
+        "used_on_site": bool(ticket.used_on_site),
         "net_kg": ticket.net_kg,
         "qty": ticket.qty,
         "unit_price": ticket.unit_price,

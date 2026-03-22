@@ -19,7 +19,13 @@ EMAIL_PROVIDER_RESEND = "resend"
 SUPPORTED_EMAIL_PROVIDERS = (EMAIL_PROVIDER_RESEND,)
 DEFAULT_RESEND_TIMEOUT_SECONDS = 20
 RESEND_SEND_EMAIL_URL = "https://api.resend.com/emails"
-EMAIL_TEMPLATE_PLACEHOLDERS = ("company_name", "invoice_no", "ticket_no")
+EMAIL_TEMPLATE_PLACEHOLDERS = (
+    "company_name",
+    "invoice_no",
+    "ticket_no",
+    "final_disposal",
+    "used_on_site",
+)
 PLATFORM_EMAIL_AUDIT_FIELDS = (
     "email_provider",
     "resend_api_key_configured",

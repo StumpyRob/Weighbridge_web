@@ -38,10 +38,12 @@ HELP_TEXT = {
     "vehicle_per_container_tares": "Optional tare overrides by container for this vehicle.",
     "ticket_direction": "Sets vehicle movement direction for this ticket.",
     "ticket_transaction_type": "Controls ticket rules by flow type (waste vs sale).",
+    "ticket_product": "Product options are filtered by Direction and Transaction type, so only matching products are shown (for example waste in/out or sale).",
     "ticket_walk_in_sale": "Use for cash/card counter sales. No customer invoice generated.",
     "ticket_po_number": "Optional purchase order reference used for customer billing and invoice checks.",
     "ticket_yard": "Optional yard reference for operational tracking.",
     "ticket_area": "Optional area or bay reference for operational tracking.",
+    "ticket_weights": "All weights measured in kg.",
     "ticket_readout_kg": "Readout from the weighbridge feed/manual capture. Gross/Tare remain the billing source unless applied.",
     "ticket_billable_quantity": "Used for COUNT products. For WEIGHT products, quantity is derived from weights.",
     "ticket_unit_rate": "Price per unit used to calculate estimated charge. May come from product defaults or customer overrides.",
@@ -108,10 +110,10 @@ HELP_TEXT.update(
         "company_navbar_color": "Main navigation bar background color (HEX).",
         "company_primary_color": "Primary accent color used for buttons, highlights, and active states.",
         "company_login_email": "Used to sign in to this workspace.",
-        "company_document_email_subject_template": "Plain-text subject template. Supported placeholders: {company_name}, {invoice_no}, and {ticket_no}. Leave blank to use the built-in default.",
-        "company_document_email_body_template": "Plain-text body template. Supported placeholders: {company_name}, {invoice_no}, and {ticket_no}. Leave blank to use the built-in default.",
+        "company_document_email_subject_template": "Plain-text subject template. Supported placeholders: {company_name}, {invoice_no}, and {ticket_no}. Ticket email templates also support {final_disposal} and {used_on_site}. Leave blank to use the built-in default.",
+        "company_document_email_body_template": "Plain-text body template. Supported placeholders: {company_name}, {invoice_no}, and {ticket_no}. Ticket email templates also support {final_disposal} and {used_on_site}. Leave blank to use the built-in default.",
         "company_invoice_email_placeholders": "Supported placeholders for invoice emails: {company_name}, {invoice_no}. Use {ticket_no} on ticket emails.",
-        "company_ticket_email_placeholders": "Supported placeholders for ticket emails: {company_name}, {ticket_no}. Use {invoice_no} on invoice emails.",
+        "company_ticket_email_placeholders": "Supported placeholders for ticket emails: {company_name}, {ticket_no}, {final_disposal}, {used_on_site}. Use {invoice_no} on invoice emails.",
     }
 )
 
