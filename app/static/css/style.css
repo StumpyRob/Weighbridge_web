@@ -948,6 +948,7 @@ body.js-help-tooltips .help-tooltip {
   min-height: 3.2rem;
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 
 .wtn-signature-tools__preview {
@@ -955,6 +956,7 @@ body.js-help-tooltips .help-tooltip {
   max-width: 100%;
   max-height: 110px;
   object-fit: contain;
+  margin: 0 auto;
 }
 
 .wtn-signature-tools__meta {

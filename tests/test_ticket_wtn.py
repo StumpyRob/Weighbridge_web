@@ -352,6 +352,7 @@ def test_ticket_edit_shows_wtn_buttons_only_for_complete_waste(client, db_sessio
     assert "Carrier" in waste_response.text
     assert "Receiver" in waste_response.text
     assert "Not signed" in waste_response.text
+    assert "Apply My Signature" in waste_response.text
     assert "WTN not signed" in waste_response.text
     assert (
         waste_response.text.index("This ticket is complete and cannot be edited.")
@@ -368,6 +369,7 @@ def test_ticket_edit_shows_wtn_buttons_only_for_complete_waste(client, db_sessio
     assert "documents-panel--header" in sale_response.text
     assert "Waste Transfer Note" not in sale_response.text
     assert "wtn-signature-tools" not in sale_response.text
+    assert "Apply My Signature" not in sale_response.text
     assert "WTN not signed" not in sale_response.text
 
     assert signed_waste_response.status_code == 200
@@ -478,7 +480,6 @@ def test_wtn_signature_save_persists_signature_data_for_each_role(
         f"/tickets/{ticket.id}/wtn/signature/{role}",
         data={
             "signature_data_url": SIGNATURE_DATA_URL,
-            "blank_signature_data_url": BLANK_SIGNATURE_DATA_URL,
             "signer_name": "John Smith",
         },
         follow_redirects=False,
@@ -523,7 +524,6 @@ def test_wtn_signature_legacy_route_maps_to_receiver_signature(client, db_sessio
         f"/tickets/{ticket.id}/wtn/signature",
         data={
             "signature_data_url": SIGNATURE_DATA_URL,
-            "blank_signature_data_url": BLANK_SIGNATURE_DATA_URL,
             "signer_name": "Legacy Signer",
         },
         follow_redirects=False,
@@ -560,7 +560,6 @@ def test_wtn_signature_save_rejects_blank_signature(client, db_session):
         f"/tickets/{ticket.id}/wtn/signature/receiver",
         data={
             "signature_data_url": BLANK_SIGNATURE_DATA_URL,
-            "blank_signature_data_url": SIGNATURE_DATA_URL,
             "signer_name": "John Smith",
         },
     )

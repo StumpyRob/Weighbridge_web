@@ -44,6 +44,12 @@
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}
+  {% if wtn_receiver_signature_applied %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Receiver signature applied from your saved signature.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
   {% if email_sent %}
     <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
       <div class="flash-toast__content">Ticket {{ ticket.ticket_no }} sent by email.</div>
@@ -314,6 +320,7 @@
               Captured {{ ticket.wtn_receiver_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}
             </p>
           {% endif %}
+          {% set receiver_apply_label = "Replace with My Signature" if ticket.has_wtn_receiver_signature else "Apply My Signature" %}
           <div class="actions btn-group">
             <button
               type="button"
@@ -326,6 +333,11 @@
             >
               {% if ticket.has_wtn_receiver_signature %}Replace Signature{% else %}Capture Signature{% endif %}
             </button>
+            <form method="post" action="/tickets/{{ ticket.id }}/wtn/signature/receiver/apply-saved">
+              <button type="submit" class="btn btn--outline">
+                {{ receiver_apply_label }}
+              </button>
+            </form>
           </div>
         </section>
       </div>
@@ -344,7 +356,6 @@
           data-wtn-signature-canvas
         ></canvas>
         <input type="hidden" name="signature_data_url" value="" data-wtn-signature-data />
-        <input type="hidden" name="blank_signature_data_url" value="" data-wtn-signature-blank />
         <div class="field">
           <label for="wtn_signer_name">Signer name (optional)</label>
           <input
@@ -2127,7 +2138,6 @@
     const replaceNote = root.querySelector("[data-wtn-signature-replace-note]");
     const signerInput = root.querySelector("[data-wtn-signature-signer]");
     const dataInput = root.querySelector("[data-wtn-signature-data]");
-    const blankInput = root.querySelector("[data-wtn-signature-blank]");
     const errorMessage = root.querySelector("[data-wtn-signature-error]");
 
     if (
@@ -2137,8 +2147,7 @@
       !canvas ||
       !clearButton ||
       !cancelButton ||
-      !dataInput ||
-      !blankInput
+      !dataInput
     ) {
       return;
     }
@@ -2151,8 +2160,6 @@
     const defaultFormAction = form.getAttribute("action") || "";
     let drawing = false;
     let hasStroke = false;
-    let blankDataUrl = "";
-
     function hideError() {
       if (!errorMessage) {
         return;
@@ -2184,8 +2191,6 @@
       context.strokeStyle = "#0f172a";
       context.lineWidth = 2.2;
       hasStroke = false;
-      blankDataUrl = canvas.toDataURL("image/png");
-      blankInput.value = blankDataUrl;
       dataInput.value = "";
       hideError();
     }
@@ -2297,7 +2302,6 @@
         return;
       }
       dataInput.value = canvas.toDataURL("image/png");
-      blankInput.value = blankDataUrl || "";
     });
   })();
 </script>

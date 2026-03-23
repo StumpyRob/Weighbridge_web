@@ -42,6 +42,12 @@
               Signed in as {{ signed_in_as }}
             </span>
             <span class="site-utility-bar__item">{{ current_user_role_label }}</span>
+            <a
+              href="{{ tenant_path('/account/signature') }}"
+              class="site-auth__link site-utility-bar__action"
+            >
+              My Signature
+            </a>
             <form method="post" action="{{ tenant_path('/logout') }}" class="site-auth__logout site-utility-bar__action">
               <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
               <button type="submit" class="site-auth__link">Logout</button>

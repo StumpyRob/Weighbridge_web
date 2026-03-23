@@ -1,9 +1,10 @@
 from datetime import datetime
 
 import sqlalchemy as sa
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, event
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, event
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
+from ..constants import NAME_MAX
 from .base import Base, utcnow
 from ..user_roles import (
     ROLE_OPERATOR,
@@ -45,6 +46,15 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False, default=ROLE_OPERATOR)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    saved_signature_data_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    saved_signature_signer_name: Mapped[str | None] = mapped_column(
+        String(NAME_MAX),
+        nullable=True,
+    )
+    saved_signature_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     @property
@@ -58,6 +68,10 @@ class User(Base):
             if part
         ).strip()
         return full_name or None
+
+    @property
+    def has_saved_signature(self) -> bool:
+        return bool(str(self.saved_signature_data_uri or "").strip())
 
 
 def _normalize_identity_email(value: object) -> str | None:

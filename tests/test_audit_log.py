@@ -26,10 +26,6 @@ SIGNATURE_DATA_URL = (
     "data:image/png;base64,"
     "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAD0lEQVR4nGP4DwQMDAz/ARruBPywhCTXAAAAAElFTkSuQmCC"
 )
-BLANK_SIGNATURE_DATA_URL = (
-    "data:image/png;base64,"
-    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAC0lEQVR4nGP4DwUAI+UH+Yo0eLMAAAAASUVORK5CYII="
-)
 
 
 def _csrf_from_cookie(client) -> str:
@@ -246,7 +242,6 @@ def test_ticket_wtn_signature_save_and_replace_are_audited(client, db_session):
         f"/tickets/{ticket.id}/wtn/signature/producer",
         data={
             "signature_data_url": SIGNATURE_DATA_URL,
-            "blank_signature_data_url": BLANK_SIGNATURE_DATA_URL,
             "signer_name": "First Signer",
         },
         follow_redirects=False,
@@ -257,7 +252,6 @@ def test_ticket_wtn_signature_save_and_replace_are_audited(client, db_session):
         f"/tickets/{ticket.id}/wtn/signature/producer",
         data={
             "signature_data_url": SIGNATURE_DATA_URL,
-            "blank_signature_data_url": BLANK_SIGNATURE_DATA_URL,
             "signer_name": "Second Signer",
         },
         follow_redirects=False,

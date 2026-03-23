@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+
+{% block title %}My Signature | Weighbridge Web{% endblock %}
+
+{% block toast_messages %}
+  {% if saved %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Saved signature updated.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>My Signature</h1>
+      <p class="muted">Used by the receiver-side Apply My Signature action on completed waste tickets. Tickets keep a copied snapshot.</p>
+    </div>
+  </div>
+
+  {% if errors %}
+    <div class="alert">
+      <ul>
+        {% for error in errors %}
+          <li>{{ error }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <section class="wtn-signature-tools" data-account-signature-root>
+    <div class="wtn-signature-tools__header">
+      <h3>Saved Receiver Signature</h3>
+      <span class="wtn-signature-tools__status {% if user.has_saved_signature %}is-signed{% else %}is-pending{% endif %}">
+        {% if user.has_saved_signature %}Saved{% else %}Not saved{% endif %}
+      </span>
+    </div>
+
+    <div class="wtn-signature-tools__body">
+      {% if user.saved_signature_data_uri %}
+        <div class="wtn-signature-tools__preview-wrap">
+          <img
+            src="{{ user.saved_signature_data_uri }}"
+            alt="Saved signature preview"
+            class="wtn-signature-tools__preview"
+          />
+        </div>
+      {% endif %}
+      {% if user.has_saved_signature %}
+        <p class="wtn-signature-tools__meta muted">
+          Signer: {{ user.saved_signature_signer_name or user_display_name(user) }}
+        </p>
+      {% endif %}
+      {% if user.saved_signature_updated_at %}
+        <p class="wtn-signature-tools__meta muted">
+          Saved {{ user.saved_signature_updated_at.strftime("%d/%m/%Y %H:%M") }}
+        </p>
+      {% endif %}
+      <div class="actions btn-group">
+        <button
+          type="button"
+          class="btn btn--secondary"
+          data-account-signature-open
+          data-signature-existing="{{ '1' if user.has_saved_signature else '0' }}"
+          data-signature-signer="{{ dialog_signer_name | e }}"
+        >
+          {% if user.has_saved_signature %}Replace Signature{% else %}Capture Signature{% endif %}
+        </button>
+      </div>
+    </div>
+
+    <dialog class="wtn-signature-dialog" data-account-signature-dialog>
+      <form method="post" action="{{ tenant_path('/account/signature') }}" data-account-signature-form>
+        <h3>Capture My Signature</h3>
+        <p class="muted" data-account-signature-replace-note {% if not user.has_saved_signature %}hidden{% endif %}>
+          Saving will replace your current saved signature.
+        </p>
+        <canvas
+          class="wtn-signature-dialog__canvas"
+          width="600"
+          height="220"
+          data-account-signature-canvas
+        ></canvas>
+        <input type="hidden" name="signature_data_url" value="" data-account-signature-data />
+        <div class="field">
+          <label for="saved_signature_signer_name">Signer name (optional)</label>
+          <input
+            type="text"
+            id="saved_signature_signer_name"
+            name="signer_name"
+            maxlength="{{ limits.NAME_MAX }}"
+            value="{{ dialog_signer_name }}"
+            data-account-signature-signer
+          />
+        </div>
+        <p class="wtn-signature-dialog__error" data-account-signature-error hidden></p>
+        <div class="actions btn-group">
+          <button type="button" class="btn btn--secondary" data-account-signature-clear>Clear</button>
+          <button type="submit" class="btn btn--primary">Save Signature</button>
+          <button type="button" class="btn btn--ghost" data-account-signature-cancel>Cancel</button>
+        </div>
+      </form>
+    </dialog>
+  </section>
+
+  <script>
+    (function () {
+      const root = document.querySelector("[data-account-signature-root]");
+      if (!root) {
+        return;
+      }
+
+      const openButton = root.querySelector("[data-account-signature-open]");
+      const dialog = root.querySelector("[data-account-signature-dialog]");
+      const form = root.querySelector("[data-account-signature-form]");
+      const canvas = root.querySelector("[data-account-signature-canvas]");
+      const clearButton = root.querySelector("[data-account-signature-clear]");
+      const cancelButton = root.querySelector("[data-account-signature-cancel]");
+      const replaceNote = root.querySelector("[data-account-signature-replace-note]");
+      const signerInput = root.querySelector("[data-account-signature-signer]");
+      const dataInput = root.querySelector("[data-account-signature-data]");
+      const errorMessage = root.querySelector("[data-account-signature-error]");
+
+      if (
+        !openButton ||
+        !dialog ||
+        !form ||
+        !canvas ||
+        !clearButton ||
+        !cancelButton ||
+        !signerInput ||
+        !dataInput
+      ) {
+        return;
+      }
+
+      const context = canvas.getContext("2d", { alpha: false });
+      if (!context) {
+        return;
+      }
+
+      let drawing = false;
+      let hasStroke = false;
+      function hideError() {
+        if (!errorMessage) {
+          return;
+        }
+        errorMessage.hidden = true;
+        errorMessage.textContent = "";
+      }
+
+      function showError(message) {
+        if (!errorMessage) {
+          return;
+        }
+        errorMessage.textContent = message;
+        errorMessage.hidden = false;
+      }
+
+      function resizeCanvas() {
+        const bounds = canvas.getBoundingClientRect();
+        const ratio = Math.max(window.devicePixelRatio || 1, 1);
+        const width = Math.max(Math.floor(bounds.width * ratio), 1);
+        const height = Math.max(Math.floor(bounds.height * ratio), 1);
+        canvas.width = width;
+        canvas.height = height;
+        context.setTransform(ratio, 0, 0, ratio, 0, 0);
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, bounds.width, bounds.height);
+        context.lineJoin = "round";
+        context.lineCap = "round";
+        context.strokeStyle = "#0f172a";
+        context.lineWidth = 2.2;
+        hasStroke = false;
+        dataInput.value = "";
+        hideError();
+      }
+
+      function pointFromEvent(event) {
+        const bounds = canvas.getBoundingClientRect();
+        return {
+          x: event.clientX - bounds.left,
+          y: event.clientY - bounds.top,
+        };
+      }
+
+      function beginStroke(event) {
+        if (event.pointerType === "mouse" && event.button !== 0) {
+          return;
+        }
+        const point = pointFromEvent(event);
+        drawing = true;
+        hasStroke = true;
+        hideError();
+        context.beginPath();
+        context.moveTo(point.x, point.y);
+        if (canvas.setPointerCapture) {
+          canvas.setPointerCapture(event.pointerId);
+        }
+        event.preventDefault();
+      }
+
+      function moveStroke(event) {
+        if (!drawing) {
+          return;
+        }
+        const point = pointFromEvent(event);
+        context.lineTo(point.x, point.y);
+        context.stroke();
+        event.preventDefault();
+      }
+
+      function endStroke(event) {
+        if (!drawing) {
+          return;
+        }
+        drawing = false;
+        if (canvas.releasePointerCapture) {
+          try {
+            canvas.releasePointerCapture(event.pointerId);
+          } catch (_error) {
+          }
+        }
+        context.closePath();
+        event.preventDefault();
+      }
+
+      function openDialog() {
+        if (replaceNote) {
+          replaceNote.hidden = openButton.getAttribute("data-signature-existing") !== "1";
+        }
+        signerInput.value = openButton.getAttribute("data-signature-signer") || "";
+        if (typeof dialog.showModal === "function") {
+          dialog.showModal();
+        } else {
+          dialog.setAttribute("open", "open");
+        }
+        window.setTimeout(resizeCanvas, 0);
+      }
+
+      function closeDialog() {
+        hideError();
+        if (typeof dialog.close === "function") {
+          dialog.close();
+        } else {
+          dialog.removeAttribute("open");
+        }
+      }
+
+      openButton.addEventListener("click", openDialog);
+      cancelButton.addEventListener("click", closeDialog);
+      clearButton.addEventListener("click", resizeCanvas);
+      window.addEventListener("resize", function () {
+        if (dialog.hasAttribute("open")) {
+          resizeCanvas();
+        }
+      });
+
+      canvas.addEventListener("pointerdown", beginStroke);
+      canvas.addEventListener("pointermove", moveStroke);
+      canvas.addEventListener("pointerup", endStroke);
+      canvas.addEventListener("pointercancel", endStroke);
+      canvas.addEventListener("pointerleave", endStroke);
+
+      form.addEventListener("submit", function (event) {
+        if (!hasStroke) {
+          event.preventDefault();
+          showError("Signature cannot be blank.");
+          return;
+        }
+        dataInput.value = canvas.toDataURL("image/png");
+      });
+    })();
+  </script>
+{% endblock %}
