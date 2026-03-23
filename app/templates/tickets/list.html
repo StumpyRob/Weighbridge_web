@@ -92,6 +92,7 @@
         <th class="truncate-col">Product</th>
         <th class="status-col">Status</th>
         <th class="type-col">Type</th>
+        <th class="wtn-col">WTN</th>
         <th class="weights-col numeric-col num">Net (kg)</th>
       </tr>
     </thead>
@@ -161,13 +162,22 @@
               &mdash;
             {% endif %}
           </td>
+          <td class="wtn-col">
+            {% if row.Ticket.wtn_signature_status == "signed" %}
+              <span class="status-pill status-complete">Signed</span>
+            {% elif row.Ticket.wtn_signature_status == "unsigned" %}
+              <span class="status-pill status-draft">Unsigned</span>
+            {% else %}
+              &mdash;
+            {% endif %}
+          </td>
           <td class="weights-col numeric-col num">
             {{ "{:,.0f} kg".format(row.Ticket.net_kg) if row.Ticket.net_kg is not none else "&mdash;" | safe }}
           </td>
         </tr>
       {% else %}
         <tr>
-          <td colspan="9" class="empty">No tickets found.</td>
+          <td colspan="10" class="empty">No tickets found.</td>
         </tr>
       {% endfor %}
     </tbody>

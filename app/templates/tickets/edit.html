@@ -184,6 +184,10 @@
   </div>
 {% endif %}
 
+{% if show_wtn_actions and not ticket.has_wtn_signature %}
+  <div class="alert alert--warning">⚠ WTN not signed</div>
+{% endif %}
+
 {% if is_complete and can_manage_ticket and show_wtn_actions %}
   <section class="wtn-signature-tools" data-wtn-signature-root>
     <div class="wtn-signature-tools__header">

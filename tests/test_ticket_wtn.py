@@ -286,11 +286,26 @@ def test_ticket_edit_shows_wtn_buttons_only_for_complete_waste(client, db_sessio
         dont_invoice=False,
         paid=False,
     )
-    db_session.add_all([waste_ticket, sale_ticket])
+    signed_waste_ticket = Ticket(
+        ticket_no="T-WTN-UI-WASTE-SIGNED",
+        datetime=datetime(2026, 2, 20, 10, 47, 0),
+        status=TicketStatusEnum.COMPLETE.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        ewc_code_display="17 09 04",
+        ewc_description="Waste UI signed",
+        net_kg=Decimal("2100.000"),
+        wtn_signature_data_uri=SIGNATURE_DATA_URL,
+        wtn_signature_signed_at=datetime(2026, 2, 20, 10, 47, 30),
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([waste_ticket, sale_ticket, signed_waste_ticket])
     db_session.commit()
 
     waste_response = client.get(f"/tickets/{waste_ticket.id}")
     sale_response = client.get(f"/tickets/{sale_ticket.id}")
+    signed_waste_response = client.get(f"/tickets/{signed_waste_ticket.id}")
 
     assert waste_response.status_code == 200
     assert "Documents" in waste_response.text
@@ -311,8 +326,10 @@ def test_ticket_edit_shows_wtn_buttons_only_for_complete_waste(client, db_sessio
     assert "wtn-signature-tools" in waste_response.text
     assert "WTN Signature" in waste_response.text
     assert "Not signed" in waste_response.text
+    assert "⚠ WTN not signed" in waste_response.text
     assert (
         waste_response.text.index("This ticket is complete and cannot be edited.")
+        < waste_response.text.index("⚠ WTN not signed")
         < waste_response.text.index("wtn-signature-tools")
         < waste_response.text.index("Ticket Info")
     )
@@ -325,6 +342,13 @@ def test_ticket_edit_shows_wtn_buttons_only_for_complete_waste(client, db_sessio
     assert "documents-panel--header" in sale_response.text
     assert "Waste Transfer Note" not in sale_response.text
     assert "wtn-signature-tools" not in sale_response.text
+    assert "⚠ WTN not signed" not in sale_response.text
+
+    assert signed_waste_response.status_code == 200
+    assert "wtn-signature-tools" in signed_waste_response.text
+    assert "WTN Signature" in signed_waste_response.text
+    assert "Signed" in signed_waste_response.text
+    assert "⚠ WTN not signed" not in signed_waste_response.text
 
 
 def test_wtn_send_succeeds_and_creates_job_when_compliant(client, db_session):

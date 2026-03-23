@@ -4,6 +4,29 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.19.1 - 2026-03-23
+
+### RELEASE
+- `v0.19.1` improves WTN signature visibility in ticket UIs while keeping existing completion and signature workflows unchanged.
+
+### ADD
+- Add computed ticket helpers for WTN signature state:
+  - `ticket.has_wtn_signature`
+  - `ticket.wtn_signature_status` (`signed`/`unsigned`/`None`)
+- Add `WTN` status column on the tickets list with compact badges:
+  - `Signed` for waste tickets with a saved signature
+  - `Unsigned` for waste tickets without a saved signature
+  - `—` for non-waste tickets
+- Add a subtle warning banner on complete waste ticket detail pages when no WTN signature is present: `WTN not signed`.
+
+### FIX
+- Move the WTN signature tools out of the top-right document action stack and render them as a full-width card in the main ticket flow to remove empty header whitespace and keep header actions compact.
+
+### TEST
+- Add list-page UI coverage for signed waste, unsigned waste, and non-waste WTN status rendering.
+- Extend ticket detail WTN UI coverage to assert unsigned warning visibility rules and placement above the WTN Signature card.
+- Re-run targeted ticket list and WTN signature regression tests.
+
 ## v0.19 - 2026-03-22
 
 ### RELEASE

@@ -154,3 +154,17 @@ class Ticket(Base):
     driver: Mapped[Driver | None] = relationship("Driver")
     container: Mapped[Container | None] = relationship("Container")
     destination: Mapped[Destination | None] = relationship("Destination")
+
+    @property
+    def has_wtn_signature(self) -> bool:
+        return bool(str(self.wtn_signature_data_uri or "").strip())
+
+    @property
+    def wtn_signature_status(self) -> str | None:
+        tx_value = self.transaction_type
+        if hasattr(tx_value, "value"):
+            tx_value = tx_value.value
+        tx = str(tx_value or "").strip().upper()
+        if not tx.startswith("WASTE"):
+            return None
+        return "signed" if self.has_wtn_signature else "unsigned"

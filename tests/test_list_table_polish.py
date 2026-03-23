@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -64,6 +65,71 @@ def test_tickets_list_uses_net_header_and_compact_badges(client, db_session):
     assert "WALK-IN" in response.text
     assert "1,250 kg" in response.text
     assert 'class="btn btn--outline" href="/tickets">Reset</a>' in response.text
+
+
+def test_tickets_list_shows_wtn_signature_status_badges(client, db_session):
+    signed_waste = Ticket(
+        ticket_no="T-LIST-WTN-SIGNED",
+        datetime=datetime(2026, 2, 18, 8, 40, 0),
+        status=TicketStatusEnum.COMPLETE.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        wtn_signature_data_uri="data:image/png;base64,signed",
+        dont_invoice=False,
+        paid=False,
+    )
+    unsigned_waste = Ticket(
+        ticket_no="T-LIST-WTN-UNSIGNED",
+        datetime=datetime(2026, 2, 18, 8, 39, 0),
+        status=TicketStatusEnum.COMPLETE.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEOUT.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    non_waste_sale = Ticket(
+        ticket_no="T-LIST-WTN-SALE",
+        datetime=datetime(2026, 2, 18, 8, 38, 0),
+        status=TicketStatusEnum.COMPLETE.value,
+        direction=DirectionEnum.OUTWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add_all([signed_waste, unsigned_waste, non_waste_sale])
+    db_session.commit()
+
+    response = client.get("/tickets")
+
+    assert response.status_code == 200
+    assert '<th class="wtn-col">WTN</th>' in response.text
+    assert (
+        re.search(
+            rf'data-row-link="/tickets/{signed_waste.id}".*?'
+            r'<td class="wtn-col">\s*<span class="status-pill status-complete">Signed</span>\s*</td>',
+            response.text,
+            re.S,
+        )
+        is not None
+    )
+    assert (
+        re.search(
+            rf'data-row-link="/tickets/{unsigned_waste.id}".*?'
+            r'<td class="wtn-col">\s*<span class="status-pill status-draft">Unsigned</span>\s*</td>',
+            response.text,
+            re.S,
+        )
+        is not None
+    )
+    assert (
+        re.search(
+            rf'data-row-link="/tickets/{non_waste_sale.id}".*?'
+            r'<td class="wtn-col">\s*&mdash;\s*</td>',
+            response.text,
+            re.S,
+        )
+        is not None
+    )
 
 
 def test_tickets_list_shows_ad_hoc_vehicle_registration_text(client, db_session):

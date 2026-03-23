@@ -1331,6 +1331,12 @@ body.js-help-tooltips .help-tooltip {
   min-width: 90px;
 }
 
+.tickets-table th.wtn-col,
+.tickets-table td.wtn-col {
+  width: 102px;
+  min-width: 102px;
+}
+
 .products-table {
   table-layout: fixed;
   width: 100%;
