@@ -1,12 +1,15 @@
+import app.seed as seed_module
+
 from sqlalchemy import func, select
 
-from app.models import PrintDestination, PrintTemplate
+from app.models import PrintDestination, PrintTemplate, Tenant
 from app.seed import (
     PRINT_DELIVERY_LOCAL_BROWSER,
     PRINT_DOCUMENT_TYPE_INVOICE,
     PRINT_DOCUMENT_TYPE_TICKET,
     PRINT_DOCUMENT_TYPE_WTN,
     force_refresh_system_print_templates,
+    refresh_system_print_templates_for_all_tenants,
     seed_print_destinations,
     seed_print_templates,
 )
@@ -89,6 +92,40 @@ def test_force_refresh_system_templates_overwrites_canonical_system_rows(db_sess
     assert "payload.logistics." not in content
     assert "payload.weights." not in content
     assert ("payload.invoice_no" in content) or ("p.invoice_no" in content)
+
+
+def test_refresh_system_print_templates_for_all_tenants_iterates_tenant_scopes(
+    db_session,
+    monkeypatch,
+):
+    tenant_one = Tenant(name="Tenant One", subdomain="tenant-one", is_active=True)
+    tenant_two = Tenant(name="Tenant Two", subdomain="tenant-two", is_active=True)
+    db_session.add_all([tenant_one, tenant_two])
+    db_session.commit()
+
+    visited: list[tuple[int | None, bool]] = []
+
+    def _fake_force_refresh(session):
+        visited.append(
+            (
+                session.info.get("tenant_id"),
+                bool(session.info.get("platform_mode", False)),
+            )
+        )
+        return 1
+
+    monkeypatch.setattr(
+        seed_module,
+        "force_refresh_system_print_templates",
+        _fake_force_refresh,
+    )
+
+    refreshed = refresh_system_print_templates_for_all_tenants(db_session)
+
+    assert refreshed >= 2
+    visited_tenant_ids = {int(tenant_id) for tenant_id, _ in visited if tenant_id is not None}
+    assert {int(tenant_one.id), int(tenant_two.id)}.issubset(visited_tenant_ids)
+    assert all(platform_mode is False for _, platform_mode in visited)
 
 
 def test_seed_print_destinations_creates_default_wtn_destination(db_session):

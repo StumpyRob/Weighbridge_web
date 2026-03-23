@@ -74,6 +74,7 @@ from .services.ui_branding import (
     nav_foreground_color,
     normalize_hex_color,
 )
+from .seed import refresh_system_print_templates_for_all_tenants
 from .tenancy import (
     host_without_port,
     platform_route_url,
@@ -1413,6 +1414,12 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
     def startup_printing_bootstrap() -> None:
         _ensure_upload_dirs()
         check_invoice_pdf_renderer()
+        try:
+            refresh_system_print_templates_for_all_tenants()
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Failed to refresh system print templates during startup."
+            )
 
     @app.get("/health", tags=["health"])
     def health_check() -> dict:

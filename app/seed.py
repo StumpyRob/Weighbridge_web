@@ -17,6 +17,7 @@ from .models import (
     PrintTemplate,
     Product,
     TaxRate,
+    Tenant,
     Unit,
     VehicleType,
     VoidReason,
@@ -740,6 +741,40 @@ def force_refresh_system_print_templates(session: Session | None = None) -> int:
     return seed_print_templates(session, force_system_content=True)
 
 
+def refresh_system_print_templates_for_all_tenants(
+    session: Session | None = None,
+) -> int:
+    def refresh_rows(target_session: Session) -> int:
+        previous_tenant_id = target_session.info.get("tenant_id")
+        previous_platform_mode = target_session.info.get("platform_mode")
+        refreshed = 0
+        try:
+            target_session.info["tenant_id"] = None
+            target_session.info["platform_mode"] = True
+            tenant_ids = [
+                int(row)
+                for row in target_session.execute(
+                    select(Tenant.id).order_by(Tenant.id.asc())
+                ).scalars()
+            ]
+            if not tenant_ids:
+                tenant_ids = [1]
+
+            for tenant_id in tenant_ids:
+                target_session.info["tenant_id"] = int(tenant_id)
+                target_session.info["platform_mode"] = False
+                refreshed += int(force_refresh_system_print_templates(target_session) or 0)
+        finally:
+            target_session.info["tenant_id"] = previous_tenant_id
+            target_session.info["platform_mode"] = previous_platform_mode
+        return refreshed
+
+    if session is None:
+        with SessionLocal() as local_session:
+            return refresh_rows(local_session)
+    return refresh_rows(session)
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     created_units = seed_units()
@@ -748,7 +783,7 @@ def main() -> None:
     created_invoice_void_reasons = seed_invoice_void_reasons()
     created_payment_methods = seed_payment_methods()
     created_vehicle_types = seed_vehicle_types()
-    created_print_templates = force_refresh_system_print_templates()
+    created_print_templates = refresh_system_print_templates_for_all_tenants()
     created_print_destinations = seed_print_destinations()
     logger.info("Seeded units: %s", created_units)
     logger.info("Seeded tax rates: %s", created_tax_rates)

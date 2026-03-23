@@ -57,7 +57,11 @@ from ..models import (
     VehicleTare,
 )
 from ..models.base import utcnow
-from ..seed import seed_print_destinations, seed_print_templates, seed_units
+from ..seed import (
+    force_refresh_system_print_templates,
+    seed_print_destinations,
+    seed_units,
+)
 from ..services.demo_dataset import seed_demo_dataset
 from ..services.email_service import (
     EMAIL_PROVIDER_RESEND,
@@ -254,7 +258,7 @@ def _seed_tenant_baseline(
             seed_required_reference_data(db)
         else:
             seed_units(db)
-        seed_print_templates(db)
+        force_refresh_system_print_templates(db)
         seed_print_destinations(db)
         company.is_initialized = True
     _seed_number_sequences(db, tenant_id)

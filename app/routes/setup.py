@@ -16,10 +16,10 @@ from ..constants import NAME_MAX
 from ..db import get_db
 from ..models import Yard
 from ..seed import (
+    force_refresh_system_print_templates,
     seed_invoice_void_reasons,
     seed_payment_methods,
     seed_print_destinations,
-    seed_print_templates,
     seed_tax_rates,
     seed_units,
     seed_vehicle_types,
@@ -91,7 +91,7 @@ def _run_demo_seed() -> None:
 
 
 def _seed_printing_defaults(db: Session) -> None:
-    seed_print_templates(db)
+    force_refresh_system_print_templates(db)
     seed_print_destinations(db)
 
 
