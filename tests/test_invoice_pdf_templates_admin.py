@@ -125,6 +125,22 @@ def test_template_edit_page_shows_template_variables_help_panel(client, db_sessi
     assert "Preview uses sample data unless opened from a real document." in response.text
 
 
+def test_wtn_template_edit_page_shows_role_based_signature_guidance(client, db_session):
+    template = _create_template(
+        db_session,
+        code="WTN_HELP_PANEL_TEMPLATE",
+        document_type="WTN",
+    )
+
+    response = client.get(f"/admin/printing/templates/{template.id}/edit")
+
+    assert response.status_code == 200
+    assert "payload.producer_signature_*" in response.text
+    assert "payload.carrier_signature_*" in response.text
+    assert "payload.receiver_signature_*" in response.text
+    assert "payload.wtn_signature_*" in response.text
+
+
 def test_system_template_row_is_read_only_and_uses_duplicate_action_in_list(
     client,
     db_session,

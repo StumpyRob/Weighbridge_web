@@ -118,6 +118,11 @@ PRINT_PAYLOAD_KEYS: tuple[str, ...] = (
     "logo_data_uri",
 )
 
+SAMPLE_SIGNATURE_DATA_URI = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAD0lEQVR4nGP4DwQMDAz/ARruBPywhCTXAAAAAElFTkSuQmCC"
+)
+
 
 def _normalize_document_type(value: str | None) -> str:
     normalized = str(value or "").strip().upper()
@@ -519,22 +524,22 @@ def _sample_wtn_payload() -> dict[str, Any]:
             "status": "COMPLETE",
             "final_disposal": False,
             "used_on_site": False,
-            "producer_signature_data_uri": "",
-            "producer_signature_signed_at": "",
-            "producer_signature_signed_at_iso": "",
-            "producer_signature_signer_name": "",
-            "carrier_signature_data_uri": "",
-            "carrier_signature_signed_at": "",
-            "carrier_signature_signed_at_iso": "",
-            "carrier_signature_signer_name": "",
-            "receiver_signature_data_uri": "",
-            "receiver_signature_signed_at": "",
-            "receiver_signature_signed_at_iso": "",
-            "receiver_signature_signer_name": "",
-            "wtn_signature_data_uri": "",
-            "wtn_signature_signed_at": "",
-            "wtn_signature_signed_at_iso": "",
-            "wtn_signature_signer_name": "",
+            "producer_signature_data_uri": SAMPLE_SIGNATURE_DATA_URI,
+            "producer_signature_signed_at": "01/02/2026 10:15",
+            "producer_signature_signed_at_iso": "2026-02-01T10:15:00",
+            "producer_signature_signer_name": "Sample Producer Signer",
+            "carrier_signature_data_uri": SAMPLE_SIGNATURE_DATA_URI,
+            "carrier_signature_signed_at": "01/02/2026 10:16",
+            "carrier_signature_signed_at_iso": "2026-02-01T10:16:00",
+            "carrier_signature_signer_name": "Sample Carrier Signer",
+            "receiver_signature_data_uri": SAMPLE_SIGNATURE_DATA_URI,
+            "receiver_signature_signed_at": "01/02/2026 10:17",
+            "receiver_signature_signed_at_iso": "2026-02-01T10:17:00",
+            "receiver_signature_signer_name": "Sample Receiver Signer",
+            "wtn_signature_data_uri": SAMPLE_SIGNATURE_DATA_URI,
+            "wtn_signature_signed_at": "01/02/2026 10:17",
+            "wtn_signature_signed_at_iso": "2026-02-01T10:17:00",
+            "wtn_signature_signer_name": "Sample Receiver Signer",
             "is_complete": True,
             "is_waste": True,
             "customer_name": "Sample Producer",
@@ -1020,22 +1025,22 @@ def print_payload_variable_docs() -> list[dict[str, str]]:
         "transaction_type": "Ticket transaction type.",
         "final_disposal": "Ticket-level final disposal flag.",
         "used_on_site": "Ticket-level used-on-site flag.",
-        "producer_signature_data_uri": "Saved producer signature PNG data URI.",
-        "producer_signature_signed_at": "Producer signature captured at (display format).",
-        "producer_signature_signed_at_iso": "Producer signature captured at (ISO datetime).",
-        "producer_signature_signer_name": "Optional producer signature signer name.",
-        "carrier_signature_data_uri": "Saved carrier signature PNG data URI.",
-        "carrier_signature_signed_at": "Carrier signature captured at (display format).",
-        "carrier_signature_signed_at_iso": "Carrier signature captured at (ISO datetime).",
-        "carrier_signature_signer_name": "Optional carrier signature signer name.",
-        "receiver_signature_data_uri": "Saved receiver signature PNG data URI.",
-        "receiver_signature_signed_at": "Receiver signature captured at (display format).",
-        "receiver_signature_signed_at_iso": "Receiver signature captured at (ISO datetime).",
-        "receiver_signature_signer_name": "Optional receiver signature signer name.",
-        "wtn_signature_data_uri": "Legacy alias of receiver_signature_data_uri.",
-        "wtn_signature_signed_at": "Legacy alias of receiver_signature_signed_at.",
-        "wtn_signature_signed_at_iso": "Legacy alias of receiver_signature_signed_at_iso.",
-        "wtn_signature_signer_name": "Legacy alias of receiver_signature_signer_name.",
+        "producer_signature_data_uri": "Preferred WTN variable: producer signature PNG data URI.",
+        "producer_signature_signed_at": "Preferred WTN variable: producer signature captured at (display format).",
+        "producer_signature_signed_at_iso": "Preferred WTN variable: producer signature captured at (ISO datetime).",
+        "producer_signature_signer_name": "Preferred WTN variable: optional producer signer name.",
+        "carrier_signature_data_uri": "Preferred WTN variable: carrier signature PNG data URI.",
+        "carrier_signature_signed_at": "Preferred WTN variable: carrier signature captured at (display format).",
+        "carrier_signature_signed_at_iso": "Preferred WTN variable: carrier signature captured at (ISO datetime).",
+        "carrier_signature_signer_name": "Preferred WTN variable: optional carrier signer name.",
+        "receiver_signature_data_uri": "Preferred WTN variable: receiver signature PNG data URI.",
+        "receiver_signature_signed_at": "Preferred WTN variable: receiver signature captured at (display format).",
+        "receiver_signature_signed_at_iso": "Preferred WTN variable: receiver signature captured at (ISO datetime).",
+        "receiver_signature_signer_name": "Preferred WTN variable: optional receiver signer name.",
+        "wtn_signature_data_uri": "Legacy receiver alias for receiver_signature_data_uri; retained for older custom WTN templates.",
+        "wtn_signature_signed_at": "Legacy receiver alias for receiver_signature_signed_at; retained for older custom WTN templates.",
+        "wtn_signature_signed_at_iso": "Legacy receiver alias for receiver_signature_signed_at_iso; retained for older custom WTN templates.",
+        "wtn_signature_signer_name": "Legacy receiver alias for receiver_signature_signer_name; retained for older custom WTN templates.",
         "is_complete": "True when source document is complete.",
         "is_sale": "True for sale transactions.",
         "is_waste": "True for waste transactions.",
@@ -1103,6 +1108,22 @@ def print_payload_variable_docs() -> list[dict[str, str]]:
             example_value = invoice_sample.get(key)
         elif key in {
             "wtn_no",
+            "producer_signature_data_uri",
+            "producer_signature_signed_at",
+            "producer_signature_signed_at_iso",
+            "producer_signature_signer_name",
+            "carrier_signature_data_uri",
+            "carrier_signature_signed_at",
+            "carrier_signature_signed_at_iso",
+            "carrier_signature_signer_name",
+            "receiver_signature_data_uri",
+            "receiver_signature_signed_at",
+            "receiver_signature_signed_at_iso",
+            "receiver_signature_signer_name",
+            "wtn_signature_data_uri",
+            "wtn_signature_signed_at",
+            "wtn_signature_signed_at_iso",
+            "wtn_signature_signer_name",
             "producer",
             "producer_address",
             "quantity_net_kg",
@@ -1112,6 +1133,10 @@ def print_payload_variable_docs() -> list[dict[str, str]]:
             "send_blockers",
         }:
             example_value = wtn_sample.get(key)
+        if key.endswith("_signature_data_uri") and str(example_value or "").startswith(
+            "data:image/png;base64,"
+        ):
+            example_value = "data:image/png;base64,..."
         rows.append(
             {
                 "name": f"payload.{key}",

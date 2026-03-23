@@ -48,6 +48,25 @@ def test_system_template_preview_renders_with_sample_payload(
     assert sample_marker in response.text
 
 
+def test_wtn_system_template_preview_shows_role_signature_sample_metadata(
+    client,
+    db_session,
+):
+    force_refresh_system_print_templates(db_session)
+    template = _system_template(db_session, "WTN_SYSTEM")
+
+    response = client.get(f"/admin/printing/templates/{template.id}/preview")
+
+    assert response.status_code == 200
+    assert "Template render failed" not in response.text
+    assert "PRODUCER SIGNATURE" in response.text
+    assert "CARRIER SIGNATURE" in response.text
+    assert "RECEIVER SIGNATURE" in response.text
+    assert "Sample Producer Signer" in response.text
+    assert "Sample Carrier Signer" in response.text
+    assert "Sample Receiver Signer" in response.text
+
+
 def test_invoice_system_template_preview_renders_logo_when_company_logo_is_set(
     client,
     db_session,

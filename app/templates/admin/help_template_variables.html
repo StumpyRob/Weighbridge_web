@@ -8,6 +8,11 @@
     <div>
       <h1>Template Variables{{ help(help_text.printing_template_concept, "printing-template-variables-title-help") }}</h1>
       <p class="muted">Use these variables in Ticket, Invoice, and WTN templates.</p>
+      <p class="muted">
+        For WTN signatures, prefer <code>payload.producer_signature_*</code>,
+        <code>payload.carrier_signature_*</code>, and <code>payload.receiver_signature_*</code>.
+        Legacy <code>payload.wtn_signature_*</code> names still map to receiver values for older custom WTN templates.
+      </p>
     </div>
     <div class="actions btn-group">
       <a class="btn btn--secondary" href="/admin">Back to Settings</a>

@@ -88,11 +88,23 @@
         <section class="template-vars-section">
           <h2>Accessing document fields</h2>
           <p>Document fields live under <code>payload</code>.</p>
+          {% if form_data.document_type == "WTN" %}
+            <p>
+              For WTN signatures, prefer <code>payload.producer_signature_*</code>,
+              <code>payload.carrier_signature_*</code>, and
+              <code>payload.receiver_signature_*</code>. Legacy
+              <code>payload.wtn_signature_*</code> names remain as receiver-only compatibility aliases.
+            </p>
+          {% endif %}
           <p>Examples:</p>
           <ul class="template-vars-list">
             <li><code>{% raw %}{{ payload.reference_no }}{% endraw %}</code></li>
             <li><code>{% raw %}{{ payload.customer_name }}{% endraw %}</code></li>
             <li><code>{% raw %}{{ payload.net_kg }}{% endraw %}</code></li>
+            {% if form_data.document_type == "WTN" %}
+              <li><code>{% raw %}{{ payload.producer_signature_signer_name or "-" }}{% endraw %}</code></li>
+              <li><code>{% raw %}{% if payload.receiver_signature_data_uri %}&lt;img src="{{ payload.receiver_signature_data_uri }}" alt="Receiver signature"&gt;{% endif %}{% endraw %}</code></li>
+            {% endif %}
           </ul>
         </section>
 

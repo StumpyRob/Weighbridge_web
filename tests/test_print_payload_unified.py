@@ -14,7 +14,11 @@ from app.models import (
     TransactionTypeEnum,
     Unit,
 )
-from app.services.print_payload import PRINT_PAYLOAD_KEYS, build_print_payload
+from app.services.print_payload import (
+    PRINT_PAYLOAD_KEYS,
+    build_print_payload,
+    print_payload_variable_docs,
+)
 from app.services.printing import (
     DOCUMENT_TYPE_INVOICE,
     DOCUMENT_TYPE_TICKET,
@@ -139,3 +143,18 @@ def test_template_variables_page_lists_payload_variables(client, db_session):
     assert "Template Variables" in response.text
     assert "payload.document_type" in response.text
     assert "payload.vehicle_reg" in response.text
+
+
+def test_print_payload_variable_docs_prefer_role_based_wtn_signature_fields():
+    rows = {row["name"]: row for row in print_payload_variable_docs()}
+
+    assert rows["payload.producer_signature_data_uri"]["example"] == "data:image/png;base64,..."
+    assert rows["payload.producer_signature_data_uri"]["description"].startswith(
+        "Preferred WTN variable:"
+    )
+    assert rows["payload.carrier_signature_signed_at_iso"]["example"] == "2026-02-01T10:16:00"
+    assert rows["payload.receiver_signature_signer_name"]["example"] == "Sample Receiver Signer"
+    assert rows["payload.wtn_signature_data_uri"]["description"].startswith(
+        "Legacy receiver alias"
+    )
+    assert rows["payload.wtn_signature_signed_at"]["example"] == "01/02/2026 10:17"

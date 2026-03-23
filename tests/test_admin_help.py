@@ -15,6 +15,11 @@ def test_admin_help_pages_render(client):
     assert "payload.document_type" in template_vars.text
     assert "company_logo_url" in template_vars.text
     assert "fmt_date(value, format)" in template_vars.text
+    assert "payload.producer_signature_data_uri" in template_vars.text
+    assert "payload.carrier_signature_signed_at_iso" in template_vars.text
+    assert "payload.receiver_signature_signer_name" in template_vars.text
+    assert "payload.wtn_signature_data_uri" in template_vars.text
+    assert "Legacy receiver alias" in template_vars.text
 
 
 def test_legacy_printing_template_variables_route_redirects(client):

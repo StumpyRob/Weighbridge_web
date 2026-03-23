@@ -25,6 +25,12 @@ def test_seed_print_templates_creates_default_wtn_template(db_session):
     assert bool(template.is_system) is True
     assert bool(template.is_active) is True
     assert "Waste Transfer Note" in str(template.content or "")
+    assert "PRODUCER SIGNATURE" in str(template.content or "")
+    assert "CARRIER SIGNATURE" in str(template.content or "")
+    assert "RECEIVER SIGNATURE" in str(template.content or "")
+    assert "producer_signature_data_uri" in str(template.content or "")
+    assert "carrier_signature_data_uri" in str(template.content or "")
+    assert "receiver_signature_data_uri" in str(template.content or "")
 
 
 def test_seed_print_templates_creates_all_system_templates(db_session):
