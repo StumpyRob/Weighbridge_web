@@ -74,7 +74,19 @@ def test_tickets_list_shows_wtn_signature_status_badges(client, db_session):
         status=TicketStatusEnum.COMPLETE.value,
         direction=DirectionEnum.INWARD.value,
         transaction_type=TransactionTypeEnum.WASTEIN.value,
-        wtn_signature_data_uri="data:image/png;base64,signed",
+        wtn_producer_signature_data_uri="data:image/png;base64,signed-producer",
+        wtn_carrier_signature_data_uri="data:image/png;base64,signed-carrier",
+        wtn_receiver_signature_data_uri="data:image/png;base64,signed-receiver",
+        dont_invoice=False,
+        paid=False,
+    )
+    partial_waste = Ticket(
+        ticket_no="T-LIST-WTN-PARTIAL",
+        datetime=datetime(2026, 2, 18, 8, 39, 30),
+        status=TicketStatusEnum.COMPLETE.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEOUT.value,
+        wtn_receiver_signature_data_uri="data:image/png;base64,partial-receiver",
         dont_invoice=False,
         paid=False,
     )
@@ -96,7 +108,7 @@ def test_tickets_list_shows_wtn_signature_status_badges(client, db_session):
         dont_invoice=False,
         paid=False,
     )
-    db_session.add_all([signed_waste, unsigned_waste, non_waste_sale])
+    db_session.add_all([signed_waste, partial_waste, unsigned_waste, non_waste_sale])
     db_session.commit()
 
     response = client.get("/tickets")
@@ -115,7 +127,16 @@ def test_tickets_list_shows_wtn_signature_status_badges(client, db_session):
     assert (
         re.search(
             rf'data-row-link="/tickets/{unsigned_waste.id}".*?'
-            r'<td class="wtn-col">\s*<span class="status-pill status-draft">Unsigned</span>\s*</td>',
+            r'<td class="wtn-col">\s*<span class="status-pill status-void">Unsigned</span>\s*</td>',
+            response.text,
+            re.S,
+        )
+        is not None
+    )
+    assert (
+        re.search(
+            rf'data-row-link="/tickets/{partial_waste.id}".*?'
+            r'<td class="wtn-col">\s*<span class="status-pill status-draft">Partial</span>\s*</td>',
             response.text,
             re.S,
         )

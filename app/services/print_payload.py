@@ -52,6 +52,18 @@ PRINT_PAYLOAD_KEYS: tuple[str, ...] = (
     "transaction_type",
     "final_disposal",
     "used_on_site",
+    "producer_signature_data_uri",
+    "producer_signature_signed_at",
+    "producer_signature_signed_at_iso",
+    "producer_signature_signer_name",
+    "carrier_signature_data_uri",
+    "carrier_signature_signed_at",
+    "carrier_signature_signed_at_iso",
+    "carrier_signature_signer_name",
+    "receiver_signature_data_uri",
+    "receiver_signature_signed_at",
+    "receiver_signature_signed_at_iso",
+    "receiver_signature_signer_name",
     "wtn_signature_data_uri",
     "wtn_signature_signed_at",
     "wtn_signature_signed_at_iso",
@@ -322,6 +334,18 @@ def _empty_payload(document_type: str) -> dict[str, Any]:
         "transaction_type": "",
         "final_disposal": False,
         "used_on_site": False,
+        "producer_signature_data_uri": "",
+        "producer_signature_signed_at": "",
+        "producer_signature_signed_at_iso": "",
+        "producer_signature_signer_name": "",
+        "carrier_signature_data_uri": "",
+        "carrier_signature_signed_at": "",
+        "carrier_signature_signed_at_iso": "",
+        "carrier_signature_signer_name": "",
+        "receiver_signature_data_uri": "",
+        "receiver_signature_signed_at": "",
+        "receiver_signature_signed_at_iso": "",
+        "receiver_signature_signer_name": "",
         "wtn_signature_data_uri": "",
         "wtn_signature_signed_at": "",
         "wtn_signature_signed_at_iso": "",
@@ -393,6 +417,18 @@ def _sample_ticket_payload() -> dict[str, Any]:
             "transaction_type": "SALE",
             "final_disposal": False,
             "used_on_site": False,
+            "producer_signature_data_uri": "",
+            "producer_signature_signed_at": "",
+            "producer_signature_signed_at_iso": "",
+            "producer_signature_signer_name": "",
+            "carrier_signature_data_uri": "",
+            "carrier_signature_signed_at": "",
+            "carrier_signature_signed_at_iso": "",
+            "carrier_signature_signer_name": "",
+            "receiver_signature_data_uri": "",
+            "receiver_signature_signed_at": "",
+            "receiver_signature_signed_at_iso": "",
+            "receiver_signature_signer_name": "",
             "wtn_signature_data_uri": "",
             "wtn_signature_signed_at": "",
             "wtn_signature_signed_at_iso": "",
@@ -483,6 +519,18 @@ def _sample_wtn_payload() -> dict[str, Any]:
             "status": "COMPLETE",
             "final_disposal": False,
             "used_on_site": False,
+            "producer_signature_data_uri": "",
+            "producer_signature_signed_at": "",
+            "producer_signature_signed_at_iso": "",
+            "producer_signature_signer_name": "",
+            "carrier_signature_data_uri": "",
+            "carrier_signature_signed_at": "",
+            "carrier_signature_signed_at_iso": "",
+            "carrier_signature_signer_name": "",
+            "receiver_signature_data_uri": "",
+            "receiver_signature_signed_at": "",
+            "receiver_signature_signed_at_iso": "",
+            "receiver_signature_signer_name": "",
             "wtn_signature_data_uri": "",
             "wtn_signature_signed_at": "",
             "wtn_signature_signed_at_iso": "",
@@ -530,6 +578,9 @@ def _build_ticket_payload_from_ticket(db: Session, ticket: Ticket) -> dict[str, 
 
     net_kg_decimal = _to_decimal(ticket.net_kg)
     tonnes_decimal = _wtn_quantity_tonnes(net_kg_decimal)
+    producer_signed_at = ticket.wtn_producer_signature_signed_at
+    carrier_signed_at = ticket.wtn_carrier_signature_signed_at
+    receiver_signed_at = ticket.wtn_receiver_signature_signed_at
 
     payload = _empty_payload(DOCUMENT_TYPE_TICKET)
     payload.update(
@@ -547,18 +598,45 @@ def _build_ticket_payload_from_ticket(db: Session, ticket: Ticket) -> dict[str, 
             "transaction_type": transaction_type,
             "final_disposal": bool(ticket.final_disposal),
             "used_on_site": bool(ticket.used_on_site),
-            "wtn_signature_data_uri": _text(ticket.wtn_signature_data_uri),
+            "producer_signature_data_uri": _text(ticket.wtn_producer_signature_data_uri),
+            "producer_signature_signed_at": (
+                _format_dt(producer_signed_at) if producer_signed_at else ""
+            ),
+            "producer_signature_signed_at_iso": (
+                producer_signed_at.isoformat() if producer_signed_at else ""
+            ),
+            "producer_signature_signer_name": _text(
+                ticket.wtn_producer_signature_signer_name
+            ),
+            "carrier_signature_data_uri": _text(ticket.wtn_carrier_signature_data_uri),
+            "carrier_signature_signed_at": (
+                _format_dt(carrier_signed_at) if carrier_signed_at else ""
+            ),
+            "carrier_signature_signed_at_iso": (
+                carrier_signed_at.isoformat() if carrier_signed_at else ""
+            ),
+            "carrier_signature_signer_name": _text(
+                ticket.wtn_carrier_signature_signer_name
+            ),
+            "receiver_signature_data_uri": _text(ticket.wtn_receiver_signature_data_uri),
+            "receiver_signature_signed_at": (
+                _format_dt(receiver_signed_at) if receiver_signed_at else ""
+            ),
+            "receiver_signature_signed_at_iso": (
+                receiver_signed_at.isoformat() if receiver_signed_at else ""
+            ),
+            "receiver_signature_signer_name": _text(
+                ticket.wtn_receiver_signature_signer_name
+            ),
+            # Legacy aliases kept for compatibility with existing custom templates.
+            "wtn_signature_data_uri": _text(ticket.wtn_receiver_signature_data_uri),
             "wtn_signature_signed_at": (
-                _format_dt(ticket.wtn_signature_signed_at)
-                if ticket.wtn_signature_signed_at
-                else ""
+                _format_dt(receiver_signed_at) if receiver_signed_at else ""
             ),
             "wtn_signature_signed_at_iso": (
-                ticket.wtn_signature_signed_at.isoformat()
-                if ticket.wtn_signature_signed_at
-                else ""
+                receiver_signed_at.isoformat() if receiver_signed_at else ""
             ),
-            "wtn_signature_signer_name": _text(ticket.wtn_signature_signer_name),
+            "wtn_signature_signer_name": _text(ticket.wtn_receiver_signature_signer_name),
             "is_complete": status == TicketStatusEnum.COMPLETE.value,
             "is_sale": transaction_type == "SALE",
             "is_waste": transaction_type.startswith("WASTE"),
@@ -775,6 +853,9 @@ def _build_wtn_payload_from_ticket(db: Session, ticket: Ticket) -> dict[str, Any
     tonnes_decimal = _wtn_quantity_tonnes(net_kg_decimal)
     quantity_net_kg = float(net_kg_decimal) if net_kg_decimal is not None else None
     quantity_tonnes = float(tonnes_decimal) if tonnes_decimal is not None else None
+    producer_signed_at = ticket.wtn_producer_signature_signed_at
+    carrier_signed_at = ticket.wtn_carrier_signature_signed_at
+    receiver_signed_at = ticket.wtn_receiver_signature_signed_at
 
     payload = _empty_payload(DOCUMENT_TYPE_WTN)
     payload.update(
@@ -791,18 +872,45 @@ def _build_wtn_payload_from_ticket(db: Session, ticket: Ticket) -> dict[str, Any
             "status": _enum_value(ticket.status),
             "final_disposal": bool(ticket.final_disposal),
             "used_on_site": bool(ticket.used_on_site),
-            "wtn_signature_data_uri": _text(ticket.wtn_signature_data_uri),
+            "producer_signature_data_uri": _text(ticket.wtn_producer_signature_data_uri),
+            "producer_signature_signed_at": (
+                _format_dt(producer_signed_at) if producer_signed_at else ""
+            ),
+            "producer_signature_signed_at_iso": (
+                producer_signed_at.isoformat() if producer_signed_at else ""
+            ),
+            "producer_signature_signer_name": _text(
+                ticket.wtn_producer_signature_signer_name
+            ),
+            "carrier_signature_data_uri": _text(ticket.wtn_carrier_signature_data_uri),
+            "carrier_signature_signed_at": (
+                _format_dt(carrier_signed_at) if carrier_signed_at else ""
+            ),
+            "carrier_signature_signed_at_iso": (
+                carrier_signed_at.isoformat() if carrier_signed_at else ""
+            ),
+            "carrier_signature_signer_name": _text(
+                ticket.wtn_carrier_signature_signer_name
+            ),
+            "receiver_signature_data_uri": _text(ticket.wtn_receiver_signature_data_uri),
+            "receiver_signature_signed_at": (
+                _format_dt(receiver_signed_at) if receiver_signed_at else ""
+            ),
+            "receiver_signature_signed_at_iso": (
+                receiver_signed_at.isoformat() if receiver_signed_at else ""
+            ),
+            "receiver_signature_signer_name": _text(
+                ticket.wtn_receiver_signature_signer_name
+            ),
+            # Legacy aliases kept for compatibility with existing custom templates.
+            "wtn_signature_data_uri": _text(ticket.wtn_receiver_signature_data_uri),
             "wtn_signature_signed_at": (
-                _format_dt(ticket.wtn_signature_signed_at)
-                if ticket.wtn_signature_signed_at
-                else ""
+                _format_dt(receiver_signed_at) if receiver_signed_at else ""
             ),
             "wtn_signature_signed_at_iso": (
-                ticket.wtn_signature_signed_at.isoformat()
-                if ticket.wtn_signature_signed_at
-                else ""
+                receiver_signed_at.isoformat() if receiver_signed_at else ""
             ),
-            "wtn_signature_signer_name": _text(ticket.wtn_signature_signer_name),
+            "wtn_signature_signer_name": _text(ticket.wtn_receiver_signature_signer_name),
             "is_complete": _enum_value(ticket.status) == TicketStatusEnum.COMPLETE.value,
             "is_waste": True,
             "customer_name": customer_name,
@@ -912,10 +1020,22 @@ def print_payload_variable_docs() -> list[dict[str, str]]:
         "transaction_type": "Ticket transaction type.",
         "final_disposal": "Ticket-level final disposal flag.",
         "used_on_site": "Ticket-level used-on-site flag.",
-        "wtn_signature_data_uri": "Saved WTN signature PNG data URI.",
-        "wtn_signature_signed_at": "WTN signature captured at (display format).",
-        "wtn_signature_signed_at_iso": "WTN signature captured at (ISO datetime).",
-        "wtn_signature_signer_name": "Optional WTN signature signer name.",
+        "producer_signature_data_uri": "Saved producer signature PNG data URI.",
+        "producer_signature_signed_at": "Producer signature captured at (display format).",
+        "producer_signature_signed_at_iso": "Producer signature captured at (ISO datetime).",
+        "producer_signature_signer_name": "Optional producer signature signer name.",
+        "carrier_signature_data_uri": "Saved carrier signature PNG data URI.",
+        "carrier_signature_signed_at": "Carrier signature captured at (display format).",
+        "carrier_signature_signed_at_iso": "Carrier signature captured at (ISO datetime).",
+        "carrier_signature_signer_name": "Optional carrier signature signer name.",
+        "receiver_signature_data_uri": "Saved receiver signature PNG data URI.",
+        "receiver_signature_signed_at": "Receiver signature captured at (display format).",
+        "receiver_signature_signed_at_iso": "Receiver signature captured at (ISO datetime).",
+        "receiver_signature_signer_name": "Optional receiver signature signer name.",
+        "wtn_signature_data_uri": "Legacy alias of receiver_signature_data_uri.",
+        "wtn_signature_signed_at": "Legacy alias of receiver_signature_signed_at.",
+        "wtn_signature_signed_at_iso": "Legacy alias of receiver_signature_signed_at_iso.",
+        "wtn_signature_signer_name": "Legacy alias of receiver_signature_signer_name.",
         "is_complete": "True when source document is complete.",
         "is_sale": "True for sale transactions.",
         "is_waste": "True for waste transactions.",

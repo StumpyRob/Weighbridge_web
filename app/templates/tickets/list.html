@@ -165,8 +165,10 @@
           <td class="wtn-col">
             {% if row.Ticket.wtn_signature_status == "signed" %}
               <span class="status-pill status-complete">Signed</span>
+            {% elif row.Ticket.wtn_signature_status == "partial" %}
+              <span class="status-pill status-draft">Partial</span>
             {% elif row.Ticket.wtn_signature_status == "unsigned" %}
-              <span class="status-pill status-draft">Unsigned</span>
+              <span class="status-pill status-void">Unsigned</span>
             {% else %}
               &mdash;
             {% endif %}

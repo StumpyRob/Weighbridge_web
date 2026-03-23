@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from urllib.parse import parse_qs, urlparse
 
+import pytest
 from sqlalchemy import delete, select
 
 import app.routes.tickets as tickets_routes
@@ -38,7 +39,9 @@ def _create_wtn_template_and_destination(db_session) -> tuple[PrintTemplate, Pri
         format="HTML",
         content=(
             "<html><body>WTN_PREVIEW {{ payload.wtn_no }} "
-            "{{ payload.wtn_signature_data_uri|default('', true) }}</body></html>"
+            "{{ payload.producer_signature_data_uri|default('', true) }} "
+            "{{ payload.carrier_signature_data_uri|default('', true) }} "
+            "{{ payload.receiver_signature_data_uri|default('', true) }}</body></html>"
         ),
         is_active=True,
     )
@@ -109,9 +112,15 @@ def test_build_wtn_payload_returns_expected_keys(db_session):
         net_kg=Decimal("12340.000"),
         waste_producer_name="WTN Producer",
         waste_producer_address="WTN Producer Address",
-        wtn_signature_data_uri=SIGNATURE_DATA_URL,
-        wtn_signature_signed_at=datetime(2026, 2, 20, 9, 20, 0),
-        wtn_signature_signer_name="Inspector",
+        wtn_producer_signature_data_uri=SIGNATURE_DATA_URL,
+        wtn_producer_signature_signed_at=datetime(2026, 2, 20, 9, 20, 0),
+        wtn_producer_signature_signer_name="Producer Inspector",
+        wtn_carrier_signature_data_uri=SIGNATURE_DATA_URL,
+        wtn_carrier_signature_signed_at=datetime(2026, 2, 20, 9, 21, 0),
+        wtn_carrier_signature_signer_name="Carrier Inspector",
+        wtn_receiver_signature_data_uri=SIGNATURE_DATA_URL,
+        wtn_receiver_signature_signed_at=datetime(2026, 2, 20, 9, 22, 0),
+        wtn_receiver_signature_signer_name="Receiver Inspector",
         dont_invoice=False,
         paid=False,
     )
@@ -132,9 +141,19 @@ def test_build_wtn_payload_returns_expected_keys(db_session):
     assert payload["destination_site"] == "WTN Destination"
     assert payload["final_disposal"] is True
     assert payload["used_on_site"] is False
+    assert payload["producer_signature_data_uri"] == SIGNATURE_DATA_URL
+    assert payload["producer_signature_signed_at"] == "20/02/2026 09:20"
+    assert payload["producer_signature_signer_name"] == "Producer Inspector"
+    assert payload["carrier_signature_data_uri"] == SIGNATURE_DATA_URL
+    assert payload["carrier_signature_signed_at"] == "20/02/2026 09:21"
+    assert payload["carrier_signature_signer_name"] == "Carrier Inspector"
+    assert payload["receiver_signature_data_uri"] == SIGNATURE_DATA_URL
+    assert payload["receiver_signature_signed_at"] == "20/02/2026 09:22"
+    assert payload["receiver_signature_signer_name"] == "Receiver Inspector"
+    # Legacy aliases map to receiver signature values for backward compatibility.
     assert payload["wtn_signature_data_uri"] == SIGNATURE_DATA_URL
-    assert payload["wtn_signature_signed_at"] == "20/02/2026 09:20"
-    assert payload["wtn_signature_signer_name"] == "Inspector"
+    assert payload["wtn_signature_signed_at"] == "20/02/2026 09:22"
+    assert payload["wtn_signature_signer_name"] == "Receiver Inspector"
     assert payload["send_ready"] is True
     assert payload["send_blockers"] == []
 
@@ -295,8 +314,12 @@ def test_ticket_edit_shows_wtn_buttons_only_for_complete_waste(client, db_sessio
         ewc_code_display="17 09 04",
         ewc_description="Waste UI signed",
         net_kg=Decimal("2100.000"),
-        wtn_signature_data_uri=SIGNATURE_DATA_URL,
-        wtn_signature_signed_at=datetime(2026, 2, 20, 10, 47, 30),
+        wtn_producer_signature_data_uri=SIGNATURE_DATA_URL,
+        wtn_producer_signature_signed_at=datetime(2026, 2, 20, 10, 47, 10),
+        wtn_carrier_signature_data_uri=SIGNATURE_DATA_URL,
+        wtn_carrier_signature_signed_at=datetime(2026, 2, 20, 10, 47, 20),
+        wtn_receiver_signature_data_uri=SIGNATURE_DATA_URL,
+        wtn_receiver_signature_signed_at=datetime(2026, 2, 20, 10, 47, 30),
         dont_invoice=False,
         paid=False,
     )
@@ -324,12 +347,15 @@ def test_ticket_edit_shows_wtn_buttons_only_for_complete_waste(client, db_sessio
     assert waste_response.text.count("Preview") >= 2
     assert waste_response.text.count("Print") >= 2
     assert "wtn-signature-tools" in waste_response.text
-    assert "WTN Signature" in waste_response.text
+    assert "WTN Signatures" in waste_response.text
+    assert "Producer" in waste_response.text
+    assert "Carrier" in waste_response.text
+    assert "Receiver" in waste_response.text
     assert "Not signed" in waste_response.text
-    assert "⚠ WTN not signed" in waste_response.text
+    assert "WTN not signed" in waste_response.text
     assert (
         waste_response.text.index("This ticket is complete and cannot be edited.")
-        < waste_response.text.index("⚠ WTN not signed")
+        < waste_response.text.index("WTN not signed")
         < waste_response.text.index("wtn-signature-tools")
         < waste_response.text.index("Ticket Info")
     )
@@ -342,13 +368,13 @@ def test_ticket_edit_shows_wtn_buttons_only_for_complete_waste(client, db_sessio
     assert "documents-panel--header" in sale_response.text
     assert "Waste Transfer Note" not in sale_response.text
     assert "wtn-signature-tools" not in sale_response.text
-    assert "⚠ WTN not signed" not in sale_response.text
+    assert "WTN not signed" not in sale_response.text
 
     assert signed_waste_response.status_code == 200
     assert "wtn-signature-tools" in signed_waste_response.text
-    assert "WTN Signature" in signed_waste_response.text
+    assert "WTN Signatures" in signed_waste_response.text
     assert "Signed" in signed_waste_response.text
-    assert "⚠ WTN not signed" not in signed_waste_response.text
+    assert "WTN not signed" not in signed_waste_response.text
 
 
 def test_wtn_send_succeeds_and_creates_job_when_compliant(client, db_session):
@@ -400,7 +426,37 @@ def test_wtn_send_succeeds_and_creates_job_when_compliant(client, db_session):
     assert job.destination_id == destination.id
 
 
-def test_wtn_signature_save_persists_signature_data(client, db_session):
+@pytest.mark.parametrize(
+    ("role", "data_field", "signed_at_field", "signer_field"),
+    [
+        (
+            "producer",
+            "wtn_producer_signature_data_uri",
+            "wtn_producer_signature_signed_at",
+            "wtn_producer_signature_signer_name",
+        ),
+        (
+            "carrier",
+            "wtn_carrier_signature_data_uri",
+            "wtn_carrier_signature_signed_at",
+            "wtn_carrier_signature_signer_name",
+        ),
+        (
+            "receiver",
+            "wtn_receiver_signature_data_uri",
+            "wtn_receiver_signature_signed_at",
+            "wtn_receiver_signature_signer_name",
+        ),
+    ],
+)
+def test_wtn_signature_save_persists_signature_data_for_each_role(
+    client,
+    db_session,
+    role: str,
+    data_field: str,
+    signed_at_field: str,
+    signer_field: str,
+):
     _create_wtn_template_and_destination(db_session)
 
     ticket = Ticket(
@@ -419,7 +475,7 @@ def test_wtn_signature_save_persists_signature_data(client, db_session):
     db_session.commit()
 
     response = client.post(
-        f"/tickets/{ticket.id}/wtn/signature",
+        f"/tickets/{ticket.id}/wtn/signature/{role}",
         data={
             "signature_data_url": SIGNATURE_DATA_URL,
             "blank_signature_data_url": BLANK_SIGNATURE_DATA_URL,
@@ -432,9 +488,54 @@ def test_wtn_signature_save_persists_signature_data(client, db_session):
     assert response.headers["location"] == f"/tickets/{ticket.id}?wtn_signature_saved=1"
 
     db_session.refresh(ticket)
-    assert ticket.wtn_signature_data_uri == SIGNATURE_DATA_URL
-    assert ticket.wtn_signature_signed_at is not None
-    assert ticket.wtn_signature_signer_name == "John Smith"
+    assert getattr(ticket, data_field) == SIGNATURE_DATA_URL
+    assert getattr(ticket, signed_at_field) is not None
+    assert getattr(ticket, signer_field) == "John Smith"
+
+    role_data_fields = {
+        "wtn_producer_signature_data_uri",
+        "wtn_carrier_signature_data_uri",
+        "wtn_receiver_signature_data_uri",
+    }
+    for other_field in role_data_fields - {data_field}:
+        assert getattr(ticket, other_field) in (None, "")
+
+
+def test_wtn_signature_legacy_route_maps_to_receiver_signature(client, db_session):
+    _create_wtn_template_and_destination(db_session)
+
+    ticket = Ticket(
+        ticket_no="T-WTN-SIGN-LEGACY",
+        datetime=datetime(2026, 3, 22, 11, 12, 0),
+        status=TicketStatusEnum.COMPLETE.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        ewc_code_display="17 09 04",
+        ewc_description="Waste signed legacy",
+        net_kg=Decimal("1500.000"),
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    response = client.post(
+        f"/tickets/{ticket.id}/wtn/signature",
+        data={
+            "signature_data_url": SIGNATURE_DATA_URL,
+            "blank_signature_data_url": BLANK_SIGNATURE_DATA_URL,
+            "signer_name": "Legacy Signer",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/tickets/{ticket.id}?wtn_signature_saved=1"
+
+    db_session.refresh(ticket)
+    assert ticket.wtn_receiver_signature_data_uri == SIGNATURE_DATA_URL
+    assert ticket.wtn_receiver_signature_signed_at is not None
+    assert ticket.wtn_receiver_signature_signer_name == "Legacy Signer"
 
 
 def test_wtn_signature_save_rejects_blank_signature(client, db_session):
@@ -456,7 +557,7 @@ def test_wtn_signature_save_rejects_blank_signature(client, db_session):
     db_session.commit()
 
     response = client.post(
-        f"/tickets/{ticket.id}/wtn/signature",
+        f"/tickets/{ticket.id}/wtn/signature/receiver",
         data={
             "signature_data_url": BLANK_SIGNATURE_DATA_URL,
             "blank_signature_data_url": SIGNATURE_DATA_URL,
@@ -468,11 +569,11 @@ def test_wtn_signature_save_rejects_blank_signature(client, db_session):
     assert "Signature cannot be blank." in response.text
 
     db_session.refresh(ticket)
-    assert ticket.wtn_signature_data_uri in (None, "")
-    assert ticket.wtn_signature_signed_at is None
+    assert ticket.wtn_receiver_signature_data_uri in (None, "")
+    assert ticket.wtn_receiver_signature_signed_at is None
 
 
-def test_wtn_preview_route_includes_saved_signature(client, db_session):
+def test_wtn_preview_route_includes_saved_signatures_for_all_roles(client, db_session):
     _create_wtn_template_and_destination(db_session)
 
     ticket = Ticket(
@@ -484,9 +585,15 @@ def test_wtn_preview_route_includes_saved_signature(client, db_session):
         ewc_code_display="17 09 04",
         ewc_description="Waste preview signature",
         net_kg=Decimal("1700.000"),
-        wtn_signature_data_uri=SIGNATURE_DATA_URL,
-        wtn_signature_signed_at=datetime(2026, 3, 22, 11, 24, 0),
-        wtn_signature_signer_name="Alex",
+        wtn_producer_signature_data_uri="data:image/png;base64,producer-preview",
+        wtn_producer_signature_signed_at=datetime(2026, 3, 22, 11, 24, 0),
+        wtn_producer_signature_signer_name="Producer Alex",
+        wtn_carrier_signature_data_uri="data:image/png;base64,carrier-preview",
+        wtn_carrier_signature_signed_at=datetime(2026, 3, 22, 11, 24, 30),
+        wtn_carrier_signature_signer_name="Carrier Alex",
+        wtn_receiver_signature_data_uri="data:image/png;base64,receiver-preview",
+        wtn_receiver_signature_signed_at=datetime(2026, 3, 22, 11, 25, 0),
+        wtn_receiver_signature_signer_name="Receiver Alex",
         dont_invoice=False,
         paid=False,
     )
@@ -496,10 +603,14 @@ def test_wtn_preview_route_includes_saved_signature(client, db_session):
     response = client.get(f"/tickets/{ticket.id}/wtn/preview")
 
     assert response.status_code == 200
-    assert SIGNATURE_DATA_URL in response.text
+    assert "data:image/png;base64,producer-preview" in response.text
+    assert "data:image/png;base64,carrier-preview" in response.text
+    assert "data:image/png;base64,receiver-preview" in response.text
 
 
-def test_wtn_pdf_route_includes_saved_signature(client, db_session, monkeypatch):
+def test_wtn_pdf_route_includes_saved_signatures_for_all_roles(
+    client, db_session, monkeypatch
+):
     _create_wtn_template_and_destination(db_session)
 
     ticket = Ticket(
@@ -511,9 +622,15 @@ def test_wtn_pdf_route_includes_saved_signature(client, db_session, monkeypatch)
         ewc_code_display="17 09 04",
         ewc_description="Waste PDF signature",
         net_kg=Decimal("1800.000"),
-        wtn_signature_data_uri=SIGNATURE_DATA_URL,
-        wtn_signature_signed_at=datetime(2026, 3, 22, 11, 29, 0),
-        wtn_signature_signer_name="Alex",
+        wtn_producer_signature_data_uri="data:image/png;base64,producer-pdf",
+        wtn_producer_signature_signed_at=datetime(2026, 3, 22, 11, 29, 0),
+        wtn_producer_signature_signer_name="Producer PDF",
+        wtn_carrier_signature_data_uri="data:image/png;base64,carrier-pdf",
+        wtn_carrier_signature_signed_at=datetime(2026, 3, 22, 11, 29, 30),
+        wtn_carrier_signature_signer_name="Carrier PDF",
+        wtn_receiver_signature_data_uri="data:image/png;base64,receiver-pdf",
+        wtn_receiver_signature_signed_at=datetime(2026, 3, 22, 11, 30, 0),
+        wtn_receiver_signature_signer_name="Receiver PDF",
         dont_invoice=False,
         paid=False,
     )
@@ -536,4 +653,7 @@ def test_wtn_pdf_route_includes_saved_signature(client, db_session, monkeypatch)
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/pdf")
-    assert SIGNATURE_DATA_URL in captured.get("html", "")
+    html = captured.get("html", "")
+    assert "data:image/png;base64,producer-pdf" in html
+    assert "data:image/png;base64,carrier-pdf" in html
+    assert "data:image/png;base64,receiver-pdf" in html

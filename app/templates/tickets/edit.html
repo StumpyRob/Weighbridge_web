@@ -184,55 +184,162 @@
   </div>
 {% endif %}
 
-{% if show_wtn_actions and not ticket.has_wtn_signature %}
-  <div class="alert alert--warning">⚠ WTN not signed</div>
+{% set wtn_signature_status = ticket.wtn_signature_status %}
+{% if show_wtn_actions and wtn_signature_status == "unsigned" %}
+  <div class="alert alert--warning">WTN not signed</div>
 {% endif %}
 
 {% if is_complete and can_manage_ticket and show_wtn_actions %}
   <section class="wtn-signature-tools" data-wtn-signature-root>
     <div class="wtn-signature-tools__header">
-      <h3>WTN Signature</h3>
-      <span class="wtn-signature-tools__status {% if ticket.wtn_signature_data_uri %}is-signed{% else %}is-pending{% endif %}">
-        {% if ticket.wtn_signature_data_uri %}Signed{% else %}Not signed{% endif %}
+      <h3>WTN Signatures</h3>
+      <span class="wtn-signature-tools__status {% if wtn_signature_status == 'signed' %}is-signed{% elif wtn_signature_status == 'partial' %}is-partial{% else %}is-pending{% endif %}">
+        {% if wtn_signature_status == "signed" %}
+          Signed
+        {% elif wtn_signature_status == "partial" %}
+          Partial
+        {% else %}
+          Unsigned
+        {% endif %}
       </span>
     </div>
 
     <div class="wtn-signature-tools__body">
-      {% if ticket.wtn_signature_data_uri %}
-        <div class="wtn-signature-tools__preview-wrap">
-          <img
-            src="{{ ticket.wtn_signature_data_uri }}"
-            alt="Saved WTN signature"
-            class="wtn-signature-tools__preview"
-          />
-        </div>
-      {% endif %}
+      <div class="wtn-signature-tools__grid">
+        <section class="wtn-signature-role">
+          <div class="wtn-signature-role__header">
+            <h4>Producer</h4>
+            <span class="wtn-signature-tools__status {% if ticket.has_wtn_producer_signature %}is-signed{% else %}is-pending{% endif %}">
+              {% if ticket.has_wtn_producer_signature %}Signed{% else %}Not signed{% endif %}
+            </span>
+          </div>
+          {% if ticket.wtn_producer_signature_data_uri %}
+            <div class="wtn-signature-tools__preview-wrap">
+              <img
+                src="{{ ticket.wtn_producer_signature_data_uri }}"
+                alt="Saved producer signature"
+                class="wtn-signature-tools__preview"
+              />
+            </div>
+          {% endif %}
+          {% if ticket.wtn_producer_signature_signer_name %}
+            <p class="wtn-signature-tools__meta muted">
+              Signer: {{ ticket.wtn_producer_signature_signer_name }}
+            </p>
+          {% endif %}
+          {% if ticket.wtn_producer_signature_signed_at %}
+            <p class="wtn-signature-tools__meta muted">
+              Captured {{ ticket.wtn_producer_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}
+            </p>
+          {% endif %}
+          <div class="actions btn-group">
+            <button
+              type="button"
+              class="btn btn--secondary"
+              data-wtn-signature-open
+              data-signature-role="producer"
+              data-signature-role-label="Producer"
+              data-signature-action="/tickets/{{ ticket.id }}/wtn/signature/producer"
+              data-signature-existing="{{ '1' if ticket.has_wtn_producer_signature else '0' }}"
+              data-signature-signer="{{ (ticket.wtn_producer_signature_signer_name or '') | e }}"
+            >
+              {% if ticket.has_wtn_producer_signature %}Replace Signature{% else %}Capture Signature{% endif %}
+            </button>
+          </div>
+        </section>
 
-      {% if ticket.wtn_signature_signer_name %}
-        <p class="wtn-signature-tools__meta muted">
-          Signer: {{ ticket.wtn_signature_signer_name }}
-        </p>
-      {% endif %}
+        <section class="wtn-signature-role">
+          <div class="wtn-signature-role__header">
+            <h4>Carrier</h4>
+            <span class="wtn-signature-tools__status {% if ticket.has_wtn_carrier_signature %}is-signed{% else %}is-pending{% endif %}">
+              {% if ticket.has_wtn_carrier_signature %}Signed{% else %}Not signed{% endif %}
+            </span>
+          </div>
+          {% if ticket.wtn_carrier_signature_data_uri %}
+            <div class="wtn-signature-tools__preview-wrap">
+              <img
+                src="{{ ticket.wtn_carrier_signature_data_uri }}"
+                alt="Saved carrier signature"
+                class="wtn-signature-tools__preview"
+              />
+            </div>
+          {% endif %}
+          {% if ticket.wtn_carrier_signature_signer_name %}
+            <p class="wtn-signature-tools__meta muted">
+              Signer: {{ ticket.wtn_carrier_signature_signer_name }}
+            </p>
+          {% endif %}
+          {% if ticket.wtn_carrier_signature_signed_at %}
+            <p class="wtn-signature-tools__meta muted">
+              Captured {{ ticket.wtn_carrier_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}
+            </p>
+          {% endif %}
+          <div class="actions btn-group">
+            <button
+              type="button"
+              class="btn btn--secondary"
+              data-wtn-signature-open
+              data-signature-role="carrier"
+              data-signature-role-label="Carrier"
+              data-signature-action="/tickets/{{ ticket.id }}/wtn/signature/carrier"
+              data-signature-existing="{{ '1' if ticket.has_wtn_carrier_signature else '0' }}"
+              data-signature-signer="{{ (ticket.wtn_carrier_signature_signer_name or '') | e }}"
+            >
+              {% if ticket.has_wtn_carrier_signature %}Replace Signature{% else %}Capture Signature{% endif %}
+            </button>
+          </div>
+        </section>
 
-      {% if ticket.wtn_signature_signed_at %}
-        <p class="wtn-signature-tools__meta muted">
-          Captured {{ ticket.wtn_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}
-        </p>
-      {% endif %}
-
-      <div class="actions btn-group">
-        <button type="button" class="btn btn--secondary" data-wtn-signature-open>
-          {% if ticket.wtn_signature_data_uri %}Replace Signature{% else %}Capture Signature{% endif %}
-        </button>
+        <section class="wtn-signature-role">
+          <div class="wtn-signature-role__header">
+            <h4>Receiver</h4>
+            <span class="wtn-signature-tools__status {% if ticket.has_wtn_receiver_signature %}is-signed{% else %}is-pending{% endif %}">
+              {% if ticket.has_wtn_receiver_signature %}Signed{% else %}Not signed{% endif %}
+            </span>
+          </div>
+          {% if ticket.wtn_receiver_signature_data_uri %}
+            <div class="wtn-signature-tools__preview-wrap">
+              <img
+                src="{{ ticket.wtn_receiver_signature_data_uri }}"
+                alt="Saved receiver signature"
+                class="wtn-signature-tools__preview"
+              />
+            </div>
+          {% endif %}
+          {% if ticket.wtn_receiver_signature_signer_name %}
+            <p class="wtn-signature-tools__meta muted">
+              Signer: {{ ticket.wtn_receiver_signature_signer_name }}
+            </p>
+          {% endif %}
+          {% if ticket.wtn_receiver_signature_signed_at %}
+            <p class="wtn-signature-tools__meta muted">
+              Captured {{ ticket.wtn_receiver_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}
+            </p>
+          {% endif %}
+          <div class="actions btn-group">
+            <button
+              type="button"
+              class="btn btn--secondary"
+              data-wtn-signature-open
+              data-signature-role="receiver"
+              data-signature-role-label="Receiver"
+              data-signature-action="/tickets/{{ ticket.id }}/wtn/signature/receiver"
+              data-signature-existing="{{ '1' if ticket.has_wtn_receiver_signature else '0' }}"
+              data-signature-signer="{{ (ticket.wtn_receiver_signature_signer_name or '') | e }}"
+            >
+              {% if ticket.has_wtn_receiver_signature %}Replace Signature{% else %}Capture Signature{% endif %}
+            </button>
+          </div>
+        </section>
       </div>
     </div>
 
     <dialog class="wtn-signature-dialog" data-wtn-signature-dialog>
-      <form method="post" action="/tickets/{{ ticket.id }}/wtn/signature" data-wtn-signature-form>
-        <h3>Capture WTN Signature</h3>
-        {% if ticket.wtn_signature_data_uri %}
-          <p class="muted">Saving will replace the existing signature on this WTN.</p>
-        {% endif %}
+      <form method="post" action="/tickets/{{ ticket.id }}/wtn/signature/receiver" data-wtn-signature-form>
+        <h3 data-wtn-signature-dialog-title>Capture Signature</h3>
+        <p class="muted" data-wtn-signature-replace-note hidden>
+          Saving will replace the existing signature for this role.
+        </p>
         <canvas
           class="wtn-signature-dialog__canvas"
           width="600"
@@ -248,7 +355,8 @@
             id="wtn_signer_name"
             name="signer_name"
             maxlength="{{ limits.NAME_MAX }}"
-            value="{{ ticket.wtn_signature_signer_name or '' }}"
+            value=""
+            data-wtn-signature-signer
           />
         </div>
         <p class="wtn-signature-dialog__error" data-wtn-signature-error hidden></p>
@@ -2012,18 +2120,21 @@
       return;
     }
 
-    const openButton = root.querySelector("[data-wtn-signature-open]");
+    const openButtons = Array.from(root.querySelectorAll("[data-wtn-signature-open]"));
     const dialog = root.querySelector("[data-wtn-signature-dialog]");
     const form = root.querySelector("[data-wtn-signature-form]");
     const canvas = root.querySelector("[data-wtn-signature-canvas]");
     const clearButton = root.querySelector("[data-wtn-signature-clear]");
     const cancelButton = root.querySelector("[data-wtn-signature-cancel]");
+    const dialogTitle = root.querySelector("[data-wtn-signature-dialog-title]");
+    const replaceNote = root.querySelector("[data-wtn-signature-replace-note]");
+    const signerInput = root.querySelector("[data-wtn-signature-signer]");
     const dataInput = root.querySelector("[data-wtn-signature-data]");
     const blankInput = root.querySelector("[data-wtn-signature-blank]");
     const errorMessage = root.querySelector("[data-wtn-signature-error]");
 
     if (
-      !openButton ||
+      openButtons.length === 0 ||
       !dialog ||
       !form ||
       !canvas ||
@@ -2040,6 +2151,7 @@
       return;
     }
 
+    const defaultFormAction = form.getAttribute("action") || "";
     let drawing = false;
     let hasStroke = false;
     let blankDataUrl = "";
@@ -2130,7 +2242,21 @@
       event.preventDefault();
     }
 
-    function openDialog() {
+    function openDialog(button) {
+      const action = button.getAttribute("data-signature-action") || defaultFormAction;
+      const roleLabel = button.getAttribute("data-signature-role-label") || "WTN";
+      const hasExisting = button.getAttribute("data-signature-existing") === "1";
+      const signerValue = button.getAttribute("data-signature-signer") || "";
+      form.setAttribute("action", action);
+      if (dialogTitle) {
+        dialogTitle.textContent = "Capture " + roleLabel + " Signature";
+      }
+      if (replaceNote) {
+        replaceNote.hidden = !hasExisting;
+      }
+      if (signerInput) {
+        signerInput.value = signerValue;
+      }
       if (typeof dialog.showModal === "function") {
         dialog.showModal();
       } else {
@@ -2148,7 +2274,11 @@
       }
     }
 
-    openButton.addEventListener("click", openDialog);
+    openButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        openDialog(button);
+      });
+    });
     cancelButton.addEventListener("click", closeDialog);
     clearButton.addEventListener("click", resizeCanvas);
     window.addEventListener("resize", function () {

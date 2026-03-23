@@ -894,6 +894,12 @@ body.js-help-tooltips .help-tooltip {
   color: #14532d;
 }
 
+.wtn-signature-tools__status.is-partial {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
 .wtn-signature-tools__status.is-pending {
   background: #f3f4f6;
   border-color: #d1d5db;
@@ -904,6 +910,34 @@ body.js-help-tooltips .help-tooltip {
   display: grid;
   gap: 0.55rem;
   padding: 1rem;
+}
+
+.wtn-signature-tools__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.wtn-signature-role {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.wtn-signature-role__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+.wtn-signature-role__header h4 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .wtn-signature-tools__preview-wrap {

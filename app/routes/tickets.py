@@ -160,6 +160,28 @@ TICKET_EMAIL_DEFAULT_BODY = (
 CREDIT_LIMIT_WARNING_RATIO = Decimal("0.80")
 WTN_SIGNATURE_DATA_URL_PREFIX = "data:image/png;base64,"
 WTN_SIGNATURE_MAX_BYTES = 500_000
+WTN_SIGNATURE_ROLE_LABELS: dict[str, str] = {
+    "producer": "Producer",
+    "carrier": "Carrier",
+    "receiver": "Receiver",
+}
+WTN_SIGNATURE_ROLE_FIELDS: dict[str, tuple[str, str, str]] = {
+    "producer": (
+        "wtn_producer_signature_data_uri",
+        "wtn_producer_signature_signed_at",
+        "wtn_producer_signature_signer_name",
+    ),
+    "carrier": (
+        "wtn_carrier_signature_data_uri",
+        "wtn_carrier_signature_signed_at",
+        "wtn_carrier_signature_signer_name",
+    ),
+    "receiver": (
+        "wtn_receiver_signature_data_uri",
+        "wtn_receiver_signature_signed_at",
+        "wtn_receiver_signature_signer_name",
+    ),
+}
 _TICKET_AUDIT_DIFF_KEYS = (
     "status",
     "product_id",
@@ -2549,6 +2571,18 @@ def _wtn_filename(ticket: Ticket) -> str:
     return f"{token}-wtn.pdf"
 
 
+def _normalize_wtn_signature_role(value: str | None) -> str:
+    role = str(value or "").strip().lower()
+    return role if role in WTN_SIGNATURE_ROLE_FIELDS else ""
+
+
+def _wtn_signature_role_columns(role: str) -> tuple[str, str, str]:
+    normalized_role = _normalize_wtn_signature_role(role)
+    if not normalized_role:
+        raise KeyError("Invalid WTN signature role.")
+    return WTN_SIGNATURE_ROLE_FIELDS[normalized_role]
+
+
 def _normalize_png_data_url(value: str | None) -> tuple[str, bytes] | None:
     raw_value = str(value or "").strip()
     if not raw_value or not raw_value.startswith(WTN_SIGNATURE_DATA_URL_PREFIX):
@@ -2835,11 +2869,12 @@ def tickets_wtn_pdf(
     )
 
 
-@router.post("/tickets/{ticket_id:int}/wtn/signature")
-async def tickets_wtn_signature_save(
+async def _tickets_wtn_signature_save_for_role(
+    *,
     ticket_id: int,
+    role: str,
     request: Request,
-    db: Session = Depends(get_db),
+    db: Session,
 ) -> Response:
     _require_tickets_manage(request)
     ticket = db.get(Ticket, ticket_id)
@@ -2850,6 +2885,10 @@ async def tickets_wtn_signature_save(
             {"request": request, "ticket_id": ticket_id},
             status_code=404,
         )
+
+    normalized_role = _normalize_wtn_signature_role(role)
+    if not normalized_role:
+        return HTMLResponse("WTN signature role not found.", status_code=404)
 
     status_value = _status_value(ticket.status)
     transaction_type_value = _enum_value_or_text(ticket.transaction_type)
@@ -2905,15 +2944,14 @@ async def tickets_wtn_signature_save(
             status_code=400,
         )
 
-    replacing_existing = bool(str(ticket.wtn_signature_data_uri or "").strip())
-    ticket.wtn_signature_data_uri = normalized_data_url
-    ticket.wtn_signature_signed_at = utcnow()
-    ticket.wtn_signature_signer_name = signer_name
-    signed_at_iso = (
-        ticket.wtn_signature_signed_at.isoformat()
-        if ticket.wtn_signature_signed_at is not None
-        else ""
-    )
+    data_field, signed_at_field, signer_field = _wtn_signature_role_columns(normalized_role)
+    replacing_existing = bool(str(getattr(ticket, data_field, "") or "").strip())
+    signed_at_value = utcnow()
+    setattr(ticket, data_field, normalized_data_url)
+    setattr(ticket, signed_at_field, signed_at_value)
+    setattr(ticket, signer_field, signer_name)
+    signed_at_iso = signed_at_value.isoformat()
+    role_label = WTN_SIGNATURE_ROLE_LABELS.get(normalized_role, normalized_role.title())
     audit_log(
         db,
         request,
@@ -2921,13 +2959,14 @@ async def tickets_wtn_signature_save(
         entity_type="ticket",
         entity_id=ticket.id,
         summary=(
-            f"Replaced WTN signature for ticket {ticket.ticket_no}"
+            f"Replaced WTN {role_label} signature for ticket {ticket.ticket_no}"
             if replacing_existing
-            else f"Saved WTN signature for ticket {ticket.ticket_no}"
+            else f"Saved WTN {role_label} signature for ticket {ticket.ticket_no}"
         ),
         details={
             "ticket_id": ticket.id,
             "ticket_no": ticket.ticket_no,
+            "role": normalized_role,
             "operation": "replace" if replacing_existing else "save",
             "signer_name": signer_name or None,
             "signed_at": signed_at_iso,
@@ -2938,6 +2977,63 @@ async def tickets_wtn_signature_save(
     return RedirectResponse(
         url=f"/tickets/{ticket.id}?wtn_signature_saved=1",
         status_code=303,
+    )
+
+
+@router.post("/tickets/{ticket_id:int}/wtn/signature/producer")
+async def tickets_wtn_signature_save_producer(
+    ticket_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    return await _tickets_wtn_signature_save_for_role(
+        ticket_id=ticket_id,
+        role="producer",
+        request=request,
+        db=db,
+    )
+
+
+@router.post("/tickets/{ticket_id:int}/wtn/signature/carrier")
+async def tickets_wtn_signature_save_carrier(
+    ticket_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    return await _tickets_wtn_signature_save_for_role(
+        ticket_id=ticket_id,
+        role="carrier",
+        request=request,
+        db=db,
+    )
+
+
+@router.post("/tickets/{ticket_id:int}/wtn/signature/receiver")
+async def tickets_wtn_signature_save_receiver(
+    ticket_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    return await _tickets_wtn_signature_save_for_role(
+        ticket_id=ticket_id,
+        role="receiver",
+        request=request,
+        db=db,
+    )
+
+
+@router.post("/tickets/{ticket_id:int}/wtn/signature")
+async def tickets_wtn_signature_save(
+    ticket_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    # Legacy compatibility path from phase-1; maps to receiver signature in phase-2.
+    return await _tickets_wtn_signature_save_for_role(
+        ticket_id=ticket_id,
+        role="receiver",
+        request=request,
+        db=db,
     )
 
 

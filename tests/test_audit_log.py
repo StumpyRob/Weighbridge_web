@@ -243,7 +243,7 @@ def test_ticket_wtn_signature_save_and_replace_are_audited(client, db_session):
     db_session.commit()
 
     first = client.post(
-        f"/tickets/{ticket.id}/wtn/signature",
+        f"/tickets/{ticket.id}/wtn/signature/producer",
         data={
             "signature_data_url": SIGNATURE_DATA_URL,
             "blank_signature_data_url": BLANK_SIGNATURE_DATA_URL,
@@ -254,7 +254,7 @@ def test_ticket_wtn_signature_save_and_replace_are_audited(client, db_session):
     assert first.status_code == 303
 
     second = client.post(
-        f"/tickets/{ticket.id}/wtn/signature",
+        f"/tickets/{ticket.id}/wtn/signature/producer",
         data={
             "signature_data_url": SIGNATURE_DATA_URL,
             "blank_signature_data_url": BLANK_SIGNATURE_DATA_URL,
@@ -278,11 +278,13 @@ def test_ticket_wtn_signature_save_and_replace_are_audited(client, db_session):
     first_details = events[0].details_json or {}
     assert first_details.get("ticket_id") == ticket.id
     assert first_details.get("ticket_no") == ticket.ticket_no
+    assert first_details.get("role") == "producer"
     assert first_details.get("operation") == "save"
     assert first_details.get("signer_name") == "First Signer"
     assert first_details.get("signed_at")
 
     second_details = events[1].details_json or {}
+    assert second_details.get("role") == "producer"
     assert second_details.get("operation") == "replace"
     assert second_details.get("signer_name") == "Second Signer"
     assert second_details.get("signed_at")

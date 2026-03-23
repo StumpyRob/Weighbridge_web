@@ -95,9 +95,37 @@ class Ticket(Base):
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"))
     final_disposal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     used_on_site: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Legacy single-signature fields (phase-1). Kept for compatibility during phase-2 rollout.
     wtn_signature_data_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
     wtn_signature_signed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     wtn_signature_signer_name: Mapped[str | None] = mapped_column(
+        String(NAME_MAX),
+        nullable=True,
+    )
+    wtn_producer_signature_data_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    wtn_producer_signature_signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    wtn_producer_signature_signer_name: Mapped[str | None] = mapped_column(
+        String(NAME_MAX),
+        nullable=True,
+    )
+    wtn_carrier_signature_data_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    wtn_carrier_signature_signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    wtn_carrier_signature_signer_name: Mapped[str | None] = mapped_column(
+        String(NAME_MAX),
+        nullable=True,
+    )
+    wtn_receiver_signature_data_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    wtn_receiver_signature_signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    wtn_receiver_signature_signer_name: Mapped[str | None] = mapped_column(
         String(NAME_MAX),
         nullable=True,
     )
@@ -156,15 +184,45 @@ class Ticket(Base):
     destination: Mapped[Destination | None] = relationship("Destination")
 
     @property
-    def has_wtn_signature(self) -> bool:
-        return bool(str(self.wtn_signature_data_uri or "").strip())
-
-    @property
-    def wtn_signature_status(self) -> str | None:
+    def is_waste_ticket(self) -> bool:
         tx_value = self.transaction_type
         if hasattr(tx_value, "value"):
             tx_value = tx_value.value
         tx = str(tx_value or "").strip().upper()
-        if not tx.startswith("WASTE"):
+        return tx.startswith("WASTE")
+
+    @property
+    def has_wtn_producer_signature(self) -> bool:
+        return bool(str(self.wtn_producer_signature_data_uri or "").strip())
+
+    @property
+    def has_wtn_carrier_signature(self) -> bool:
+        return bool(str(self.wtn_carrier_signature_data_uri or "").strip())
+
+    @property
+    def has_wtn_receiver_signature(self) -> bool:
+        return bool(str(self.wtn_receiver_signature_data_uri or "").strip())
+
+    @property
+    def has_wtn_signature(self) -> bool:
+        # Backward-compatible alias for legacy single-signature checks.
+        return self.has_wtn_receiver_signature
+
+    @property
+    def wtn_signature_status(self) -> str | None:
+        if not self.is_waste_ticket:
             return None
-        return "signed" if self.has_wtn_signature else "unsigned"
+        signed_count = sum(
+            1
+            for value in (
+                self.has_wtn_producer_signature,
+                self.has_wtn_carrier_signature,
+                self.has_wtn_receiver_signature,
+            )
+            if value
+        )
+        if signed_count <= 0:
+            return "unsigned"
+        if signed_count >= 3:
+            return "signed"
+        return "partial"

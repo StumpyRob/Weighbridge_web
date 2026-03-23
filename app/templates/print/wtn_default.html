@@ -302,9 +302,15 @@
     {% set company_name_value = company_name or (company.name if company else "") or "Your Company Name" %}
     {% set company_lines_value = company_lines or (company.lines if company else []) or [] %}
     {% set logo_src = p.logo_data_uri or "" %}
-    {% set signature_src = p.wtn_signature_data_uri or "" %}
-    {% set signature_signed_at = p.wtn_signature_signed_at or "" %}
-    {% set signature_signer_name = p.wtn_signature_signer_name or "" %}
+    {% set producer_signature_src = p.producer_signature_data_uri or "" %}
+    {% set producer_signature_signed_at = p.producer_signature_signed_at or "" %}
+    {% set producer_signature_signer_name = p.producer_signature_signer_name or "" %}
+    {% set carrier_signature_src = p.carrier_signature_data_uri or "" %}
+    {% set carrier_signature_signed_at = p.carrier_signature_signed_at or "" %}
+    {% set carrier_signature_signer_name = p.carrier_signature_signer_name or "" %}
+    {% set receiver_signature_src = p.receiver_signature_data_uri or "" %}
+    {% set receiver_signature_signed_at = p.receiver_signature_signed_at or "" %}
+    {% set receiver_signature_signer_name = p.receiver_signature_signer_name or "" %}
 
     <div class="header">
       <div class="company-section">
@@ -378,57 +384,23 @@
     <div class="signatures">
       <div class="signature-item">
         <div class="signature-label">PRODUCER SIGNATURE</div>
-        <div class="signature-area"></div>
-        <div class="print-name-row">
-          <span class="print-name-label">Print name:</span>
-          <span class="print-name-line"></span>
-        </div>
-        <div class="date-row">
-          <span class="date-label">Date:</span>
-          <span class="date-digits">__</span>
-          <span class="date-slash">/</span>
-          <span class="date-digits">__</span>
-          <span class="date-slash">/</span>
-          <span class="date-digits">____</span>
-        </div>
-      </div>
-
-      <div class="signature-item">
-        <div class="signature-label">CARRIER SIGNATURE</div>
-        <div class="signature-area"></div>
-        <div class="print-name-row">
-          <span class="print-name-label">Print name:</span>
-          <span class="print-name-line"></span>
-        </div>
-        <div class="date-row">
-          <span class="date-label">Date:</span>
-          <span class="date-digits">__</span>
-          <span class="date-slash">/</span>
-          <span class="date-digits">__</span>
-          <span class="date-slash">/</span>
-          <span class="date-digits">____</span>
-        </div>
-      </div>
-
-      <div class="signature-item">
-        <div class="signature-label">RECEIVER SIGNATURE</div>
         <div class="signature-area">
-          {% if signature_src %}
-            <img src="{{ signature_src }}" alt="Captured signature" class="signature-image" />
+          {% if producer_signature_src %}
+            <img src="{{ producer_signature_src }}" alt="Producer signature" class="signature-image" />
           {% endif %}
         </div>
         <div class="print-name-row">
           <span class="print-name-label">Print name:</span>
-          {% if signature_signer_name %}
-            <span class="signature-print-name">{{ signature_signer_name }}</span>
+          {% if producer_signature_signer_name %}
+            <span class="signature-print-name">{{ producer_signature_signer_name }}</span>
           {% else %}
             <span class="print-name-line"></span>
           {% endif %}
         </div>
         <div class="date-row">
           <span class="date-label">Date:</span>
-          {% if signature_signed_at %}
-            <span class="detail-value">{{ signature_signed_at }}</span>
+          {% if producer_signature_signed_at %}
+            <span class="detail-value">{{ producer_signature_signed_at }}</span>
           {% else %}
             <span class="date-digits">__</span>
             <span class="date-slash">/</span>
@@ -437,7 +409,71 @@
             <span class="date-digits">____</span>
           {% endif %}
         </div>
-        {% if signature_signed_at %}
+        {% if producer_signature_signed_at %}
+          <div class="signature-signed-meta">Captured electronically.</div>
+        {% endif %}
+      </div>
+
+      <div class="signature-item">
+        <div class="signature-label">CARRIER SIGNATURE</div>
+        <div class="signature-area">
+          {% if carrier_signature_src %}
+            <img src="{{ carrier_signature_src }}" alt="Carrier signature" class="signature-image" />
+          {% endif %}
+        </div>
+        <div class="print-name-row">
+          <span class="print-name-label">Print name:</span>
+          {% if carrier_signature_signer_name %}
+            <span class="signature-print-name">{{ carrier_signature_signer_name }}</span>
+          {% else %}
+            <span class="print-name-line"></span>
+          {% endif %}
+        </div>
+        <div class="date-row">
+          <span class="date-label">Date:</span>
+          {% if carrier_signature_signed_at %}
+            <span class="detail-value">{{ carrier_signature_signed_at }}</span>
+          {% else %}
+            <span class="date-digits">__</span>
+            <span class="date-slash">/</span>
+            <span class="date-digits">__</span>
+            <span class="date-slash">/</span>
+            <span class="date-digits">____</span>
+          {% endif %}
+        </div>
+        {% if carrier_signature_signed_at %}
+          <div class="signature-signed-meta">Captured electronically.</div>
+        {% endif %}
+      </div>
+
+      <div class="signature-item">
+        <div class="signature-label">RECEIVER SIGNATURE</div>
+        <div class="signature-area">
+          {% if receiver_signature_src %}
+            <img src="{{ receiver_signature_src }}" alt="Receiver signature" class="signature-image" />
+          {% endif %}
+        </div>
+        <div class="print-name-row">
+          <span class="print-name-label">Print name:</span>
+          {% if receiver_signature_signer_name %}
+            <span class="signature-print-name">{{ receiver_signature_signer_name }}</span>
+          {% else %}
+            <span class="print-name-line"></span>
+          {% endif %}
+        </div>
+        <div class="date-row">
+          <span class="date-label">Date:</span>
+          {% if receiver_signature_signed_at %}
+            <span class="detail-value">{{ receiver_signature_signed_at }}</span>
+          {% else %}
+            <span class="date-digits">__</span>
+            <span class="date-slash">/</span>
+            <span class="date-digits">__</span>
+            <span class="date-slash">/</span>
+            <span class="date-digits">____</span>
+          {% endif %}
+        </div>
+        {% if receiver_signature_signed_at %}
           <div class="signature-signed-meta">Captured electronically.</div>
         {% endif %}
       </div>
