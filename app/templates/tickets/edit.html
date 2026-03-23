@@ -237,7 +237,6 @@
               type="button"
               class="btn btn--secondary"
               data-wtn-signature-open
-              data-signature-role="producer"
               data-signature-role-label="Producer"
               data-signature-action="/tickets/{{ ticket.id }}/wtn/signature/producer"
               data-signature-existing="{{ '1' if ticket.has_wtn_producer_signature else '0' }}"
@@ -279,7 +278,6 @@
               type="button"
               class="btn btn--secondary"
               data-wtn-signature-open
-              data-signature-role="carrier"
               data-signature-role-label="Carrier"
               data-signature-action="/tickets/{{ ticket.id }}/wtn/signature/carrier"
               data-signature-existing="{{ '1' if ticket.has_wtn_carrier_signature else '0' }}"
@@ -321,7 +319,6 @@
               type="button"
               class="btn btn--secondary"
               data-wtn-signature-open
-              data-signature-role="receiver"
               data-signature-role-label="Receiver"
               data-signature-action="/tickets/{{ ticket.id }}/wtn/signature/receiver"
               data-signature-existing="{{ '1' if ticket.has_wtn_receiver_signature else '0' }}"

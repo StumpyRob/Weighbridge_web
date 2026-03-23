@@ -204,11 +204,6 @@ class Ticket(Base):
         return bool(str(self.wtn_receiver_signature_data_uri or "").strip())
 
     @property
-    def has_wtn_signature(self) -> bool:
-        # Backward-compatible alias for legacy single-signature checks.
-        return self.has_wtn_receiver_signature
-
-    @property
     def wtn_signature_status(self) -> str | None:
         if not self.is_waste_ticket:
             return None
