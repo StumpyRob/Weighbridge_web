@@ -308,11 +308,23 @@ def test_ticket_edit_shows_wtn_buttons_only_for_complete_waste(client, db_sessio
     )
     assert waste_response.text.count("Preview") >= 2
     assert waste_response.text.count("Print") >= 2
+    assert "wtn-signature-tools" in waste_response.text
+    assert "WTN Signature" in waste_response.text
+    assert "Not signed" in waste_response.text
+    assert (
+        waste_response.text.index("This ticket is complete and cannot be edited.")
+        < waste_response.text.index("wtn-signature-tools")
+        < waste_response.text.index("Ticket Info")
+    )
+    assert waste_response.text.index("page-header__aside--documents") < waste_response.text.index(
+        "wtn-signature-tools"
+    )
 
     assert sale_response.status_code == 200
     assert "Documents" in sale_response.text
     assert "documents-panel--header" in sale_response.text
     assert "Waste Transfer Note" not in sale_response.text
+    assert "wtn-signature-tools" not in sale_response.text
 
 
 def test_wtn_send_succeeds_and_creates_job_when_compliant(client, db_session):

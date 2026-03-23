@@ -851,27 +851,59 @@ body.js-help-tooltips .help-tooltip {
 }
 
 .wtn-signature-tools {
-  margin-top: 0.35rem;
-  width: min(36rem, 100%);
-  border: 1px solid #d7dee7;
-  border-radius: 12px;
-  background: #f8fafc;
-  padding: 0.7rem 0.8rem 0.8rem;
-  display: grid;
-  gap: 0.55rem;
+  margin: 0 0 var(--section-gap);
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #ffffff;
+  overflow: hidden;
 }
 
 .wtn-signature-tools__header {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: 0.45rem;
+  gap: 0.5rem;
+  background: #f3f4f6;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 0.6rem 1rem;
 }
 
 .wtn-signature-tools__header h3 {
   margin: 0;
-  font-size: 0.92rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.wtn-signature-tools__status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 0.14rem 0.5rem;
+  font-size: 0.78rem;
+  line-height: 1.1;
+  font-weight: 600;
+}
+
+.wtn-signature-tools__status.is-signed {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #14532d;
+}
+
+.wtn-signature-tools__status.is-pending {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #374151;
+}
+
+.wtn-signature-tools__body {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
 }
 
 .wtn-signature-tools__preview-wrap {
@@ -893,7 +925,7 @@ body.js-help-tooltips .help-tooltip {
 
 .wtn-signature-tools__meta {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: 0.84rem;
 }
 
 .wtn-signature-dialog {

@@ -137,73 +137,6 @@
       {% set email_id_prefix = "ticket-email" %}
       {% set email_help_text = "Uses the configured ticket document output and platform email settings to attach a PDF copy." %}
       {% include "printing/_document_email_form.html" %}
-      {% if show_wtn_actions %}
-        <section class="wtn-signature-tools" data-wtn-signature-root>
-          <div class="wtn-signature-tools__header">
-            <h3>WTN Signature</h3>
-            {% if ticket.wtn_signature_signed_at %}
-              <span class="muted">Captured {{ ticket.wtn_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}</span>
-            {% else %}
-              <span class="muted">No signature captured yet.</span>
-            {% endif %}
-          </div>
-
-          {% if ticket.wtn_signature_data_uri %}
-            <div class="wtn-signature-tools__preview-wrap">
-              <img
-                src="{{ ticket.wtn_signature_data_uri }}"
-                alt="Saved WTN signature"
-                class="wtn-signature-tools__preview"
-              />
-            </div>
-          {% endif %}
-
-          {% if ticket.wtn_signature_signer_name %}
-            <p class="wtn-signature-tools__meta muted">
-              Signer: {{ ticket.wtn_signature_signer_name }}
-            </p>
-          {% endif %}
-
-          <div class="actions btn-group">
-            <button type="button" class="btn btn--secondary" data-wtn-signature-open>
-              {% if ticket.wtn_signature_data_uri %}Replace Signature{% else %}Capture Signature{% endif %}
-            </button>
-          </div>
-
-          <dialog class="wtn-signature-dialog" data-wtn-signature-dialog>
-            <form method="post" action="/tickets/{{ ticket.id }}/wtn/signature" data-wtn-signature-form>
-              <h3>Capture WTN Signature</h3>
-              {% if ticket.wtn_signature_data_uri %}
-                <p class="muted">Saving will replace the existing signature on this WTN.</p>
-              {% endif %}
-              <canvas
-                class="wtn-signature-dialog__canvas"
-                width="600"
-                height="220"
-                data-wtn-signature-canvas
-              ></canvas>
-              <input type="hidden" name="signature_data_url" value="" data-wtn-signature-data />
-              <input type="hidden" name="blank_signature_data_url" value="" data-wtn-signature-blank />
-              <div class="field">
-                <label for="wtn_signer_name">Signer name (optional)</label>
-                <input
-                  type="text"
-                  id="wtn_signer_name"
-                  name="signer_name"
-                  maxlength="{{ limits.NAME_MAX }}"
-                  value="{{ ticket.wtn_signature_signer_name or '' }}"
-                />
-              </div>
-              <p class="wtn-signature-dialog__error" data-wtn-signature-error hidden></p>
-              <div class="actions btn-group">
-                <button type="button" class="btn btn--secondary" data-wtn-signature-clear>Clear</button>
-                <button type="submit" class="btn btn--primary">Save Signature</button>
-                <button type="button" class="btn btn--ghost" data-wtn-signature-cancel>Cancel</button>
-              </div>
-            </form>
-          </dialog>
-        </section>
-      {% endif %}
     </div>
   {% elif is_open and (can_complete_ticket or (allow_dev_preview and can_manage_ticket)) %}
     <div class="actions btn-group ticket-header-actions">
@@ -249,6 +182,80 @@
   <div class="alert alert--warning">
     {{ locked_message or "This ticket is complete and cannot be edited." }}
   </div>
+{% endif %}
+
+{% if is_complete and can_manage_ticket and show_wtn_actions %}
+  <section class="wtn-signature-tools" data-wtn-signature-root>
+    <div class="wtn-signature-tools__header">
+      <h3>WTN Signature</h3>
+      <span class="wtn-signature-tools__status {% if ticket.wtn_signature_data_uri %}is-signed{% else %}is-pending{% endif %}">
+        {% if ticket.wtn_signature_data_uri %}Signed{% else %}Not signed{% endif %}
+      </span>
+    </div>
+
+    <div class="wtn-signature-tools__body">
+      {% if ticket.wtn_signature_data_uri %}
+        <div class="wtn-signature-tools__preview-wrap">
+          <img
+            src="{{ ticket.wtn_signature_data_uri }}"
+            alt="Saved WTN signature"
+            class="wtn-signature-tools__preview"
+          />
+        </div>
+      {% endif %}
+
+      {% if ticket.wtn_signature_signer_name %}
+        <p class="wtn-signature-tools__meta muted">
+          Signer: {{ ticket.wtn_signature_signer_name }}
+        </p>
+      {% endif %}
+
+      {% if ticket.wtn_signature_signed_at %}
+        <p class="wtn-signature-tools__meta muted">
+          Captured {{ ticket.wtn_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}
+        </p>
+      {% endif %}
+
+      <div class="actions btn-group">
+        <button type="button" class="btn btn--secondary" data-wtn-signature-open>
+          {% if ticket.wtn_signature_data_uri %}Replace Signature{% else %}Capture Signature{% endif %}
+        </button>
+      </div>
+    </div>
+
+    <dialog class="wtn-signature-dialog" data-wtn-signature-dialog>
+      <form method="post" action="/tickets/{{ ticket.id }}/wtn/signature" data-wtn-signature-form>
+        <h3>Capture WTN Signature</h3>
+        {% if ticket.wtn_signature_data_uri %}
+          <p class="muted">Saving will replace the existing signature on this WTN.</p>
+        {% endif %}
+        <canvas
+          class="wtn-signature-dialog__canvas"
+          width="600"
+          height="220"
+          data-wtn-signature-canvas
+        ></canvas>
+        <input type="hidden" name="signature_data_url" value="" data-wtn-signature-data />
+        <input type="hidden" name="blank_signature_data_url" value="" data-wtn-signature-blank />
+        <div class="field">
+          <label for="wtn_signer_name">Signer name (optional)</label>
+          <input
+            type="text"
+            id="wtn_signer_name"
+            name="signer_name"
+            maxlength="{{ limits.NAME_MAX }}"
+            value="{{ ticket.wtn_signature_signer_name or '' }}"
+          />
+        </div>
+        <p class="wtn-signature-dialog__error" data-wtn-signature-error hidden></p>
+        <div class="actions btn-group">
+          <button type="button" class="btn btn--secondary" data-wtn-signature-clear>Clear</button>
+          <button type="submit" class="btn btn--primary">Save Signature</button>
+          <button type="button" class="btn btn--ghost" data-wtn-signature-cancel>Cancel</button>
+        </div>
+      </form>
+    </dialog>
+  </section>
 {% endif %}
 
 {% if not can_manage_ticket %}
