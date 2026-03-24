@@ -12,7 +12,7 @@
 
   const mobileQuery = window.matchMedia("(max-width: 1099px)");
   const navLinks = sidebar.querySelectorAll("a");
-  let desktopCollapsed = root.classList.contains("shell-sidebar-collapsed");
+  let desktopHidden = root.classList.contains("shell-sidebar-hidden");
 
   function isMobile() {
     return mobileQuery.matches;
@@ -20,22 +20,10 @@
 
   function persistCollapsedState() {
     try {
-      window.localStorage.setItem(storageKey, desktopCollapsed ? "1" : "0");
+      window.localStorage.setItem(storageKey, desktopHidden ? "1" : "0");
     } catch (error) {
       return;
     }
-  }
-
-  function syncNavTitles() {
-    const shouldShowTitles = desktopCollapsed && !isMobile();
-    navLinks.forEach(function (link) {
-      const label = link.getAttribute("data-nav-label") || "";
-      if (shouldShowTitles && label) {
-        link.setAttribute("title", label);
-      } else {
-        link.removeAttribute("title");
-      }
-    });
   }
 
   function syncToggleState(isDrawerOpen) {
@@ -49,23 +37,22 @@
       return;
     }
 
-    const sidebarExpanded = !desktopCollapsed;
-    toggle.setAttribute("aria-expanded", sidebarExpanded ? "true" : "false");
+    const sidebarVisible = !desktopHidden;
+    toggle.setAttribute("aria-expanded", sidebarVisible ? "true" : "false");
     toggle.setAttribute(
       "aria-label",
-      sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"
+      sidebarVisible ? "Hide navigation sidebar" : "Show navigation sidebar"
     );
   }
 
-  function applyDesktopCollapsedState() {
-    root.classList.toggle("shell-sidebar-collapsed", desktopCollapsed);
-    shell.classList.toggle("app-shell--collapsed", desktopCollapsed);
-    syncNavTitles();
+  function applyDesktopVisibilityState() {
+    root.classList.toggle("shell-sidebar-hidden", desktopHidden);
+    shell.classList.toggle("app-shell--sidebar-hidden", desktopHidden);
   }
 
-  function setDesktopCollapsed(nextCollapsed) {
-    desktopCollapsed = Boolean(nextCollapsed);
-    applyDesktopCollapsedState();
+  function setDesktopHidden(nextHidden) {
+    desktopHidden = Boolean(nextHidden);
+    applyDesktopVisibilityState();
     persistCollapsedState();
     syncToggleState(document.body.classList.contains("is-shell-nav-open"));
   }
@@ -127,7 +114,7 @@
       return;
     }
 
-    setDesktopCollapsed(!desktopCollapsed);
+    setDesktopHidden(!desktopHidden);
   });
 
   backdrop.addEventListener("click", function () {
@@ -154,7 +141,7 @@
 
   const handleMediaChange = function () {
     syncShellState(false);
-    applyDesktopCollapsedState();
+    applyDesktopVisibilityState();
   };
 
   if (typeof mobileQuery.addEventListener === "function") {
@@ -163,6 +150,6 @@
     mobileQuery.addListener(handleMediaChange);
   }
 
-  applyDesktopCollapsedState();
+  applyDesktopVisibilityState();
   syncShellState(false);
 })();

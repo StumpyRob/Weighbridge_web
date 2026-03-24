@@ -9,10 +9,10 @@
       (function () {
         try {
           if (window.localStorage && window.localStorage.getItem("sidebar_collapsed") === "1") {
-            document.documentElement.classList.add("shell-sidebar-collapsed");
+            document.documentElement.classList.add("shell-sidebar-hidden");
           }
         } catch (error) {
-          document.documentElement.classList.remove("shell-sidebar-collapsed");
+          document.documentElement.classList.remove("shell-sidebar-hidden");
         }
       })();
     </script>
@@ -67,12 +67,11 @@
             {% endif %}
           </a>
         </div>
-        {% if current_host_label %}
-          <div class="site-utility-host" aria-label="Host domain">{{ current_host_label }}</div>
-        {% endif %}
-      </div>
-      <div class="site-header__utility">
-        <div class="site-utility-bar">
+        <div class="site-header__utility">
+          <div class="site-utility-bar">
+            {% if current_host_label %}
+              <span class="site-utility-host site-utility-bar__item" aria-label="Host domain">{{ current_host_label }}</span>
+            {% endif %}
           {% if platform_mode %}
             <span class="site-utility-bar__item site-utility-bar__item--platform">Platform Admin</span>
           {% elif current_tenant_name or current_tenant_subdomain %}
@@ -108,6 +107,7 @@
           {% if DEV_MODE and platform_mode %}
             <span class="dev-mode-pill">DEV</span>
           {% endif %}
+          </div>
         </div>
       </div>
     </header>

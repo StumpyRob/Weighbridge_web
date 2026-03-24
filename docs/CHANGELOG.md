@@ -4,6 +4,26 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.21.4 - 2026-03-24
+
+### RELEASE
+- `v0.21.4` simplifies the shared app shell again by replacing the desktop mini-rail collapse mode with a true hide/show sidebar and consolidating the header into one compact top bar.
+
+### CHANGE
+- Remove the desktop mini-rail letter-only collapsed sidebar mode.
+- Change the shared desktop toggle so it now fully hides the sidebar and lets the content area reclaim the space cleanly.
+- Keep the existing `sidebar_collapsed` localStorage key, but repurpose it to persist the desktop hidden/visible sidebar state.
+- Move tenant/platform context and account utility items fully into the main header row so the shell no longer has a second utility-strip feel.
+- Tighten the top header further into a single compact band while keeping branding, user context, and actions readable.
+- Keep mobile drawer behaviour unchanged:
+  - burger opens drawer
+  - backdrop closes drawer
+  - Escape closes drawer
+  - nav click closes drawer
+
+### TEST
+- Re-run focused shared-shell, branding, signed-in utility-bar, platform-shell, tenant-shell, and toast-layout regressions after the desktop hide/show and header consolidation changes.
+
 ## v0.21.3 - 2026-03-24
 
 ### RELEASE
