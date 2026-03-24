@@ -7,13 +7,13 @@
   {% macro dashboard_trend(points, aria_label, throughput=False) -%}
     {% set point_count = points|length %}
     {% set divisor = point_count - 1 if point_count > 1 else 1 %}
-    {% set x_start = 8 %}
-    {% set x_span = 84 %}
-    {% set y_base = 48 %}
-    {% set y_span = 34 %}
+    {% set x_start = 10 %}
+    {% set x_span = 78 %}
+    {% set y_base = 46 %}
+    {% set y_span = 30 %}
     {% set ns = namespace(polyline='', area='M ' ~ x_start ~ ' ' ~ y_base) %}
     <div
-      class="dashboard-trend{% if throughput %} dashboard-trend--throughput{% endif %}"
+      class="dashboard-trend dashboard-trend--area{% if throughput %} dashboard-trend--throughput{% endif %}"
       style="--dashboard-chart-columns: {{ point_count }};"
       role="img"
       aria-label="{{ aria_label }}"
@@ -21,8 +21,8 @@
       <div class="dashboard-trend__plot">
         <svg class="dashboard-trend__svg" viewBox="0 0 100 60" aria-hidden="true">
           <line class="dashboard-trend__grid" x1="{{ x_start }}" y1="{{ y_base }}" x2="{{ x_start + x_span }}" y2="{{ y_base }}"></line>
-          <line class="dashboard-trend__grid" x1="{{ x_start }}" y1="31" x2="{{ x_start + x_span }}" y2="31"></line>
-          <line class="dashboard-trend__grid" x1="{{ x_start }}" y1="14" x2="{{ x_start + x_span }}" y2="14"></line>
+          <line class="dashboard-trend__grid" x1="{{ x_start }}" y1="29" x2="{{ x_start + x_span }}" y2="29"></line>
+          <line class="dashboard-trend__grid" x1="{{ x_start }}" y1="12" x2="{{ x_start + x_span }}" y2="12"></line>
           {% for point in points %}
             {% set x = x_start + ((x_span * loop.index0) // divisor) %}
             {% set y = y_base - (((point.height_percent or 0) * y_span) // 100) %}
@@ -34,7 +34,7 @@
           {% for point in points %}
             {% set x = x_start + ((x_span * loop.index0) // divisor) %}
             {% set y = y_base - (((point.height_percent or 0) * y_span) // 100) %}
-            <circle class="dashboard-trend__point" cx="{{ x }}" cy="{{ y }}" r="1.9">
+            <circle class="dashboard-trend__point{% if loop.last %} dashboard-trend__point--latest{% endif %}" cx="{{ x }}" cy="{{ y }}" r="1.8">
               <title>
                 {% if throughput %}
                   {{ point.value_label }} in {{ point.date_label }}
