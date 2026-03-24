@@ -38,4 +38,12 @@ class Tenant(Base):
         Boolean,
         nullable=True,
     )
+    demo_reset_interval_days: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    demo_last_reset_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)

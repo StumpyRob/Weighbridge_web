@@ -61,6 +61,16 @@ def is_demo_tenant(tenant: Tenant | None) -> bool:
     return subdomain in {demo_subdomain, LEGACY_DEFAULT_TENANT_SUBDOMAIN}
 
 
+def is_reserved_demo_tenant(tenant: Tenant | None) -> bool:
+    if tenant is None:
+        return False
+    subdomain = normalize_subdomain(getattr(tenant, "subdomain", None))
+    demo_subdomain = normalize_subdomain(
+        settings.effective_demo_tenant_subdomain or DEMO_TENANT_SUBDOMAIN
+    )
+    return subdomain in {demo_subdomain, LEGACY_DEFAULT_TENANT_SUBDOMAIN}
+
+
 def ensure_demo_tenant(db: Session, *, create_missing: bool = True) -> Tenant | None:
     demo_subdomain = settings.effective_demo_tenant_subdomain or DEMO_TENANT_SUBDOMAIN
     tenant = get_tenant_by_subdomain(db, demo_subdomain)

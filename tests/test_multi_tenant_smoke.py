@@ -3195,14 +3195,19 @@ def test_demo_tenant_reset_action_is_only_available_for_demo_tenants(tmp_path, m
         assert "Reset Demo Tenant" in demo_detail.text
         assert "Type DEMO to enable confirmation" in demo_detail.text
         assert f'action="/platform/tenants/{demo_tenant}/reset-demo"' in demo_detail.text
+        assert f'action="/platform/tenants/{demo_tenant}/demo-reset-schedule"' in demo_detail.text
+        assert "demo@demo.com" in demo_detail.text
+        assert "password" in demo_detail.text
 
         marked_demo_detail = admin_client.get(f"/platform/tenants/{marked_demo_tenant}")
         assert marked_demo_detail.status_code == 200
         assert f'action="/platform/tenants/{marked_demo_tenant}/reset-demo"' in marked_demo_detail.text
+        assert f'action="/platform/tenants/{marked_demo_tenant}/demo-reset-schedule"' not in marked_demo_detail.text
         assert (
             "Delete is blocked for the demo tenant because it is reserved for internal demo/testing use."
             in marked_demo_detail.text
         )
+        assert "Automatic demo reset is only available for the reserved demo workspace." in marked_demo_detail.text
 
         non_demo_detail = admin_client.get(f"/platform/tenants/{non_demo_tenant}")
         assert non_demo_detail.status_code == 200
@@ -3224,6 +3229,23 @@ def test_demo_tenant_reset_action_is_only_available_for_demo_tenants(tmp_path, m
         blocked_detail = admin_client.get(blocked.headers["location"])
         assert blocked_detail.status_code == 200
         assert "Reset Demo Tenant is only available for workspaces marked as demo." in blocked_detail.text
+
+        blocked_schedule = admin_client.post(
+            f"/platform/tenants/{marked_demo_tenant}/demo-reset-schedule",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "demo_reset_interval_days": "7",
+            },
+            follow_redirects=False,
+        )
+        assert blocked_schedule.status_code in {302, 303}
+        assert blocked_schedule.headers.get("location", "").startswith(
+            f"/platform/tenants/{marked_demo_tenant}?"
+        )
+
+        blocked_schedule_page = admin_client.get(blocked_schedule.headers["location"])
+        assert blocked_schedule_page.status_code == 200
+        assert "Automatic demo reset is only available for the reserved demo workspace." in blocked_schedule_page.text
 
     with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.localhost") as tenant_client:
         assert _login(tenant_client, email="demo-admin@example.com", password="DemoPass123!") == 303
@@ -3313,6 +3335,7 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert _tenant_row_count(db, Ticket, demo_tenant) == 32
         assert _tenant_row_count(db, Invoice, demo_tenant) == 7
         assert _tenant_row_count(db, InvoiceLine, demo_tenant) == 19
+        assert _tenant_row_count(db, User, demo_tenant) == 1
         assert {
             value
             for value in db.execute(
@@ -3664,7 +3687,8 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         reset_page = admin_client.get(reset.headers["location"])
         assert reset_page.status_code == 200
         assert "Demo tenant data deleted and recreated." in reset_page.text
-        assert "No tenant users." in reset_page.text
+        assert "demo@demo.com" in reset_page.text
+        assert "password" in reset_page.text
 
     with SessionLocal() as db:
         demo = db.get(Tenant, demo_tenant)
@@ -3672,7 +3696,15 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert bool(demo.is_active) is True
         assert bool(demo.is_demo) is True
 
-        assert db.execute(select(User).where(User.tenant_id == demo_tenant)).scalars().first() is None
+        demo_user = db.execute(
+            select(User).where(
+                User.tenant_id == demo_tenant,
+                getattr(User, "email", getattr(User, "username")) == "demo@demo.com",
+            )
+        ).scalars().first()
+        assert demo_user is not None
+        assert str(demo_user.role or "").strip().lower() == ROLE_TENANT_ADMIN
+        assert bool(demo_user.is_active) is True
         assert_demo_dataset_counts(db)
 
         company = (
@@ -3752,6 +3784,7 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert reset_event.user_id == superadmin_id
         assert reset_event.tenant_id is None
         assert isinstance(reset_event.details_json, dict)
+        assert reset_event.details_json.get("default_demo_user_created") is True
         assert reset_event.details_json.get("dataset", {}).get("customers") == 25
         assert reset_event.details_json.get("dataset", {}).get("tickets") == 32
         assert reset_event.details_json.get("dataset", {}).get("tickets_open") == 7
@@ -3762,6 +3795,9 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
 
     assert demo_logo_file.is_file()
     assert stale_logo_file.exists() is False
+
+    with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.localhost") as demo_client:
+        assert _login(demo_client, email="demo@demo.com", password="password") == 303
 
     with _client(app, base_url="https://admin.localhost") as admin_client:
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
@@ -3874,8 +3910,131 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
     assert demo_logo_file.is_file()
 
     with SessionLocal() as db:
-        assert db.execute(select(User).where(User.tenant_id == demo_tenant)).scalars().first() is None
+        assert _tenant_row_count(db, User, demo_tenant) == 1
+        assert (
+            db.execute(
+                select(User).where(
+                    User.tenant_id == demo_tenant,
+                    getattr(User, "email", getattr(User, "username")) == "demo@demo.com",
+                )
+            ).scalars().first()
+            is not None
+        )
         assert_demo_dataset_counts(db)
+
+
+def test_reserved_demo_auto_reset_schedule_resets_on_next_request(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-demo-auto-reset.db", monkeypatch=monkeypatch
+    )
+
+    demo_tenant = _seed_tenant(
+        SessionLocal,
+        name="Demo",
+        subdomain=settings.effective_demo_tenant_subdomain,
+        is_active=True,
+        is_demo=True,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=demo_tenant,
+        company_name="Demo Co",
+        primary_color="#335577",
+    )
+    stale_user_id = _seed_user(
+        SessionLocal,
+        email="stale-demo@example.com",
+        password="DemoPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=demo_tenant,
+    )
+    _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+        csrf = _prime_csrf(admin_client)
+        saved = admin_client.post(
+            f"/platform/tenants/{demo_tenant}/demo-reset-schedule",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "demo_reset_interval_days": "2",
+            },
+            follow_redirects=False,
+        )
+        assert saved.status_code in {302, 303}
+        assert saved.headers.get("location") == (
+            f"/platform/tenants/{demo_tenant}?demo_reset_schedule_saved=1"
+        )
+
+        saved_page = admin_client.get(saved.headers["location"])
+        assert saved_page.status_code == 200
+        assert "Automatic demo reset schedule updated." in saved_page.text
+        assert f'action="/platform/tenants/{demo_tenant}/demo-reset-schedule"' in saved_page.text
+        assert 'value="2"' in saved_page.text
+
+    with SessionLocal() as db:
+        demo = db.get(Tenant, demo_tenant)
+        assert demo is not None
+        assert demo.demo_reset_interval_days == 2
+        assert demo.demo_last_reset_at is not None
+        demo.demo_last_reset_at = utcnow() - timedelta(days=3)
+        db.add(Customer(tenant_id=demo_tenant, account_code="STALE-001", name="Stale Customer"))
+        db.commit()
+
+    with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.localhost") as demo_client:
+        login_page = demo_client.get("/login")
+        assert login_page.status_code == 200
+        assert "Invalid email or password." not in login_page.text
+
+    with SessionLocal() as db:
+        demo = db.get(Tenant, demo_tenant)
+        assert demo is not None
+        assert demo.demo_last_reset_at is not None
+        assert demo.demo_last_reset_at > utcnow() - timedelta(minutes=2)
+        assert _tenant_row_count(db, User, demo_tenant) == 1
+        assert db.get(User, stale_user_id) is None
+        assert (
+            db.execute(
+                select(User).where(
+                    User.tenant_id == demo_tenant,
+                    getattr(User, "email", getattr(User, "username")) == "demo@demo.com",
+                )
+            ).scalars().first()
+            is not None
+        )
+        assert (
+            db.execute(
+                select(Customer).where(
+                    Customer.tenant_id == demo_tenant,
+                    Customer.account_code == "STALE-001",
+                )
+            ).scalars().first()
+            is None
+        )
+        assert _tenant_row_count(db, Ticket, demo_tenant) == 32
+        reset_event = db.execute(
+            select(AuditEvent)
+            .where(
+                AuditEvent.action == "TENANT_RESET_DEMO",
+                AuditEvent.entity_id == str(demo_tenant),
+            )
+            .order_by(AuditEvent.id.desc())
+            .limit(1)
+        ).scalars().first()
+        assert reset_event is not None
+        assert isinstance(reset_event.details_json, dict)
+        assert reset_event.details_json.get("reason") == "automatic"
+        assert reset_event.details_json.get("default_demo_user_created") is True
+
+    with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.localhost") as demo_client:
+        assert _login(demo_client, email="stale-demo@example.com", password="DemoPass123!") == 401
+        assert _login(demo_client, email="demo@demo.com", password="password") == 303
 
 
 def test_platform_superadmin_reset_demo_deletes_tenant_ai_usage_logs_before_users(
@@ -3970,7 +4129,7 @@ def test_platform_superadmin_reset_demo_deletes_tenant_ai_usage_logs_before_user
     with SessionLocal() as db:
         assert (
             db.execute(select(func.count(User.id)).where(User.tenant_id == demo_tenant)).scalar_one()
-            == 0
+            == 1
         )
         assert (
             db.execute(select(func.count(AIUsageLog.id)).where(AIUsageLog.tenant_id == demo_tenant)).scalar_one()
@@ -3978,6 +4137,15 @@ def test_platform_superadmin_reset_demo_deletes_tenant_ai_usage_logs_before_user
         )
         assert (
             db.execute(select(func.count(AIUsageLog.id)).where(AIUsageLog.tenant_id == other_tenant)).scalar_one()
+            == 1
+        )
+        assert (
+            db.execute(
+                select(func.count(User.id)).where(
+                    User.tenant_id == demo_tenant,
+                    getattr(User, "email", getattr(User, "username")) == "demo@demo.com",
+                )
+            ).scalar_one()
             == 1
         )
         assert db.get(User, other_user_id) is not None

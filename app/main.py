@@ -57,6 +57,7 @@ from .security_hardening import (
     validate_production_secret,
 )
 from .services.system_setup import get_company_setting, missing_required_lookup_messages
+from .services.demo_tenant_reset import maybe_auto_reset_demo_tenant
 from .services.tenants import ensure_demo_tenant, get_tenant_by_subdomain
 from .services.uploads import company_logo_upload_dir
 from .services.credit import (
@@ -1267,6 +1268,8 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                     tenant = get_tenant_by_subdomain(db, tenant_path_subdomain)
                     if tenant is None:
                         return _plain_error("Unknown tenant", 404)
+                    if maybe_auto_reset_demo_tenant(db, request, tenant=tenant):
+                        db.refresh(tenant)
                     if not bool(tenant.is_active):
                         return _plain_error("Tenant disabled", 403)
                     request.state.tenant = tenant
@@ -1291,6 +1294,8 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
 
                         if tenant is None:
                             return _plain_error("Unknown tenant", 404)
+                        if maybe_auto_reset_demo_tenant(db, request, tenant=tenant):
+                            db.refresh(tenant)
                         if not bool(tenant.is_active):
                             return _plain_error("Tenant disabled", 403)
                         request.state.tenant = tenant

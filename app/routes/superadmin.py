@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import logging
-from pathlib import Path
 import shutil
 from urllib.parse import urlencode
 
@@ -62,7 +61,15 @@ from ..seed import (
     seed_print_destinations,
     seed_units,
 )
-from ..services.demo_dataset import seed_demo_dataset
+from ..services.demo_tenant_reset import (
+    DEMO_DEFAULT_EMAIL,
+    DEMO_DEFAULT_PASSWORD,
+    DEMO_RESET_INTERVAL_DAYS_MAX,
+    DEMO_RESET_INTERVAL_DAYS_MIN,
+    demo_reset_interval_days_value,
+    parse_demo_reset_interval_days,
+    reset_demo_tenant_data,
+)
 from ..services.email_service import (
     EMAIL_PROVIDER_RESEND,
     PLATFORM_EMAIL_AUDIT_FIELDS,
@@ -109,7 +116,12 @@ from ..services.tenant_ai_settings import (
     parse_dashboard_insights_override,
     resolve_tenant_ai_settings,
 )
-from ..services.tenants import is_demo_tenant, normalize_subdomain, validate_subdomain
+from ..services.tenants import (
+    is_demo_tenant,
+    is_reserved_demo_tenant,
+    normalize_subdomain,
+    validate_subdomain,
+)
 from ..services.uploads import company_logo_upload_dir
 from ..tenancy import (
     base_domain_supports_direct_tenant_hosts,
@@ -122,18 +134,6 @@ from ..user_roles import ROLE_TENANT_ADMIN, TENANT_USER_ROLES, normalize_role, r
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-DEMO_COMPANY_NAME = "Demo Ltd."
-DEMO_COMPANY_ADDRESS_LINE_1 = "1 Chapter House Street"
-DEMO_COMPANY_CITY = "York"
-DEMO_COMPANY_POSTCODE = "YO1 7JH"
-DEMO_COMPANY_COUNTRY = "United Kingdom"
-DEMO_PRIMARY_COLOR_HEX = "#2596BE"
-DEMO_NAVBAR_COLOR_HEX = "#242B3B"
-DEMO_LOGO_FILENAME = "demo-logo.png"
-DEMO_LOGO_WEB_PATH = f"/static/uploads/company/{DEMO_LOGO_FILENAME}"
-DEMO_LOGO_SOURCE = (
-    Path(__file__).resolve().parents[1] / "static" / "uploads" / "company" / DEMO_LOGO_FILENAME
-)
 _DELETE_BLOCKING_MODELS = (
     ("customer records", Customer),
     ("customer adjustments", CustomerAdjustment),
@@ -262,29 +262,6 @@ def _seed_tenant_baseline(
         seed_print_destinations(db)
         company.is_initialized = True
     _seed_number_sequences(db, tenant_id)
-
-
-def _apply_demo_company_branding(db: Session, tenant_id: int) -> None:
-    with _tenant_scope(db, tenant_id):
-        company = ensure_company_settings_row_exists(db)
-        company.name = DEMO_COMPANY_NAME
-        company.address_line1 = DEMO_COMPANY_ADDRESS_LINE_1
-        company.address_line2 = None
-        company.city = DEMO_COMPANY_CITY
-        company.postcode = DEMO_COMPANY_POSTCODE
-        company.country = DEMO_COMPANY_COUNTRY
-        company.navbar_color_hex = DEMO_NAVBAR_COLOR_HEX
-        company.primary_color_hex = DEMO_PRIMARY_COLOR_HEX
-        company.nav_logo_height_px = 34
-        company.show_nav_logo = True
-        company.show_nav_title = True
-
-        if DEMO_LOGO_SOURCE.is_file():
-            logo_dir = company_logo_upload_dir(tenant_id, create=True)
-            logo_target = logo_dir / DEMO_LOGO_FILENAME
-            shutil.copyfile(DEMO_LOGO_SOURCE, logo_target)
-            company.company_logo_path = DEMO_LOGO_WEB_PATH
-            company.company_logo_updated_at = utcnow()
 
 
 def _user_identity(user: User | None) -> str:
@@ -461,65 +438,6 @@ def _tenant_delete_block_reason(
     return ""
 
 
-def _reset_demo_tenant_data(
-    db: Session,
-    request: Request,
-    *,
-    tenant: Tenant,
-    current_user: User,
-) -> None:
-    tenant_id = int(tenant.id)
-    tenant_upload_dir = company_logo_upload_dir(tenant_id, create=False).parent
-    users = list(
-        db.execute(
-            select(User)
-            .where(User.tenant_id == tenant_id)
-            .order_by(User.id.asc())
-        ).scalars()
-    )
-    user_ids = [int(user.id) for user in users if getattr(user, "id", None) is not None]
-
-    if user_ids:
-        db.execute(
-            update(AuditEvent)
-            .where(AuditEvent.user_id.in_(user_ids))
-            .values(user_id=None)
-        )
-
-    shutil.rmtree(tenant_upload_dir, ignore_errors=True)
-
-    db.execute(delete(AuditEvent).where(AuditEvent.tenant_id == str(tenant_id)))
-    db.execute(delete(AIUsageLog).where(AIUsageLog.tenant_id == tenant_id))
-    for model in _DELETE_CASCADE_MODELS:
-        db.execute(delete(model).where(model.tenant_id == tenant_id))
-    db.execute(delete(User).where(User.tenant_id == tenant_id))
-
-    tenant.is_active = True
-    _seed_tenant_baseline(
-        db,
-        tenant_id,
-        company_name=str(tenant.name or "").strip(),
-        include_shared_reference_data=False,
-    )
-    _apply_demo_company_branding(db, tenant_id)
-    dataset_counts = seed_demo_dataset(db, tenant_id)
-    audit_log(
-        db,
-        request,
-        action="TENANT_RESET_DEMO",
-        entity_type="tenant",
-        entity_id=tenant.id,
-        summary=f"Reset demo tenant {tenant.name}",
-        details={
-            "subdomain": tenant.subdomain,
-            "deleted_user_count": len(users),
-            "reseeded": True,
-            "dataset": dataset_counts,
-        },
-        user=current_user,
-        tenant_id=None,
-    )
-    db.commit()
 
 
 def _tenant_form_context(
@@ -752,6 +670,7 @@ def tenant_detail(
             "request": request,
             "tenant": tenant,
             "tenant_is_demo": is_demo_tenant(tenant),
+            "tenant_is_reserved_demo": is_reserved_demo_tenant(tenant),
             "users": users,
             "summary": summary,
             "tenant_role_options": _tenant_role_options(),
@@ -768,6 +687,14 @@ def tenant_detail(
             "tenant_created": request.query_params.get("tenant_created") == "1",
             "demo_reset": request.query_params.get("demo_reset") == "1",
             "demo_reset_error": request.query_params.get("demo_reset_error", ""),
+            "demo_reset_schedule_saved": request.query_params.get("demo_reset_schedule_saved") == "1",
+            "demo_reset_schedule_error": request.query_params.get("demo_reset_schedule_error", ""),
+            "demo_reset_interval_days": demo_reset_interval_days_value(tenant),
+            "demo_last_reset_at": getattr(tenant, "demo_last_reset_at", None),
+            "demo_default_email": DEMO_DEFAULT_EMAIL,
+            "demo_default_password": DEMO_DEFAULT_PASSWORD,
+            "demo_reset_interval_days_min": DEMO_RESET_INTERVAL_DAYS_MIN,
+            "demo_reset_interval_days_max": DEMO_RESET_INTERVAL_DAYS_MAX,
             "user_saved": request.query_params.get("user_saved") == "1",
             "user_message": request.query_params.get("user_message", ""),
             "created_user_email": request.query_params.get("created_user", ""),
@@ -788,6 +715,77 @@ def tenant_detail(
                 tenant_ai_settings.dashboard_insights_enabled
             ),
         },
+    )
+
+
+@router.post("/platform/tenants/{tenant_id:int}/demo-reset-schedule")
+@router.post("/admin/tenants/{tenant_id:int}/demo-reset-schedule")
+async def tenant_update_demo_reset_schedule(
+    tenant_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+
+    tenant = db.get(Tenant, tenant_id)
+    if tenant is None:
+        return RedirectResponse(url="/platform/tenants?error=Tenant+not+found", status_code=303)
+    if not is_reserved_demo_tenant(tenant):
+        return RedirectResponse(
+            url=(
+                f"/platform/tenants/{tenant.id}?"
+                f"{urlencode({'demo_reset_schedule_error': 'Automatic demo reset is only available for the reserved demo workspace.'})}"
+            ),
+            status_code=303,
+        )
+
+    form = await request.form()
+    try:
+        interval_days = parse_demo_reset_interval_days(form.get("demo_reset_interval_days"))
+    except ValueError as exc:
+        return RedirectResponse(
+            url=(
+                f"/platform/tenants/{tenant.id}?"
+                f"{urlencode({'demo_reset_schedule_error': str(exc)})}"
+            ),
+            status_code=303,
+        )
+
+    previous_interval = demo_reset_interval_days_value(tenant)
+    previous_last_reset_at = getattr(tenant, "demo_last_reset_at", None)
+    tenant.demo_reset_interval_days = interval_days
+    if interval_days is not None:
+        tenant.demo_last_reset_at = utcnow()
+
+    changed: dict[str, dict[str, object]] = {}
+    if previous_interval != tenant.demo_reset_interval_days:
+        changed["demo_reset_interval_days"] = {
+            "from": previous_interval,
+            "to": tenant.demo_reset_interval_days,
+        }
+    if previous_last_reset_at != tenant.demo_last_reset_at:
+        changed["demo_last_reset_at"] = {
+            "from": previous_last_reset_at.isoformat() if previous_last_reset_at else None,
+            "to": tenant.demo_last_reset_at.isoformat() if tenant.demo_last_reset_at else None,
+        }
+
+    if changed:
+        audit_log(
+            db,
+            request,
+            action="TENANT_UPDATE",
+            entity_type="tenant",
+            entity_id=tenant.id,
+            summary=f"Updated demo reset schedule for tenant {tenant.name}",
+            details={"changed": changed},
+            user=current_user,
+            tenant_id=None,
+        )
+        db.commit()
+
+    return RedirectResponse(
+        url=f"/platform/tenants/{tenant.id}?demo_reset_schedule_saved=1",
+        status_code=303,
     )
 
 
@@ -1692,7 +1690,7 @@ async def tenant_reset_demo(
         )
 
     try:
-        _reset_demo_tenant_data(
+        reset_demo_tenant_data(
             db,
             request,
             tenant=tenant,

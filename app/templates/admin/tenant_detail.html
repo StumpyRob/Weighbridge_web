@@ -109,13 +109,25 @@
 
   {% if demo_reset %}
     <div class="notice">
-      Demo tenant data deleted and recreated.
+      Demo tenant data deleted and recreated{% if tenant_is_reserved_demo %}. Default demo login restored: {{ demo_default_email }} / {{ demo_default_password }}{% endif %}.
     </div>
   {% endif %}
 
   {% if demo_reset_error %}
     <div class="alert alert--danger">
       {{ demo_reset_error }}
+    </div>
+  {% endif %}
+
+  {% if demo_reset_schedule_saved %}
+    <div class="notice">
+      Automatic demo reset schedule updated.
+    </div>
+  {% endif %}
+
+  {% if demo_reset_schedule_error %}
+    <div class="alert alert--danger">
+      {{ demo_reset_schedule_error }}
     </div>
   {% endif %}
 
@@ -606,8 +618,48 @@
 
         {% if tenant_is_demo %}
           <div class="platform-maintenance-card" data-demo-reset>
+            {% if tenant_is_reserved_demo %}
+              <form method="post" action="/platform/tenants/{{ tenant.id }}/demo-reset-schedule" class="ticket-form platform-tenant-detail-admin-card">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                <h3>Automatic demo reset</h3>
+                <p class="muted">
+                  Reset the reserved demo workspace every X days. Each reset restores <code>{{ demo_default_email }}</code> / <code>{{ demo_default_password }}</code>.
+                </p>
+                <div class="field">
+                  <label for="demo_reset_interval_days">Reset every (days)</label>
+                  <input
+                    type="number"
+                    id="demo_reset_interval_days"
+                    name="demo_reset_interval_days"
+                    min="{{ demo_reset_interval_days_min }}"
+                    max="{{ demo_reset_interval_days_max }}"
+                    step="1"
+                    value="{{ demo_reset_interval_days or '' }}"
+                    inputmode="numeric"
+                  />
+                  <p class="muted">Leave blank or enter 0 to disable automatic reset.</p>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Last reset</span>
+                  <span class="summary-value">
+                    {% if demo_last_reset_at %}
+                      {{ demo_last_reset_at.strftime("%d/%m/%Y %H:%M") }}
+                    {% else %}
+                      Not recorded yet
+                    {% endif %}
+                  </span>
+                </div>
+                <div class="actions btn-group">
+                  <button type="submit" class="btn btn--secondary">Save Auto Reset</button>
+                </div>
+              </form>
+            {% else %}
+              <div class="notice">
+                Automatic demo reset is only available for the reserved demo workspace.
+              </div>
+            {% endif %}
             <p class="muted">
-              Delete and recreate demo workspace data, then reseed the default baseline for this demo tenant.
+              Delete and recreate demo workspace data, then reseed the default baseline for this demo tenant{% if tenant_is_reserved_demo %} and restore the default demo login{% endif %}.
             </p>
             <div class="actions btn-group">
               <button type="button" class="btn btn--danger" data-demo-reset-open>Reset Demo Tenant</button>
@@ -624,6 +676,9 @@
                 </div>
                 <div class="platform-confirmation-copy">
                   <p>This will delete and recreate all data for the demo tenant.</p>
+                  {% if tenant_is_reserved_demo %}
+                    <p>The default demo login <code>{{ demo_default_email }}</code> / <code>{{ demo_default_password }}</code> will be recreated.</p>
+                  {% endif %}
                   <p>This action is intended for development/testing only.</p>
                   <p>It will not affect other tenants or platform admin data.</p>
                 </div>
