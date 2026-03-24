@@ -4,6 +4,30 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.21.6 - 2026-03-24
+
+### RELEASE
+- `v0.21.6` is a shared mobile responsiveness and usability refinement pass that improves the existing shell, forms, tables, and action spacing on small screens without changing routes, permissions, workflows, or desktop structure.
+
+### CHANGE
+- Refine the mobile header so it stays clean in a single row:
+  - tighter spacing
+  - cleaner vertical alignment
+  - ellipsis handling for long brand, tenant, and user labels
+  - hide less-essential utility items earlier on narrow widths to avoid messy wrapping
+- Improve the mobile navigation drawer with:
+  - a roomier `min(86vw, 320px)` width
+  - better internal padding
+  - clearer, easier tap targets for nav links
+  - safer overflow handling when the drawer is open
+- Reduce wasted space on mobile content surfaces by tightening shell, container, and card padding while keeping comfortable edges.
+- Make shared page headers, filters, action rows, button groups, and inline forms stack and wrap more safely on smaller screens.
+- Improve mobile form usability by keeping inputs full width, maintaining readable label spacing, and using `16px` input sizing to avoid zoom issues on phones.
+- Keep tables in the current responsive model, while reducing minimum list-table widths and refining overflow so horizontal scrolling remains controlled and readable on phones and tablets.
+
+### TEST
+- Re-run focused branding, shared-shell, customers, invoices, tickets list, ticket detail, list-table wrapper, and mobile-safe action/header regressions after the CSS-only responsive pass.
+
 ## v0.21.5 - 2026-03-24
 
 ### RELEASE
