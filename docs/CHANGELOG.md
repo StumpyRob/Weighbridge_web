@@ -4,6 +4,26 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.21.2 - 2026-03-24
+
+### RELEASE
+- `v0.21.2` is a shared-shell polish pass that refines the new sidebar and utility header so the application layout feels more balanced, integrated, and production-ready without changing routes, permissions, or page workflows.
+
+### CHANGE
+- Refine the shared sidebar shell to feel like part of the application frame instead of a floating panel:
+  - reduce the desktop sidebar radius
+  - remove the heavy sidebar shadow
+  - tighten sidebar width to a cleaner dashboard proportion
+- Tighten sidebar navigation item spacing and padding so links feel more consistent and less button-like.
+- Rework the active sidebar state to use a subtler surface highlight with a left-edge accent instead of the larger pill treatment.
+- Reduce the shell gap between sidebar and content so the main layout feels more balanced and the content area does not sit too far right.
+- Improve header utility-bar readability and alignment with more consistent spacing, slightly larger utility text, and cleaner vertical rhythm.
+- Keep all shell styling tied to the existing branding variables and tenant theme settings.
+
+### TEST
+- Update branding CSS assertions to match the refined shared-shell active-nav styling.
+- Re-run focused shared-shell, branding, signed-in utility-bar, platform-shell, tenant-shell, and toast-layout regressions.
+
 ## v0.21 - 2026-03-24
 
 ### RELEASE

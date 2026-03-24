@@ -493,7 +493,9 @@ def test_navbar_and_primary_styles_use_root_branding_variables(
     assert "color:var(--utility-bar-link);" in compact_css
     assert ".site-nava.is-active{" in compact_css
     assert "border:1pxsolidvar(--primary);" in compact_css
-    assert "border-radius:999px;" in compact_css
+    assert "background:var(--theme-primary-soft);" in compact_css
+    assert "border-radius:var(--shell-nav-radius);" in compact_css
+    assert "box-shadow:inset3px00var(--primary);" in compact_css
     assert ".brand__logo-badge{" in compact_css
     assert "background:transparent!important;" in compact_css
     assert "box-shadow:none!important;" in compact_css
