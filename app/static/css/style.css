@@ -3822,40 +3822,47 @@ details > summary:focus-visible {
   }
 
   .dashboard-chart {
-    grid-auto-flow: column;
-    grid-auto-columns: 44px;
-    grid-template-columns: none;
-    gap: 0.5rem;
-    width: max-content;
-    min-width: 100%;
+    --dashboard-chart-min-column-width: 42px;
+    --dashboard-chart-gap: 0.38rem;
+    grid-template-columns: repeat(
+      var(--dashboard-chart-columns, 1),
+      minmax(var(--dashboard-chart-min-column-width), 1fr)
+    );
+    gap: var(--dashboard-chart-gap);
+    width: 100%;
+    min-width: calc(
+      (var(--dashboard-chart-columns, 1) * var(--dashboard-chart-min-column-width)) +
+      ((var(--dashboard-chart-columns, 1) - 1) * var(--dashboard-chart-gap))
+    );
     max-width: none;
   }
 
   .dashboard-chart--throughput {
-    padding-inline: 0.25rem;
+    --dashboard-chart-min-column-width: 42px;
+    padding-inline: 0.12rem;
   }
 
   .dashboard-chart:not(.dashboard-chart--throughput) {
-    grid-auto-columns: 38px;
-    gap: 0.42rem;
+    --dashboard-chart-min-column-width: 36px;
+    --dashboard-chart-gap: 0.3rem;
   }
 
   .dashboard-chart--compact {
-    gap: 0.34rem;
+    --dashboard-chart-gap: 0.3rem;
   }
 
   .dashboard-chart--compact:not(.dashboard-chart--throughput) {
-    gap: 0.26rem;
+    --dashboard-chart-gap: 0.22rem;
   }
 
   .dashboard-chart__bar-shell {
     height: 132px;
     padding: 0.32rem;
-    max-width: 100%;
+    width: 100%;
+    max-width: none;
   }
 
   .dashboard-chart:not(.dashboard-chart--throughput) .dashboard-chart__bar-shell {
-    max-width: 44px;
     padding: 0.24rem;
   }
 
@@ -3865,7 +3872,6 @@ details > summary:focus-visible {
   }
 
   .dashboard-chart--compact:not(.dashboard-chart--throughput) .dashboard-chart__bar-shell {
-    max-width: 40px;
     padding: 0.18rem;
   }
 
@@ -3881,21 +3887,21 @@ details > summary:focus-visible {
   }
 
   .dashboard-chart {
-    grid-auto-columns: 40px;
-    gap: 0.42rem;
+    --dashboard-chart-min-column-width: 38px;
+    --dashboard-chart-gap: 0.3rem;
   }
 
   .dashboard-chart:not(.dashboard-chart--throughput) {
-    grid-auto-columns: 34px;
-    gap: 0.3rem;
+    --dashboard-chart-min-column-width: 32px;
+    --dashboard-chart-gap: 0.22rem;
   }
 
   .dashboard-chart--compact {
-    gap: 0.28rem;
+    --dashboard-chart-gap: 0.24rem;
   }
 
   .dashboard-chart--compact:not(.dashboard-chart--throughput) {
-    gap: 0.2rem;
+    --dashboard-chart-gap: 0.18rem;
   }
 
   .dashboard-chart__count {
@@ -3908,7 +3914,6 @@ details > summary:focus-visible {
   }
 
   .dashboard-chart:not(.dashboard-chart--throughput) .dashboard-chart__bar-shell {
-    max-width: 38px;
     padding: 0.2rem;
   }
 
@@ -3918,7 +3923,6 @@ details > summary:focus-visible {
   }
 
   .dashboard-chart--compact:not(.dashboard-chart--throughput) .dashboard-chart__bar-shell {
-    max-width: 34px;
     padding: 0.15rem;
   }
 

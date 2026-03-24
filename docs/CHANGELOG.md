@@ -4,6 +4,24 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.21.8 - 2026-03-24
+
+### RELEASE
+- `v0.21.8` corrects the dashboard chart follow-up so the mobile clipping fix no longer leaves the ticket and throughput charts looking padded, squashed, or uneven in full-screen and phone-sized views.
+
+### CHANGE
+- Remove the temporary dashboard chart width-sync script from the shared base template after it proved too aggressive on some viewport sizes.
+- Replace the mobile dashboard chart sizing with a pure CSS layout model that uses:
+  - per-chart minimum column widths
+  - calculated chart minimum width
+  - full-width bar shells inside each chart column
+- Keep chart overflow local to the chart wrapper on mobile so the page itself does not scroll horizontally.
+- Preserve the earlier parent `min-width: 0` and non-clipping container fixes so the original right-edge clipping issue stays resolved.
+- Keep desktop dashboard behaviour unchanged.
+
+### TEST
+- Re-run focused branding, shared-shell, populated dashboard, and dashboard tooltip regressions after replacing the chart width sync with CSS-only sizing.
+
 ## v0.21.7 - 2026-03-24
 
 ### RELEASE
