@@ -4,6 +4,24 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.21.9 - 2026-03-24
+
+### RELEASE
+- `v0.21.9` fixes the remaining dashboard chart alignment issue by normalising the chart column structure itself, so the ticket and throughput charts render symmetrically on iPhone/mobile widths and stay visually contained inside their frames on larger screens.
+
+### CHANGE
+- Update the dashboard chart markup in `app/templates/index.html` so throughput values render in a consistent split structure instead of wrapping unpredictably.
+- Refine the dashboard chart CSS in `app/static/css/style.css` to:
+  - reserve consistent top-row height for chart values
+  - align all bars from the same baseline
+  - keep throughput value/unit text on a predictable two-line layout
+  - add a small internal chart gutter so outer bars do not press against the frame edge
+- Keep the earlier local chart-scroll protection and non-clipping container fixes.
+- Keep desktop dashboard behaviour unchanged apart from the corrected chart symmetry and spacing.
+
+### TEST
+- Re-run focused branding, shared-shell, populated dashboard, and dashboard tooltip regressions after the dashboard chart structure and alignment fix.
+
 ## v0.21.8 - 2026-03-24
 
 ### RELEASE

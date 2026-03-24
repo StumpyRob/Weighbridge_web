@@ -3623,6 +3623,8 @@ details > summary:focus-visible {
   min-width: 0;
   max-width: 100%;
   overflow: visible;
+  box-sizing: border-box;
+  padding-inline: 0.12rem;
   padding-bottom: 0;
 }
 
@@ -3673,20 +3675,52 @@ details > summary:focus-visible {
 }
 
 .dashboard-chart__column {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  display: grid;
+  grid-template-rows: minmax(1.25rem, auto) minmax(0, 1fr) auto auto;
+  justify-items: center;
+  align-items: end;
   gap: 0.45rem;
   min-width: 0;
 }
 
 .dashboard-chart__count {
   width: 100%;
+  min-width: 0;
+  min-height: 1.25rem;
   font-size: 0.78rem;
   color: #4b5563;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
   text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-chart--throughput .dashboard-chart__column {
+  grid-template-rows: minmax(1.8rem, auto) minmax(0, 1fr) auto auto;
+}
+
+.dashboard-chart__count--throughput {
+  display: grid;
+  justify-items: center;
+  align-content: end;
+  gap: 0.05rem;
+  min-height: 1.8rem;
+}
+
+.dashboard-chart__count-value,
+.dashboard-chart__count-unit {
+  display: block;
+  width: 100%;
+}
+
+.dashboard-chart__count-value {
+  line-height: 1.05;
+}
+
+.dashboard-chart__count-unit {
+  font-size: 0.72em;
+  line-height: 1;
+  text-transform: lowercase;
 }
 
 .dashboard-chart__bar-shell {
@@ -3818,6 +3852,7 @@ details > summary:focus-visible {
     overflow-y: visible;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
+    padding-inline: 0.08rem;
     padding-bottom: 0.15rem;
   }
 
@@ -3879,10 +3914,27 @@ details > summary:focus-visible {
   .dashboard-chart__sub-label {
     font-size: 0.72rem;
   }
+
+  .dashboard-chart__column {
+    grid-template-rows: minmax(1.1rem, auto) minmax(0, 1fr) auto auto;
+  }
+
+  .dashboard-chart--throughput .dashboard-chart__column {
+    grid-template-rows: minmax(2.2rem, auto) minmax(0, 1fr) auto auto;
+  }
+
+  .dashboard-chart__count {
+    min-height: 1.1rem;
+  }
+
+  .dashboard-chart__count--throughput {
+    min-height: 2.2rem;
+  }
 }
 
 @media (max-width: 480px) {
   .dashboard-chart-wrap {
+    padding-inline: 0.05rem;
     padding-bottom: 0.2rem;
   }
 
@@ -3906,6 +3958,15 @@ details > summary:focus-visible {
 
   .dashboard-chart__count {
     font-size: 0.7rem;
+    min-height: 1rem;
+  }
+
+  .dashboard-chart--throughput .dashboard-chart__column {
+    grid-template-rows: minmax(2rem, auto) minmax(0, 1fr) auto auto;
+  }
+
+  .dashboard-chart__count--throughput {
+    min-height: 2rem;
   }
 
   .dashboard-chart__bar-shell {

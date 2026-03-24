@@ -165,12 +165,20 @@
                 aria-label="Weight throughput for {{ dashboard.period_label | lower }}"
               >
                 {% for point in dashboard.weight_throughput.points %}
+                  {% set throughput_parts = point.value_label.rsplit(' ', 1) %}
                   <div
                     class="dashboard-chart__column"
                     data-dashboard-throughput-point="{{ point.date_label }}"
                     data-dashboard-throughput-kg="{{ point.weight_kg_raw }}"
                   >
-                    <div class="dashboard-chart__count">{{ point.value_label }}</div>
+                    <div class="dashboard-chart__count dashboard-chart__count--throughput">
+                      <span class="dashboard-chart__count-value">
+                        {{ throughput_parts[0] if throughput_parts else point.value_label }}
+                      </span>
+                      {% if throughput_parts|length > 1 %}
+                        <span class="dashboard-chart__count-unit">{{ throughput_parts[1] }}</span>
+                      {% endif %}
+                    </div>
                     <div class="dashboard-chart__bar-shell">
                       <div class="dashboard-chart__bar dashboard-chart__bar--throughput" style="height: {{ point.height_percent }}%;"></div>
                     </div>
