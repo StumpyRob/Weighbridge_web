@@ -369,6 +369,7 @@
     <script>
       (function () {
         let flashToastHeaderObserver = null;
+        let dashboardChartSyncFrame = null;
 
         function csrfToken() {
           const meta = document.querySelector("meta[name='csrf-token']");
@@ -415,9 +416,35 @@
           );
         }
 
+        function syncDashboardChartWidths() {
+          const wraps = document.querySelectorAll(".dashboard-chart-wrap");
+          wraps.forEach(function (wrap) {
+            const chart = wrap.querySelector(".dashboard-chart");
+            if (!chart) {
+              return;
+            }
+            const width = Math.max(0, Math.floor(wrap.clientWidth || 0));
+            if (!width) {
+              return;
+            }
+            chart.style.minWidth = width + "px";
+          });
+        }
+
+        function queueDashboardChartSync() {
+          if (dashboardChartSyncFrame !== null) {
+            window.cancelAnimationFrame(dashboardChartSyncFrame);
+          }
+          dashboardChartSyncFrame = window.requestAnimationFrame(function () {
+            dashboardChartSyncFrame = null;
+            syncDashboardChartWidths();
+          });
+        }
+
         document.addEventListener("DOMContentLoaded", function () {
           applyCsrfToAllForms(document);
           syncFlashToastOffset();
+          queueDashboardChartSync();
 
           const header = document.querySelector(".site-header");
           if (header && typeof ResizeObserver === "function") {
@@ -427,6 +454,8 @@
         });
 
         window.addEventListener("resize", syncFlashToastOffset);
+        window.addEventListener("resize", queueDashboardChartSync);
+        window.addEventListener("orientationchange", queueDashboardChartSync);
 
         document.addEventListener(
           "submit",
@@ -446,6 +475,7 @@
 
         document.body.addEventListener("htmx:afterSwap", function (event) {
           applyCsrfToAllForms(event.target);
+          queueDashboardChartSync();
         });
       })();
     </script>

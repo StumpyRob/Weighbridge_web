@@ -4,6 +4,30 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.21.7 - 2026-03-24
+
+### RELEASE
+- `v0.21.7` fixes dashboard chart clipping on real mobile devices by tightening the chart container sizing, allowing chart-area scrolling when needed, and forcing the dashboard charts to recalculate their minimum width after mobile viewport changes.
+
+### CHANGE
+- Fix dashboard chart parent/container sizing so the ticket activity and weight throughput charts can shrink correctly inside their cards:
+  - add `min-width: 0` to the chart grid, chart frames, frame bodies, wrappers, and charts
+  - keep the chart area at `width: 100%` within the available card width
+- Remove chart clipping by replacing the wrapper’s hidden overflow with visible overflow by default and a chart-local horizontal scroll fallback on mobile only.
+- Optimise mobile dashboard charts under `768px` and `480px` by reducing:
+  - bar/column widths
+  - inter-bar gaps
+  - compact label sizing
+- Add a small dashboard-only width sync in the shared base script so chart min-width is recalculated on:
+  - page load
+  - window resize
+  - orientation change
+  - HTMX swaps
+- Keep desktop dashboard layout unchanged.
+
+### TEST
+- Re-run focused branding, shared-shell, populated dashboard, and dashboard tooltip regressions after the dashboard chart responsiveness fix.
+
 ## v0.21.6 - 2026-03-24
 
 ### RELEASE
