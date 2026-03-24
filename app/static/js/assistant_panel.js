@@ -116,13 +116,6 @@
     }
   }
 
-  function setFollowupsVisible(followupsEl, isVisible) {
-    if (!followupsEl) {
-      return;
-    }
-    followupsEl.hidden = !isVisible;
-  }
-
   async function readErrorMessage(response) {
     try {
       const payload = await response.json();
@@ -136,7 +129,7 @@
     return RESPONSE_UNAVAILABLE;
   }
 
-  async function submitAssistantQuestion(form, question, followupsEl) {
+  async function submitAssistantQuestion(form, question) {
     const endpoint = form.getAttribute("data-endpoint") || "";
     const responseEl = document.querySelector("[data-assistant-response]");
     const submitButton = form.querySelector("[data-assistant-submit]");
@@ -148,13 +141,11 @@
     const trimmedQuestion = String(question || "").trim();
     if (!trimmedQuestion) {
       setResponseContent(responseEl, RESPONSE_EMPTY_QUESTION, true);
-      setFollowupsVisible(followupsEl, false);
       return;
     }
 
     setBusy(submitButton, statusEl, true);
     setResponseContent(responseEl, RESPONSE_BUSY, true);
-    setFollowupsVisible(followupsEl, false);
     const abortController = typeof AbortController === "function" ? new AbortController() : null;
     const timeoutId = window.setTimeout(function () {
       if (abortController) {
@@ -180,13 +171,11 @@
       const answer = String((payload || {}).answer || "").trim();
       const items = Array.isArray((payload || {}).items) ? payload.items : [];
       setResponseContent(responseEl, answer || RESPONSE_UNAVAILABLE, false, items);
-      setFollowupsVisible(followupsEl, true);
     } catch (error) {
       const message = error && error.name === "AbortError"
         ? RESPONSE_TIMEOUT
         : String((error && error.message) || "").trim() || RESPONSE_UNAVAILABLE;
       setResponseContent(responseEl, message, true);
-      setFollowupsVisible(followupsEl, true);
     } finally {
       window.clearTimeout(timeoutId);
       setBusy(submitButton, statusEl, false);
@@ -199,14 +188,12 @@
     const form = document.querySelector("[data-assistant-form]");
     const input = document.querySelector("[data-assistant-input]");
     const responseEl = document.querySelector("[data-assistant-response]");
-    const followupsEl = document.querySelector("[data-assistant-followups]");
     if (!panel || !openButton || !form || !input) {
       return;
     }
     if (responseEl) {
       setResponseContent(responseEl, RESPONSE_PLACEHOLDER, true);
     }
-    setFollowupsVisible(followupsEl, false);
 
     var closeTimer = null;
     const closeButtons = panel.querySelectorAll("[data-assistant-close]");
@@ -247,7 +234,7 @@
 
     form.addEventListener("submit", function (event) {
       event.preventDefault();
-      submitAssistantQuestion(form, input.value, followupsEl);
+      submitAssistantQuestion(form, input.value);
     });
 
     promptButtons.forEach(function (button) {
@@ -255,7 +242,7 @@
         const question = button.getAttribute("data-assistant-prompt") || "";
         input.value = question;
         openPanel();
-        submitAssistantQuestion(form, question, followupsEl);
+        submitAssistantQuestion(form, question);
       });
     });
   }

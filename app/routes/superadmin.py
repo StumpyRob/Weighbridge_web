@@ -25,7 +25,6 @@ from ..auth import (
 )
 from ..db import get_db
 from ..models import (
-    AIUsageLog,
     Area,
     AuditEvent,
     CompanySetting,

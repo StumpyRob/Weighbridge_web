@@ -303,7 +303,6 @@ body {
   max-width: min(100%, 42rem);
 }
 
-.invoice-header-documents,
 .document-action-stack {
   flex-direction: column;
   align-items: flex-end;
@@ -3472,10 +3471,6 @@ details > summary:focus-visible {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
-.platform-tenants-row-note {
-  font-size: 0.78rem;
-}
-
 .platform-tenants-table .actions-col {
   min-width: 360px;
 }
@@ -4824,22 +4819,6 @@ body.assistant-panel-open {
   border-color: #9db2d8;
   background: #eef4ff;
   color: #0b3a63;
-}
-
-.assistant-panel__followups {
-  display: grid;
-  gap: 0.45rem;
-}
-
-.assistant-panel__followups-title {
-  margin: 0;
-  color: #4b5563;
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.assistant-panel__prompts--followups {
-  gap: 0.4rem;
 }
 
 .company-logo-preview-container {

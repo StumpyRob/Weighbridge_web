@@ -14,7 +14,7 @@ from threading import Lock
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import settings

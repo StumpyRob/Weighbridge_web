@@ -4,6 +4,31 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.20.1 - 2026-03-24
+
+### RELEASE
+- `v0.20.1` closes out the current demo/WTN/admin polish phase with stronger demo seed realism, cleaner tenant-management UX, tighter print-template presentation, and a safe housekeeping sweep.
+
+### ADD
+- Seed visibly signed demo WTN records so reserved demo resets rebuild with realistic signature previews instead of technically valid but blank-looking placeholders.
+- Restore a default saved signature for the rebuilt reserved demo user `demo@demo.com` so receiver-signature demos work immediately after reset.
+
+### FIX
+- Align unsigned WTN signature cards with signed cards by always reserving metadata rows and showing explicit unsigned placeholders for signer/captured values.
+- Clean up the super-admin tenant detail page by removing duplicated explanatory copy, relying on tooltips for guidance, and tightening nested card spacing so primary-admin and demo-reset panels stay inside their parent frames.
+- Make the demo reset confirmation field clearer by removing forced uppercase styling and changing the prompt to `Type "DEMO" to confirm reset`.
+- Reduce status badge sizing in the built-in ticket and invoice system print templates so their pills better match the main application status styling.
+
+### CLEANUP
+- Remove dormant assistant-panel follow-up hooks that no longer have rendered markup behind them.
+- Remove orphaned CSS selectors and provably unused Python imports identified during a conservative dead-code scan.
+- Keep the cleanup scoped to low-risk, validated removals only; no schema, route-behavior, or feature-flow changes were introduced as part of this housekeeping pass.
+
+### TEST
+- Add and update UI coverage for unsigned WTN signature placeholders and tenant-detail reset wording.
+- Re-run focused super-admin tenant-detail, assistant UI, WTN detail, print single-page, and system-template preview regression slices.
+- Re-run static analysis for unused-import cleanup via `ruff`.
+
 ## v0.20 - 2026-03-24
 
 ### RELEASE
