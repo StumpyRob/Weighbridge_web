@@ -354,6 +354,9 @@ def test_ticket_edit_shows_wtn_buttons_only_for_complete_waste(client, db_sessio
     assert "Not signed" in waste_response.text
     assert 'class="wtn-signature-tools__preview-wrap is-empty"' in waste_response.text
     assert 'class="wtn-signature-tools__placeholder">Unsigned</span>' in waste_response.text
+    assert waste_response.text.count("Signer: Unsigned") == 3
+    assert waste_response.text.count("Captured: Unsigned") == 3
+    assert 'class="wtn-signature-tools__meta muted is-placeholder"' in waste_response.text
     assert "Apply My Signature" in waste_response.text
     assert "WTN not signed" in waste_response.text
     assert (

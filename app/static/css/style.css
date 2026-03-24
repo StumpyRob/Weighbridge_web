@@ -972,6 +972,17 @@ body.js-help-tooltips .help-tooltip {
   font-size: 0.84rem;
 }
 
+.wtn-signature-tools__meta-stack {
+  display: grid;
+  gap: 0.18rem;
+  min-height: 2.45rem;
+  align-content: start;
+}
+
+.wtn-signature-tools__meta.is-placeholder {
+  color: #9ca3af;
+}
+
 .wtn-signature-dialog {
   width: min(44rem, calc(100% - 2rem));
   border: 1px solid #d1d5db;
@@ -2447,9 +2458,9 @@ details.frame:not([open]) .frame-header {
 }
 
 .platform-confirmation-field input {
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
 }
 
 .platform-confirmation-dialog .actions {
@@ -3481,7 +3492,7 @@ details > summary:focus-visible {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 1rem;
-  align-items: stretch;
+  align-items: start;
 }
 
 @media (min-width: 1080px) {
@@ -3501,29 +3512,32 @@ details > summary:focus-visible {
   }
 }
 
-.platform-tenant-detail-admin-grid.company-document-email-grid .platform-tenant-detail-admin-card {
-  height: auto;
-}
-
 .platform-tenant-detail-admin-card {
   display: grid;
   gap: 0.85rem;
-  height: 100%;
+  width: 100%;
+  min-width: 0;
   padding: 1rem;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
   background: #f8fafc;
+  box-sizing: border-box;
+  align-content: start;
 }
 
 .platform-tenant-detail-admin-card h3,
 .platform-tenant-maintenance-block h3,
-.platform-tenant-role-guide__item h3 {
+.platform-tenant-role-guide__title {
   margin: 0;
   font-size: 1rem;
 }
 
+.platform-tenant-detail-admin-card.ticket-form {
+  gap: 0.85rem;
+}
+
 .platform-tenant-detail-admin-card > .muted {
-  margin-top: -0.2rem;
+  margin: 0;
 }
 
 .platform-tenant-detail-admin-card .actions {
@@ -3538,24 +3552,26 @@ details > summary:focus-visible {
 .platform-tenant-role-guide {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.75rem;
+  gap: 0.6rem;
   margin-bottom: 1rem;
 }
 
 .platform-tenant-role-guide__item {
-  display: grid;
-  gap: 0.4rem;
-  padding: 0.85rem 0.95rem;
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding: 0.75rem 0.95rem;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
   background: #f8fafc;
 }
 
-.platform-tenant-role-guide__item p {
-  margin: 0;
-  font-size: 0.9rem;
-  color: #4b5563;
-  line-height: 1.4;
+.platform-tenant-role-guide__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #14213d;
+  font-weight: 600;
 }
 
 .platform-tenant-role-cell {
@@ -3617,6 +3633,7 @@ details > summary:focus-visible {
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 1rem;
   margin-bottom: 1rem;
+  align-items: start;
 }
 
 .platform-tenant-maintenance-block {
@@ -3631,6 +3648,27 @@ details > summary:focus-visible {
 .platform-tenant-maintenance-block--danger {
   border-color: #fecaca;
   background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+}
+
+.platform-maintenance-card {
+  align-items: start;
+}
+
+.platform-maintenance-card > * {
+  min-width: 0;
+}
+
+.platform-maintenance-card .ticket-form {
+  gap: 0.85rem;
+}
+
+.platform-tenant-maintenance-inline-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #14213d;
+  font-size: 0.94rem;
+  font-weight: 600;
 }
 
 @media (max-width: 640px) {

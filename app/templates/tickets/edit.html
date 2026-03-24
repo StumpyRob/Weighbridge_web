@@ -230,16 +230,22 @@
               <span class="wtn-signature-tools__placeholder">Unsigned</span>
             {% endif %}
           </div>
-          {% if ticket.wtn_producer_signature_signer_name %}
-            <p class="wtn-signature-tools__meta muted">
-              Signer: {{ ticket.wtn_producer_signature_signer_name }}
+          <div class="wtn-signature-tools__meta-stack">
+            <p class="wtn-signature-tools__meta muted{% if not ticket.wtn_producer_signature_signer_name %} is-placeholder{% endif %}">
+              {% if ticket.wtn_producer_signature_signer_name %}
+                Signer: {{ ticket.wtn_producer_signature_signer_name }}
+              {% else %}
+                Signer: Unsigned
+              {% endif %}
             </p>
-          {% endif %}
-          {% if ticket.wtn_producer_signature_signed_at %}
-            <p class="wtn-signature-tools__meta muted">
-              Captured {{ ticket.wtn_producer_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}
+            <p class="wtn-signature-tools__meta muted{% if not ticket.wtn_producer_signature_signed_at %} is-placeholder{% endif %}">
+              {% if ticket.wtn_producer_signature_signed_at %}
+                Captured {{ ticket.wtn_producer_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}
+              {% else %}
+                Captured: Unsigned
+              {% endif %}
             </p>
-          {% endif %}
+          </div>
           <div class="actions btn-group">
             <button
               type="button"
@@ -273,16 +279,22 @@
               <span class="wtn-signature-tools__placeholder">Unsigned</span>
             {% endif %}
           </div>
-          {% if ticket.wtn_carrier_signature_signer_name %}
-            <p class="wtn-signature-tools__meta muted">
-              Signer: {{ ticket.wtn_carrier_signature_signer_name }}
+          <div class="wtn-signature-tools__meta-stack">
+            <p class="wtn-signature-tools__meta muted{% if not ticket.wtn_carrier_signature_signer_name %} is-placeholder{% endif %}">
+              {% if ticket.wtn_carrier_signature_signer_name %}
+                Signer: {{ ticket.wtn_carrier_signature_signer_name }}
+              {% else %}
+                Signer: Unsigned
+              {% endif %}
             </p>
-          {% endif %}
-          {% if ticket.wtn_carrier_signature_signed_at %}
-            <p class="wtn-signature-tools__meta muted">
-              Captured {{ ticket.wtn_carrier_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}
+            <p class="wtn-signature-tools__meta muted{% if not ticket.wtn_carrier_signature_signed_at %} is-placeholder{% endif %}">
+              {% if ticket.wtn_carrier_signature_signed_at %}
+                Captured {{ ticket.wtn_carrier_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}
+              {% else %}
+                Captured: Unsigned
+              {% endif %}
             </p>
-          {% endif %}
+          </div>
           <div class="actions btn-group">
             <button
               type="button"
@@ -316,16 +328,22 @@
               <span class="wtn-signature-tools__placeholder">Unsigned</span>
             {% endif %}
           </div>
-          {% if ticket.wtn_receiver_signature_signer_name %}
-            <p class="wtn-signature-tools__meta muted">
-              Signer: {{ ticket.wtn_receiver_signature_signer_name }}
+          <div class="wtn-signature-tools__meta-stack">
+            <p class="wtn-signature-tools__meta muted{% if not ticket.wtn_receiver_signature_signer_name %} is-placeholder{% endif %}">
+              {% if ticket.wtn_receiver_signature_signer_name %}
+                Signer: {{ ticket.wtn_receiver_signature_signer_name }}
+              {% else %}
+                Signer: Unsigned
+              {% endif %}
             </p>
-          {% endif %}
-          {% if ticket.wtn_receiver_signature_signed_at %}
-            <p class="wtn-signature-tools__meta muted">
-              Captured {{ ticket.wtn_receiver_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}
+            <p class="wtn-signature-tools__meta muted{% if not ticket.wtn_receiver_signature_signed_at %} is-placeholder{% endif %}">
+              {% if ticket.wtn_receiver_signature_signed_at %}
+                Captured {{ ticket.wtn_receiver_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}
+              {% else %}
+                Captured: Unsigned
+              {% endif %}
             </p>
-          {% endif %}
+          </div>
           {% set receiver_apply_label = "Replace with My Signature" if ticket.has_wtn_receiver_signature else "Apply My Signature" %}
           <div class="actions btn-group">
             <button

@@ -3219,7 +3219,7 @@ def test_demo_tenant_reset_action_is_only_available_for_demo_tenants(tmp_path, m
         assert demo_detail.status_code == 200
         assert "Maintenance" in demo_detail.text
         assert "Reset Demo Tenant" in demo_detail.text
-        assert "Type DEMO to enable confirmation" in demo_detail.text
+        assert 'Type "DEMO" to confirm reset' in demo_detail.text
         assert f'action="/platform/tenants/{demo_tenant}/reset-demo"' in demo_detail.text
         assert f'action="/platform/tenants/{demo_tenant}/demo-reset-schedule"' in demo_detail.text
         assert "demo@demo.com" in demo_detail.text

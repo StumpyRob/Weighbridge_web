@@ -182,9 +182,6 @@
       </div>
       <div class="frame-body">
         {% if primary_admin_email %}
-          <p class="muted platform-tenant-detail-section-copy">
-            This is the main sign-in and admin account for the tenant workspace.
-          </p>
           <div class="platform-tenant-detail-admin-grid">
             <div class="platform-tenant-detail-admin-card">
               <h3>Current primary admin</h3>
@@ -211,8 +208,7 @@
             </div>
             <form method="post" action="/platform/tenants/{{ tenant.id }}/admin-email" class="ticket-form platform-tenant-detail-admin-card">
               <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-              <h3>Update email</h3>
-              <p class="muted">Change the email used to sign in as the primary tenant admin.</p>
+              <h3>Update email{{ help("Change the sign-in email for the current primary tenant admin.", "platform-primary-tenant-admin-email-help") }}</h3>
               <div class="field">
                 <label for="admin_email">Primary admin email</label>
                 <input
@@ -230,8 +226,7 @@
             </form>
             <form method="post" action="/platform/tenants/{{ tenant.id }}/admin-password" class="ticket-form platform-tenant-detail-admin-card">
               <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-              <h3>Reset password</h3>
-              <p class="muted">Set a new password directly for the current primary tenant admin.</p>
+              <h3>Reset password{{ help("Set a new password directly for the current primary tenant admin.", "platform-primary-tenant-admin-password-help") }}</h3>
               <div class="field">
                 <label for="admin_password">New password</label>
                 <input
@@ -272,14 +267,15 @@
         <h2>Users{{ help(help_text.platform_tenant_users, "platform-tenant-users-help") }}</h2>
       </div>
       <div class="frame-body">
-        <p class="muted platform-tenant-detail-section-copy">
-          Review current tenant users here. Role help is shown below and on each user row.
-        </p>
         <div class="platform-tenant-role-guide" aria-label="Tenant user role guide">
           {% for role_value, role_name in tenant_role_options %}
             <div class="platform-tenant-role-guide__item">
-              <h3>{{ role_name }}</h3>
-              <p>{{ role_help_map.get(role_value, "") }}</p>
+              <span class="platform-tenant-role-guide__title">
+                {{ role_name }}
+                {% if role_help_map.get(role_value) %}
+                  {{ help(role_help_map.get(role_value), "platform-tenant-role-guide-help-" ~ role_value) }}
+                {% endif %}
+              </span>
             </div>
           {% endfor %}
         </div>
@@ -424,9 +420,10 @@
         <h2>Add User{{ help(help_text.platform_add_tenant_user, "platform-add-tenant-user-help") }}</h2>
       </div>
       <div class="frame-body">
-        <p class="muted platform-tenant-detail-section-copy">
-          Use email as the sign-in ID for any additional tenant user. Choose the role that matches their day-to-day access.
-        </p>
+        {% set add_user_role_help = help_text.platform_tenant_user_role %}
+        {% if tenant_requires_admin_role %}
+          {% set add_user_role_help = add_user_role_help ~ " The first active user for this tenant must be a Tenant Admin." %}
+        {% endif %}
         <form method="post" action="/platform/tenants/{{ tenant.id }}/users" class="ticket-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
           <div class="form-grid form-grid--3">
@@ -461,16 +458,12 @@
               />
             </div>
             <div class="field">
-              <label for="role">Role{{ help(help_text.platform_tenant_user_role, "platform-add-user-role-help") }}</label>
+              <label for="role">Role{{ help(add_user_role_help, "platform-add-user-role-help") }}</label>
               <select id="role" name="role" required>
                 {% for role_value, role_name in tenant_role_options %}
                   <option value="{{ role_value }}">{{ role_name }}</option>
                 {% endfor %}
               </select>
-              <p class="help">Tenant Admin can manage users and settings. Other roles keep access narrower.</p>
-              {% if tenant_requires_admin_role %}
-                <p class="help">The first active user for this tenant must be a Tenant Admin.</p>
-              {% endif %}
             </div>
             <div class="field">
               <label for="password">Temporary password</label>
@@ -570,8 +563,7 @@
       <div class="frame-body">
         <div class="platform-tenant-maintenance-grid">
           <div class="platform-tenant-maintenance-block">
-            <h3>Tenant access</h3>
-            <p class="muted">Enable or disable sign-in access for this tenant.</p>
+            <h3>Tenant access{{ help("Enable or disable sign-in access for this tenant.", "platform-tenant-access-help") }}</h3>
             <div class="actions btn-group">
               {% if tenant.is_active %}
                 <form method="post" action="/platform/tenants/{{ tenant.id }}/disable">
@@ -588,8 +580,7 @@
           </div>
 
           <div class="platform-tenant-maintenance-block platform-tenant-maintenance-block--danger">
-            <h3>Delete tenant</h3>
-            <p class="muted">Permanently remove the tenant, seeded settings, and uploaded files when deletion is allowed.</p>
+            <h3>Delete tenant{{ help("Permanently remove the tenant, seeded settings, and uploaded files when deletion is allowed.", "platform-tenant-delete-help") }}</h3>
             {% if delete_error %}
               <div class="alert alert--warning platform-tenant-delete-note">
                 {{ delete_error }}
@@ -621,12 +612,9 @@
             {% if tenant_is_reserved_demo %}
               <form method="post" action="/platform/tenants/{{ tenant.id }}/demo-reset-schedule" class="ticket-form platform-tenant-detail-admin-card">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-                <h3>Automatic demo reset</h3>
-                <p class="muted">
-                  Reset the reserved demo workspace every X days. Each reset restores <code>{{ demo_default_email }}</code> / <code>{{ demo_default_password }}</code>.
-                </p>
+                <h3>Automatic demo reset{{ help("Reserved demo only. Automatically reset the demo workspace every X days at the chosen time. Each reset restores " ~ demo_default_email ~ " / " ~ demo_default_password ~ ".", "platform-demo-reset-schedule-help") }}</h3>
                 <div class="field">
-                  <label for="demo_reset_interval_days">Reset every (days)</label>
+                  <label for="demo_reset_interval_days">Reset every (days){{ help("Leave blank or enter 0 to disable automatic reset.", "platform-demo-reset-interval-help") }}</label>
                   <input
                     type="number"
                     id="demo_reset_interval_days"
@@ -637,7 +625,6 @@
                     value="{{ demo_reset_interval_days or '' }}"
                     inputmode="numeric"
                   />
-                  <p class="muted">Leave blank or enter 0 to disable automatic reset.</p>
                 </div>
                 <div class="field">
                   <label for="demo_reset_time">Reset time</label>
@@ -679,9 +666,9 @@
                 Automatic demo reset is only available for the reserved demo workspace.
               </div>
             {% endif %}
-            <p class="muted">
-              Delete and recreate demo workspace data, then reseed the default baseline for this demo tenant{% if tenant_is_reserved_demo %} and restore the default demo login{% endif %}.
-            </p>
+            <div class="platform-tenant-maintenance-inline-label">
+              Manual demo reset{{ help("Delete and recreate demo workspace data, then reseed the default baseline for this demo tenant" ~ (" and restore the default demo login." if tenant_is_reserved_demo else "."), "platform-demo-reset-action-help") }}
+            </div>
             <div class="actions btn-group">
               <button type="button" class="btn btn--danger" data-demo-reset-open>Reset Demo Tenant</button>
             </div>
@@ -704,13 +691,16 @@
                   <p>It will not affect other tenants or platform admin data.</p>
                 </div>
                 <div class="field platform-confirmation-field">
-                  <label for="demo-reset-confirmation-{{ tenant.id }}">Type DEMO to enable confirmation</label>
+                  <label for="demo-reset-confirmation-{{ tenant.id }}">Type "DEMO" to confirm reset</label>
                   <input
                     type="text"
                     id="demo-reset-confirmation-{{ tenant.id }}"
                     name="confirmation_text"
                     value=""
                     autocomplete="off"
+                    autocapitalize="off"
+                    autocorrect="off"
+                    placeholder="DEMO"
                     spellcheck="false"
                     data-demo-reset-input
                   />
