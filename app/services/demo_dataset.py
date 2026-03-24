@@ -32,7 +32,6 @@ from ..models import (
     Yard,
 )
 from ..models.base import utcnow
-from .print_payload import SAMPLE_SIGNATURE_DATA_URI
 from .wip_snapshots import product_wip_snapshot, ticket_wip_snapshot
 
 MONEY_PLACES = Decimal("0.01")
@@ -363,6 +362,10 @@ DEMO_VEHICLES_WITHOUT_DEFAULT_HAULIER = frozenset(
         "NX72KLU",
     }
 )
+DEMO_SIGNATURE_DATA_URI = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAUAAAABQCAIAAADnUzvSAAACZElEQVR42u3cS1IDIRRAUfbi3MW4/73oyCqHpgPvxznl2ASai3QbXd9AW8sUgIABAQMCBgEDAgYEDAgYBAwIGBAwCBgQMCBgQMAgYEDAgIABAYOAAQEDAn7s4/Pr75cJQcAt0xUwAm6croARcON0BYyAG6cr4JhpNycCPpKuteWMI2DpCthUC1i6c6fdLAlYuqadcQFbQ6Y9cbACnrmGBi/r/0/7mIYFfN32P3JNP0h3/IYl4Jknt2EL+p10bxi1gC9Kt9dSfjDtAwZefHtaI6evS7pd1vE7Y+k79hanjCVd6Z4+7LSbhF23CQEDXNK95KyVe5/SZRJeHXX6VV7Szd2tW++eG79561EnXusl3bCrXrzhmGmvdik3jjplxS7pRl519+11Gj406uDVu6R77g2/9E2ueuSWe3EDRh02pUu6YemWCjh92iNfLuVhcsz0LunGL/TcMdaZ87CX3vtroUNfpQPu+Jw2ZXu+JN3IhlvU+3jIS7rnTst1Gm7611pFRn1pwLPTPfdyfU+Ph96kDSs6YOlWaLjLXdzehlt/bi8/4F4fQqqwucTHUDPgXQ33+vRboYB7fXiw1LngkqNjTMO3/SulFZxu+tG64Blhy6uP+ROoN9/8bf8FbYWlm3K663K8P/czp+ki3vjE+Hu0FZZuYsCtf+087K4v62mtgNP2+5iAKy/Za+/6BJwT8LxHIx0DnrFABRwasI08/q2OX98CjgjYCvAzJ2xOdLszYJPoZw5tAkbACBiHRgQMAgYEDAgYEDAIGBAwIGBAwCBgQMCAgEHAgIABAQMCBgEDAgYEDPz6Ab4kvDWwHa2oAAAAAElFTkSuQmCC"
+)
 DEMO_WASTE_TICKET_SIGNATURES: dict[int, dict[str, tuple[str, int]]] = {
     4: {
         "producer": ("Martin Shaw", -28),
@@ -477,7 +480,7 @@ def _apply_demo_wtn_signatures(
         return
     signed_base = ticket.datetime
     for role, (signer_name, minutes_offset) in signature_plan.items():
-        setattr(ticket, f"wtn_{role}_signature_data_uri", SAMPLE_SIGNATURE_DATA_URI)
+        setattr(ticket, f"wtn_{role}_signature_data_uri", DEMO_SIGNATURE_DATA_URI)
         setattr(ticket, f"wtn_{role}_signature_signer_name", signer_name)
         setattr(
             ticket,

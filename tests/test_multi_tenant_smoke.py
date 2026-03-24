@@ -63,9 +63,11 @@ from app.routes.tickets import _generate_ticket_no
 from app.seed import seed_print_destinations, seed_print_templates
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER_NAME
 from app.services.credit import customer_outstanding_total
+from app.services.demo_dataset import DEMO_SIGNATURE_DATA_URI
 from app.services.demo_tenant_reset import format_demo_reset_datetime, next_demo_reset_at
 from app.services.print_context import build_print_base_context
 from app.services.print_payload import _company_logo_src
+from app.services.signatures import normalize_png_data_url, png_has_visible_ink
 from app.services.system_setup import (
     DEFAULT_YARD_NAME,
     ensure_company_settings_row_exists,
@@ -3936,15 +3938,18 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
 
     with SessionLocal() as db:
         assert _tenant_row_count(db, User, demo_tenant) == 1
-        assert (
+        default_demo_user = (
             db.execute(
                 select(User).where(
                     User.tenant_id == demo_tenant,
                     getattr(User, "email", getattr(User, "username")) == "demo@demo.com",
                 )
             ).scalars().first()
-            is not None
         )
+        assert default_demo_user is not None
+        assert default_demo_user.saved_signature_data_uri == DEMO_SIGNATURE_DATA_URI
+        assert default_demo_user.saved_signature_signer_name == "Demo Admin"
+        assert default_demo_user.saved_signature_updated_at is not None
         assert_demo_dataset_counts(db)
 
 
@@ -4027,15 +4032,21 @@ def test_reserved_demo_auto_reset_schedule_resets_on_next_request(tmp_path, monk
         assert demo.demo_last_reset_at > utcnow() - timedelta(minutes=2)
         assert _tenant_row_count(db, User, demo_tenant) == 1
         assert db.get(User, stale_user_id) is None
-        assert (
+        default_demo_user = (
             db.execute(
                 select(User).where(
                     User.tenant_id == demo_tenant,
                     getattr(User, "email", getattr(User, "username")) == "demo@demo.com",
                 )
             ).scalars().first()
-            is not None
         )
+        assert default_demo_user is not None
+        assert default_demo_user.saved_signature_data_uri == DEMO_SIGNATURE_DATA_URI
+        assert default_demo_user.saved_signature_signer_name == "Demo Admin"
+        assert default_demo_user.saved_signature_updated_at is not None
+        seeded_signature = normalize_png_data_url(default_demo_user.saved_signature_data_uri)
+        assert seeded_signature is not None
+        assert png_has_visible_ink(seeded_signature[1]) is True
         assert (
             db.execute(
                 select(Customer).where(

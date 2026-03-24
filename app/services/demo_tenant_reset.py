@@ -46,7 +46,7 @@ from ..models import (
 from ..models.base import utcnow
 from ..seed import force_refresh_system_print_templates, seed_print_destinations, seed_units
 from ..user_roles import ROLE_TENANT_ADMIN
-from .demo_dataset import seed_demo_dataset
+from .demo_dataset import DEMO_SIGNATURE_DATA_URI, seed_demo_dataset
 from .system_setup import (
     DEFAULT_YARD_NAME,
     ensure_company_settings_row_exists,
@@ -62,6 +62,7 @@ DEMO_DEFAULT_EMAIL = "demo@demo.com"
 DEMO_DEFAULT_PASSWORD = "password"
 DEMO_DEFAULT_FIRST_NAME = "Demo"
 DEMO_DEFAULT_LAST_NAME = "Admin"
+DEMO_DEFAULT_SIGNATURE_NAME = f"{DEMO_DEFAULT_FIRST_NAME} {DEMO_DEFAULT_LAST_NAME}".strip()
 DEMO_RESET_INTERVAL_DAYS_MIN = 1
 DEMO_RESET_INTERVAL_DAYS_MAX = 365
 DEMO_RESET_DEFAULT_TIME_MINUTES = 180
@@ -316,6 +317,7 @@ def should_auto_reset_demo_tenant(tenant: Tenant | None, *, now=None) -> bool:
 
 
 def _create_default_demo_user(db: Session, tenant_id: int) -> User:
+    signature_updated_at = utcnow()
     existing = (
         db.execute(
             select(User)
@@ -334,6 +336,9 @@ def _create_default_demo_user(db: Session, tenant_id: int) -> User:
         existing.role = ROLE_TENANT_ADMIN
         existing.password_hash = hash_password(DEMO_DEFAULT_PASSWORD)
         existing.is_active = True
+        existing.saved_signature_data_uri = DEMO_SIGNATURE_DATA_URI
+        existing.saved_signature_signer_name = DEMO_DEFAULT_SIGNATURE_NAME
+        existing.saved_signature_updated_at = signature_updated_at
         return existing
 
     user = User(
@@ -342,6 +347,9 @@ def _create_default_demo_user(db: Session, tenant_id: int) -> User:
         last_name=DEMO_DEFAULT_LAST_NAME,
         password_hash=hash_password(DEMO_DEFAULT_PASSWORD),
         is_active=True,
+        saved_signature_data_uri=DEMO_SIGNATURE_DATA_URI,
+        saved_signature_signer_name=DEMO_DEFAULT_SIGNATURE_NAME,
+        saved_signature_updated_at=signature_updated_at,
         tenant_id=int(tenant_id),
     )
     db.add(user)

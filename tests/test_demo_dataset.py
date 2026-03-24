@@ -1,7 +1,8 @@
 from sqlalchemy import func, select
 
 from app.models import Tenant, Ticket, TicketStatusEnum, TransactionTypeEnum, Vehicle
-from app.services.demo_dataset import seed_demo_dataset
+from app.services.demo_dataset import DEMO_SIGNATURE_DATA_URI, seed_demo_dataset
+from app.services.signatures import normalize_png_data_url, png_has_visible_ink
 from app.services.system_setup import DEFAULT_YARD_NAME, seed_required_reference_data, upsert_default_yard
 
 
@@ -63,6 +64,21 @@ def test_seed_demo_dataset_includes_wtn_signature_mix_and_vehicle_default_mix(db
         and not ticket.has_wtn_producer_signature
         for ticket in partial
     )
+    seeded_signature = normalize_png_data_url(DEMO_SIGNATURE_DATA_URI)
+    assert seeded_signature is not None
+    assert png_has_visible_ink(seeded_signature[1]) is True
+    signed_signature_payloads = [
+        str(signature_data_uri or "").strip()
+        for ticket in completed_waste_tickets
+        for signature_data_uri in (
+            ticket.wtn_producer_signature_data_uri,
+            ticket.wtn_carrier_signature_data_uri,
+            ticket.wtn_receiver_signature_data_uri,
+        )
+        if str(signature_data_uri or "").strip()
+    ]
+    assert signed_signature_payloads
+    assert set(signed_signature_payloads) == {DEMO_SIGNATURE_DATA_URI}
 
     vehicles_without_default_haulier = db_session.execute(
         select(func.count(Vehicle.id)).where(
