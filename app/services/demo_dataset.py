@@ -32,6 +32,7 @@ from ..models import (
     Yard,
 )
 from ..models.base import utcnow
+from .print_payload import SAMPLE_SIGNATURE_DATA_URI
 from .wip_snapshots import product_wip_snapshot, ticket_wip_snapshot
 
 MONEY_PLACES = Decimal("0.01")
@@ -352,6 +353,38 @@ DEMO_VEHICLE_TYPE_MASS_PROFILES = {
         ("16820", "40000"),
     ),
 }
+DEMO_VEHICLES_WITHOUT_DEFAULT_HAULIER = frozenset(
+    {
+        "YA24RVO",
+        "YG73TWN",
+        "YJ68MVT",
+        "YD24BXR",
+        "YK19VLP",
+        "NX72KLU",
+    }
+)
+DEMO_WASTE_TICKET_SIGNATURES: dict[int, dict[str, tuple[str, int]]] = {
+    4: {
+        "producer": ("Martin Shaw", -28),
+        "carrier": ("Ben Thornton", -9),
+        "receiver": ("Rachel Moore", 6),
+    },
+    9: {
+        "receiver": ("Alicia Ford", 8),
+    },
+    13: {
+        "carrier": ("Ben Thornton", -11),
+        "receiver": ("Megan Frost", 7),
+    },
+    20: {
+        "carrier": ("Daniel Mercer", -10),
+    },
+    24: {
+        "producer": ("Leanne Whitfield", -31),
+        "carrier": ("Ben Thornton", -12),
+        "receiver": ("Ryan Porter", 5),
+    },
+}
 
 
 def _money(value: object) -> Decimal:
@@ -433,6 +466,24 @@ def _demo_vehicle_mass_profile(vehicle_type_code: str, occurrence: int) -> tuple
     profiles = DEMO_VEHICLE_TYPE_MASS_PROFILES[vehicle_type_code]
     tare_text, threshold_text = profiles[occurrence % len(profiles)]
     return Decimal(tare_text), Decimal(threshold_text)
+
+
+def _apply_demo_wtn_signatures(
+    ticket: Ticket,
+    *,
+    signature_plan: dict[str, tuple[str, int]] | None,
+) -> None:
+    if not signature_plan:
+        return
+    signed_base = ticket.datetime
+    for role, (signer_name, minutes_offset) in signature_plan.items():
+        setattr(ticket, f"wtn_{role}_signature_data_uri", SAMPLE_SIGNATURE_DATA_URI)
+        setattr(ticket, f"wtn_{role}_signature_signer_name", signer_name)
+        setattr(
+            ticket,
+            f"wtn_{role}_signature_signed_at",
+            signed_base + timedelta(minutes=int(minutes_offset)),
+        )
 
 
 def _sync_demo_sequences(
@@ -648,7 +699,11 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
             default_tare_kg=default_tare_kg,
             overweight_threshold_kg=overweight_threshold_kg,
             haulier_id=hauliers[haulier_name].id,
-            default_haulier_id=hauliers[haulier_name].id,
+            default_haulier_id=(
+                None
+                if registration in DEMO_VEHICLES_WITHOUT_DEFAULT_HAULIER
+                else hauliers[haulier_name].id
+            ),
             driver_id=drivers[driver_name].id,
             default_driver_id=drivers[driver_name].id,
         )
@@ -798,6 +853,14 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
             wip_snapshot_json=ticket_wip_snapshot(customer=customer, product=product),
             **ticket_kwargs,
         )
+        if (
+            status == TicketStatusEnum.COMPLETE.value
+            and transaction_type in WASTE_TYPES
+        ):
+            _apply_demo_wtn_signatures(
+                ticket,
+                signature_plan=DEMO_WASTE_TICKET_SIGNATURES.get(ticket_number),
+            )
         db.add(ticket)
         ticket_rows[ticket_number] = (ticket, product, vehicle)
     db.flush()

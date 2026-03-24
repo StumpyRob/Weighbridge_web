@@ -46,6 +46,12 @@ def test_seed_print_templates_creates_default_wtn_template(db_session):
     )
     assert signature_area_block is not None
     assert "background:" not in signature_area_block.group("body")
+    assert "@media print" in content
+    assert ".company-line:last-child" in content
+    assert "overflow-wrap: anywhere" in content
+    assert "document-section" in content
+    assert "invoice-section" not in content
+    assert ".text-strong" not in content
 
 
 def test_seed_print_templates_creates_all_system_templates(db_session):

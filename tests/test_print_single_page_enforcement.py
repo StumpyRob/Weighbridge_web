@@ -100,6 +100,37 @@ def test_system_wtn_template_with_long_values_stays_single_page(db_session):
     assert count_html_pages(prepared_html) == 1
 
 
+def test_system_ticket_template_with_long_values_stays_single_page(db_session):
+    force_refresh_system_print_templates(db_session)
+    template = _system_template(db_session, "TICKET_A4_SYSTEM")
+
+    payload = build_print_payload(db_session, DOCUMENT_TYPE_TICKET)
+    payload.update(
+        {
+            "customer_name": "North Ridge Civil Engineering and Environmental Recovery Limited",
+            "customer_account_code": "NRCE-REC-204",
+            "driver_name": "Christopher Alexander Morgan",
+            "haulier_name": "Regional Bulk Logistics and Aggregates Transport Services",
+            "destination_name": "Materials Recovery Centre, Riverside Industrial Estate",
+            "origin_site": "Main Transfer Yard, North Compound",
+            "product_code": "P-REC-001",
+            "product_description": (
+                "Recovered aggregate blend for general construction and site reinstatement works"
+            ),
+            "waste_description": (
+                "Mixed inert recovery material screened from construction and demolition arisings"
+            ),
+            "ewc_code": "17 09 04",
+            "ewc_description": "Mixed construction and demolition waste",
+        }
+    )
+
+    rendered_html = render_from_content(payload, template.content, db=db_session)
+    prepared_html = prepare_html_for_print_output(rendered_html)
+
+    assert count_html_pages(prepared_html) == 1
+
+
 def test_print_safe_policy_blocks_background_images():
     html = (
         "<html><head><style>"

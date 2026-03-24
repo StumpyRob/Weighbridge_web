@@ -3350,6 +3350,24 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert thresholds_by_type["8 Wheeler"] == {32000}
         assert thresholds_by_type["Artic"] == {40000, 44000}
         assert thresholds_by_type["Tractor & Trailer"] == {38000, 40000}
+        assert (
+            db.execute(
+                select(func.count(Vehicle.id)).where(
+                    Vehicle.tenant_id == demo_tenant,
+                    Vehicle.default_haulier_id.is_(None),
+                )
+            ).scalar_one()
+            == 6
+        )
+        assert (
+            db.execute(
+                select(func.count(Vehicle.id)).where(
+                    Vehicle.tenant_id == demo_tenant,
+                    Vehicle.default_haulier_id.is_not(None),
+                )
+            ).scalar_one()
+            == 10
+        )
 
         demo_ewc_rows = {
             row.code_6: row
@@ -3531,6 +3549,45 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
                 )
             ).scalar_one()
             == 8
+        )
+        completed_demo_waste_tickets = db.execute(
+            select(Ticket).where(
+                Ticket.tenant_id == demo_tenant,
+                Ticket.status == TicketStatusEnum.COMPLETE.value,
+                Ticket.transaction_type.in_(
+                    [
+                        TransactionTypeEnum.WASTEIN.value,
+                        TransactionTypeEnum.WASTEOUT.value,
+                    ]
+                ),
+            )
+        ).scalars().all()
+        assert sum(
+            1 for ticket in completed_demo_waste_tickets if ticket.wtn_signature_status == "signed"
+        ) == 2
+        assert sum(
+            1 for ticket in completed_demo_waste_tickets if ticket.wtn_signature_status == "partial"
+        ) == 3
+        assert sum(
+            1 for ticket in completed_demo_waste_tickets if ticket.wtn_signature_status == "unsigned"
+        ) == 1
+        assert any(
+            ticket.has_wtn_receiver_signature
+            and not ticket.has_wtn_carrier_signature
+            and not ticket.has_wtn_producer_signature
+            for ticket in completed_demo_waste_tickets
+        )
+        assert any(
+            ticket.has_wtn_receiver_signature
+            and ticket.has_wtn_carrier_signature
+            and not ticket.has_wtn_producer_signature
+            for ticket in completed_demo_waste_tickets
+        )
+        assert any(
+            ticket.has_wtn_carrier_signature
+            and not ticket.has_wtn_receiver_signature
+            and not ticket.has_wtn_producer_signature
+            for ticket in completed_demo_waste_tickets
         )
         demo_invoice_prefix = f"INV-{str(utcnow().year)[2:]}"
         assert list(

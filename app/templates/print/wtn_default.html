@@ -27,11 +27,6 @@
         padding: 0;
       }
 
-      .text-strong {
-        font-weight: 600;
-        color: #0f172a;
-      }
-
       .header {
         display: flex;
         justify-content: space-between;
@@ -68,6 +63,11 @@
         color: #475569;
         margin: 1px 0;
         font-size: 9px;
+      }
+
+      .document-section {
+        min-width: 215px;
+        text-align: right;
       }
 
       .document-title {
@@ -260,6 +260,40 @@
         font-size: 8px;
         font-style: italic;
       }
+
+      @media print {
+        .company-section {
+          padding-bottom: 4px;
+        }
+
+        .company-line:last-child {
+          margin-bottom: 6px;
+        }
+
+        .print-name-row {
+          display: grid;
+          gap: 1px;
+          align-items: start;
+        }
+
+        .print-name-label {
+          margin-right: 0;
+        }
+
+        .print-name-line {
+          width: 100%;
+          height: auto;
+          min-height: 1em;
+          margin-left: 0;
+        }
+
+        .signature-print-name {
+          display: block;
+          line-height: 1.15;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+      }
     </style>
   </head>
   <body>
@@ -321,7 +355,7 @@
         {% endfor %}
       </div>
 
-      <div class="invoice-section">
+      <div class="document-section">
         <div class="document-title">WASTE TRANSFER NOTE</div>
       </div>
     </div>

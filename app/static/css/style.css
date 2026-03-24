@@ -945,7 +945,7 @@ body.js-help-tooltips .help-tooltip {
   border-radius: 8px;
   background: #ffffff;
   padding: 0.35rem;
-  min-height: 3.2rem;
+  min-height: 8rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -957,6 +957,14 @@ body.js-help-tooltips .help-tooltip {
   max-height: 110px;
   object-fit: contain;
   margin: 0 auto;
+}
+
+.wtn-signature-tools__placeholder {
+  color: #9ca3af;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .wtn-signature-tools__meta {
@@ -2543,6 +2551,10 @@ details.frame:not([open]) .frame-header {
 }
 
 .ticket-void-actions {
+  margin-top: 0.75rem;
+}
+
+.ticket-detail-back-actions {
   margin-top: 0.75rem;
 }
 

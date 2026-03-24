@@ -23,6 +23,7 @@ def test_complete_ticket_shows_back_not_cancel(client, db_session):
     assert '>Back</a>' in response.text
     assert '>Cancel</a>' not in response.text
     assert response.text.index('<summary class="frame-header">Void Ticket</summary>') < response.text.index('>Back</a>')
+    assert 'class="actions btn-group ticket-detail-back-actions"' in response.text
 
 
 def test_open_ticket_shows_cancel(client, db_session):

@@ -219,15 +219,17 @@
               {% if ticket.has_wtn_producer_signature %}Signed{% else %}Not signed{% endif %}
             </span>
           </div>
-          {% if ticket.wtn_producer_signature_data_uri %}
-            <div class="wtn-signature-tools__preview-wrap">
+          <div class="wtn-signature-tools__preview-wrap{% if not ticket.wtn_producer_signature_data_uri %} is-empty{% endif %}">
+            {% if ticket.wtn_producer_signature_data_uri %}
               <img
                 src="{{ ticket.wtn_producer_signature_data_uri }}"
                 alt="Saved producer signature"
                 class="wtn-signature-tools__preview"
               />
-            </div>
-          {% endif %}
+            {% else %}
+              <span class="wtn-signature-tools__placeholder">Unsigned</span>
+            {% endif %}
+          </div>
           {% if ticket.wtn_producer_signature_signer_name %}
             <p class="wtn-signature-tools__meta muted">
               Signer: {{ ticket.wtn_producer_signature_signer_name }}
@@ -260,15 +262,17 @@
               {% if ticket.has_wtn_carrier_signature %}Signed{% else %}Not signed{% endif %}
             </span>
           </div>
-          {% if ticket.wtn_carrier_signature_data_uri %}
-            <div class="wtn-signature-tools__preview-wrap">
+          <div class="wtn-signature-tools__preview-wrap{% if not ticket.wtn_carrier_signature_data_uri %} is-empty{% endif %}">
+            {% if ticket.wtn_carrier_signature_data_uri %}
               <img
                 src="{{ ticket.wtn_carrier_signature_data_uri }}"
                 alt="Saved carrier signature"
                 class="wtn-signature-tools__preview"
               />
-            </div>
-          {% endif %}
+            {% else %}
+              <span class="wtn-signature-tools__placeholder">Unsigned</span>
+            {% endif %}
+          </div>
           {% if ticket.wtn_carrier_signature_signer_name %}
             <p class="wtn-signature-tools__meta muted">
               Signer: {{ ticket.wtn_carrier_signature_signer_name }}
@@ -301,15 +305,17 @@
               {% if ticket.has_wtn_receiver_signature %}Signed{% else %}Not signed{% endif %}
             </span>
           </div>
-          {% if ticket.wtn_receiver_signature_data_uri %}
-            <div class="wtn-signature-tools__preview-wrap">
+          <div class="wtn-signature-tools__preview-wrap{% if not ticket.wtn_receiver_signature_data_uri %} is-empty{% endif %}">
+            {% if ticket.wtn_receiver_signature_data_uri %}
               <img
                 src="{{ ticket.wtn_receiver_signature_data_uri }}"
                 alt="Saved receiver signature"
                 class="wtn-signature-tools__preview"
               />
-            </div>
-          {% endif %}
+            {% else %}
+              <span class="wtn-signature-tools__placeholder">Unsigned</span>
+            {% endif %}
+          </div>
           {% if ticket.wtn_receiver_signature_signer_name %}
             <p class="wtn-signature-tools__meta muted">
               Signer: {{ ticket.wtn_receiver_signature_signer_name }}
@@ -1004,7 +1010,7 @@
 {% endif %}
 
 {% if not is_open %}
-  <div class="actions btn-group">
+  <div class="actions btn-group ticket-detail-back-actions">
     <a class="btn btn--secondary" href="/tickets">Back</a>
   </div>
 {% endif %}

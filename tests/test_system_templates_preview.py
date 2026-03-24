@@ -67,6 +67,23 @@ def test_wtn_system_template_preview_shows_role_signature_sample_metadata(
     assert "Sample Receiver Signer" in response.text
 
 
+def test_ticket_system_template_preview_uses_modern_section_layout(
+    client,
+    db_session,
+):
+    force_refresh_system_print_templates(db_session)
+    template = _system_template(db_session, "TICKET_A4_SYSTEM")
+
+    response = client.get(f"/admin/printing/templates/{template.id}/preview")
+
+    assert response.status_code == 200
+    assert "Template render failed" not in response.text
+    assert "Customer & Logistics" in response.text
+    assert "Material & Compliance" in response.text
+    assert "Weights & Charges" in response.text
+    assert "background: #f1f5f9;" not in response.text
+
+
 def test_invoice_system_template_preview_renders_logo_when_company_logo_is_set(
     client,
     db_session,
