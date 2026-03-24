@@ -283,6 +283,37 @@ def test_email_login_shows_full_name_and_role_label(workspace_env):
         client.close()
 
 
+def test_shared_sidebar_shell_renders_major_tenant_pages(workspace_env):
+    client, _csrf = _client_for_role(workspace_env, "tenant_admin")
+    ticket_id = workspace_env["ticket_id"]
+    page_cases = [
+        ("/", "Home"),
+        ("/tickets", "Tickets"),
+        (f"/tickets/{ticket_id}", "Tickets"),
+        ("/customers", "Customers"),
+        ("/vehicles", "Vehicles"),
+        ("/products", "Products"),
+        ("/invoices", "Invoices"),
+        ("/lookups/hauliers", "Lookups"),
+        ("/reports", "Reports"),
+        ("/admin", "Settings"),
+    ]
+
+    try:
+        for path, active_label in page_cases:
+            response = client.get(path)
+            assert response.status_code == 200, path
+            assert 'class="site-header"' in response.text
+            assert 'id="site-sidebar"' in response.text
+            assert 'data-shell-toggle' in response.text
+            assert 'data-shell-backdrop' in response.text
+            assert '<nav class="site-nav">' in response.text
+            assert '<script src="/static/js/app_shell.js?v=' in response.text
+            assert f'aria-current="page">{active_label}<' in response.text
+    finally:
+        client.close()
+
+
 @pytest.mark.parametrize(
     ("role_key", "expected"),
     [

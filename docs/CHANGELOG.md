@@ -4,6 +4,42 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.21 - 2026-03-24
+
+### RELEASE
+- `v0.21` introduces a shared sidebar shell for the main application, replacing the old top-row primary navigation with a cleaner left navigation rail and a simplified utility header.
+
+### ADD
+- Add a responsive left sidebar for primary navigation across tenant and platform shells:
+  - desktop persistent sidebar
+  - smaller-screen collapsible drawer
+  - mobile burger toggle with overlay close
+- Add shared shell drawer behavior for mobile/tablet navigation:
+  - open/close button state
+  - backdrop click to close
+  - Escape-to-close
+  - automatic reset when returning to desktop width
+
+### CHANGE
+- Move the main application navigation from the top horizontal bar into the shared sidebar while keeping the existing route structure, labels, active-link behavior, and permission-based visibility.
+- Simplify the top header so it now focuses on brand identity, tenant/platform context, signed-in user details, `My Signature`, and logout.
+- Keep the shared shell branding tied to the existing theme variables and nav/logo/title settings so tenant color and logo behavior still apply in the new layout.
+
+### TEST
+- Add shared-shell coverage that verifies the sidebar renders across the major tenant pages:
+  - Home
+  - Tickets list
+  - Ticket detail
+  - Customers
+  - Vehicles
+  - Products
+  - Invoices
+  - Lookups
+  - Reports
+  - Settings
+- Extend tenant/platform shell smoke tests to assert sidebar and drawer markup are present.
+- Re-run focused branding, signed-in utility-bar, platform-shell, tenant-shell, and toast-layout regressions.
+
 ## v0.20.1 - 2026-03-24
 
 ### RELEASE

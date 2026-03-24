@@ -1898,6 +1898,9 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert tenant_admin_page.status_code == 200
         tenant_nav = _extract_nav_markup(tenant_admin_page.text)
         tenant_utility = _extract_utility_bar_markup(tenant_admin_page.text)
+        assert 'id="site-sidebar"' in tenant_admin_page.text
+        assert 'data-shell-toggle' in tenant_admin_page.text
+        assert 'data-shell-backdrop' in tenant_admin_page.text
         assert "Tenant Management" not in tenant_admin_page.text
         assert "Tenant A" not in tenant_nav
         assert "Signed in as tenant-admin@example.com" not in tenant_nav
@@ -4266,6 +4269,9 @@ def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypa
         assert tenants_page.status_code == 200
         platform_nav = _extract_nav_markup(tenants_page.text)
         platform_utility = _extract_utility_bar_markup(tenants_page.text)
+        assert 'id="site-sidebar"' in tenants_page.text
+        assert 'data-shell-toggle' in tenants_page.text
+        assert 'data-shell-backdrop' in tenants_page.text
         assert ">Tenant Management<" in tenants_page.text
         assert ">AI Settings<" in tenants_page.text
         assert ">System Status<" in tenants_page.text
