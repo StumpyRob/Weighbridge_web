@@ -18,7 +18,9 @@
   --section-gap: 1rem;
   --flash-toast-top: 88px;
   --shell-gap: 1rem;
-  --shell-sidebar-width: 250px;
+  --shell-sidebar-width-expanded: 250px;
+  --shell-sidebar-width-collapsed: 68px;
+  --shell-sidebar-width: var(--shell-sidebar-width-expanded);
   --shell-nav-radius: 10px;
 }
 
@@ -33,8 +35,8 @@ body {
   position: relative;
   z-index: 220;
   display: grid;
-  gap: 0.65rem;
-  padding: 0.85rem var(--shell-gap);
+  gap: 0.45rem;
+  padding: 0.58rem var(--shell-gap) 0.62rem;
   background-color: var(--nav-bg);
   color: var(--primary);
   border-bottom: 2px solid rgba(15, 23, 42, 0.16);
@@ -46,24 +48,24 @@ body {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem 1rem;
-  min-height: 42px;
+  gap: 0.55rem 0.9rem;
+  min-height: 36px;
 }
 
 .site-header__brand-row {
   display: inline-flex;
   align-items: center;
-  gap: 0.85rem;
+  gap: 0.65rem;
   min-width: 0;
 }
 
 .site-utility-host {
   display: inline-flex;
   align-items: center;
-  min-height: 32px;
+  min-height: 26px;
   min-width: 0;
   max-width: 100%;
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   line-height: 1.2;
   font-weight: 500;
   letter-spacing: 0.04em;
@@ -79,8 +81,8 @@ body {
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.35rem 1rem;
-  padding-top: 0.65rem;
+  gap: 0.3rem 0.85rem;
+  padding-top: 0.42rem;
   border-top: 1px solid var(--theme-primary-soft);
 }
 
@@ -89,10 +91,10 @@ body {
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
-  gap: 0.45rem 1rem;
-  min-height: 34px;
+  gap: 0.3rem 0.85rem;
+  min-height: 28px;
   min-width: 0;
-  font-size: 0.83rem;
+  font-size: 0.78rem;
   line-height: 1.2;
   color: var(--utility-bar-text);
 }
@@ -101,7 +103,7 @@ body {
 .site-utility-bar__action {
   display: inline-flex;
   align-items: center;
-  min-height: 34px;
+  min-height: 28px;
   min-width: 0;
   max-width: 100%;
 }
@@ -111,9 +113,9 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.28rem;
-  width: 44px;
-  height: 44px;
+  gap: 0.22rem;
+  width: 38px;
+  height: 38px;
   padding: 0;
   border: 1px solid var(--theme-primary-soft);
   border-radius: var(--shell-nav-radius);
@@ -136,7 +138,7 @@ body {
 
 .site-shell-toggle__line {
   display: block;
-  width: 18px;
+  width: 16px;
   height: 2px;
   border-radius: 999px;
   background: currentColor;
@@ -145,7 +147,7 @@ body {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.58rem;
   font-weight: 600;
   letter-spacing: 0.3px;
   color: inherit;
@@ -189,7 +191,7 @@ body {
 
 .brand__text {
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 0.96rem;
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
@@ -204,6 +206,7 @@ body {
 .site-nav a {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   color: var(--primary);
   text-decoration: none;
   font-weight: 600;
@@ -235,6 +238,10 @@ body {
   color: var(--primary);
   text-decoration: none;
   opacity: 1;
+}
+
+.site-nav a::before {
+  content: "";
 }
 
 .site-utility-bar__item--tenant {
@@ -269,7 +276,7 @@ body {
   background: transparent;
   color: var(--utility-bar-link);
   font: inherit;
-  font-size: 0.83rem;
+  font-size: 0.78rem;
   font-weight: 600;
   text-decoration: none;
   cursor: pointer;
@@ -302,6 +309,14 @@ body {
   padding: 0 var(--shell-gap) 1.25rem;
 }
 
+.app-shell--collapsed {
+  --shell-sidebar-width: var(--shell-sidebar-width-collapsed);
+}
+
+.shell-sidebar-collapsed .app-shell--with-sidebar {
+  --shell-sidebar-width: var(--shell-sidebar-width-collapsed);
+}
+
 .app-shell__content {
   min-width: 0;
 }
@@ -319,7 +334,7 @@ body {
   left: 0;
   bottom: 0;
   z-index: 260;
-  width: min(82vw, calc(var(--shell-sidebar-width) + 18px));
+  width: min(82vw, 280px);
   box-sizing: border-box;
   padding: 1rem 0.8rem 1.25rem;
   background: var(--nav-bg);
@@ -355,7 +370,7 @@ body.is-shell-nav-open .app-sidebar {
 
 @media (min-width: 768px) {
   .site-header {
-    padding: 0.95rem 1.25rem 0.9rem;
+    padding: 0.62rem 1.1rem 0.66rem;
   }
 
   .container {
@@ -364,10 +379,6 @@ body.is-shell-nav-open .app-sidebar {
 }
 
 @media (min-width: 1100px) {
-  .site-shell-toggle {
-    display: none;
-  }
-
   .app-shell--with-sidebar {
     display: grid;
     grid-template-columns: var(--shell-sidebar-width) minmax(0, 1fr);
@@ -386,6 +397,33 @@ body.is-shell-nav-open .app-sidebar {
     max-height: calc(100svh - var(--flash-toast-top) + 12px);
     border-radius: 0;
     transform: none;
+  }
+
+  .app-shell--collapsed .app-sidebar,
+  .shell-sidebar-collapsed .app-shell--with-sidebar .app-sidebar {
+    padding-inline: 0.45rem;
+  }
+
+  .app-shell--collapsed .app-sidebar__inner,
+  .shell-sidebar-collapsed .app-shell--with-sidebar .app-sidebar__inner {
+    gap: 0.55rem;
+  }
+
+  .app-shell--collapsed .site-nav a,
+  .shell-sidebar-collapsed .app-shell--with-sidebar .site-nav a {
+    justify-content: center;
+    padding: 0.7rem 0.35rem;
+    font-size: 0;
+    line-height: 1;
+  }
+
+  .app-shell--collapsed .site-nav a::before,
+  .shell-sidebar-collapsed .app-shell--with-sidebar .site-nav a::before {
+    content: attr(data-short-label);
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.04em;
   }
 }
 
@@ -518,7 +556,7 @@ body.is-shell-nav-open .app-sidebar {
 
 @media (max-width: 1099px) {
   .site-header {
-    padding: 0.8rem var(--shell-gap) 0.85rem;
+    padding: 0.58rem var(--shell-gap) 0.62rem;
   }
 
   .site-header__utility,

@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="csrf-token" content="{{ csrf_token or '' }}" />
     <title>{% block title %}Weighbridge Web{% endblock %}</title>
+    <script>
+      (function () {
+        try {
+          if (window.localStorage && window.localStorage.getItem("sidebar_collapsed") === "1") {
+            document.documentElement.classList.add("shell-sidebar-collapsed");
+          }
+        } catch (error) {
+          document.documentElement.classList.remove("shell-sidebar-collapsed");
+        }
+      })();
+    </script>
     {% set favicon_href = tenant_path(ui_branding.favicon_url or '/static/img/default-company-logo.svg') %}
     <link rel="icon" type="{{ ui_branding.favicon_mime_type or 'image/svg+xml' }}" href="{{ favicon_href }}" />
     <link rel="shortcut icon" href="{{ favicon_href }}" />
@@ -18,8 +29,8 @@
     {% set show_sidebar_nav = (platform_mode and current_user_is_superadmin) or ((not platform_mode) and current_user and (permissions.view_dashboard or permissions.view_tickets or permissions.view_customers or permissions.view_vehicles or permissions.view_products or permissions.view_invoices or permissions.view_lookups or permissions.view_reports or permissions.manage_settings or permissions.manage_users)) %}
     {% set signed_in_as = current_user_display_name if current_user else '' %}
     {% set signed_in_as_identity = (current_user.email or current_user.username or current_user_display_name or 'User') if current_user else '' %}
-    {% macro nav_link(href, label, active) -%}
-      <a href="{{ tenant_path(href) }}" class="{% if active %}is-active{% endif %}" {% if active %}aria-current="page"{% endif %}>{{ label }}</a>
+    {% macro nav_link(href, label, active, short_label) -%}
+      <a href="{{ tenant_path(href) }}" class="{% if active %}is-active{% endif %}" data-short-label="{{ short_label }}" data-nav-label="{{ label }}" {% if active %}aria-current="page"{% endif %}>{{ label }}</a>
     {%- endmacro %}
     <header class="site-header">
       <div class="site-header__main">
@@ -30,7 +41,7 @@
               class="site-shell-toggle"
               data-shell-toggle
               aria-controls="site-sidebar"
-              aria-expanded="false"
+              aria-expanded="true"
               aria-label="Open navigation menu"
             >
               <span class="site-shell-toggle__line" aria-hidden="true"></span>
@@ -170,7 +181,7 @@
         </div>
       {% endif %}
     {% endblock %}
-    <div class="app-shell{% if show_sidebar_nav %} app-shell--with-sidebar{% endif %}">
+    <div class="app-shell{% if show_sidebar_nav %} app-shell--with-sidebar{% endif %}"{% if show_sidebar_nav %} data-shell-root{% endif %}>
       {% if show_sidebar_nav %}
         <div class="app-shell__backdrop" data-shell-backdrop hidden></div>
         <aside
@@ -182,37 +193,37 @@
           <div class="app-sidebar__inner">
             <nav class="site-nav">
               {% if platform_mode %}
-                {{ nav_link('/platform/tenants', 'Tenant Management', request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants')) }}
-                {{ nav_link('/platform/ai-settings', 'AI Settings', request.url.path.startswith('/platform/ai-settings') or request.url.path.startswith('/admin/ai-settings')) }}
-                {{ nav_link('/platform/email-settings', 'Email Settings', request.url.path.startswith('/platform/email-settings') or request.url.path.startswith('/admin/email-settings')) }}
-                {{ nav_link('/admin/system-status', 'System Status', request.url.path.startswith('/admin/system-status')) }}
+                {{ nav_link('/platform/tenants', 'Tenant Management', request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants'), 'TM') }}
+                {{ nav_link('/platform/ai-settings', 'AI Settings', request.url.path.startswith('/platform/ai-settings') or request.url.path.startswith('/admin/ai-settings'), 'AI') }}
+                {{ nav_link('/platform/email-settings', 'Email Settings', request.url.path.startswith('/platform/email-settings') or request.url.path.startswith('/admin/email-settings'), 'EM') }}
+                {{ nav_link('/admin/system-status', 'System Status', request.url.path.startswith('/admin/system-status'), 'SS') }}
               {% else %}
                 {% if permissions.view_dashboard %}
-                  {{ nav_link('/', 'Home', request.url.path == '/') }}
+                  {{ nav_link('/', 'Home', request.url.path == '/', 'H') }}
                 {% endif %}
                 {% if permissions.view_tickets %}
-                  {{ nav_link('/tickets', 'Tickets', request.url.path.startswith('/tickets')) }}
+                  {{ nav_link('/tickets', 'Tickets', request.url.path.startswith('/tickets'), 'T') }}
                 {% endif %}
                 {% if permissions.view_customers %}
-                  {{ nav_link('/customers', 'Customers', request.url.path.startswith('/customers')) }}
+                  {{ nav_link('/customers', 'Customers', request.url.path.startswith('/customers'), 'C') }}
                 {% endif %}
                 {% if permissions.view_vehicles %}
-                  {{ nav_link('/vehicles', 'Vehicles', request.url.path.startswith('/vehicles')) }}
+                  {{ nav_link('/vehicles', 'Vehicles', request.url.path.startswith('/vehicles'), 'V') }}
                 {% endif %}
                 {% if permissions.view_products %}
-                  {{ nav_link('/products', 'Products', request.url.path.startswith('/products')) }}
+                  {{ nav_link('/products', 'Products', request.url.path.startswith('/products'), 'P') }}
                 {% endif %}
                 {% if permissions.view_invoices %}
-                  {{ nav_link('/invoices', 'Invoices', request.url.path.startswith('/invoices')) }}
+                  {{ nav_link('/invoices', 'Invoices', request.url.path.startswith('/invoices'), 'I') }}
                 {% endif %}
                 {% if permissions.view_lookups %}
-                  {{ nav_link('/lookups/hauliers', 'Lookups', request.url.path.startswith('/lookups')) }}
+                  {{ nav_link('/lookups/hauliers', 'Lookups', request.url.path.startswith('/lookups'), 'L') }}
                 {% endif %}
                 {% if permissions.view_reports %}
-                  {{ nav_link('/reports', 'Reports', request.url.path.startswith('/reports')) }}
+                  {{ nav_link('/reports', 'Reports', request.url.path.startswith('/reports'), 'R') }}
                 {% endif %}
                 {% if permissions.manage_settings or permissions.manage_users %}
-                  {{ nav_link('/admin', 'Settings', request.url.path.startswith('/admin')) }}
+                  {{ nav_link('/admin', 'Settings', request.url.path.startswith('/admin'), 'S') }}
                 {% endif %}
               {% endif %}
             </nav>

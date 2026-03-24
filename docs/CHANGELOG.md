@@ -4,6 +4,33 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.21.3 - 2026-03-24
+
+### RELEASE
+- `v0.21.3` extends the shared application shell with a desktop-collapsible sidebar and a slimmer utility header so the layout frees both horizontal and vertical space without changing routes, permissions, or page workflows.
+
+### ADD
+- Add a desktop sidebar collapse/expand mode to the shared shell:
+  - expanded width `250px`
+  - collapsed rail width `68px`
+  - persisted in `localStorage` via `sidebar_collapsed`
+- Reuse the shared shell toggle button so it now:
+  - collapses/expands the sidebar on desktop
+  - continues to open/close the drawer on mobile
+- Apply the saved desktop collapse state before the main stylesheet loads to reduce initial render flicker.
+
+### CHANGE
+- Slim down the top header to recover vertical page space by tightening shell padding, row heights, and utility-bar spacing.
+- Keep the desktop collapsed rail readable by switching nav links to short labels and per-link hover titles when collapsed.
+- Keep mobile drawer behaviour unchanged:
+  - burger opens drawer
+  - backdrop closes drawer
+  - Escape closes drawer
+  - nav click closes drawer
+
+### TEST
+- Re-run focused shared-shell, branding, signed-in utility-bar, platform-shell, tenant-shell, and toast-layout regressions after the collapse/header update.
+
 ## v0.21.2 - 2026-03-24
 
 ### RELEASE

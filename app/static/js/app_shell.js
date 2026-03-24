@@ -1,22 +1,78 @@
 (function () {
+  const storageKey = "sidebar_collapsed";
+  const root = document.documentElement;
+  const shell = document.querySelector("[data-shell-root]");
   const toggle = document.querySelector("[data-shell-toggle]");
   const sidebar = document.querySelector("[data-shell-sidebar]");
   const backdrop = document.querySelector("[data-shell-backdrop]");
 
-  if (!toggle || !sidebar || !backdrop) {
+  if (!shell || !toggle || !sidebar || !backdrop) {
     return;
   }
 
   const mobileQuery = window.matchMedia("(max-width: 1099px)");
+  const navLinks = sidebar.querySelectorAll("a");
+  let desktopCollapsed = root.classList.contains("shell-sidebar-collapsed");
 
   function isMobile() {
     return mobileQuery.matches;
   }
 
+  function persistCollapsedState() {
+    try {
+      window.localStorage.setItem(storageKey, desktopCollapsed ? "1" : "0");
+    } catch (error) {
+      return;
+    }
+  }
+
+  function syncNavTitles() {
+    const shouldShowTitles = desktopCollapsed && !isMobile();
+    navLinks.forEach(function (link) {
+      const label = link.getAttribute("data-nav-label") || "";
+      if (shouldShowTitles && label) {
+        link.setAttribute("title", label);
+      } else {
+        link.removeAttribute("title");
+      }
+    });
+  }
+
+  function syncToggleState(isDrawerOpen) {
+    if (isMobile()) {
+      const drawerExpanded = Boolean(isDrawerOpen);
+      toggle.setAttribute("aria-expanded", drawerExpanded ? "true" : "false");
+      toggle.setAttribute(
+        "aria-label",
+        drawerExpanded ? "Close navigation menu" : "Open navigation menu"
+      );
+      return;
+    }
+
+    const sidebarExpanded = !desktopCollapsed;
+    toggle.setAttribute("aria-expanded", sidebarExpanded ? "true" : "false");
+    toggle.setAttribute(
+      "aria-label",
+      sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"
+    );
+  }
+
+  function applyDesktopCollapsedState() {
+    root.classList.toggle("shell-sidebar-collapsed", desktopCollapsed);
+    shell.classList.toggle("app-shell--collapsed", desktopCollapsed);
+    syncNavTitles();
+  }
+
+  function setDesktopCollapsed(nextCollapsed) {
+    desktopCollapsed = Boolean(nextCollapsed);
+    applyDesktopCollapsedState();
+    persistCollapsedState();
+    syncToggleState(document.body.classList.contains("is-shell-nav-open"));
+  }
+
   function syncShellState(open) {
     const isOpen = Boolean(open) && isMobile();
     document.body.classList.toggle("is-shell-nav-open", isOpen);
-    toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
     backdrop.hidden = !isOpen;
 
     if (isMobile()) {
@@ -25,12 +81,14 @@
       } else {
         sidebar.setAttribute("inert", "");
       }
+      syncToggleState(isOpen);
       return;
     }
 
     sidebar.removeAttribute("inert");
     backdrop.hidden = true;
     document.body.classList.remove("is-shell-nav-open");
+    syncToggleState(false);
   }
 
   function focusToggle() {
@@ -59,15 +117,17 @@
   }
 
   toggle.addEventListener("click", function () {
-    if (!isMobile()) {
+    if (isMobile()) {
+      const isOpen = document.body.classList.contains("is-shell-nav-open");
+      if (isOpen) {
+        closeShell();
+        return;
+      }
+      openShell();
       return;
     }
-    const isOpen = document.body.classList.contains("is-shell-nav-open");
-    if (isOpen) {
-      closeShell();
-      return;
-    }
-    openShell();
+
+    setDesktopCollapsed(!desktopCollapsed);
   });
 
   backdrop.addEventListener("click", function () {
@@ -84,7 +144,7 @@
     closeShell({ restoreFocus: true });
   });
 
-  sidebar.querySelectorAll("a").forEach(function (link) {
+  navLinks.forEach(function (link) {
     link.addEventListener("click", function () {
       if (isMobile()) {
         closeShell();
@@ -94,6 +154,7 @@
 
   const handleMediaChange = function () {
     syncShellState(false);
+    applyDesktopCollapsedState();
   };
 
   if (typeof mobileQuery.addEventListener === "function") {
@@ -102,5 +163,6 @@
     mobileQuery.addListener(handleMediaChange);
   }
 
+  applyDesktopCollapsedState();
   syncShellState(false);
 })();
