@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 import logging
 from pathlib import Path
 import shutil
@@ -64,6 +64,7 @@ DEMO_DEFAULT_FIRST_NAME = "Demo"
 DEMO_DEFAULT_LAST_NAME = "Admin"
 DEMO_RESET_INTERVAL_DAYS_MIN = 1
 DEMO_RESET_INTERVAL_DAYS_MAX = 365
+DEMO_RESET_DEFAULT_TIME_MINUTES = 180
 DEMO_COMPANY_NAME = "Demo Ltd."
 DEMO_COMPANY_ADDRESS_LINE_1 = "1 Chapter House Street"
 DEMO_COMPANY_CITY = "York"
@@ -218,6 +219,23 @@ def parse_demo_reset_interval_days(raw_value: object) -> int | None:
     return days
 
 
+def parse_demo_reset_time_minutes(raw_value: object) -> int | None:
+    candidate = str(raw_value or "").strip()
+    if not candidate:
+        return None
+    parts = candidate.split(":", 1)
+    if len(parts) != 2:
+        raise ValueError("Enter a valid reset time in HH:MM format.")
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Enter a valid reset time in HH:MM format.") from exc
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        raise ValueError("Enter a valid reset time in HH:MM format.")
+    return (hour * 60) + minute
+
+
 def demo_reset_interval_days_value(tenant: Tenant | None) -> int | None:
     if tenant is None:
         return None
@@ -233,17 +251,68 @@ def demo_reset_interval_days_value(tenant: Tenant | None) -> int | None:
     return value
 
 
-def should_auto_reset_demo_tenant(tenant: Tenant | None, *, now=None) -> bool:
+def demo_reset_time_minutes_value(tenant: Tenant | None) -> int | None:
+    if tenant is None:
+        return None
+    raw_value = getattr(tenant, "demo_reset_time_minutes", None)
+    if raw_value is None:
+        return (
+            DEMO_RESET_DEFAULT_TIME_MINUTES
+            if demo_reset_interval_days_value(tenant) is not None
+            else None
+        )
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return DEMO_RESET_DEFAULT_TIME_MINUTES
+    if value < 0 or value >= (24 * 60):
+        return DEMO_RESET_DEFAULT_TIME_MINUTES
+    return value
+
+
+def format_demo_reset_time_input(minutes: int | None) -> str:
+    if minutes is None:
+        return ""
+    resolved = max(0, min(int(minutes), (24 * 60) - 1))
+    hour, minute = divmod(resolved, 60)
+    return f"{hour:02d}:{minute:02d}"
+
+
+def next_demo_reset_at(tenant: Tenant | None) -> datetime | None:
     if not is_reserved_demo_tenant(tenant):
-        return False
+        return None
     interval_days = demo_reset_interval_days_value(tenant)
-    if interval_days is None:
-        return False
-    current_now = now or utcnow()
+    reset_time_minutes = demo_reset_time_minutes_value(tenant)
+    if interval_days is None or reset_time_minutes is None:
+        return None
     baseline = getattr(tenant, "demo_last_reset_at", None) or getattr(tenant, "created_at", None)
     if baseline is None:
+        return None
+    hour, minute = divmod(reset_time_minutes, 60)
+    scheduled = datetime.combine(
+        baseline.date() + timedelta(days=interval_days),
+        time(hour=hour, minute=minute),
+    )
+    while scheduled <= baseline:
+        scheduled += timedelta(days=interval_days)
+    return scheduled
+
+
+def demo_reset_due_now(tenant: Tenant | None, *, now: datetime | None = None) -> bool:
+    scheduled = next_demo_reset_at(tenant)
+    if scheduled is None:
         return False
-    return baseline + timedelta(days=interval_days) <= current_now
+    return scheduled <= (now or utcnow())
+
+
+def format_demo_reset_datetime(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    return value.strftime("%d/%m/%Y %H:%M")
+
+
+def should_auto_reset_demo_tenant(tenant: Tenant | None, *, now=None) -> bool:
+    return demo_reset_due_now(tenant, now=now or utcnow())
 
 
 def _create_default_demo_user(db: Session, tenant_id: int) -> User:

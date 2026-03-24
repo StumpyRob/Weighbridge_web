@@ -639,6 +639,15 @@
                   />
                   <p class="muted">Leave blank or enter 0 to disable automatic reset.</p>
                 </div>
+                <div class="field">
+                  <label for="demo_reset_time">Reset time</label>
+                  <input
+                    type="time"
+                    id="demo_reset_time"
+                    name="demo_reset_time"
+                    value="{{ demo_reset_time_value }}"
+                  />
+                </div>
                 <div class="summary-item">
                   <span class="summary-label">Last reset</span>
                   <span class="summary-value">
@@ -646,6 +655,18 @@
                       {{ demo_last_reset_at.strftime("%d/%m/%Y %H:%M") }}
                     {% else %}
                       Not recorded yet
+                    {% endif %}
+                  </span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Next scheduled reset</span>
+                  <span class="summary-value">
+                    {% if demo_next_reset_at_display %}
+                      {{ demo_next_reset_at_display }}
+                    {% elif demo_reset_interval_days %}
+                      Waiting for schedule
+                    {% else %}
+                      Disabled
                     {% endif %}
                   </span>
                 </div>

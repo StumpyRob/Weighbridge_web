@@ -63,6 +63,7 @@ from app.routes.tickets import _generate_ticket_no
 from app.seed import seed_print_destinations, seed_print_templates
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER_NAME
 from app.services.credit import customer_outstanding_total
+from app.services.demo_tenant_reset import format_demo_reset_datetime, next_demo_reset_at
 from app.services.print_context import build_print_base_context
 from app.services.print_payload import _company_logo_src
 from app.services.system_setup import (
@@ -271,6 +272,9 @@ def _seed_tenant(
     ai_enabled: bool = False,
     ai_model: str | None = None,
     ai_dashboard_insights_override: bool | None = None,
+    demo_reset_interval_days: int | None = None,
+    demo_reset_time_minutes: int | None = None,
+    demo_last_reset_at: datetime | None = None,
 ) -> int:
     with SessionLocal() as db:
         tenant = Tenant(
@@ -281,6 +285,9 @@ def _seed_tenant(
             ai_enabled=ai_enabled,
             ai_model=ai_model,
             ai_dashboard_insights_override=ai_dashboard_insights_override,
+            demo_reset_interval_days=demo_reset_interval_days,
+            demo_reset_time_minutes=demo_reset_time_minutes,
+            demo_last_reset_at=demo_last_reset_at,
         )
         db.add(tenant)
         db.commit()
@@ -427,6 +434,21 @@ def test_software_subdomain_serves_marketing_page_and_other_subdomains_still_rou
         role=ROLE_SUPERADMIN,
         tenant_id=None,
     )
+    demo_tenant_id = _seed_tenant(
+        SessionLocal,
+        name="Demo",
+        subdomain=settings.effective_demo_tenant_subdomain,
+        is_active=True,
+        is_demo=True,
+    )
+    with SessionLocal() as db:
+        demo = db.get(Tenant, demo_tenant_id)
+        assert demo is not None
+        demo.demo_reset_interval_days = 3
+        demo.demo_reset_time_minutes = (5 * 60) + 30
+        demo.demo_last_reset_at = utcnow().replace(second=0, microsecond=0)
+        expected_next_reset = format_demo_reset_datetime(next_demo_reset_at(demo))
+        db.commit()
 
     with _client(app, base_url="https://example.test") as apex_client:
         landing_redirect = apex_client.get("/", follow_redirects=False)
@@ -446,6 +468,8 @@ def test_software_subdomain_serves_marketing_page_and_other_subdomains_still_rou
         assert "/static/css/marketing.css" in landing.text
         assert "https://software.example.test/" in landing.text
         assert 'href="https://demo.example.test/"' in landing.text
+        assert expected_next_reset in landing.text
+        assert "Shared demo data can be changed by other visitors" in landing.text
 
         blocked_tickets = marketing_client.get("/tickets")
         assert blocked_tickets.status_code == 404
@@ -3235,6 +3259,7 @@ def test_demo_tenant_reset_action_is_only_available_for_demo_tenants(tmp_path, m
             data={
                 CSRF_FORM_FIELD: csrf,
                 "demo_reset_interval_days": "7",
+                "demo_reset_time": "03:00",
             },
             follow_redirects=False,
         )
@@ -3964,6 +3989,7 @@ def test_reserved_demo_auto_reset_schedule_resets_on_next_request(tmp_path, monk
             data={
                 CSRF_FORM_FIELD: csrf,
                 "demo_reset_interval_days": "2",
+                "demo_reset_time": "04:15",
             },
             follow_redirects=False,
         )
@@ -3977,11 +4003,13 @@ def test_reserved_demo_auto_reset_schedule_resets_on_next_request(tmp_path, monk
         assert "Automatic demo reset schedule updated." in saved_page.text
         assert f'action="/platform/tenants/{demo_tenant}/demo-reset-schedule"' in saved_page.text
         assert 'value="2"' in saved_page.text
+        assert 'value="04:15"' in saved_page.text
 
     with SessionLocal() as db:
         demo = db.get(Tenant, demo_tenant)
         assert demo is not None
         assert demo.demo_reset_interval_days == 2
+        assert demo.demo_reset_time_minutes == 255
         assert demo.demo_last_reset_at is not None
         demo.demo_last_reset_at = utcnow() - timedelta(days=3)
         db.add(Customer(tenant_id=demo_tenant, account_code="STALE-001", name="Stale Customer"))

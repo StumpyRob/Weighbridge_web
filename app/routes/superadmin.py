@@ -67,7 +67,12 @@ from ..services.demo_tenant_reset import (
     DEMO_RESET_INTERVAL_DAYS_MAX,
     DEMO_RESET_INTERVAL_DAYS_MIN,
     demo_reset_interval_days_value,
+    demo_reset_time_minutes_value,
+    format_demo_reset_datetime,
+    format_demo_reset_time_input,
+    next_demo_reset_at,
     parse_demo_reset_interval_days,
+    parse_demo_reset_time_minutes,
     reset_demo_tenant_data,
 )
 from ..services.email_service import (
@@ -663,6 +668,7 @@ def tenant_detail(
         dashboard_insights_override=getattr(tenant, "ai_dashboard_insights_override", None),
         platform_settings=platform_ai_settings,
     )
+    demo_next_reset_at = next_demo_reset_at(tenant)
     return templates.TemplateResponse(
         request,
         "admin/tenant_detail.html",
@@ -690,7 +696,12 @@ def tenant_detail(
             "demo_reset_schedule_saved": request.query_params.get("demo_reset_schedule_saved") == "1",
             "demo_reset_schedule_error": request.query_params.get("demo_reset_schedule_error", ""),
             "demo_reset_interval_days": demo_reset_interval_days_value(tenant),
+            "demo_reset_time_value": format_demo_reset_time_input(
+                demo_reset_time_minutes_value(tenant)
+            ),
             "demo_last_reset_at": getattr(tenant, "demo_last_reset_at", None),
+            "demo_next_reset_at": demo_next_reset_at,
+            "demo_next_reset_at_display": format_demo_reset_datetime(demo_next_reset_at),
             "demo_default_email": DEMO_DEFAULT_EMAIL,
             "demo_default_password": DEMO_DEFAULT_PASSWORD,
             "demo_reset_interval_days_min": DEMO_RESET_INTERVAL_DAYS_MIN,
@@ -742,6 +753,7 @@ async def tenant_update_demo_reset_schedule(
     form = await request.form()
     try:
         interval_days = parse_demo_reset_interval_days(form.get("demo_reset_interval_days"))
+        reset_time_minutes = parse_demo_reset_time_minutes(form.get("demo_reset_time"))
     except ValueError as exc:
         return RedirectResponse(
             url=(
@@ -751,9 +763,20 @@ async def tenant_update_demo_reset_schedule(
             status_code=303,
         )
 
+    if interval_days is not None and reset_time_minutes is None:
+        return RedirectResponse(
+            url=(
+                f"/platform/tenants/{tenant.id}?"
+                f"{urlencode({'demo_reset_schedule_error': 'Select a reset time when automatic reset is enabled.'})}"
+            ),
+            status_code=303,
+        )
+
     previous_interval = demo_reset_interval_days_value(tenant)
+    previous_time_minutes = demo_reset_time_minutes_value(tenant)
     previous_last_reset_at = getattr(tenant, "demo_last_reset_at", None)
     tenant.demo_reset_interval_days = interval_days
+    tenant.demo_reset_time_minutes = reset_time_minutes
     if interval_days is not None:
         tenant.demo_last_reset_at = utcnow()
 
@@ -762,6 +785,11 @@ async def tenant_update_demo_reset_schedule(
         changed["demo_reset_interval_days"] = {
             "from": previous_interval,
             "to": tenant.demo_reset_interval_days,
+        }
+    if previous_time_minutes != demo_reset_time_minutes_value(tenant):
+        changed["demo_reset_time"] = {
+            "from": format_demo_reset_time_input(previous_time_minutes),
+            "to": format_demo_reset_time_input(demo_reset_time_minutes_value(tenant)),
         }
     if previous_last_reset_at != tenant.demo_last_reset_at:
         changed["demo_last_reset_at"] = {

@@ -42,6 +42,10 @@ class Tenant(Base):
         Integer,
         nullable=True,
     )
+    demo_reset_time_minutes: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
     demo_last_reset_at: Mapped[datetime | None] = mapped_column(
         DateTime,
         nullable=True,

@@ -185,6 +185,31 @@ body.marketing-landing-page::before {
   font-weight: 500;
 }
 
+.marketing-demo-cta__note {
+  max-width: 34rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--marketing-muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.marketing-demo-cta__note p {
+  margin: 0;
+}
+
+.marketing-demo-cta__note p + p {
+  margin-top: 0.4rem;
+}
+
+.marketing-demo-cta__note strong {
+  color: var(--marketing-text);
+  font-weight: 500;
+}
+
 @keyframes marketing-fade-up {
   from {
     opacity: 0;

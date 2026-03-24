@@ -49,6 +49,16 @@
             <p><strong>Username:</strong> demo@demo.com</p>
             <p><strong>Password:</strong> password</p>
           </div>
+          <div class="marketing-demo-cta__note" aria-label="Demo reset notice">
+            {% if marketing_demo_next_reset_at_display and not marketing_demo_reset_due %}
+              <p><strong>Next demo reset:</strong> {{ marketing_demo_next_reset_at_display }}</p>
+            {% elif marketing_demo_reset_due %}
+              <p><strong>Next demo reset:</strong> Due now and will run on the next demo visit.</p>
+            {% else %}
+              <p><strong>Next demo reset:</strong> Schedule not currently set.</p>
+            {% endif %}
+            <p>Shared demo data can be changed by other visitors, so some records may be inaccurate, incomplete, or inconsistent until the next reset.</p>
+          </div>
         </div>
       </div>
     </main>

@@ -58,6 +58,11 @@ from .security_hardening import (
 )
 from .services.system_setup import get_company_setting, missing_required_lookup_messages
 from .services.demo_tenant_reset import maybe_auto_reset_demo_tenant
+from .services.demo_tenant_reset import (
+    demo_reset_due_now,
+    format_demo_reset_datetime,
+    next_demo_reset_at,
+)
 from .services.tenants import ensure_demo_tenant, get_tenant_by_subdomain
 from .services.uploads import company_logo_upload_dir
 from .services.credit import (
@@ -1510,6 +1515,8 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
             if _is_exact_base_domain(host_name) and settings.effective_base_domain:
                 marketing_host = f"{settings.effective_marketing_subdomain}.{settings.effective_base_domain}"
                 return RedirectResponse(url=f"https://{marketing_host}/", status_code=307)
+            demo_tenant = ensure_demo_tenant(db, create_missing=False)
+            marketing_demo_next_reset_at = next_demo_reset_at(demo_tenant)
             return templates.TemplateResponse(
                 request,
                 "marketing_home.html",
@@ -1520,6 +1527,11 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                         f"https://{settings.effective_demo_tenant_subdomain}."
                         f"{settings.effective_base_domain or host_without_port(str(request.url.hostname or ''))}/"
                     ),
+                    "marketing_demo_next_reset_at": marketing_demo_next_reset_at,
+                    "marketing_demo_next_reset_at_display": format_demo_reset_datetime(
+                        marketing_demo_next_reset_at
+                    ),
+                    "marketing_demo_reset_due": demo_reset_due_now(demo_tenant),
                 },
             )
         if bool(getattr(request.state, "platform_mode", False)):
