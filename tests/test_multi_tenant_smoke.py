@@ -5022,7 +5022,9 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert 'data-dashboard-ticket="A-OPEN-1"' in response.text
     assert 'data-dashboard-open-ticket="A-OPEN-1"' in response.text
     assert 'data-dashboard-traffic-ticket="A-COMP-1"' in response.text
-    assert "dashboard-chart-wrap" in response.text
+    assert response.text.count("dashboard-svg-chart--bar") == 2
+    assert "dashboard-svg-chart--area" not in response.text
+    assert "dashboard-chart-wrap" not in response.text
     assert 'data-dashboard-throughput-kg="1500"' in response.text
     assert 'data-dashboard-throughput-kg="1750"' in response.text
     assert 'data-dashboard-throughput-kg="2200"' in response.text
@@ -5062,6 +5064,8 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert response_today.status_code == 200
     assert 'data-dashboard-period="today"' in response_today.text
     assert 'data-dashboard-period-active="1"' in response_today.text
+    assert response_today.text.count("dashboard-svg-chart--bar") == 2
+    assert "dashboard-svg-chart--area" not in response_today.text
     assert "Total processed this period: 2 tickets" in response_today.text
     assert "Total processed this period: 1.5 tonnes" in response_today.text
     assert response_today.text.count("Total processed this period:") == 2
@@ -5091,7 +5095,9 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert response_12m.text.count('data-dashboard-throughput-point="') == 12
     assert 'data-dashboard-chart-day="Mar 26"' in response_12m.text
     assert 'data-dashboard-chart-day="Feb 26"' in response_12m.text
-    assert "dashboard-trend" in response_12m.text
+    assert response_12m.text.count("dashboard-svg-chart--area") == 2
+    assert "dashboard-svg-chart--bar" not in response_12m.text
+    assert "dashboard-trend" not in response_12m.text
     assert "dashboard-chart-wrap" not in response_12m.text
     assert "Total processed this period: 4 tickets" in response_12m.text
     assert "Total processed this period: 8.6 tonnes" in response_12m.text

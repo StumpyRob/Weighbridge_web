@@ -481,10 +481,10 @@ def test_navbar_and_primary_styles_use_root_branding_variables(
     assert ".btn--primary{" in compact_css
     assert "background-color:var(--primary)!important;" in compact_css
     assert "border-color:var(--primary)!important;" in compact_css
-    assert ".dashboard-chart__bar{" in compact_css
-    assert "background:linear-gradient(180deg,var(--dashboard-chart-bar-start)0%,var(--dashboard-chart-bar-end)100%);" in compact_css
-    assert ".dashboard-chart__bar--throughput{" in compact_css
-    assert "background:linear-gradient(180deg,var(--dashboard-throughput-bar-start)0%,var(--dashboard-throughput-bar-end)100%);" in compact_css
+    assert ".dashboard-svg-chart__bar{" in compact_css
+    assert "fill:var(--dashboard-chart-bar-end);" in compact_css
+    assert ".dashboard-svg-chart--throughput .dashboard-svg-chart__bar {" in normalized_css
+    assert "fill:var(--dashboard-throughput-bar-end);" in compact_css
     assert ".site-utility-bar{" in compact_css
     assert "color:var(--utility-bar-text);" in compact_css
     assert ".site-utility-bar__item--tenant{" in compact_css
