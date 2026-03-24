@@ -69,6 +69,37 @@ def test_system_html_templates_render_as_single_page(
     assert count_html_pages(prepared_html) == 1
 
 
+def test_system_wtn_template_with_long_values_stays_single_page(db_session):
+    force_refresh_system_print_templates(db_session)
+    template = _system_template(db_session, "WTN_SYSTEM")
+
+    payload = build_print_payload(db_session, DOCUMENT_TYPE_WTN)
+    payload.update(
+        {
+            "customer_name": "North Yard Waste Recovery and Environmental Services Limited",
+            "haulier_name": "Regional Haulage and Transfer Operations Group",
+            "carrier_name": "Regional Haulage and Transfer Operations Group",
+            "waste_description": (
+                "Mixed construction and demolition waste including timber, plasterboard, "
+                "plastics, metals, packaging residues, and inert fines from sorting operations"
+            ),
+            "ewc_description": (
+                "Mixed construction and demolition waste from transfer station inspection and load review"
+            ),
+            "origin_site": "North Transfer Station, Building 4, Riverside Industrial Estate",
+            "destination_site": "Materials Recovery Facility, South Dock Environmental Campus",
+            "producer_signature_signer_name": "Alexandra Thompson",
+            "carrier_signature_signer_name": "Christopher Morgan",
+            "receiver_signature_signer_name": "Patricia Wilkinson",
+        }
+    )
+
+    rendered_html = render_from_content(payload, template.content, db=db_session)
+    prepared_html = prepare_html_for_print_output(rendered_html)
+
+    assert count_html_pages(prepared_html) == 1
+
+
 def test_print_safe_policy_blocks_background_images():
     html = (
         "<html><head><style>"

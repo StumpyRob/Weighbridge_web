@@ -1155,6 +1155,15 @@ body.js-help-tooltips .help-tooltip {
   margin: 0.2rem 0;
 }
 
+.template-vars-name-list {
+  columns: 3 16rem;
+  column-gap: 1.25rem;
+}
+
+.template-vars-name-list li {
+  break-inside: avoid;
+}
+
 .template-vars-code {
   margin: 0;
   padding: 0.55rem 0.65rem;

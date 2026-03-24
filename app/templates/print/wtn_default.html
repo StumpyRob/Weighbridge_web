@@ -19,8 +19,8 @@
       body {
         color: #1e293b;
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        font-size: 10.5px;
-        line-height: 1.5;
+        font-size: 10px;
+        line-height: 1.35;
         -webkit-font-smoothing: antialiased;
         max-width: 210mm;
         margin: 0 auto;
@@ -36,9 +36,9 @@
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
-        margin-bottom: 24px;
-        padding-bottom: 20px;
-        border-bottom: 2px solid #f1f5f9;
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #e2e8f0;
       }
 
       .company-section {
@@ -49,32 +49,31 @@
 
       .company-logo {
         display: block;
-        height: 48px;
+        height: 40px;
         width: auto;
-        margin-bottom: 12px;
+        margin-bottom: 8px;
         object-fit: contain;
         object-position: left;
       }
 
       .company-name {
-        font-size: 18px;
+        font-size: 16px;
         font-weight: 600;
         color: #0f172a;
-        margin-bottom: 6px;
+        margin-bottom: 4px;
         letter-spacing: -0.02em;
       }
 
       .company-line {
         color: #475569;
-        margin: 2px 0;
-        font-size: 10px;
+        margin: 1px 0;
+        font-size: 9px;
       }
 
       .document-title {
-        font-size: 28px;
+        font-size: 24px;
         font-weight: 600;
         color: #0f172a;
-        margin-bottom: 12px;
         letter-spacing: -0.02em;
         line-height: 1;
         text-align: right;
@@ -83,19 +82,19 @@
       .meta-grid {
         display: grid;
         grid-template-columns: auto 1fr;
-        gap: 8px 16px;
+        gap: 6px 12px;
         align-items: baseline;
-        margin-bottom: 20px;
+        margin-bottom: 14px;
         background: #f8fafc;
         border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 16px;
+        border-radius: 6px;
+        padding: 12px;
       }
 
       .meta-label {
         color: #64748b;
         font-weight: 500;
-        min-width: 140px;
+        min-width: 120px;
       }
 
       .meta-value {
@@ -104,14 +103,14 @@
       }
 
       .section {
-        margin-top: 20px;
+        margin-top: 14px;
       }
 
       .section-title {
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 600;
         color: #334155;
-        margin: 0 0 8px 0;
+        margin: 0 0 6px 0;
         letter-spacing: 0.02em;
         text-transform: uppercase;
       }
@@ -119,40 +118,41 @@
       .section-content {
         background: #f8fafc;
         border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 16px;
+        border-radius: 6px;
+        padding: 12px;
       }
 
       .details-grid {
         display: grid;
         grid-template-columns: auto 1fr;
-        gap: 8px 16px;
+        gap: 6px 12px;
         align-items: baseline;
       }
 
       .detail-label {
         color: #475569;
         font-weight: 500;
-        min-width: 140px;
+        min-width: 120px;
       }
 
       .detail-value {
         color: #0f172a;
         font-weight: 500;
+        overflow-wrap: anywhere;
       }
 
       .detail-subvalue {
         display: block;
-        margin-top: 4px;
+        margin-top: 2px;
         color: #475569;
         font-weight: 400;
       }
 
       .signatures {
-        margin-top: 40px;
+        margin-top: 22px;
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: 30px;
+        gap: 18px;
       }
 
       .signature-item {
@@ -161,20 +161,20 @@
       }
 
       .signature-label {
-        font-size: 11px;
+        font-size: 10px;
         font-weight: 600;
         color: #334155;
         letter-spacing: 0.02em;
         text-transform: uppercase;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
       }
 
       .signature-area {
-        border: 1px solid #e2e8f0;
+        border: 1px solid #cbd5e1;
         border-radius: 6px;
-        background: #f8fafc;
-        min-height: 100px;
-        margin-bottom: 12px;
+        min-height: 82px;
+        margin-bottom: 8px;
+        padding: 6px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -183,16 +183,16 @@
 
       .signature-image {
         max-width: 100%;
-        max-height: 92px;
+        max-height: 68px;
         object-fit: contain;
       }
 
       .print-name-row {
         display: flex;
         align-items: center;
-        font-size: 10px;
+        font-size: 9px;
         color: #334155;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
         width: 100%;
       }
 
@@ -216,12 +216,12 @@
       }
 
       .date-row {
-        font-size: 10px;
+        font-size: 9px;
         color: #334155;
         display: flex;
         align-items: center;
         border-top: none;
-        padding-top: 4px;
+        padding-top: 0;
       }
 
       .date-label {
@@ -234,7 +234,7 @@
       .date-digits {
         font-family: 'JetBrains Mono', 'SF Mono', monospace;
         color: #0f172a;
-        letter-spacing: 2px;
+        letter-spacing: 1.5px;
         font-weight: 500;
         margin: 0 2px;
       }
@@ -246,53 +246,18 @@
       }
 
       .signature-signed-meta {
-        margin-top: 6px;
-        font-size: 9px;
+        margin-top: 4px;
+        font-size: 8px;
         color: #475569;
       }
 
-      .notes-section {
-        margin-top: 40px;
-      }
-
-      .notes-title {
-        font-size: 12px;
-        font-weight: 600;
-        color: #334155;
-        margin: 0 0 8px 0;
-        letter-spacing: 0.02em;
-        text-transform: uppercase;
-      }
-
-      .notes-container {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 16px;
-      }
-
-      .notes-lines {
-        width: 100%;
-      }
-
-      .note-line {
-        width: 100%;
-        border-bottom: 1px solid #cbd5e1;
-        margin-bottom: 16px;
-        padding-bottom: 4px;
-      }
-
-      .note-line:last-child {
-        margin-bottom: 0;
-      }
-
       .footer-note {
-        margin-top: 40px;
-        padding-top: 16px;
+        margin-top: 22px;
+        padding-top: 10px;
         border-top: 1px solid #e2e8f0;
         text-align: center;
         color: #64748b;
-        font-size: 9px;
+        font-size: 8px;
         font-style: italic;
       }
     </style>
@@ -418,18 +383,6 @@
       {{ signature_panel("PRODUCER SIGNATURE", producer_signature_src, producer_signature_signer_name, producer_signature_signed_at, "Producer signature") }}
       {{ signature_panel("CARRIER SIGNATURE", carrier_signature_src, carrier_signature_signer_name, carrier_signature_signed_at, "Carrier signature") }}
       {{ signature_panel("RECEIVER SIGNATURE", receiver_signature_src, receiver_signature_signer_name, receiver_signature_signed_at, "Receiver signature") }}
-    </div>
-
-    <div class="notes-section">
-      <div class="notes-title">ADDITIONAL NOTES</div>
-      <div class="notes-container">
-        <div class="notes-lines">
-          <div class="note-line"></div>
-          <div class="note-line"></div>
-          <div class="note-line"></div>
-          <div class="note-line"></div>
-        </div>
-      </div>
     </div>
 
     <div class="footer-note">

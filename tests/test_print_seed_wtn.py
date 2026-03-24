@@ -1,3 +1,5 @@
+import re
+
 import app.seed as seed_module
 
 from sqlalchemy import func, select
@@ -27,13 +29,23 @@ def test_seed_print_templates_creates_default_wtn_template(db_session):
     assert template.format == "HTML"
     assert bool(template.is_system) is True
     assert bool(template.is_active) is True
-    assert "Waste Transfer Note" in str(template.content or "")
-    assert "PRODUCER SIGNATURE" in str(template.content or "")
-    assert "CARRIER SIGNATURE" in str(template.content or "")
-    assert "RECEIVER SIGNATURE" in str(template.content or "")
-    assert "producer_signature_data_uri" in str(template.content or "")
-    assert "carrier_signature_data_uri" in str(template.content or "")
-    assert "receiver_signature_data_uri" in str(template.content or "")
+    content = str(template.content or "")
+    assert "Waste Transfer Note" in content
+    assert "PRODUCER SIGNATURE" in content
+    assert "CARRIER SIGNATURE" in content
+    assert "RECEIVER SIGNATURE" in content
+    assert "producer_signature_data_uri" in content
+    assert "carrier_signature_data_uri" in content
+    assert "receiver_signature_data_uri" in content
+    assert "ADDITIONAL NOTES" not in content
+
+    signature_area_block = re.search(
+        r"\.signature-area\s*\{(?P<body>.*?)\n\s*\}",
+        content,
+        re.DOTALL,
+    )
+    assert signature_area_block is not None
+    assert "background:" not in signature_area_block.group("body")
 
 
 def test_seed_print_templates_creates_all_system_templates(db_session):

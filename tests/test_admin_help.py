@@ -19,6 +19,7 @@ def test_admin_help_pages_render(client):
     assert "payload.carrier_signature_signed_at_iso" in template_vars.text
     assert "payload.receiver_signature_signer_name" in template_vars.text
     assert "payload.wtn_signature_data_uri" in template_vars.text
+    assert "Variable Name Quick Reference" in template_vars.text
     assert "Legacy receiver alias" in template_vars.text
 
 

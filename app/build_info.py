@@ -24,16 +24,16 @@ _COMMIT_ENV_KEYS = (
 
 
 def _load_version() -> str:
-    env_version = str(os.getenv("APP_VERSION", "") or "").strip()
-    if env_version:
-        return env_version.lstrip("v")
-
     try:
         file_version = _VERSION_FILE.read_text(encoding="utf-8").strip()
     except OSError:
         file_version = ""
     if file_version:
         return file_version.lstrip("v")
+
+    env_version = str(os.getenv("APP_VERSION", "") or "").strip()
+    if env_version:
+        return env_version.lstrip("v")
     return "0.0.0"
 
 

@@ -81,6 +81,35 @@
     </div>
   </div>
 
+  <div class="frame compact">
+    <div class="frame-header">Variable Name Quick Reference</div>
+    <div class="frame-body">
+      <div class="template-vars-section">
+        <h2>Top-level helpers</h2>
+        <ul class="template-vars-list template-vars-name-list">
+          <li><code>company_name</code></li>
+          <li><code>company_lines</code></li>
+          <li><code>company.logo_url</code></li>
+          <li><code>company_logo_url</code></li>
+          <li><code>money(value)</code></li>
+          <li><code>fmt_money(value)</code></li>
+          <li><code>fmt_date(value, format)</code></li>
+          <li><code>payload</code></li>
+        </ul>
+      </div>
+
+      <div class="template-vars-section">
+        <h2>Payload field names</h2>
+        <p class="muted">These are the exact <code>payload.*</code> names available to templates.</p>
+        <ul class="template-vars-list template-vars-name-list">
+          {% for row in rows %}
+            <li><code>{{ row.name }}</code></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
   <div class="frame">
     <div class="frame-header">Payload Variables</div>
     <div class="frame-body">

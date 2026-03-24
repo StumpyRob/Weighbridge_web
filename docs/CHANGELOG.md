@@ -4,6 +4,26 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.19.5 - 2026-03-24
+
+### RELEASE
+- `v0.19.5` is a WTN print-template and release-versioning patch release focused on single-page PDF reliability, clearer template docs, and footer version consistency.
+
+### FIX
+- Tighten the default `WTN_SYSTEM` template layout so PDF/download rendering keeps more headroom within the enforced single-page limit.
+- Remove the blue background fill from default WTN signature boxes while keeping the visible borders.
+- Remove the empty `ADDITIONAL NOTES` frame from the default WTN template.
+- Make the footer build version prefer the repository `VERSION` file over deployment `APP_VERSION` overrides so release bumps show the expected version number when the app is redeployed.
+
+### ADD
+- Add a variable-name quick reference to the Help -> Template Variables page so the exact available template keys are easier to scan and copy.
+
+### TEST
+- Add regression coverage for the default WTN template styling/content changes.
+- Add a stressed single-page WTN render test with longer field values.
+- Add build-info tests covering `VERSION` vs `APP_VERSION` precedence.
+- Re-run targeted help, WTN preview/PDF, payload, seed, and single-page enforcement regression slices.
+
 ## v0.19.1 - 2026-03-23
 
 ### RELEASE
