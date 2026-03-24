@@ -7,7 +7,11 @@
   {% macro dashboard_trend(points, aria_label, throughput=False) -%}
     {% set point_count = points|length %}
     {% set divisor = point_count - 1 if point_count > 1 else 1 %}
-    {% set ns = namespace(polyline='', area='M 4 48') %}
+    {% set x_start = 8 %}
+    {% set x_span = 84 %}
+    {% set y_base = 48 %}
+    {% set y_span = 34 %}
+    {% set ns = namespace(polyline='', area='M ' ~ x_start ~ ' ' ~ y_base) %}
     <div
       class="dashboard-trend{% if throughput %} dashboard-trend--throughput{% endif %}"
       style="--dashboard-chart-columns: {{ point_count }};"
@@ -15,21 +19,21 @@
       aria-label="{{ aria_label }}"
     >
       <div class="dashboard-trend__plot">
-        <svg class="dashboard-trend__svg" viewBox="0 0 100 56" preserveAspectRatio="none" aria-hidden="true">
-          <line class="dashboard-trend__grid" x1="4" y1="48" x2="96" y2="48"></line>
-          <line class="dashboard-trend__grid" x1="4" y1="29" x2="96" y2="29"></line>
-          <line class="dashboard-trend__grid" x1="4" y1="10" x2="96" y2="10"></line>
+        <svg class="dashboard-trend__svg" viewBox="0 0 100 60" aria-hidden="true">
+          <line class="dashboard-trend__grid" x1="{{ x_start }}" y1="{{ y_base }}" x2="{{ x_start + x_span }}" y2="{{ y_base }}"></line>
+          <line class="dashboard-trend__grid" x1="{{ x_start }}" y1="31" x2="{{ x_start + x_span }}" y2="31"></line>
+          <line class="dashboard-trend__grid" x1="{{ x_start }}" y1="14" x2="{{ x_start + x_span }}" y2="14"></line>
           {% for point in points %}
-            {% set x = 4 + ((92 * loop.index0) // divisor) %}
-            {% set y = 48 - (((point.height_percent or 0) * 38) // 100) %}
+            {% set x = x_start + ((x_span * loop.index0) // divisor) %}
+            {% set y = y_base - (((point.height_percent or 0) * y_span) // 100) %}
             {% set ns.polyline = ns.polyline ~ (' ' if ns.polyline else '') ~ x ~ ',' ~ y %}
             {% set ns.area = ns.area ~ ' L ' ~ x ~ ' ' ~ y %}
           {% endfor %}
-          <path class="dashboard-trend__area" d="{{ ns.area }} L 96 48 L 4 48 Z"></path>
+          <path class="dashboard-trend__area" d="{{ ns.area }} L {{ x_start + x_span }} {{ y_base }} L {{ x_start }} {{ y_base }} Z"></path>
           <polyline class="dashboard-trend__line" points="{{ ns.polyline }}"></polyline>
           {% for point in points %}
-            {% set x = 4 + ((92 * loop.index0) // divisor) %}
-            {% set y = 48 - (((point.height_percent or 0) * 38) // 100) %}
+            {% set x = x_start + ((x_span * loop.index0) // divisor) %}
+            {% set y = y_base - (((point.height_percent or 0) * y_span) // 100) %}
             <circle class="dashboard-trend__point" cx="{{ x }}" cy="{{ y }}" r="1.9">
               <title>
                 {% if throughput %}
