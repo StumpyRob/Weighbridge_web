@@ -7,7 +7,7 @@
   {% macro dashboard_trend(points, aria_label, throughput=False) -%}
     {% set point_count = points|length %}
     {% set divisor = point_count - 1 if point_count > 1 else 1 %}
-    {% set x_start = 18 %}
+    {% set x_start = 16 %}
     {% set x_span = 64 %}
     {% set y_base = 46 %}
     {% set y_span = 30 %}
