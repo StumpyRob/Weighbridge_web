@@ -3624,8 +3624,7 @@ details > summary:focus-visible {
   max-width: 100%;
   overflow: hidden;
   box-sizing: border-box;
-  padding-inline-start: 0.42rem;
-  padding-inline-end: 0.8rem;
+  padding-inline: 0.62rem;
   padding-bottom: 0;
 }
 
@@ -3657,14 +3656,12 @@ details > summary:focus-visible {
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
-  padding-inline-start: 0.08rem;
-  padding-inline-end: 0.36rem;
+  padding-inline: 0.18rem;
 }
 
 .dashboard-chart--throughput {
   box-sizing: border-box;
-  padding-inline-start: 0.05rem;
-  padding-inline-end: 0.28rem;
+  padding-inline: 0.14rem;
 }
 
 .dashboard-chart:not(.dashboard-chart--throughput) {
@@ -3695,10 +3692,6 @@ details > summary:focus-visible {
   gap: 0.45rem;
   min-width: 0;
   box-sizing: border-box;
-}
-
-.dashboard-chart__column:last-child {
-  padding-inline-end: 0.12rem;
 }
 
 .dashboard-chart__count {
@@ -3831,8 +3824,7 @@ details > summary:focus-visible {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  padding-inline-start: 0.56rem;
-  padding-inline-end: 1rem;
+  padding-inline: 0.78rem;
 }
 
 .dashboard-trend--throughput {
@@ -3850,7 +3842,7 @@ details > summary:focus-visible {
   border: 1px solid #e5e7eb;
   background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
   overflow: hidden;
-  padding: 0.8rem 1.12rem 0.62rem 0.86rem;
+  padding: 0.8rem 0.98rem 0.62rem;
 }
 
 .dashboard-trend__svg {
@@ -3896,8 +3888,7 @@ details > summary:focus-visible {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  padding-inline-start: 0.24rem;
-  padding-inline-end: 1rem;
+  padding-inline: 0.34rem;
 }
 
 .dashboard-trend__label {
@@ -3965,20 +3956,17 @@ details > summary:focus-visible {
 
 @media (max-width: 768px) {
   .dashboard-chart-wrap {
-    padding-inline-start: 0.28rem;
-    padding-inline-end: 0.58rem;
+    padding-inline: 0.4rem;
     padding-bottom: 0.15rem;
   }
 
   .dashboard-chart {
     gap: 0.32rem;
-    padding-inline-start: 0.06rem;
-    padding-inline-end: 0.24rem;
+    padding-inline: 0.1rem;
   }
 
   .dashboard-chart--throughput {
-    padding-inline-start: 0.04rem;
-    padding-inline-end: 0.2rem;
+    padding-inline: 0.08rem;
   }
 
   .dashboard-chart:not(.dashboard-chart--throughput) {
@@ -4003,10 +3991,6 @@ details > summary:focus-visible {
   .dashboard-chart:not(.dashboard-chart--throughput) .dashboard-chart__bar-shell {
     padding: 0.16rem;
     max-width: 40px;
-  }
-
-  .dashboard-chart__column:last-child {
-    padding-inline-end: 0.08rem;
   }
 
   .dashboard-chart__label,
@@ -4038,13 +4022,12 @@ details > summary:focus-visible {
 
   .dashboard-trend {
     gap: 0.4rem;
-    padding-inline-start: 0.3rem;
-    padding-inline-end: 0.62rem;
+    padding-inline: 0.46rem;
   }
 
   .dashboard-trend__plot {
     min-height: 128px;
-    padding: 0.7rem 0.84rem 0.55rem 0.64rem;
+    padding: 0.7rem 0.76rem 0.55rem;
   }
 
   .dashboard-trend__line {
@@ -4058,20 +4041,17 @@ details > summary:focus-visible {
 
 @media (max-width: 480px) {
   .dashboard-chart-wrap {
-    padding-inline-start: 0.18rem;
-    padding-inline-end: 0.42rem;
+    padding-inline: 0.26rem;
     padding-bottom: 0.15rem;
   }
 
   .dashboard-chart {
     gap: 0.18rem;
-    padding-inline-start: 0.03rem;
-    padding-inline-end: 0.16rem;
+    padding-inline: 0.06rem;
   }
 
   .dashboard-chart--throughput {
-    padding-inline-start: 0.02rem;
-    padding-inline-end: 0.12rem;
+    padding-inline: 0.05rem;
   }
 
   .dashboard-chart:not(.dashboard-chart--throughput) {
@@ -4126,20 +4106,15 @@ details > summary:focus-visible {
     display: none;
   }
 
-  .dashboard-chart__column:last-child {
-    padding-inline-end: 0.05rem;
-  }
-
   .dashboard-trend {
     gap: 0.34rem;
-    padding-inline-start: 0.18rem;
-    padding-inline-end: 0.46rem;
+    padding-inline: 0.28rem;
   }
 
   .dashboard-trend__plot {
     min-height: 112px;
     border-radius: 10px;
-    padding: 0.58rem 0.72rem 0.46rem 0.52rem;
+    padding: 0.58rem 0.62rem 0.46rem;
   }
 
   .dashboard-trend__line {
@@ -4151,8 +4126,7 @@ details > summary:focus-visible {
   }
 
   .dashboard-trend__labels {
-    padding-inline-start: 0.12rem;
-    padding-inline-end: 0.46rem;
+    padding-inline: 0.18rem;
   }
 }
 
