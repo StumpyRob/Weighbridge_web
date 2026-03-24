@@ -23,11 +23,14 @@
     {% set value_y = 16 %}
     {% set axis_y = 183 %}
     {% set divisor = point_count - 1 if point_count > 1 else 1 %}
+    {% set slot_width = plot_width / point_count %}
     {% if mode == "bar" %}
-      {% set slot_width = plot_width / point_count %}
-      {% set bar_width = slot_width * (0.48 if point_count <= 7 else 0.42) %}
+      {% set bar_width = slot_width * (0.42 if point_count <= 7 else 0.36) %}
     {% else %}
-      {% set ns = namespace(line='', area='M ' ~ (plot_left|round(2)) ~ ' ' ~ (plot_bottom|round(2))) %}
+      {% set ns = namespace(
+        line='',
+        area='M ' ~ ((plot_left + (slot_width / 2))|round(2)) ~ ' ' ~ (plot_bottom|round(2))
+      ) %}
     {% endif %}
     <div
       class="dashboard-svg-chart dashboard-svg-chart--{{ mode }}{% if throughput %} dashboard-svg-chart--throughput{% endif %}"
@@ -97,7 +100,7 @@
                   y="{{ bar_y|round(2) }}"
                   width="{{ bar_width|round(2) }}"
                   height="{{ bar_height|round(2) }}"
-                  rx="7"
+                  rx="2.5"
                 ></rect>
               {% endif %}
               <text
@@ -110,18 +113,18 @@
           {% endfor %}
         {% else %}
           {% for point in points %}
-            {% set x = plot_left + ((plot_width * loop.index0) / divisor) %}
+            {% set x = plot_left + (slot_width * loop.index0) + (slot_width / 2) %}
             {% set y = plot_bottom - ((plot_height * (point.height_percent or 0)) / 100) %}
             {% set ns.line = ns.line ~ (' ' if ns.line else '') ~ (x|round(2)) ~ ',' ~ (y|round(2)) %}
             {% set ns.area = ns.area ~ ' L ' ~ (x|round(2)) ~ ' ' ~ (y|round(2)) %}
           {% endfor %}
           <path
             class="dashboard-svg-chart__area"
-            d="{{ ns.area }} L {{ plot_right|round(2) }} {{ plot_bottom|round(2) }} L {{ plot_left|round(2) }} {{ plot_bottom|round(2) }} Z"
+            d="{{ ns.area }} L {{ (plot_left + (slot_width * (point_count - 1)) + (slot_width / 2))|round(2) }} {{ plot_bottom|round(2) }} L {{ ((plot_left + (slot_width / 2))|round(2)) }} {{ plot_bottom|round(2) }} Z"
           ></path>
           <polyline class="dashboard-svg-chart__line" points="{{ ns.line }}"></polyline>
           {% for point in points %}
-            {% set x = plot_left + ((plot_width * loop.index0) / divisor) %}
+            {% set x = plot_left + (slot_width * loop.index0) + (slot_width / 2) %}
             {% set y = plot_bottom - ((plot_height * (point.height_percent or 0)) / 100) %}
             <g
               class="dashboard-svg-chart__point"

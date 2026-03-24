@@ -3708,9 +3708,9 @@ details > summary:focus-visible {
 }
 
 .dashboard-svg-chart__value {
-  fill: #475569;
+  fill: #64748b;
   font-size: 10.4px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .dashboard-svg-chart__value--throughput {
@@ -3718,9 +3718,9 @@ details > summary:focus-visible {
 }
 
 .dashboard-svg-chart__axis-label {
-  fill: #334155;
+  fill: #475569;
   font-size: 10.8px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .dashboard-svg-chart__axis-label--area {
