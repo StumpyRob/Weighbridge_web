@@ -1516,7 +1516,9 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 marketing_host = f"{settings.effective_marketing_subdomain}.{settings.effective_base_domain}"
                 return RedirectResponse(url=f"https://{marketing_host}/", status_code=307)
             demo_tenant = ensure_demo_tenant(db, create_missing=False)
-            marketing_demo_next_reset_at = next_demo_reset_at(demo_tenant)
+            marketing_demo_next_reset_at_display = format_demo_reset_datetime(
+                next_demo_reset_at(demo_tenant)
+            )
             return templates.TemplateResponse(
                 request,
                 "marketing_home.html",
@@ -1527,10 +1529,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                         f"https://{settings.effective_demo_tenant_subdomain}."
                         f"{settings.effective_base_domain or host_without_port(str(request.url.hostname or ''))}/"
                     ),
-                    "marketing_demo_next_reset_at": marketing_demo_next_reset_at,
-                    "marketing_demo_next_reset_at_display": format_demo_reset_datetime(
-                        marketing_demo_next_reset_at
-                    ),
+                    "marketing_demo_next_reset_at_display": marketing_demo_next_reset_at_display,
                     "marketing_demo_reset_due": demo_reset_due_now(demo_tenant),
                 },
             )

@@ -668,7 +668,7 @@ def tenant_detail(
         dashboard_insights_override=getattr(tenant, "ai_dashboard_insights_override", None),
         platform_settings=platform_ai_settings,
     )
-    demo_next_reset_at = next_demo_reset_at(tenant)
+    demo_next_reset_at_display = format_demo_reset_datetime(next_demo_reset_at(tenant))
     return templates.TemplateResponse(
         request,
         "admin/tenant_detail.html",
@@ -700,8 +700,7 @@ def tenant_detail(
                 demo_reset_time_minutes_value(tenant)
             ),
             "demo_last_reset_at": getattr(tenant, "demo_last_reset_at", None),
-            "demo_next_reset_at": demo_next_reset_at,
-            "demo_next_reset_at_display": format_demo_reset_datetime(demo_next_reset_at),
+            "demo_next_reset_at_display": demo_next_reset_at_display,
             "demo_default_email": DEMO_DEFAULT_EMAIL,
             "demo_default_password": DEMO_DEFAULT_PASSWORD,
             "demo_reset_interval_days_min": DEMO_RESET_INTERVAL_DAYS_MIN,

@@ -4,6 +4,28 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.20 - 2026-03-24
+
+### RELEASE
+- `v0.20` adds scheduled automatic reset controls for the reserved demo tenant, restores a default demo login after demo resets, and surfaces demo reset timing/warnings on the public marketing page.
+
+### ADD
+- Add reserved-demo-only automatic reset controls on the super-admin tenant page:
+  - reset every `X` days
+  - reset at a specific `HH:MM` time
+  - show last reset and next scheduled reset
+- Recreate the default reserved demo login after demo reset:
+  - `demo@demo.com`
+  - `password`
+- Show the next scheduled demo reset on the public marketing home page.
+- Add a clear warning on the marketing home page that shared demo data may be changed by visitors and can be inaccurate until the next reset.
+
+### FIX
+- Run reserved demo auto-reset on the next request once the configured schedule is due, so the demo tenant self-recovers without a manual admin action.
+
+### TEST
+- Add and extend smoke coverage for reserved-demo reset scheduling, automatic reset execution, recreated demo credentials, and marketing-page reset messaging.
+
 ## v0.19.5 - 2026-03-24
 
 ### RELEASE
