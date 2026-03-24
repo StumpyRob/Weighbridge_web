@@ -4,6 +4,31 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.21.5 - 2026-03-24
+
+### RELEASE
+- `v0.21.5` is a light shared UI polish pass that improves scanability and perceived quality across the shell, tables, buttons, and content cards without changing layout structure, routes, permissions, or workflows.
+
+### CHANGE
+- Polish shared data tables with:
+  - a subtle themed row hover tint
+  - slightly clearer header contrast and weight
+  - roomier row padding for easier scanning
+  - visible keyboard focus treatment on clickable rows
+- Tighten shared primary button styling so primary actions feel more consistent:
+  - harmonised radius and padding
+  - slightly stronger weight
+  - subtle hover/focus elevation using existing theme variables
+- Refine the shared sidebar and header presentation:
+  - clearer active navigation state
+  - softer secondary utility text
+  - tighter utility spacing
+  - no wrapping in the main desktop header row at normal widths
+- Improve shared content surfaces with more consistent page-header spacing, stronger page-title hierarchy, and subtler modern card/table shadows.
+
+### TEST
+- Re-run focused branding, shared-shell, tenant-shell, platform-shell, signed-in utility-bar, and toast-layout regressions after the CSS-only polish pass.
+
 ## v0.21.4 - 2026-03-24
 
 ### RELEASE
