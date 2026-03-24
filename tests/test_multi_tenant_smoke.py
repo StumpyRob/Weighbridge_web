@@ -5022,6 +5022,7 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert 'data-dashboard-ticket="A-OPEN-1"' in response.text
     assert 'data-dashboard-open-ticket="A-OPEN-1"' in response.text
     assert 'data-dashboard-traffic-ticket="A-COMP-1"' in response.text
+    assert "dashboard-chart-wrap" in response.text
     assert 'data-dashboard-throughput-kg="1500"' in response.text
     assert 'data-dashboard-throughput-kg="1750"' in response.text
     assert 'data-dashboard-throughput-kg="2200"' in response.text
@@ -5090,6 +5091,8 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert response_12m.text.count('data-dashboard-throughput-point="') == 12
     assert 'data-dashboard-chart-day="Mar 26"' in response_12m.text
     assert 'data-dashboard-chart-day="Feb 26"' in response_12m.text
+    assert "dashboard-trend" in response_12m.text
+    assert "dashboard-chart-wrap" not in response_12m.text
     assert "Total processed this period: 4 tickets" in response_12m.text
     assert "Total processed this period: 8.6 tonnes" in response_12m.text
     assert response_12m.text.count("Total processed this period:") == 2

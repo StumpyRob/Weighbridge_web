@@ -943,6 +943,7 @@ def _build_tenant_dashboard(
                 "hint": "Outstanding issued invoices",
             },
         ],
+        "period_key": overview_period,
         "period_label": period_labels[overview_period],
         "period_options": (
             {"key": "today", "label": "Today", "active": overview_period == "today"},

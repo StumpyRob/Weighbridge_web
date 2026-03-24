@@ -4,6 +4,63 @@
 {% block title %}Weighbridge Web{% endblock %}
 
 {% block content %}
+  {% macro dashboard_trend(points, aria_label, throughput=False) -%}
+    {% set point_count = points|length %}
+    {% set divisor = point_count - 1 if point_count > 1 else 1 %}
+    {% set ns = namespace(polyline='', area='M 4 48') %}
+    <div
+      class="dashboard-trend{% if throughput %} dashboard-trend--throughput{% endif %}"
+      style="--dashboard-chart-columns: {{ point_count }};"
+      role="img"
+      aria-label="{{ aria_label }}"
+    >
+      <div class="dashboard-trend__plot">
+        <svg class="dashboard-trend__svg" viewBox="0 0 100 56" preserveAspectRatio="none" aria-hidden="true">
+          <line class="dashboard-trend__grid" x1="4" y1="48" x2="96" y2="48"></line>
+          <line class="dashboard-trend__grid" x1="4" y1="29" x2="96" y2="29"></line>
+          <line class="dashboard-trend__grid" x1="4" y1="10" x2="96" y2="10"></line>
+          {% for point in points %}
+            {% set x = 4 + ((92 * loop.index0) // divisor) %}
+            {% set y = 48 - (((point.height_percent or 0) * 38) // 100) %}
+            {% set ns.polyline = ns.polyline ~ (' ' if ns.polyline else '') ~ x ~ ',' ~ y %}
+            {% set ns.area = ns.area ~ ' L ' ~ x ~ ' ' ~ y %}
+          {% endfor %}
+          <path class="dashboard-trend__area" d="{{ ns.area }} L 96 48 L 4 48 Z"></path>
+          <polyline class="dashboard-trend__line" points="{{ ns.polyline }}"></polyline>
+          {% for point in points %}
+            {% set x = 4 + ((92 * loop.index0) // divisor) %}
+            {% set y = 48 - (((point.height_percent or 0) * 38) // 100) %}
+            <circle class="dashboard-trend__point" cx="{{ x }}" cy="{{ y }}" r="1.9">
+              <title>
+                {% if throughput %}
+                  {{ point.value_label }} in {{ point.date_label }}
+                {% else %}
+                  {{ point.count }} in {{ point.date_label }}
+                {% endif %}
+              </title>
+            </circle>
+          {% endfor %}
+        </svg>
+      </div>
+      <div class="dashboard-trend__labels">
+        {% for point in points %}
+          <div
+            class="dashboard-trend__label"
+            {% if throughput %}
+              data-dashboard-throughput-point="{{ point.date_label }}"
+              data-dashboard-throughput-kg="{{ point.weight_kg_raw }}"
+              title="{{ point.value_label }} in {{ point.date_label }}"
+            {% else %}
+              data-dashboard-chart-day="{{ point.date_label }}"
+              title="{{ point.count }} in {{ point.date_label }}"
+            {% endif %}
+          >
+            <span class="dashboard-trend__label-short">{{ point.short_label }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {%- endmacro %}
   {% if show_dashboard %}
     <div class="page-header">
       <div>
@@ -125,25 +182,29 @@
             <p class="muted dashboard-section-copy">{{ dashboard.chart_summary }}</p>
           {% endif %}
           {% if dashboard.chart_has_data %}
-            <div class="dashboard-chart-wrap">
-              <div
-                class="dashboard-chart{% if dashboard.chart_points|length >= 14 %} dashboard-chart--compact{% endif %}"
-                style="--dashboard-chart-columns: {{ dashboard.chart_points|length }};"
-                role="img"
-                aria-label="{{ dashboard.chart_title }} for {{ dashboard.period_label | lower }}"
-              >
-                {% for point in dashboard.chart_points %}
-                  <div class="dashboard-chart__column" data-dashboard-chart-day="{{ point.date_label }}">
-                    <div class="dashboard-chart__count">{{ point.count }}</div>
-                    <div class="dashboard-chart__bar-shell">
-                      <div class="dashboard-chart__bar" style="height: {{ point.height_percent }}%;"></div>
+            {% if dashboard.period_key == "12m" and dashboard.chart_points|length == 12 %}
+              {{ dashboard_trend(dashboard.chart_points, dashboard.chart_title ~ " for " ~ dashboard.period_label | lower) }}
+            {% else %}
+              <div class="dashboard-chart-wrap">
+                <div
+                  class="dashboard-chart{% if dashboard.chart_points|length > 7 %} dashboard-chart--dense{% endif %}"
+                  style="--dashboard-chart-columns: {{ dashboard.chart_points|length }};"
+                  role="img"
+                  aria-label="{{ dashboard.chart_title }} for {{ dashboard.period_label | lower }}"
+                >
+                  {% for point in dashboard.chart_points %}
+                    <div class="dashboard-chart__column" data-dashboard-chart-day="{{ point.date_label }}" title="{{ point.count }} in {{ point.date_label }}">
+                      <div class="dashboard-chart__count">{{ point.count }}</div>
+                      <div class="dashboard-chart__bar-shell">
+                        <div class="dashboard-chart__bar" style="height: {{ point.height_percent }}%;"></div>
+                      </div>
+                      <div class="dashboard-chart__label">{{ point.short_label }}</div>
+                      <div class="dashboard-chart__sub-label">{{ point.date_label }}</div>
                     </div>
-                    <div class="dashboard-chart__label">{{ point.short_label }}</div>
-                    <div class="dashboard-chart__sub-label">{{ point.date_label }}</div>
-                  </div>
-                {% endfor %}
+                  {% endfor %}
+                </div>
               </div>
-            </div>
+            {% endif %}
           {% else %}
             <div class="dashboard-inline-empty">
               {{ dashboard.chart_empty_message }}
@@ -157,37 +218,42 @@
         <div class="frame-body">
           <p class="muted dashboard-section-copy">{{ dashboard.weight_throughput.summary }}</p>
           {% if dashboard.weight_throughput.has_data %}
-            <div class="dashboard-chart-wrap">
-              <div
-                class="dashboard-chart dashboard-chart--throughput{% if dashboard.weight_throughput.points|length >= 14 %} dashboard-chart--compact{% endif %}"
-                style="--dashboard-chart-columns: {{ dashboard.weight_throughput.points|length }};"
-                role="img"
-                aria-label="Weight throughput for {{ dashboard.period_label | lower }}"
-              >
-                {% for point in dashboard.weight_throughput.points %}
-                  {% set throughput_parts = point.value_label.rsplit(' ', 1) %}
-                  <div
-                    class="dashboard-chart__column"
-                    data-dashboard-throughput-point="{{ point.date_label }}"
-                    data-dashboard-throughput-kg="{{ point.weight_kg_raw }}"
-                  >
-                    <div class="dashboard-chart__count dashboard-chart__count--throughput">
-                      <span class="dashboard-chart__count-value">
-                        {{ throughput_parts[0] if throughput_parts else point.value_label }}
-                      </span>
-                      {% if throughput_parts|length > 1 %}
-                        <span class="dashboard-chart__count-unit">{{ throughput_parts[1] }}</span>
-                      {% endif %}
+            {% if dashboard.period_key == "12m" and dashboard.weight_throughput.points|length == 12 %}
+              {{ dashboard_trend(dashboard.weight_throughput.points, "Weight throughput for " ~ dashboard.period_label | lower, True) }}
+            {% else %}
+              <div class="dashboard-chart-wrap">
+                <div
+                  class="dashboard-chart dashboard-chart--throughput{% if dashboard.weight_throughput.points|length > 7 %} dashboard-chart--dense{% endif %}"
+                  style="--dashboard-chart-columns: {{ dashboard.weight_throughput.points|length }};"
+                  role="img"
+                  aria-label="Weight throughput for {{ dashboard.period_label | lower }}"
+                >
+                  {% for point in dashboard.weight_throughput.points %}
+                    {% set throughput_parts = point.value_label.rsplit(' ', 1) %}
+                    <div
+                      class="dashboard-chart__column"
+                      data-dashboard-throughput-point="{{ point.date_label }}"
+                      data-dashboard-throughput-kg="{{ point.weight_kg_raw }}"
+                      title="{{ point.value_label }} in {{ point.date_label }}"
+                    >
+                      <div class="dashboard-chart__count dashboard-chart__count--throughput">
+                        <span class="dashboard-chart__count-value">
+                          {{ throughput_parts[0] if throughput_parts else point.value_label }}
+                        </span>
+                        {% if throughput_parts|length > 1 %}
+                          <span class="dashboard-chart__count-unit">{{ throughput_parts[1] }}</span>
+                        {% endif %}
+                      </div>
+                      <div class="dashboard-chart__bar-shell">
+                        <div class="dashboard-chart__bar dashboard-chart__bar--throughput" style="height: {{ point.height_percent }}%;"></div>
+                      </div>
+                      <div class="dashboard-chart__label">{{ point.short_label }}</div>
+                      <div class="dashboard-chart__sub-label">{{ point.date_label }}</div>
                     </div>
-                    <div class="dashboard-chart__bar-shell">
-                      <div class="dashboard-chart__bar dashboard-chart__bar--throughput" style="height: {{ point.height_percent }}%;"></div>
-                    </div>
-                    <div class="dashboard-chart__label">{{ point.short_label }}</div>
-                    <div class="dashboard-chart__sub-label">{{ point.date_label }}</div>
-                  </div>
-                {% endfor %}
+                  {% endfor %}
+                </div>
               </div>
-            </div>
+            {% endif %}
           {% else %}
             <div class="dashboard-inline-empty">
               {{ dashboard.weight_throughput.empty_message }}
