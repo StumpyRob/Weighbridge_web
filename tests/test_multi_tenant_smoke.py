@@ -4819,6 +4819,55 @@ def test_dashboard_legacy_30d_period_maps_to_12m():
     assert main_module._normalize_dashboard_period("30d") == "12m"
 
 
+def test_trim_dashboard_bar_points_centers_sparse_today_activity():
+    points = [
+        {"short_label": "00:00", "weight_kg": Decimal("0")},
+        {"short_label": "03:00", "weight_kg": Decimal("0")},
+        {"short_label": "06:00", "weight_kg": Decimal("0")},
+        {"short_label": "09:00", "weight_kg": Decimal("0")},
+        {"short_label": "12:00", "weight_kg": Decimal("0")},
+        {"short_label": "15:00", "weight_kg": Decimal("18420")},
+        {"short_label": "18:00", "weight_kg": Decimal("0")},
+        {"short_label": "21:00", "weight_kg": Decimal("0")},
+    ]
+
+    trimmed = main_module._trim_dashboard_bar_points(
+        points,
+        value_key="weight_kg",
+        edge_padding=1,
+        min_points=3,
+    )
+
+    assert [point["short_label"] for point in trimmed] == ["12:00", "15:00", "18:00"]
+
+
+def test_trim_dashboard_bar_points_removes_empty_leading_days_from_week_view():
+    points = [
+        {"short_label": "Thu", "count": 0},
+        {"short_label": "Fri", "count": 4},
+        {"short_label": "Sat", "count": 5},
+        {"short_label": "Sun", "count": 5},
+        {"short_label": "Mon", "count": 6},
+        {"short_label": "Tue", "count": 5},
+        {"short_label": "Wed", "count": 7},
+    ]
+
+    trimmed = main_module._trim_dashboard_bar_points(
+        points,
+        value_key="count",
+        min_points=3,
+    )
+
+    assert [point["short_label"] for point in trimmed] == [
+        "Fri",
+        "Sat",
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+    ]
+
+
 def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-dashboard-data.db", monkeypatch=monkeypatch
@@ -5073,8 +5122,11 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert 'data-dashboard-throughput-kg="1750"' not in response_today.text
     assert 'data-dashboard-throughput-kg="2200"' not in response_today.text
     assert 'data-dashboard-throughput-kg="3100"' not in response_today.text
-    assert response_today.text.count(">00:00<") == 2
-    assert response_today.text.count(">21:00<") == 2
+    assert response_today.text.count(">06:00<") == 2
+    assert response_today.text.count(">09:00<") >= 2
+    assert response_today.text.count(">12:00<") == 2
+    assert ">00:00<" not in response_today.text
+    assert ">21:00<" not in response_today.text
 
     with _client(app, base_url="https://a.localhost") as tenant_client:
         assert (
