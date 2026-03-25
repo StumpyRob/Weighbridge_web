@@ -507,7 +507,7 @@ def _build_dashboard_chart_points(
             chart_points.append(
                 {
                     "date_label": f"{start_hour:02d}:00-{end_hour:02d}:00",
-                    "short_label": f"{start_hour:02d}",
+                    "short_label": f"{start_hour:02d}:00",
                     "count": count,
                     "height_percent": 0,
                 }
@@ -613,7 +613,7 @@ def _build_weight_throughput_chart(
             chart_points.append(
                 {
                     "date_label": f"{start_hour:02d}:00-{end_hour:02d}:00",
-                    "short_label": f"{start_hour:02d}",
+                    "short_label": f"{start_hour:02d}:00",
                     "weight_kg": weight_kg,
                     "weight_kg_raw": _trim_decimal_text(weight_kg),
                     "height_percent": 0,

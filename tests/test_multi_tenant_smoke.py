@@ -5073,6 +5073,8 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert 'data-dashboard-throughput-kg="1750"' not in response_today.text
     assert 'data-dashboard-throughput-kg="2200"' not in response_today.text
     assert 'data-dashboard-throughput-kg="3100"' not in response_today.text
+    assert response_today.text.count(">00:00<") == 2
+    assert response_today.text.count(">21:00<") == 2
 
     with _client(app, base_url="https://a.localhost") as tenant_client:
         assert (

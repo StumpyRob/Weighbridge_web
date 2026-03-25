@@ -8,14 +8,15 @@
     {% set point_count = points|length %}
     {% set view_width = 320 %}
     {% set view_height = 210 %}
-    {% set plot_box_left = 20 %}
+    {% set plot_box_left = 12 %}
     {% set plot_box_top = 28 %}
-    {% set plot_box_width = 280 %}
+    {% set plot_box_width = 296 %}
     {% set plot_box_height = 130 %}
     {% set plot_box_right = plot_box_left + plot_box_width %}
     {% set plot_box_bottom = plot_box_top + plot_box_height %}
-    {% set plot_left = plot_box_left + 14 %}
-    {% set plot_right = plot_box_right - 14 %}
+    {% set plot_edge_padding = 10 if mode == "bar" else 12 %}
+    {% set plot_left = plot_box_left + plot_edge_padding %}
+    {% set plot_right = plot_box_right - plot_edge_padding %}
     {% set plot_width = plot_right - plot_left %}
     {% set plot_top = plot_box_top + 10 %}
     {% set plot_bottom = plot_box_bottom - 8 %}
@@ -23,13 +24,16 @@
     {% set value_y = 16 %}
     {% set axis_y = 183 %}
     {% set divisor = point_count - 1 if point_count > 1 else 1 %}
-    {% set slot_width = plot_width / point_count %}
+    {% set point_span = plot_width / point_count if point_count else plot_width %}
+    {% set point_step = plot_width / divisor %}
+    {% set first_point_x = plot_left %}
+    {% set last_point_x = plot_left + (point_step * (point_count - 1)) %}
     {% if mode == "bar" %}
-      {% set bar_width = slot_width * (0.42 if point_count <= 7 else 0.36) %}
+      {% set bar_width = point_span * (0.44 if point_count <= 7 else 0.39) %}
     {% else %}
       {% set ns = namespace(
         line='',
-        area='M ' ~ ((plot_left + (slot_width / 2))|round(2)) ~ ' ' ~ (plot_bottom|round(2))
+        area='M ' ~ (first_point_x|round(2)) ~ ' ' ~ (plot_bottom|round(2))
       ) %}
     {% endif %}
     <div
@@ -58,7 +62,7 @@
         {% endfor %}
         {% if mode == "bar" %}
           {% for point in points %}
-            {% set slot_center = plot_left + (slot_width * loop.index0) + (slot_width / 2) %}
+            {% set point_x = plot_left + (point_step * loop.index0) %}
             {% set raw_height = (plot_height * (point.height_percent or 0)) / 100 %}
             {% set bar_height = raw_height if raw_height > 0 else 0 %}
             {% if bar_height > 0 and bar_height < 4 %}
@@ -89,14 +93,14 @@
               </title>
               <text
                 class="dashboard-svg-chart__value{% if throughput %} dashboard-svg-chart__value--throughput{% endif %}"
-                x="{{ slot_center|round(2) }}"
+                x="{{ point_x|round(2) }}"
                 y="{{ value_y }}"
                 text-anchor="middle"
               >{{ value_text }}</text>
               {% if bar_height > 0 %}
                 <rect
                   class="dashboard-svg-chart__bar"
-                  x="{{ (slot_center - (bar_width / 2))|round(2) }}"
+                  x="{{ (point_x - (bar_width / 2))|round(2) }}"
                   y="{{ bar_y|round(2) }}"
                   width="{{ bar_width|round(2) }}"
                   height="{{ bar_height|round(2) }}"
@@ -105,7 +109,7 @@
               {% endif %}
               <text
                 class="dashboard-svg-chart__axis-label"
-                x="{{ slot_center|round(2) }}"
+                x="{{ point_x|round(2) }}"
                 y="{{ axis_y }}"
                 text-anchor="middle"
               >{{ point.short_label }}</text>
@@ -113,18 +117,18 @@
           {% endfor %}
         {% else %}
           {% for point in points %}
-            {% set x = plot_left + (slot_width * loop.index0) + (slot_width / 2) %}
+            {% set x = plot_left + (point_step * loop.index0) %}
             {% set y = plot_bottom - ((plot_height * (point.height_percent or 0)) / 100) %}
             {% set ns.line = ns.line ~ (' ' if ns.line else '') ~ (x|round(2)) ~ ',' ~ (y|round(2)) %}
             {% set ns.area = ns.area ~ ' L ' ~ (x|round(2)) ~ ' ' ~ (y|round(2)) %}
           {% endfor %}
           <path
             class="dashboard-svg-chart__area"
-            d="{{ ns.area }} L {{ (plot_left + (slot_width * (point_count - 1)) + (slot_width / 2))|round(2) }} {{ plot_bottom|round(2) }} L {{ ((plot_left + (slot_width / 2))|round(2)) }} {{ plot_bottom|round(2) }} Z"
+            d="{{ ns.area }} L {{ last_point_x|round(2) }} {{ plot_bottom|round(2) }} L {{ first_point_x|round(2) }} {{ plot_bottom|round(2) }} Z"
           ></path>
           <polyline class="dashboard-svg-chart__line" points="{{ ns.line }}"></polyline>
           {% for point in points %}
-            {% set x = plot_left + (slot_width * loop.index0) + (slot_width / 2) %}
+            {% set x = plot_left + (point_step * loop.index0) %}
             {% set y = plot_bottom - ((plot_height * (point.height_percent or 0)) / 100) %}
             <g
               class="dashboard-svg-chart__point"

@@ -3703,28 +3703,29 @@ details > summary:focus-visible {
 .dashboard-svg-chart__value,
 .dashboard-svg-chart__axis-label {
   font-family: inherit;
+  font-variant-numeric: tabular-nums;
   text-anchor: middle;
   dominant-baseline: middle;
 }
 
 .dashboard-svg-chart__value {
   fill: #64748b;
-  font-size: 10.4px;
+  font-size: 9.6px;
   font-weight: 500;
 }
 
 .dashboard-svg-chart__value--throughput {
-  font-size: 9.5px;
+  font-size: 8.9px;
 }
 
 .dashboard-svg-chart__axis-label {
   fill: #475569;
-  font-size: 10.8px;
+  font-size: 9.4px;
   font-weight: 500;
 }
 
 .dashboard-svg-chart__axis-label--area {
-  font-size: 10.2px;
+  font-size: 8.9px;
 }
 
 .dashboard-panels {
@@ -3774,19 +3775,19 @@ details > summary:focus-visible {
 
 @media (max-width: 768px) {
   .dashboard-svg-chart__value {
-    font-size: 9.7px;
+    font-size: 9px;
   }
 
   .dashboard-svg-chart__value--throughput {
-    font-size: 8.9px;
+    font-size: 8.3px;
   }
 
   .dashboard-svg-chart__axis-label {
-    font-size: 10px;
+    font-size: 8.8px;
   }
 
   .dashboard-svg-chart__axis-label--area {
-    font-size: 9.5px;
+    font-size: 8.3px;
   }
 
   .dashboard-svg-chart__line {
@@ -3800,19 +3801,19 @@ details > summary:focus-visible {
 
 @media (max-width: 480px) {
   .dashboard-svg-chart__value {
-    font-size: 8.8px;
+    font-size: 8.3px;
   }
 
   .dashboard-svg-chart__value--throughput {
-    font-size: 8.1px;
+    font-size: 7.7px;
   }
 
   .dashboard-svg-chart__axis-label {
-    font-size: 9px;
+    font-size: 8px;
   }
 
   .dashboard-svg-chart__axis-label--area {
-    font-size: 8.7px;
+    font-size: 7.6px;
   }
 
   .dashboard-svg-chart__line {
