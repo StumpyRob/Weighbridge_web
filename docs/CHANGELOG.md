@@ -4,6 +4,28 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.22 - 2026-03-26
+
+### RELEASE
+- `v0.22` adds Phase 1 QZ Tray printing for tickets by reusing the existing ticket document and PDF pipeline instead of introducing a second print renderer.
+
+### CHANGE
+- Keep the current ticket preview flow unchanged while adding a direct workstation print path to the existing ticket `Print` action.
+- Add a ticket PDF download endpoint that renders from the same configured print destination/template output already used for preview and email attachment generation.
+- Reuse the existing ticket document rendering pipeline for email PDF attachment generation so preview, download, email, and QZ direct print all share the same print source of truth.
+- Extend the shared document action partial to expose QZ metadata on ticket print actions without changing WTN or invoice behavior.
+- Add a small shared browser integration that:
+  - loads a pinned local `qz-tray.js` client library
+  - detects and connects to QZ Tray
+  - fetches the existing ticket PDF output
+  - prints to a configured QZ printer name when present, otherwise the workstation default printer
+  - shows clear inline errors for QZ not running, printer not found, and signing/certificate failures
+- Add a minimal styling hook for inline QZ print status/error feedback in the existing ticket documents panel.
+- Keep the implementation structured so WTN and invoice can adopt the same QZ integration pattern next with minimal duplication.
+
+### TEST
+- Re-run focused ticket print preview/PDF/email/document-panel regressions, shared shell branding coverage, and a JavaScript syntax check for the new QZ integration script.
+
 ## v0.21.9 - 2026-03-24
 
 ### RELEASE

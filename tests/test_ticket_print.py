@@ -369,6 +369,54 @@ def test_ticket_print_a4_route_renders_html_preview(client, db_session):
     assert "<h1>Ticket T-PRINT-A4-1</h1>" in response.text
 
 
+def test_ticket_pdf_download_route_returns_attachment_pdf_headers(
+    client,
+    db_session,
+    monkeypatch,
+):
+    import app.routes.tickets as tickets_routes
+
+    ticket = Ticket(
+        ticket_no="T-PDF-1",
+        datetime=datetime(2026, 2, 19, 11, 35, 0),
+        status=TicketStatusEnum.COMPLETE.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+
+    _set_ticket_browser_destination(
+        db_session,
+        code="TICKET_ROUTE_PDF",
+        template_format="HTML",
+        content="<html><body><h1>Ticket {{ payload.ticket_no }}</h1></body></html>",
+    )
+
+    called: dict[str, object] = {}
+
+    def _fake_render_html_pdf_bytes(rendered_html, **kwargs):
+        called["rendered_html"] = rendered_html
+        called["kwargs"] = kwargs
+        return b"%PDF-1.4\n%stub-ticket-pdf\n"
+
+    monkeypatch.setattr(
+        tickets_routes,
+        "render_html_pdf_bytes",
+        _fake_render_html_pdf_bytes,
+    )
+
+    response = client.get(f"/tickets/{ticket.id}/pdf")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/pdf")
+    assert response.headers.get("content-disposition", "") == 'attachment; filename="Ticket-T-PDF-1.pdf"'
+    assert response.content.startswith(b"%PDF")
+    assert "T-PDF-1" in str(called["rendered_html"])
+
+
 def test_ticket_print_thermal_route_requires_complete(client, db_session):
     ticket = Ticket(
         ticket_no="T-PRINT-THERMAL-OPEN-1",

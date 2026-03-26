@@ -4,6 +4,7 @@
 {% set preview_variant = actions.preview_button_variant or "secondary" %}
 {% set download_variant = actions.download_button_variant or "secondary" %}
 {% set email_action = document_email_action if document_email_action is defined else None %}
+{% set qz_print = actions.qz_print if actions.qz_print is defined else None %}
 
 <div class="print-actions print-actions--{{ entity_type }}">
   <div class="print-actions__row">
@@ -28,6 +29,13 @@
       <button
         type="submit"
         class="btn btn--{{ send_variant }}"
+        {% if qz_print and qz_print.enabled %}
+          data-qz-print-button
+          data-qz-pdf-url="{{ qz_print.pdf_url }}"
+          data-qz-printer-name="{{ qz_print.printer_name or '' }}"
+          data-qz-document-label="{{ qz_print.document_label or '' }}"
+          data-qz-success-base-url="{{ qz_print.success_base_url or '' }}"
+        {% endif %}
         {% if not actions.send_enabled %}disabled aria-disabled="true"{% endif %}
       >
         {{ actions.send_label or "Print" }}
@@ -65,4 +73,7 @@
       {% endif %}
     {% endif %}
   </div>
+  {% if qz_print and qz_print.enabled %}
+    <p class="print-actions__status muted" data-qz-print-status role="status" aria-live="polite" hidden></p>
+  {% endif %}
 </div>

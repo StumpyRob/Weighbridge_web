@@ -1134,6 +1134,20 @@ body.js-help-tooltips .help-tooltip {
   flex-wrap: wrap;
 }
 
+.print-actions__status {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.print-actions__status.is-error {
+  color: #b91c1c;
+}
+
+.print-actions__status.is-success {
+  color: #166534;
+}
+
 .documents-panel {
   margin: 0 0 1rem;
   padding: 0.7rem 0.95rem 0.75rem 1rem;

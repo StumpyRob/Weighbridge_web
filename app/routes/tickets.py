@@ -90,6 +90,7 @@ from ..services.printing import (
     PRINT_CONTENT_TYPE_HTML,
     PRINT_CONTENT_TYPE_PDF,
     PRINT_CONTENT_TYPE_TEXT,
+    RenderedPrint,
     execute_rendered_print,
     replay_print_job,
     render_destination_content,
@@ -1589,6 +1590,16 @@ def _ticket_destination_display_name(destination: PrintDestination) -> str:
     return name or f"Destination {destination.id}"
 
 
+def _ticket_qz_printer_name(destination: PrintDestination | None) -> str:
+    if destination is None or not isinstance(destination.delivery_config, dict):
+        return ""
+    for key in ("qz_printer_name", "printer_name", "printer"):
+        value = str(destination.delivery_config.get(key, "") or "").strip()
+        if value:
+            return value
+    return ""
+
+
 def _friendly_print_error_label(raw_message: str) -> str:
     normalized = str(raw_message or "").strip().lower()
     if any(
@@ -1725,7 +1736,7 @@ def _resolve_wtn_default_template(db: Session) -> PrintTemplate | None:
 def _ticket_print_actions_context(
     db: Session,
     *,
-    ticket_id: int,
+    ticket: Ticket,
 ) -> dict[str, object]:
     destinations = _load_active_ticket_print_destinations(db)
     default_destination = _default_ticket_print_destination(destinations)
@@ -1735,6 +1746,10 @@ def _ticket_print_actions_context(
         if default_destination is not None
         else ""
     )
+    ticket_id = int(ticket.id)
+    ticket_label = str(ticket.ticket_no or f"#{ticket_id}")
+    download_url = f"/tickets/{ticket_id}/pdf" if send_enabled else ""
+    qz_printer_name = _ticket_qz_printer_name(default_destination)
     return {
         "has_print_destinations": bool(destinations),
         "print_primary_destination_name": primary_name,
@@ -1750,6 +1765,16 @@ def _ticket_print_actions_context(
             "preview_label": "Preview",
             "preview_button_variant": "secondary",
             "preview_button_id": "preview_browser_print_button",
+            "download_url": download_url,
+            "download_label": "Download PDF",
+            "download_button_variant": "secondary",
+            "qz_print": {
+                "enabled": send_enabled,
+                "pdf_url": f"/tickets/{ticket_id}/pdf",
+                "printer_name": qz_printer_name,
+                "document_label": f"Ticket {ticket_label}",
+                "success_base_url": f"/tickets/{ticket_id}",
+            },
             "no_default_message": "Printing is not configured. Contact admin.",
         },
     }
@@ -1805,6 +1830,52 @@ def _rendered_document_html(rendered_content: str, content_type: str) -> str:
     if content_type == PRINT_CONTENT_TYPE_HTML:
         return rendered_content
     return f"<pre>{escape(rendered_content)}</pre>"
+
+
+def _ticket_render_document(
+    db: Session,
+    ticket: Ticket,
+) -> tuple[PrintDestination, RenderedPrint]:
+    payload = build_ticket_print_payload(db, ticket)
+    destination = _resolve_ticket_print_destination(
+        db,
+        require_default=True,
+    )
+    if destination is None:
+        raise ValueError("Printing is not configured. Contact admin.")
+    rendered = render_destination_content(
+        db,
+        payload=payload,
+        destination=destination,
+    )
+    return destination, rendered
+
+
+def _ticket_filename(ticket: Ticket) -> str:
+    token = re.sub(r"[^A-Za-z0-9._-]+", "-", str(ticket.ticket_no or "").strip()).strip("-")
+    if not token:
+        token = f"ticket-{ticket.id}"
+    return f"Ticket-{token}.pdf"
+
+
+def _render_ticket_pdf_bytes(
+    request: Request,
+    db: Session,
+    ticket: Ticket,
+) -> tuple[bytes, PrintDestination]:
+    destination, rendered = _ticket_render_document(db, ticket)
+    pdf_bytes = render_html_pdf_bytes(
+        _rendered_document_html(
+            rendered.rendered_content,
+            rendered.content_type,
+        ),
+        base_url=str(request.base_url),
+        allow_fallback=False,
+        include_fallback_warning=False,
+        enforce_print_safe=rendered.content_type == PRINT_CONTENT_TYPE_HTML,
+        enforce_single_page=rendered.content_type == PRINT_CONTENT_TYPE_HTML,
+    )
+    return pdf_bytes, destination
 
 
 def _ticket_email_form_values(
@@ -2028,7 +2099,7 @@ def tickets_edit(
     )
     print_actions_context = _ticket_print_actions_context(
         db,
-        ticket_id=ticket.id,
+        ticket=ticket,
     )
     wtn_actions_context = _ticket_wtn_actions_context(
         db,
@@ -2144,20 +2215,11 @@ def tickets_print_browser(
     if not is_complete and not allow_draft_preview:
         return HTMLResponse(PRINT_REQUIRES_COMPLETE_ERROR, status_code=400)
 
-    payload = build_ticket_print_payload(db, ticket)
     destination: PrintDestination | None = None
     rendered_content = ""
     rendered_content_type = PRINT_CONTENT_TYPE_TEXT
     try:
-        destination = _resolve_ticket_print_destination(
-            db,
-            require_default=True,
-        )
-        rendered = render_destination_content(
-            db,
-            payload=payload,
-            destination=destination,
-        )
+        destination, rendered = _ticket_render_document(db, ticket)
         rendered_content = rendered.rendered_content
         rendered_content_type = rendered.content_type
     except ValueError as exc:
@@ -2207,6 +2269,32 @@ def tickets_print_browser(
             "is_draft_preview": allow_draft_preview,
             "rendered_content": rendered_content,
             "back_url": back_url,
+        },
+    )
+
+
+@router.get("/tickets/{ticket_id:int}/pdf")
+def tickets_download_pdf(
+    ticket_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    ticket = db.get(Ticket, ticket_id)
+    if not ticket:
+        return Response("Ticket not found.", status_code=404)
+    if _status_value(ticket.status) != TicketStatusEnum.COMPLETE.value:
+        return Response(PRINT_REQUIRES_COMPLETE_ERROR, status_code=400)
+
+    try:
+        pdf_bytes, _destination = _render_ticket_pdf_bytes(request, db, ticket)
+    except (ValueError, RuntimeError, OSError, NotImplementedError) as exc:
+        return Response(str(exc) or "Ticket PDF render failed.", status_code=400)
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{_ticket_filename(ticket)}"',
         },
     )
 
@@ -2306,12 +2394,7 @@ async def tickets_print_dispatch(
         )
 
     try:
-        payload = build_ticket_print_payload(db, ticket)
-        rendered = render_destination_content(
-            db,
-            payload=payload,
-            destination=destination,
-        )
+        _resolved_destination, rendered = _ticket_render_document(db, ticket)
         delivery_type = str(destination.delivery_type or "").strip().upper()
         delivery_config = (
             dict(destination.delivery_config)
@@ -2480,30 +2563,9 @@ async def tickets_email(
 
     if not error:
         try:
-            payload = build_ticket_print_payload(db, ticket)
-            destination = _resolve_ticket_print_destination(db, require_default=True)
-            if destination is None:
-                raise ValueError("Printing is not configured. Contact admin.")
-            rendered = render_destination_content(
-                db,
-                payload=payload,
-                destination=destination,
-            )
-            pdf_bytes = render_html_pdf_bytes(
-                _rendered_document_html(
-                    rendered.rendered_content,
-                    rendered.content_type,
-                ),
-                base_url=str(request.base_url),
-                allow_fallback=False,
-                include_fallback_warning=False,
-                enforce_print_safe=rendered.content_type == PRINT_CONTENT_TYPE_HTML,
-                enforce_single_page=rendered.content_type == PRINT_CONTENT_TYPE_HTML,
-            )
-            token = re.sub(r"[^A-Za-z0-9._-]+", "-", str(ticket.ticket_no or "").strip())
-            token = token.strip("-") or f"ticket-{ticket.id}"
+            pdf_bytes, _destination = _render_ticket_pdf_bytes(request, db, ticket)
             attachment = EmailAttachment(
-                filename=f"Ticket-{token}.pdf",
+                filename=_ticket_filename(ticket),
                 content_bytes=pdf_bytes,
                 content_type="application/pdf",
             )
@@ -5858,7 +5920,7 @@ def _render_ticket_edit(
     )
     print_actions_context = _ticket_print_actions_context(
         db,
-        ticket_id=ticket.id,
+        ticket=ticket,
     )
     wtn_actions_context = _ticket_wtn_actions_context(
         db,
