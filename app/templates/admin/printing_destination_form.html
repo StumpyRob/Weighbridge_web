@@ -78,6 +78,24 @@
         </div>
 
         <div class="form-grid printing-destination-delivery-grid">
+          <div class="field checkbox" data-delivery-groups="PRINT_LOCAL_BROWSER">
+            <input
+              type="checkbox"
+              id="qz_direct_print_enabled"
+              name="qz_direct_print_enabled"
+              value="1"
+              {% if form_data.qz_direct_print_enabled %}checked{% endif %}
+            />
+            <label for="qz_direct_print_enabled">Use QZ direct print{{ help(help_text.printing_qz_direct_print, "printing-destination-qz-direct-print-help") }}</label>
+          </div>
+          <div class="field" data-delivery-groups="PRINT_LOCAL_BROWSER">
+            <label for="qz_printer_name">QZ printer name{{ help(help_text.printing_qz_printer_name, "printing-destination-qz-printer-name-help") }}</label>
+            <input type="text" id="qz_printer_name" name="qz_printer_name" value="{{ form_data.qz_printer_name }}" placeholder="Office Ticket Printer" />
+          </div>
+          <div class="field" data-delivery-groups="PRINT_LOCAL_BROWSER">
+            <p class="muted">QZ certificate and signing settings are platform-managed on the backend. Tenant admins only choose whether this destination uses QZ direct print and which workstation printer name to target.</p>
+          </div>
+
           <div class="field" data-delivery-groups="PRINT_NETWORK_RAW_9100">
             <label for="raw_host">Network host</label>
             <input type="text" id="raw_host" name="raw_host" value="{{ form_data.raw_host }}" placeholder="192.168.1.40" />

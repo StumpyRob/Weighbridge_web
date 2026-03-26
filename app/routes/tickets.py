@@ -1600,6 +1600,23 @@ def _ticket_qz_printer_name(destination: PrintDestination | None) -> str:
     return ""
 
 
+def _ticket_qz_direct_print_enabled(destination: PrintDestination | None) -> bool:
+    if destination is None or not isinstance(destination.delivery_config, dict):
+        return False
+    if str(destination.delivery_type or "").strip().upper() != DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
+        return False
+
+    config = destination.delivery_config
+    if "qz_direct_print_enabled" in config:
+        return str(config.get("qz_direct_print_enabled", "") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+    return bool(_ticket_qz_printer_name(destination))
+
+
 def _friendly_print_error_label(raw_message: str) -> str:
     normalized = str(raw_message or "").strip().lower()
     if any(
@@ -1749,6 +1766,7 @@ def _ticket_print_actions_context(
     ticket_id = int(ticket.id)
     ticket_label = str(ticket.ticket_no or f"#{ticket_id}")
     download_url = f"/tickets/{ticket_id}/pdf" if send_enabled else ""
+    qz_direct_print_enabled = _ticket_qz_direct_print_enabled(default_destination)
     qz_printer_name = _ticket_qz_printer_name(default_destination)
     return {
         "has_print_destinations": bool(destinations),
@@ -1769,7 +1787,7 @@ def _ticket_print_actions_context(
             "download_label": "Download PDF",
             "download_button_variant": "secondary",
             "qz_print": {
-                "enabled": send_enabled,
+                "enabled": bool(send_enabled and qz_direct_print_enabled),
                 "pdf_url": f"/tickets/{ticket_id}/pdf",
                 "printer_name": qz_printer_name,
                 "document_label": f"Ticket {ticket_label}",

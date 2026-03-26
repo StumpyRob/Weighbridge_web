@@ -231,6 +231,18 @@ def _destination_to_form(
         if destination and isinstance(destination.delivery_config, dict)
         else {}
     )
+    qz_printer_name = ""
+    for key in ("qz_printer_name", "printer_name", "printer"):
+        value = str(config.get(key, "") or "").strip()
+        if value:
+            qz_printer_name = value
+            break
+    qz_direct_print_enabled = False
+    if destination and str(destination.delivery_type or "").strip().upper() == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
+        if "qz_direct_print_enabled" in config:
+            qz_direct_print_enabled = _is_truthy(str(config.get("qz_direct_print_enabled", "")))
+        else:
+            qz_direct_print_enabled = bool(qz_printer_name)
     return {
         "name": str(destination.name if destination else ""),
         "description": str(
@@ -252,6 +264,8 @@ def _destination_to_form(
         "node_url": str(config.get("url", "")),
         "node_api_key": str(config.get("api_key", "")),
         "node_timeout_ms": str(config.get("timeout_ms", 5000)),
+        "qz_direct_print_enabled": qz_direct_print_enabled,
+        "qz_printer_name": qz_printer_name,
         "email_to": str(config.get("to", "")),
         "email_cc": str(config.get("cc", "")),
         "email_bcc": str(config.get("bcc", "")),
@@ -299,6 +313,11 @@ def _delivery_config_from_form(form: dict[str, str], delivery_type: str) -> dict
         timeout_ms = _parse_optional_int(form.get("node_timeout_ms"))
         if timeout_ms is not None:
             config["timeout_ms"] = timeout_ms
+    elif normalized == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
+        config["qz_direct_print_enabled"] = _is_truthy(form.get("qz_direct_print_enabled"))
+        qz_printer_name = str(form.get("qz_printer_name", "")).strip()
+        if qz_printer_name:
+            config["qz_printer_name"] = qz_printer_name
     elif normalized == DELIVERY_TYPE_EMAIL_PDF:
         for key in (
             "email_to",
@@ -533,6 +552,9 @@ async def admin_print_destinations_create(
     if errors:
         form_data = _destination_to_form()
         form_data.update(incoming)
+        form_data["qz_direct_print_enabled"] = _is_truthy(
+            incoming.get("qz_direct_print_enabled")
+        )
         form_data["is_default"] = is_default
         form_data["is_active"] = is_active
         return _destination_form_response(
@@ -657,6 +679,9 @@ async def admin_print_destinations_update(
     if errors:
         form_data = _destination_to_form(destination)
         form_data.update(incoming)
+        form_data["qz_direct_print_enabled"] = _is_truthy(
+            incoming.get("qz_direct_print_enabled")
+        )
         form_data["is_default"] = is_default
         form_data["is_active"] = is_active
         return _destination_form_response(

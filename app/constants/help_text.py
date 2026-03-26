@@ -83,6 +83,8 @@ HELP_TEXT.update(
         "printing_template_field": "Template defines layout/content. Change template to change formatting.",
         "printing_delivery_type": "Delivery type decides how output is sent: local browser, network printer, print node, or email.",
         "printing_transport_config": "Delivery config holds connection settings for the selected delivery type.",
+        "printing_qz_direct_print": "Platform-managed QZ certificate signing stays on the backend. Tenant admins only control whether this destination uses QZ direct print on the workstation browser.",
+        "printing_qz_printer_name": "Optional QZ Tray printer name for this destination. Leave blank to let QZ use the workstation default printer.",
         "printing_default_destination": "Default destinations are used automatically by Send and Preview for each document type.",
         "printing_active_destination": "Inactive destinations are excluded from normal send/preview flows.",
         "printing_yard_scope": "Scope is document-type based. One active default destination is allowed per document type.",
