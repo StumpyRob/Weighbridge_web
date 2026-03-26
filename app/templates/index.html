@@ -19,7 +19,7 @@
     {% set first_point_x = plot_left + (slot_width / 2) %}
     {% set last_point_x = plot_left + (slot_width * (point_count - 1)) + (slot_width / 2) %}
     {% if mode == "bar" %}
-      {% set bar_width = slot_width * (0.18 if point_count <= 8 else 0.16) %}
+      {% set bar_width = slot_width * (0.22 if point_count <= 8 else 0.2) %}
     {% else %}
       {% set ns = namespace(
         line='',
@@ -31,7 +31,18 @@
       role="img"
       aria-label="{{ aria_label }}"
     >
-      <svg class="dashboard-svg-chart__svg" viewBox="0 0 {{ view_width }} {{ view_height }}" aria-hidden="true">
+      <svg
+        class="dashboard-svg-chart__svg"
+        viewBox="0 0 {{ view_width }} {{ view_height }}"
+        aria-hidden="true"
+        shape-rendering="geometricPrecision"
+      >
+        <defs>
+          <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#3aa0c4"></stop>
+            <stop offset="100%" stop-color="#2c7fa0"></stop>
+          </linearGradient>
+        </defs>
         {% for ratio in [0, 50, 100] %}
           {% set grid_y = plot_top + ((plot_height * ratio) / 100) %}
           <line
@@ -74,7 +85,11 @@
                   y="{{ bar_y|round(2) }}"
                   width="{{ bar_width|round(2) }}"
                   height="{{ bar_height|round(2) }}"
-                  rx="3"
+                  rx="4"
+                  fill="url(#barGradient)"
+                  stroke="rgba(255,255,255,0.2)"
+                  stroke-width="0.5"
+                  style="fill: url(#barGradient);"
                 ></rect>
               {% endif %}
               <text
