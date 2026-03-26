@@ -31,10 +31,12 @@
         class="btn btn--{{ send_variant }}"
         {% if qz_print and qz_print.enabled %}
           data-qz-print-button
-          data-qz-pdf-url="{{ qz_print.pdf_url }}"
+          data-qz-pdf-url="{{ tenant_path(qz_print.pdf_url) }}"
+          data-qz-certificate-url="{{ tenant_path('/qz/certificate') }}"
+          data-qz-sign-url="{{ tenant_path('/qz/sign') }}"
           data-qz-printer-name="{{ qz_print.printer_name or '' }}"
           data-qz-document-label="{{ qz_print.document_label or '' }}"
-          data-qz-success-base-url="{{ qz_print.success_base_url or '' }}"
+          data-qz-success-base-url="{{ tenant_path(qz_print.success_base_url or '') }}"
         {% endif %}
         {% if not actions.send_enabled %}disabled aria-disabled="true"{% endif %}
       >

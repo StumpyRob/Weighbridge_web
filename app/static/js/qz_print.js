@@ -110,7 +110,7 @@
     closeButton.className = "flash-toast__close";
     closeButton.setAttribute("aria-label", "Dismiss notification");
     closeButton.setAttribute("data-toast-close", "");
-    closeButton.textContent = "×";
+    closeButton.textContent = "x";
 
     toast.appendChild(content);
     toast.appendChild(closeButton);
@@ -166,26 +166,69 @@
     return qzLoadPromise;
   }
 
-  function configureQzSecurity(qz) {
-    if (!qz || qz.__weighbridgeQzConfigured) {
+  function csrfToken() {
+    const meta = document.querySelector("meta[name='csrf-token']");
+    return meta ? String(meta.getAttribute("content") || "").trim() : "";
+  }
+
+  function fetchText(url, options) {
+    return fetch(url, options).then(async function (response) {
+      const text = String((await response.text()) || "").trim();
+      if (!response.ok) {
+        throw new Error(text || "QZ signing request failed.");
+      }
+      return text;
+    });
+  }
+
+  function configureQzSecurity(qz, signingConfig) {
+    const certificateUrl = String(signingConfig.certificateUrl || "").trim();
+    const signUrl = String(signingConfig.signUrl || "").trim();
+    const signingKey = `${certificateUrl}|${signUrl}`;
+
+    if (!qz || qz.__weighbridgeQzConfigured === signingKey) {
       return;
     }
+    if (!certificateUrl || !signUrl) {
+      throw new Error("QZ signing routes are unavailable on this page.");
+    }
     if (qz.security && typeof qz.security.setCertificatePromise === "function") {
-      qz.security.setCertificatePromise(function (resolve) {
-        resolve("");
-      });
+      qz.security.setCertificatePromise(
+        function (resolve, reject) {
+          fetchText(certificateUrl, {
+            cache: "no-store",
+            credentials: "same-origin",
+            headers: {
+              Accept: "text/plain",
+            },
+          }).then(resolve, reject);
+        },
+        { rejectOnFailure: true }
+      );
     }
     if (qz.security && typeof qz.security.setSignatureAlgorithm === "function") {
       qz.security.setSignatureAlgorithm("SHA512");
     }
     if (qz.security && typeof qz.security.setSignaturePromise === "function") {
-      qz.security.setSignaturePromise(function () {
-        return function (resolve) {
-          resolve("");
+      qz.security.setSignaturePromise(function (toSign) {
+        return function (resolve, reject) {
+          fetchText(signUrl, {
+            method: "POST",
+            cache: "no-store",
+            credentials: "same-origin",
+            headers: {
+              Accept: "text/plain",
+              "Content-Type": "application/json",
+              "X-CSRF-Token": csrfToken(),
+            },
+            body: JSON.stringify({
+              request: toSign,
+            }),
+          }).then(resolve, reject);
         };
       });
     }
-    qz.__weighbridgeQzConfigured = true;
+    qz.__weighbridgeQzConfigured = signingKey;
   }
 
   async function ensureQzConnection(qz) {
@@ -285,6 +328,13 @@
       return "QZ Tray is not running or could not be reached on this workstation.";
     }
     if (
+      normalized.includes("qz signing") ||
+      normalized.includes("signing route") ||
+      normalized.includes("csrf validation failed")
+    ) {
+      return "QZ request signing is not available from the server yet.";
+    }
+    if (
       normalized.includes("signature") ||
       normalized.includes("certificate") ||
       normalized.includes("sign")
@@ -306,6 +356,10 @@
   async function handleQzPrint(button) {
     const statusElement = findStatusElement(button);
     const pdfUrl = String(button.getAttribute("data-qz-pdf-url") || "").trim();
+    const certificateUrl = String(
+      button.getAttribute("data-qz-certificate-url") || ""
+    ).trim();
+    const signUrl = String(button.getAttribute("data-qz-sign-url") || "").trim();
     const preferredPrinterName = String(
       button.getAttribute("data-qz-printer-name") || ""
     ).trim();
@@ -329,7 +383,10 @@
 
       setStatus(statusElement, "Preparing direct print...", null);
       const qz = await ensureQzLibrary();
-      configureQzSecurity(qz);
+      configureQzSecurity(qz, {
+        certificateUrl: certificateUrl,
+        signUrl: signUrl,
+      });
 
       setStatus(statusElement, "Connecting to QZ Tray...", null);
       await ensureQzConnection(qz);

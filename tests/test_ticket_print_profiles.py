@@ -337,6 +337,8 @@ def test_ticket_detail_documents_frame_groups_ticket_actions(client, db_session)
     assert f'href="/tickets/{ticket.id}/pdf"' in response.text
     assert "data-qz-print-button" in response.text
     assert f'data-qz-pdf-url="/tickets/{ticket.id}/pdf"' in response.text
+    assert 'data-qz-certificate-url="/qz/certificate"' in response.text
+    assert 'data-qz-sign-url="/qz/sign"' in response.text
     assert f'data-qz-success-base-url="/tickets/{ticket.id}"' in response.text
     assert 'data-qz-document-label="Ticket T-UI-1"' in response.text
     assert "data-qz-print-status" in response.text
