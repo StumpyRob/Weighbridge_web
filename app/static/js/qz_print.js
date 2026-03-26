@@ -2,6 +2,8 @@
   const BUTTON_SELECTOR = "[data-qz-print-button]";
   const STATUS_SELECTOR = "[data-qz-print-status]";
   const QZ_LIBRARY_SRC = "/static/vendor/qz-tray.js";
+  const TOAST_ROOT_ID = "flash-toasts";
+  const TOAST_HIDE_TRANSITION_MS = 250;
   let qzLoadPromise = null;
 
   function findStatusElement(button) {
@@ -24,6 +26,95 @@
     } else if (tone === "success") {
       statusElement.classList.add("is-success");
     }
+  }
+
+  function removeToast(toast) {
+    if (toast && toast.parentNode) {
+      toast.remove();
+    }
+  }
+
+  function hideToast(toast) {
+    if (!toast || toast.dataset.hiding === "1") {
+      return;
+    }
+    toast.dataset.hiding = "1";
+    toast.classList.add("is-hiding");
+    toast.addEventListener(
+      "transitionend",
+      function () {
+        removeToast(toast);
+      },
+      { once: true }
+    );
+    window.setTimeout(function () {
+      removeToast(toast);
+    }, TOAST_HIDE_TRANSITION_MS + 50);
+  }
+
+  function ensureToastRoot() {
+    let root = document.getElementById(TOAST_ROOT_ID);
+    if (!(root instanceof HTMLElement)) {
+      root = document.createElement("div");
+      root.id = TOAST_ROOT_ID;
+      root.className = "flash-toasts";
+      root.setAttribute("aria-live", "polite");
+      document.body.appendChild(root);
+    }
+    if (root.dataset.qzToastBound !== "1") {
+      root.dataset.qzToastBound = "1";
+      root.addEventListener("click", function (event) {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+        const closeButton = target.closest("[data-toast-close]");
+        if (!closeButton) {
+          return;
+        }
+        const toast = closeButton.closest(".flash-toast");
+        if (!(toast instanceof HTMLElement)) {
+          return;
+        }
+        hideToast(toast);
+      });
+    }
+    return root;
+  }
+
+  function dismissQzToasts() {
+    const root = document.getElementById(TOAST_ROOT_ID);
+    if (!(root instanceof HTMLElement)) {
+      return;
+    }
+    root.querySelectorAll(".flash-toast[data-qz-toast='1']").forEach(function (toast) {
+      removeToast(toast);
+    });
+  }
+
+  function showErrorToast(message) {
+    const root = ensureToastRoot();
+    dismissQzToasts();
+
+    const toast = document.createElement("div");
+    toast.className = "flash-toast flash-toast--error";
+    toast.setAttribute("data-flash-toast", "");
+    toast.setAttribute("data-qz-toast", "1");
+
+    const content = document.createElement("div");
+    content.className = "flash-toast__content";
+    content.textContent = message;
+
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.className = "flash-toast__close";
+    closeButton.setAttribute("aria-label", "Dismiss notification");
+    closeButton.setAttribute("data-toast-close", "");
+    closeButton.textContent = "×";
+
+    toast.appendChild(content);
+    toast.appendChild(closeButton);
+    root.appendChild(toast);
   }
 
   function loadScript(src) {
@@ -227,6 +318,7 @@
     const originalDisabled = button.disabled;
 
     try {
+      dismissQzToasts();
       button.disabled = true;
       button.setAttribute("aria-busy", "true");
       button.textContent = "Printing...";
@@ -265,10 +357,9 @@
       }
     } catch (error) {
       const message = describeError(error, preferredPrinterName);
-      setStatus(
-        statusElement,
-        `${message} Start QZ Tray and retry, or use Preview/Download PDF.`,
-        "error"
+      setStatus(statusElement, "", null);
+      showErrorToast(
+        `Direct print unavailable. ${message} Start QZ Tray and retry, or use Preview or Download PDF.`
       );
     } finally {
       button.disabled = originalDisabled;

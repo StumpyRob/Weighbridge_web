@@ -18,6 +18,21 @@ _WEAK_SECRET_VALUES = {
     "secret",
     "test-secret",
 }
+_QZ_TRAY_CONNECT_SOURCES = (
+    "wss://localhost:8181",
+    "wss://localhost:8282",
+    "wss://localhost:8383",
+    "wss://localhost:8484",
+    "wss://localhost.qz.io:8181",
+    "wss://localhost.qz.io:8282",
+    "wss://localhost.qz.io:8383",
+    "wss://localhost.qz.io:8484",
+)
+_CSP_CONNECT_SRC = (
+    "connect-src 'self' https://www.google-analytics.com "
+    + " ".join(_QZ_TRAY_CONNECT_SOURCES)
+    + "; "
+)
 
 
 def is_state_changing_method(method: str | None) -> bool:
@@ -71,7 +86,7 @@ def apply_security_headers(response: Response) -> None:
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: blob:; "
             "font-src 'self' data:; "
-            "connect-src 'self'; "
+            f"{_CSP_CONNECT_SRC}"
             "base-uri 'self'; "
             "form-action 'self'; "
             "frame-ancestors 'none'"

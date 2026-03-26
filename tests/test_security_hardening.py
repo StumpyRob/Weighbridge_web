@@ -137,6 +137,34 @@ def test_security_headers_are_present(tmp_path, monkeypatch):
         assert "frame-ancestors 'none'" in csp
 
 
+def test_csp_connect_src_allows_qz_tray_secure_websockets(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "app_secret_key", "csp-qz-prod-test-secret")
+    monkeypatch.setattr(settings, "secret_key", "")
+    app = create_app(dev_mode=False)
+
+    with _client_for_app(app=app, db_path=tmp_path / "csp-qz.db") as client:
+        response = client.get("/")
+        assert response.status_code == 200
+        csp = str(response.headers.get("content-security-policy", ""))
+        directives = [part.strip() for part in csp.split(";") if part.strip()]
+        connect_src = next(
+            (part for part in directives if part.startswith("connect-src ")),
+            "",
+        )
+        assert (
+            connect_src
+            == "connect-src 'self' https://www.google-analytics.com "
+            "wss://localhost:8181 "
+            "wss://localhost:8282 "
+            "wss://localhost:8383 "
+            "wss://localhost:8484 "
+            "wss://localhost.qz.io:8181 "
+            "wss://localhost.qz.io:8282 "
+            "wss://localhost.qz.io:8383 "
+            "wss://localhost.qz.io:8484"
+        )
+
+
 def test_csrf_cookie_has_secure_defaults_on_https(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "app_secret_key", "cookie-prod-test-secret")
     monkeypatch.setattr(settings, "secret_key", "")
