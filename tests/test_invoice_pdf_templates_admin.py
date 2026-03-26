@@ -108,9 +108,9 @@ def test_destination_form_shows_qz_printer_controls_but_not_backend_signing_sett
     response = client.get("/admin/printing/destinations/new")
 
     assert response.status_code == 200
-    assert "Use QZ direct print" in response.text
-    assert "QZ printer name" in response.text
-    assert "platform-managed on the backend" in response.text
+    assert "Print directly to workstation printer" in response.text
+    assert "Printer name (optional)" in response.text
+    assert "Leave the printer name blank to use the workstation default printer." in response.text
     assert "QZ_CERTIFICATE_TEXT" not in response.text
     assert "QZ_PRIVATE_KEY_TEXT" not in response.text
     assert "/qz/certificate" not in response.text

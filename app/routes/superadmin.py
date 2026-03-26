@@ -116,6 +116,15 @@ from ..services.platform_ai_settings import (
     save_platform_ai_settings,
     validate_platform_ai_settings,
 )
+from ..services.platform_qz_settings import (
+    PLATFORM_QZ_AUDIT_FIELDS,
+    PlatformQzSettingsState,
+    get_platform_qz_settings,
+    platform_qz_settings_snapshot,
+    record_platform_qz_validation,
+    save_platform_qz_settings,
+)
+from ..services.qz_signing import build_qz_signing_diagnostics
 from ..services.tenant_ai_settings import (
     parse_dashboard_insights_override,
     resolve_tenant_ai_settings,
@@ -553,6 +562,22 @@ def _platform_email_settings_page_context(
     }
 
 
+def _platform_qz_settings_page_context(
+    request: Request,
+    *,
+    settings_state: PlatformQzSettingsState,
+) -> dict[str, object]:
+    diagnostics = build_qz_signing_diagnostics(enabled=bool(settings_state.qz_enabled))
+    return {
+        "request": request,
+        "platform_qz_settings": settings_state,
+        "qz_diagnostics": diagnostics,
+        "saved": request.query_params.get("saved") == "1",
+        "validated": request.query_params.get("validated") == "1",
+        "error": request.query_params.get("error", ""),
+    }
+
+
 def _audit_platform_email_settings_change(
     db: Session,
     request: Request,
@@ -575,6 +600,34 @@ def _audit_platform_email_settings_change(
         entity_type="platform_setting",
         entity_id="global",
         summary="Updated platform email settings",
+        details=changed,
+        user=current_user,
+        tenant_id=None,
+    )
+
+
+def _audit_platform_qz_settings_change(
+    db: Session,
+    request: Request,
+    *,
+    current_user: User,
+    before: PlatformQzSettingsState,
+    after: PlatformQzSettingsState,
+) -> None:
+    changed = audit_diff(
+        platform_qz_settings_snapshot(before),
+        platform_qz_settings_snapshot(after),
+        PLATFORM_QZ_AUDIT_FIELDS,
+    )
+    if not changed.get("changed"):
+        return
+    audit_log(
+        db,
+        request,
+        action="PLATFORM_QZ_SETTINGS_UPDATE",
+        entity_type="platform_setting",
+        entity_id="global",
+        summary="Updated platform QZ settings",
         details=changed,
         user=current_user,
         tenant_id=None,
@@ -936,6 +989,23 @@ def platform_email_settings_detail(
     )
 
 
+@router.get("/platform/qz-settings", response_class=HTMLResponse)
+@router.get("/admin/qz-settings", response_class=HTMLResponse)
+def platform_qz_settings_detail(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    _require_platform_superadmin(request, db)
+    return templates.TemplateResponse(
+        request,
+        "admin/platform_qz_settings.html",
+        _platform_qz_settings_page_context(
+            request,
+            settings_state=get_platform_qz_settings(db),
+        ),
+    )
+
+
 @router.post("/platform/email-settings")
 @router.post("/admin/email-settings")
 async def platform_email_settings_update(
@@ -972,6 +1042,35 @@ async def platform_email_settings_update(
     )
     db.commit()
     return RedirectResponse(url="/platform/email-settings?saved=1", status_code=303)
+
+
+@router.post("/platform/qz-settings")
+@router.post("/admin/qz-settings")
+async def platform_qz_settings_update(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+    form = await request.form()
+    before = get_platform_qz_settings(db)
+    saved = save_platform_qz_settings(
+        db,
+        PlatformQzSettingsState(
+            qz_enabled=_form_checkbox_checked(form, "qz_enabled"),
+            qz_last_validated_at=before.qz_last_validated_at,
+            qz_last_validation_status=before.qz_last_validation_status,
+            qz_last_validation_summary=before.qz_last_validation_summary,
+        ),
+    )
+    _audit_platform_qz_settings_change(
+        db,
+        request,
+        current_user=current_user,
+        before=before,
+        after=saved,
+    )
+    db.commit()
+    return RedirectResponse(url="/platform/qz-settings?saved=1", status_code=303)
 
 
 @router.post("/platform/email-settings/test")
@@ -1031,6 +1130,56 @@ async def platform_email_settings_send_test(
         url=f"/platform/email-settings?{urlencode({'test_error': result.error or 'Test email failed.', 'test_to': test_to})}",
         status_code=303,
     )
+
+
+@router.post("/platform/qz-settings/validate")
+@router.post("/admin/qz-settings/validate")
+def platform_qz_settings_validate(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+    settings_state = get_platform_qz_settings(db)
+    diagnostics = build_qz_signing_diagnostics(enabled=bool(settings_state.qz_enabled))
+    summary = "QZ direct printing is ready for tenant use."
+    if not diagnostics.ready_for_tenants:
+        summary = next(
+            iter(diagnostics.likely_causes),
+            diagnostics.sign_route.detail
+            or diagnostics.certificate_route.detail
+            or diagnostics.csp_detail
+            or "QZ validation failed.",
+        )
+    saved = record_platform_qz_validation(
+        db,
+        ok=bool(diagnostics.ready_for_tenants),
+        summary=summary,
+    )
+    audit_log(
+        db,
+        request,
+        action="PLATFORM_QZ_SETTINGS_VALIDATE",
+        entity_type="platform_setting",
+        entity_id="global",
+        summary=(
+            "Validated platform QZ settings"
+            if saved.validation_ok
+            else "Platform QZ validation failed"
+        ),
+        details={
+            "status": saved.qz_last_validation_status,
+            "summary": saved.qz_last_validation_summary,
+            "ready_for_tenants": diagnostics.ready_for_tenants,
+            "signing_operational": diagnostics.signing_operational,
+            "certificate_route": diagnostics.certificate_route.summary,
+            "sign_route": diagnostics.sign_route.summary,
+            "csp_connect_src_ok": diagnostics.csp_connect_src_ok,
+        },
+        user=current_user,
+        tenant_id=None,
+    )
+    db.commit()
+    return RedirectResponse(url="/platform/qz-settings?validated=1", status_code=303)
 
 
 @router.post("/platform/tenants/new", response_class=HTMLResponse)

@@ -143,6 +143,7 @@ _PLATFORM_ONLY_PREFIXES = (
     "/admin/tenants",
     "/admin/ai-settings",
     "/admin/email-settings",
+    "/admin/qz-settings",
     "/admin/system-status",
     "/admin/dev-mode",
     "/bootstrap",

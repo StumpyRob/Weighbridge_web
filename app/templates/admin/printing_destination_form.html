@@ -86,14 +86,21 @@
               value="1"
               {% if form_data.qz_direct_print_enabled %}checked{% endif %}
             />
-            <label for="qz_direct_print_enabled">Use QZ direct print{{ help(help_text.printing_qz_direct_print, "printing-destination-qz-direct-print-help") }}</label>
+            <label for="qz_direct_print_enabled">Print directly to workstation printer{{ help(help_text.printing_qz_direct_print, "printing-destination-qz-direct-print-help") }}</label>
           </div>
           <div class="field" data-delivery-groups="PRINT_LOCAL_BROWSER">
-            <label for="qz_printer_name">QZ printer name{{ help(help_text.printing_qz_printer_name, "printing-destination-qz-printer-name-help") }}</label>
+            <label for="qz_printer_name">Printer name (optional){{ help(help_text.printing_qz_printer_name, "printing-destination-qz-printer-name-help") }}</label>
             <input type="text" id="qz_printer_name" name="qz_printer_name" value="{{ form_data.qz_printer_name }}" placeholder="Office Ticket Printer" />
           </div>
           <div class="field" data-delivery-groups="PRINT_LOCAL_BROWSER">
-            <p class="muted">QZ certificate and signing settings are platform-managed on the backend. Tenant admins only choose whether this destination uses QZ direct print and which workstation printer name to target.</p>
+            <p class="muted">Leave the printer name blank to use the workstation default printer.</p>
+            {% if platform_qz_ready %}
+              <p class="muted">Platform setup is ready. Tenant admins only choose whether this destination prints directly from the workstation browser and which printer to target.</p>
+            {% elif platform_qz_enabled %}
+              <p class="muted">Direct workstation printing is enabled at platform level but not fully validated yet. You can save printer behaviour now, but users may need the platform administrator to finish setup before direct printing will work.</p>
+            {% else %}
+              <p class="muted">Direct workstation printing is currently disabled at platform level. You can still save these settings now for later activation.</p>
+            {% endif %}
           </div>
 
           <div class="field" data-delivery-groups="PRINT_NETWORK_RAW_9100">

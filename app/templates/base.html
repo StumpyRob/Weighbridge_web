@@ -196,6 +196,7 @@
                 {{ nav_link('/platform/tenants', 'Tenant Management', request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants'), 'TM') }}
                 {{ nav_link('/platform/ai-settings', 'AI Settings', request.url.path.startswith('/platform/ai-settings') or request.url.path.startswith('/admin/ai-settings'), 'AI') }}
                 {{ nav_link('/platform/email-settings', 'Email Settings', request.url.path.startswith('/platform/email-settings') or request.url.path.startswith('/admin/email-settings'), 'EM') }}
+                {{ nav_link('/platform/qz-settings', 'QZ Settings', request.url.path.startswith('/platform/qz-settings') or request.url.path.startswith('/admin/qz-settings'), 'QZ') }}
                 {{ nav_link('/admin/system-status', 'System Status', request.url.path.startswith('/admin/system-status'), 'SS') }}
               {% else %}
                 {% if permissions.view_dashboard %}

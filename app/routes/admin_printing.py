@@ -18,6 +18,14 @@ from ..permissions import PERM_MANAGE_SETTINGS, require_permission
 from ..services.print_payload import (
     build_print_payload,
 )
+from ..services.platform_qz_settings import (
+    get_platform_qz_settings,
+    platform_qz_ready_for_tenants,
+)
+from ..services.qz_printing import (
+    qz_direct_print_enabled_from_destination,
+    qz_printer_name_from_delivery_config,
+)
 from ..services.print_render import render_from_content
 from ..services.printing import (
     DELIVERY_TYPE_EMAIL_PDF,
@@ -231,18 +239,12 @@ def _destination_to_form(
         if destination and isinstance(destination.delivery_config, dict)
         else {}
     )
-    qz_printer_name = ""
-    for key in ("qz_printer_name", "printer_name", "printer"):
-        value = str(config.get(key, "") or "").strip()
-        if value:
-            qz_printer_name = value
-            break
-    qz_direct_print_enabled = False
-    if destination and str(destination.delivery_type or "").strip().upper() == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
-        if "qz_direct_print_enabled" in config:
-            qz_direct_print_enabled = _is_truthy(str(config.get("qz_direct_print_enabled", "")))
-        else:
-            qz_direct_print_enabled = bool(qz_printer_name)
+    qz_printer_name = qz_printer_name_from_delivery_config(config)
+    qz_direct_print_enabled = qz_direct_print_enabled_from_destination(
+        delivery_type=destination.delivery_type if destination else DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
+        delivery_config=config,
+        local_browser_delivery_type=DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
+    )
     return {
         "name": str(destination.name if destination else ""),
         "description": str(
@@ -464,6 +466,7 @@ def _destination_form_response(
             _destination_delete_block_error(destination, has_jobs=has_jobs) or ""
         )
         can_delete_destination = not bool(destination_delete_error)
+    platform_qz_settings = get_platform_qz_settings(db)
     return templates.TemplateResponse(
         request,
         "admin/printing_destination_form.html",
@@ -480,6 +483,8 @@ def _destination_form_response(
             "saved": request.query_params.get("saved") == "1",
             "can_delete_destination": can_delete_destination,
             "destination_delete_error": destination_delete_error,
+            "platform_qz_enabled": bool(platform_qz_settings.qz_enabled),
+            "platform_qz_ready": platform_qz_ready_for_tenants(db),
         },
         status_code=status_code,
     )

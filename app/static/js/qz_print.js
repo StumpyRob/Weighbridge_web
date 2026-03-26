@@ -289,11 +289,28 @@
     return defaultPrinter;
   }
 
-  function buildSuccessUrl(baseUrl, printerName) {
+  function buildSuccessUrl(baseUrl, printerName, successKind) {
     if (!baseUrl) {
       return "";
     }
     const url = new URL(baseUrl, window.location.origin);
+    const normalizedKind = String(successKind || "ticket").trim().toLowerCase();
+    if (normalizedKind === "invoice") {
+      url.searchParams.set("invoice_print_sent", "1");
+      url.searchParams.delete("invoice_print_job_id");
+      url.searchParams.delete("print_failed");
+      url.searchParams.delete("print_error");
+      url.searchParams.delete("print_error_detail");
+      url.searchParams.delete("print_job_id");
+      return url.toString();
+    }
+    if (normalizedKind === "wtn") {
+      url.searchParams.set("wtn_sent", "1");
+      url.searchParams.delete("wtn_failed");
+      url.searchParams.delete("wtn_error_detail");
+      url.searchParams.delete("wtn_job_id");
+      return url.toString();
+    }
     url.searchParams.set("printed", "1");
     url.searchParams.set("print_sent", "1");
     url.searchParams.set("print_status", "1");
@@ -306,17 +323,23 @@
     return url.toString();
   }
 
-  function describeError(error, preferredPrinterName) {
+  function classifyError(error, preferredPrinterName) {
     const message = String(error && error.message ? error.message : error || "").trim();
     const normalized = message.toLowerCase();
     if (!message) {
-      return "Direct print failed.";
+      return {
+        message: "Direct print failed.",
+        recovery: "Use Preview or Download PDF.",
+      };
     }
     if (
       normalized.includes("failed to load qz tray support") ||
       normalized.includes("javascript library did not load")
     ) {
-      return "QZ Tray support is unavailable in this browser session.";
+      return {
+        message: "QZ Tray support is unavailable in this browser session.",
+        recovery: "Reload the page or use Preview or Download PDF.",
+      };
     }
     if (
       normalized.includes("websocket") ||
@@ -325,32 +348,55 @@
       normalized.includes("closed before") ||
       normalized.includes("failed to establish a connection")
     ) {
-      return "QZ Tray is not running or could not be reached on this workstation.";
+      return {
+        message: "QZ Tray is not running or could not be reached on this workstation.",
+        recovery: "Start QZ Tray and retry, or use Preview or Download PDF.",
+      };
     }
     if (
+      normalized.includes("direct workstation printing is disabled") ||
+      normalized.includes("direct workstation printing is not available") ||
       normalized.includes("qz signing") ||
       normalized.includes("signing route") ||
       normalized.includes("csrf validation failed")
     ) {
-      return "QZ request signing is not available from the server yet.";
+      return {
+        message: "Direct workstation printing is not set up for this workspace.",
+        recovery: "Use Preview or Download PDF, or contact your administrator.",
+      };
     }
     if (
       normalized.includes("signature") ||
       normalized.includes("certificate") ||
       normalized.includes("sign")
     ) {
-      return "QZ Tray rejected the request because certificate/signing is not fully configured yet.";
+      return {
+        message: "Direct workstation printing is not set up for this workspace.",
+        recovery: "Use Preview or Download PDF, or contact your administrator.",
+      };
     }
     if (normalized.includes("not found") && normalized.includes("printer")) {
       if (preferredPrinterName) {
-        return `Printer "${preferredPrinterName}" was not found in QZ Tray.`;
+        return {
+          message: `Printer "${preferredPrinterName}" was not found in QZ Tray.`,
+          recovery: "Use a different workstation printer or use Preview or Download PDF.",
+        };
       }
-      return "The selected printer was not found in QZ Tray.";
+      return {
+        message: "The selected printer was not found in QZ Tray.",
+        recovery: "Use a different workstation printer or use Preview or Download PDF.",
+      };
     }
     if (normalized.includes("no default printer")) {
-      return "No default printer is available for QZ Tray.";
+      return {
+        message: "No default printer is available on this workstation.",
+        recovery: "Choose a printer name or set a workstation default printer.",
+      };
     }
-    return message;
+    return {
+      message: message,
+      recovery: "Use Preview or Download PDF if the issue continues.",
+    };
   }
 
   async function handleQzPrint(button) {
@@ -367,6 +413,9 @@
       String(button.getAttribute("data-qz-document-label") || "").trim() || "Ticket";
     const successBaseUrl = String(
       button.getAttribute("data-qz-success-base-url") || ""
+    ).trim();
+    const successKind = String(
+      button.getAttribute("data-qz-success-kind") || "ticket"
     ).trim();
     const originalLabel = button.textContent;
     const originalDisabled = button.disabled;
@@ -408,16 +457,14 @@
       ]);
 
       setStatus(statusElement, `Printed to ${printerName}.`, "success");
-      const successUrl = buildSuccessUrl(successBaseUrl, printerName);
+      const successUrl = buildSuccessUrl(successBaseUrl, printerName, successKind);
       if (successUrl) {
         window.location.assign(successUrl);
       }
     } catch (error) {
-      const message = describeError(error, preferredPrinterName);
+      const errorState = classifyError(error, preferredPrinterName);
       setStatus(statusElement, "", null);
-      showErrorToast(
-        `Direct print unavailable. ${message} Start QZ Tray and retry, or use Preview or Download PDF.`
-      );
+      showErrorToast(`Direct print unavailable. ${errorState.message} ${errorState.recovery}`);
     } finally {
       button.disabled = originalDisabled;
       button.removeAttribute("aria-busy");

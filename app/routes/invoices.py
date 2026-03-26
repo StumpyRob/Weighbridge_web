@@ -58,6 +58,11 @@ from ..services.email_service import (
     render_email_template,
     send_email,
 )
+from ..services.platform_qz_settings import platform_qz_ready_for_tenants
+from ..services.qz_printing import (
+    qz_direct_print_enabled_from_destination,
+    qz_printer_name_from_delivery_config,
+)
 from ..services.printing import (
     DELIVERY_TYPE_EMAIL_PDF,
     DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
@@ -1260,6 +1265,24 @@ def _render_invoice_print_html(
     return rendered_html, template_id
 
 
+def _invoice_qz_printer_name(destination: PrintDestination | None) -> str:
+    if destination is None:
+        return ""
+    return qz_printer_name_from_delivery_config(
+        destination.delivery_config if isinstance(destination.delivery_config, dict) else {}
+    )
+
+
+def _invoice_qz_direct_print_enabled(destination: PrintDestination | None) -> bool:
+    if destination is None:
+        return False
+    return qz_direct_print_enabled_from_destination(
+        delivery_type=destination.delivery_type,
+        delivery_config=destination.delivery_config if isinstance(destination.delivery_config, dict) else {},
+        local_browser_delivery_type=DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
+    )
+
+
 def _invoice_print_actions_context(
     db: Session,
     invoice_id: int,
@@ -1267,6 +1290,11 @@ def _invoice_print_actions_context(
     destinations = _load_active_invoice_destinations(db)
     default_destination = _default_invoice_destination(destinations)
     send_enabled = default_destination is not None
+    platform_qz_ready = platform_qz_ready_for_tenants(db)
+    qz_printer_name = _invoice_qz_printer_name(default_destination)
+    qz_direct_print_enabled = _invoice_qz_direct_print_enabled(default_destination)
+    invoice = db.get(Invoice, invoice_id)
+    invoice_label = str(invoice.invoice_no or f"#{invoice_id}") if invoice is not None else f"#{invoice_id}"
 
     return {
         "print_missing_default": not send_enabled,
@@ -1284,6 +1312,14 @@ def _invoice_print_actions_context(
             "download_url": f"/invoices/{invoice_id}/pdf",
             "download_label": "Download PDF",
             "download_button_variant": "secondary",
+            "qz_print": {
+                "enabled": bool(send_enabled and platform_qz_ready and qz_direct_print_enabled),
+                "pdf_url": f"/invoices/{invoice_id}/pdf",
+                "printer_name": qz_printer_name,
+                "document_label": f"Invoice {invoice_label}",
+                "success_base_url": f"/invoices/{invoice_id}",
+                "success_kind": "invoice",
+            },
             "no_default_message": "Printing is not configured. Contact admin.",
         }
     }

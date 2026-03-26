@@ -37,6 +37,7 @@
           data-qz-printer-name="{{ qz_print.printer_name or '' }}"
           data-qz-document-label="{{ qz_print.document_label or '' }}"
           data-qz-success-base-url="{{ tenant_path(qz_print.success_base_url or '') }}"
+          data-qz-success-kind="{{ qz_print.success_kind or 'ticket' }}"
         {% endif %}
         {% if not actions.send_enabled %}disabled aria-disabled="true"{% endif %}
       >

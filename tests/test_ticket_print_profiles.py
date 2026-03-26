@@ -353,7 +353,14 @@ def test_ticket_detail_documents_frame_groups_ticket_actions(client, db_session)
     assert "Advanced printing" not in response.text
 
 
-def test_ticket_detail_qz_print_button_uses_configured_printer_name(client, db_session):
+def test_ticket_detail_qz_print_button_uses_configured_printer_name(
+    client,
+    db_session,
+    monkeypatch,
+):
+    import app.routes.tickets as tickets_routes
+
+    monkeypatch.setattr(tickets_routes, "platform_qz_ready_for_tenants", lambda _db: True)
     ticket = _create_ticket(
         db_session,
         ticket_no="T-QZ-PRINTER-1",
@@ -379,10 +386,18 @@ def test_ticket_detail_qz_print_button_uses_configured_printer_name(client, db_s
     response = client.get(f"/tickets/{ticket.id}")
 
     assert response.status_code == 200
+    assert "data-qz-print-button" in response.text
     assert 'data-qz-printer-name="Office Ticket Printer"' in response.text
 
 
-def test_ticket_detail_qz_print_button_uses_explicit_qz_toggle(client, db_session):
+def test_ticket_detail_qz_print_button_uses_explicit_qz_toggle(
+    client,
+    db_session,
+    monkeypatch,
+):
+    import app.routes.tickets as tickets_routes
+
+    monkeypatch.setattr(tickets_routes, "platform_qz_ready_for_tenants", lambda _db: True)
     ticket = _create_ticket(
         db_session,
         ticket_no="T-QZ-TOGGLE-1",

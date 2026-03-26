@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat
 from cryptography.x509.oid import NameOID
 
 from app.config import settings
+from app.models import PlatformSetting
 from app.services import qz_signing
 
 
@@ -166,9 +167,9 @@ def test_qz_signing_does_not_use_desktop_demo_fallback_when_dev_mode_is_false(
     sign_response = client_anonymous.post("/qz/sign", json={"request": "demo-request"})
 
     assert certificate_response.status_code == 503
-    assert "QZ signing certificate is not configured." in certificate_response.text
+    assert certificate_response.text == qz_signing.QZ_PUBLIC_UNAVAILABLE_MESSAGE
     assert sign_response.status_code == 503
-    assert "QZ signing private key is not configured." in sign_response.text
+    assert sign_response.text == qz_signing.QZ_PUBLIC_UNAVAILABLE_MESSAGE
 
 
 def test_qz_certificate_route_returns_503_with_admin_config_error_when_missing(
@@ -180,11 +181,29 @@ def test_qz_certificate_route_returns_503_with_admin_config_error_when_missing(
     response = client_anonymous.get("/qz/certificate")
 
     assert response.status_code == 503
-    assert "QZ signing certificate is not configured." in response.text
-    assert "QZ_CERTIFICATE_TEXT" in response.text
-    assert "QZ_CERTIFICATE_PATH" in response.text
-    assert "QZ_CERTIFICATE_FILE" in response.text
-    assert "$RAILWAY_VOLUME_MOUNT_PATH/qz/digital-certificate.txt" in response.text
+    assert response.text == qz_signing.QZ_PUBLIC_UNAVAILABLE_MESSAGE
+    assert "QZ_CERTIFICATE_TEXT" not in response.text
+    assert "QZ_CERTIFICATE_PATH" not in response.text
+    assert "QZ_CERTIFICATE_FILE" not in response.text
+    assert "$RAILWAY_VOLUME_MOUNT_PATH/qz/digital-certificate.txt" not in response.text
+
+
+def test_qz_routes_return_disabled_message_when_platform_setting_turns_off_qz(
+    client_anonymous,
+    db_session,
+    monkeypatch,
+):
+    _clear_qz_signing_config(monkeypatch)
+    db_session.add(PlatformSetting(qz_enabled=False))
+    db_session.commit()
+
+    certificate_response = client_anonymous.get("/qz/certificate")
+    sign_response = client_anonymous.post("/qz/sign", json={"request": "demo-request"})
+
+    assert certificate_response.status_code == 503
+    assert certificate_response.text == qz_signing.QZ_PUBLIC_DISABLED_MESSAGE
+    assert sign_response.status_code == 503
+    assert sign_response.text == qz_signing.QZ_PUBLIC_DISABLED_MESSAGE
 
 
 def test_qz_sign_route_returns_503_with_admin_config_error_when_missing(
@@ -196,11 +215,42 @@ def test_qz_sign_route_returns_503_with_admin_config_error_when_missing(
     response = client_anonymous.post("/qz/sign", json={"request": "demo-request"})
 
     assert response.status_code == 503
-    assert "QZ signing private key is not configured." in response.text
-    assert "QZ_PRIVATE_KEY_TEXT" in response.text
-    assert "QZ_PRIVATE_KEY_PATH" in response.text
-    assert "QZ_PRIVATE_KEY_FILE" in response.text
-    assert "$RAILWAY_VOLUME_MOUNT_PATH/qz/private-key.pem" in response.text
+    assert response.text == qz_signing.QZ_PUBLIC_UNAVAILABLE_MESSAGE
+    assert "QZ_PRIVATE_KEY_TEXT" not in response.text
+    assert "QZ_PRIVATE_KEY_PATH" not in response.text
+    assert "QZ_PRIVATE_KEY_FILE" not in response.text
+    assert "$RAILWAY_VOLUME_MOUNT_PATH/qz/private-key.pem" not in response.text
+
+
+def test_qz_signing_diagnostics_report_missing_configuration(monkeypatch):
+    _clear_qz_signing_config(monkeypatch)
+
+    diagnostics = qz_signing.build_qz_signing_diagnostics(enabled=True)
+
+    assert diagnostics.enabled is True
+    assert diagnostics.certificate.configured is False
+    assert diagnostics.private_key.configured is False
+    assert diagnostics.certificate_route.ok is False
+    assert diagnostics.sign_route.ok is False
+    assert diagnostics.signing_operational is False
+    assert diagnostics.ready_for_tenants is False
+    assert diagnostics.likely_causes
+
+
+def test_qz_signing_diagnostics_report_ready_when_configured(monkeypatch, tmp_path):
+    certificate_path, private_key_path, _certificate_text = _write_qz_test_keys(tmp_path)
+    _clear_qz_signing_config(monkeypatch)
+    monkeypatch.setattr(settings, "qz_certificate_path", str(certificate_path))
+    monkeypatch.setattr(settings, "qz_private_key_path", str(private_key_path))
+
+    diagnostics = qz_signing.build_qz_signing_diagnostics(enabled=True)
+
+    assert diagnostics.certificate.configured is True
+    assert diagnostics.private_key.configured is True
+    assert diagnostics.certificate_route.ok is True
+    assert diagnostics.sign_route.ok is True
+    assert diagnostics.signing_operational is True
+    assert diagnostics.ready_for_tenants is True
 
 
 def test_qz_signing_service_loads_dev_demo_keys_from_desktop(monkeypatch, tmp_path):

@@ -2,24 +2,86 @@ from __future__ import annotations
 
 import base64
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
+from fastapi.responses import Response
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 
 from ..config import settings
+from ..security_hardening import apply_security_headers
 
 
 class QzSigningConfigurationError(RuntimeError):
     pass
 
 
+QZ_PUBLIC_DISABLED_MESSAGE = "Direct workstation printing is disabled."
+QZ_PUBLIC_UNAVAILABLE_MESSAGE = "Direct workstation printing is not available."
 _DEFAULT_QZ_MOUNT_DIRS = (
     Path("/data/qz"),
     Path("/config/qz"),
 )
+_QZ_SAMPLE_SIGN_PAYLOAD = '{"call":"qz.healthcheck","params":[],"timestamp":1}'
+
+
+@dataclass(frozen=True)
+class QzConfigSourceStatus:
+    label: str
+    configured: bool
+    source_type: str
+    source_label: str
+    validation_status: str
+    resolved_path: str | None = None
+    checked_paths: tuple[str, ...] = ()
+    detail: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.validation_status == "ok"
+
+
+@dataclass(frozen=True)
+class QzRouteStatus:
+    path: str
+    ok: bool
+    status: str
+    summary: str
+    detail: str = ""
+
+
+@dataclass(frozen=True)
+class QzSigningDiagnostics:
+    enabled: bool
+    certificate: QzConfigSourceStatus
+    private_key: QzConfigSourceStatus
+    certificate_route: QzRouteStatus
+    sign_route: QzRouteStatus
+    csp_connect_src_ok: bool
+    csp_detail: str
+    likely_causes: tuple[str, ...]
+    browser_requirements: tuple[str, ...]
+    signing_operational: bool
+    ready_for_tenants: bool
+
+
+@dataclass(frozen=True)
+class _QzPathCandidate:
+    source_type: str
+    source_label: str
+    path: Path
+
+
+@dataclass(frozen=True)
+class _QzResolvedTextValue:
+    value: str | None
+    source_type: str
+    source_label: str
+    resolved_path: str | None
+    checked_paths: tuple[str, ...]
 
 
 def _normalized_multiline_value(value: str | None) -> str:
@@ -49,33 +111,62 @@ def _path_candidates(
     configured_path: str | None,
     env_aliases: tuple[str, ...],
     default_demo_filename: str,
-) -> list[Path]:
-    candidates: list[Path] = []
+) -> list[_QzPathCandidate]:
+    candidates: list[_QzPathCandidate] = []
     seen: set[str] = set()
 
-    raw_values = [str(configured_path or "").strip()]
-    raw_values.extend(str(os.getenv(name, "") or "").strip() for name in env_aliases)
+    raw_candidates: list[tuple[str, str, str]] = []
+    configured_path_value = str(configured_path or "").strip()
+    if configured_path_value:
+        raw_candidates.append(
+            ("app_config_path", "Application file path", configured_path_value)
+        )
+
+    for env_name in env_aliases:
+        raw_value = str(os.getenv(env_name, "") or "").strip()
+        if raw_value:
+            raw_candidates.append(
+                ("env_path", f"Environment file path ({env_name})", raw_value)
+            )
 
     railway_mount = str(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "") or "").strip()
     if railway_mount:
-        raw_values.append(str((Path(railway_mount).expanduser() / "qz" / default_demo_filename)))
+        raw_candidates.append(
+            (
+                "railway_mount",
+                "Railway volume mount",
+                str(Path(railway_mount).expanduser() / "qz" / default_demo_filename),
+            )
+        )
 
     for mount_dir in _DEFAULT_QZ_MOUNT_DIRS:
-        raw_values.append(str(mount_dir / default_demo_filename))
+        raw_candidates.append(
+            (
+                "mounted_file",
+                f"Mounted file ({mount_dir})",
+                str(mount_dir / default_demo_filename),
+            )
+        )
 
     demo_candidate = _candidate_dev_demo_file(default_demo_filename)
     if demo_candidate is not None:
-        raw_values.append(str(demo_candidate))
+        raw_candidates.append(
+            ("dev_demo_file", "Developer demo file", str(demo_candidate))
+        )
 
-    for raw in raw_values:
-        if not raw:
-            continue
-        candidate = Path(raw).expanduser()
+    for source_type, source_label, raw_value in raw_candidates:
+        candidate = Path(raw_value).expanduser()
         key = str(candidate)
         if key in seen:
             continue
         seen.add(key)
-        candidates.append(candidate)
+        candidates.append(
+            _QzPathCandidate(
+                source_type=source_type,
+                source_label=source_label,
+                path=candidate,
+            )
+        )
 
     return candidates
 
@@ -86,7 +177,7 @@ def _missing_configuration_message(
     inline_env_aliases: tuple[str, ...],
     path_env_aliases: tuple[str, ...],
     default_demo_filename: str,
-    candidate_paths: list[Path],
+    candidate_paths: tuple[str, ...],
 ) -> str:
     inline_hint = " or ".join(inline_env_aliases)
     path_hint = " or ".join(path_env_aliases)
@@ -97,7 +188,7 @@ def _missing_configuration_message(
             f"/config/qz/{default_demo_filename}",
         ]
     )
-    tried_paths = ", ".join(str(path) for path in candidate_paths) or "(none)"
+    tried_paths = ", ".join(candidate_paths) or "(none)"
     return (
         f"QZ signing {label} is not configured. "
         f"Set {inline_hint} or {path_hint}, "
@@ -106,54 +197,61 @@ def _missing_configuration_message(
     )
 
 
-def _load_text_value(
+def _resolve_text_value(
     *,
     inline_value: str | None,
     configured_path: str | None,
     path_env_aliases: tuple[str, ...],
     inline_env_aliases: tuple[str, ...],
     default_demo_filename: str,
-    label: str,
-) -> str:
+) -> _QzResolvedTextValue:
     normalized_inline = _normalized_multiline_value(inline_value)
     if normalized_inline:
-        return normalized_inline
+        return _QzResolvedTextValue(
+            value=normalized_inline,
+            source_type="app_config_text",
+            source_label="Application inline value",
+            resolved_path=None,
+            checked_paths=(),
+        )
 
     for env_name in inline_env_aliases:
         normalized_env_inline = _normalized_multiline_value(os.getenv(env_name, ""))
         if normalized_env_inline:
-            return normalized_env_inline
+            return _QzResolvedTextValue(
+                value=normalized_env_inline,
+                source_type="env_text",
+                source_label=f"Environment inline value ({env_name})",
+                resolved_path=None,
+                checked_paths=(),
+            )
 
     candidate_paths = _path_candidates(
         configured_path=configured_path,
         env_aliases=path_env_aliases,
         default_demo_filename=default_demo_filename,
     )
-
+    checked_paths = tuple(str(candidate.path) for candidate in candidate_paths)
     for candidate in candidate_paths:
-        if candidate.is_file():
-            return candidate.read_text(encoding="utf-8").strip()
+        if candidate.path.is_file():
+            return _QzResolvedTextValue(
+                value=candidate.path.read_text(encoding="utf-8").strip(),
+                source_type=candidate.source_type,
+                source_label=candidate.source_label,
+                resolved_path=str(candidate.path),
+                checked_paths=checked_paths,
+            )
 
-    raise QzSigningConfigurationError(
-        _missing_configuration_message(
-            label=label,
-            inline_env_aliases=inline_env_aliases,
-            path_env_aliases=path_env_aliases,
-            default_demo_filename=default_demo_filename,
-            candidate_paths=candidate_paths,
-        )
+    return _QzResolvedTextValue(
+        value=None,
+        source_type="missing",
+        source_label="Missing",
+        resolved_path=None,
+        checked_paths=checked_paths,
     )
 
 
-def load_qz_certificate_text() -> str:
-    certificate_text = _load_text_value(
-        inline_value=settings.qz_certificate_text,
-        configured_path=settings.qz_certificate_path,
-        path_env_aliases=("QZ_CERTIFICATE_PATH", "QZ_CERTIFICATE_FILE"),
-        inline_env_aliases=("QZ_CERTIFICATE_TEXT",),
-        default_demo_filename="digital-certificate.txt",
-        label="certificate",
-    )
+def _validate_certificate_text(certificate_text: str) -> None:
     if not certificate_text:
         raise QzSigningConfigurationError("QZ signing certificate is empty.")
     try:
@@ -162,22 +260,12 @@ def load_qz_certificate_text() -> str:
         raise QzSigningConfigurationError(
             f"QZ signing certificate is invalid: {exc}"
         ) from exc
-    return certificate_text
 
 
-def _load_qz_private_key_pem() -> str:
-    return _load_text_value(
-        inline_value=settings.qz_private_key_text,
-        configured_path=settings.qz_private_key_path,
-        path_env_aliases=("QZ_PRIVATE_KEY_PATH", "QZ_PRIVATE_KEY_FILE"),
-        inline_env_aliases=("QZ_PRIVATE_KEY_TEXT",),
-        default_demo_filename="private-key.pem",
-        label="private key",
-    )
-
-
-def load_qz_private_key() -> RSAPrivateKey:
-    pem_bytes = _load_qz_private_key_pem().encode("utf-8")
+def _validate_private_key_pem(private_key_pem: str) -> None:
+    if not private_key_pem:
+        raise QzSigningConfigurationError("QZ signing private key is empty.")
+    pem_bytes = private_key_pem.encode("utf-8")
     try:
         private_key = serialization.load_pem_private_key(pem_bytes, password=None)
     except Exception as exc:
@@ -185,7 +273,147 @@ def load_qz_private_key() -> RSAPrivateKey:
             f"QZ signing private key is invalid: {exc}"
         ) from exc
     if not isinstance(private_key, RSAPrivateKey):
-        raise QzSigningConfigurationError("QZ signing private key must be an RSA private key.")
+        raise QzSigningConfigurationError(
+            "QZ signing private key must be an RSA private key."
+        )
+
+
+def _inspect_source_status(
+    *,
+    label: str,
+    inline_value: str | None,
+    configured_path: str | None,
+    path_env_aliases: tuple[str, ...],
+    inline_env_aliases: tuple[str, ...],
+    default_demo_filename: str,
+    validator,
+) -> QzConfigSourceStatus:
+    resolved = _resolve_text_value(
+        inline_value=inline_value,
+        configured_path=configured_path,
+        path_env_aliases=path_env_aliases,
+        inline_env_aliases=inline_env_aliases,
+        default_demo_filename=default_demo_filename,
+    )
+    if resolved.value is None:
+        return QzConfigSourceStatus(
+            label=label,
+            configured=False,
+            source_type=resolved.source_type,
+            source_label=resolved.source_label,
+            validation_status="missing",
+            checked_paths=resolved.checked_paths,
+            detail=_missing_configuration_message(
+                label=label.lower(),
+                inline_env_aliases=inline_env_aliases,
+                path_env_aliases=path_env_aliases,
+                default_demo_filename=default_demo_filename,
+                candidate_paths=resolved.checked_paths,
+            ),
+        )
+
+    try:
+        validator(resolved.value)
+    except QzSigningConfigurationError as exc:
+        return QzConfigSourceStatus(
+            label=label,
+            configured=True,
+            source_type=resolved.source_type,
+            source_label=resolved.source_label,
+            validation_status="error",
+            resolved_path=resolved.resolved_path,
+            checked_paths=resolved.checked_paths,
+            detail=str(exc),
+        )
+
+    return QzConfigSourceStatus(
+        label=label,
+        configured=True,
+        source_type=resolved.source_type,
+        source_label=resolved.source_label,
+        validation_status="ok",
+        resolved_path=resolved.resolved_path,
+        checked_paths=resolved.checked_paths,
+    )
+
+
+def inspect_qz_certificate_source() -> QzConfigSourceStatus:
+    return _inspect_source_status(
+        label="Certificate",
+        inline_value=settings.qz_certificate_text,
+        configured_path=settings.qz_certificate_path,
+        path_env_aliases=("QZ_CERTIFICATE_PATH", "QZ_CERTIFICATE_FILE"),
+        inline_env_aliases=("QZ_CERTIFICATE_TEXT",),
+        default_demo_filename="digital-certificate.txt",
+        validator=_validate_certificate_text,
+    )
+
+
+def inspect_qz_private_key_source() -> QzConfigSourceStatus:
+    return _inspect_source_status(
+        label="Private key",
+        inline_value=settings.qz_private_key_text,
+        configured_path=settings.qz_private_key_path,
+        path_env_aliases=("QZ_PRIVATE_KEY_PATH", "QZ_PRIVATE_KEY_FILE"),
+        inline_env_aliases=("QZ_PRIVATE_KEY_TEXT",),
+        default_demo_filename="private-key.pem",
+        validator=_validate_private_key_pem,
+    )
+
+
+def load_qz_certificate_text() -> str:
+    resolved = _resolve_text_value(
+        inline_value=settings.qz_certificate_text,
+        configured_path=settings.qz_certificate_path,
+        path_env_aliases=("QZ_CERTIFICATE_PATH", "QZ_CERTIFICATE_FILE"),
+        inline_env_aliases=("QZ_CERTIFICATE_TEXT",),
+        default_demo_filename="digital-certificate.txt",
+    )
+    if resolved.value is None:
+        raise QzSigningConfigurationError(
+            _missing_configuration_message(
+                label="certificate",
+                inline_env_aliases=("QZ_CERTIFICATE_TEXT",),
+                path_env_aliases=("QZ_CERTIFICATE_PATH", "QZ_CERTIFICATE_FILE"),
+                default_demo_filename="digital-certificate.txt",
+                candidate_paths=resolved.checked_paths,
+            )
+        )
+    certificate_text = resolved.value.strip()
+    _validate_certificate_text(certificate_text)
+    return certificate_text
+
+
+def _load_qz_private_key_pem() -> str:
+    resolved = _resolve_text_value(
+        inline_value=settings.qz_private_key_text,
+        configured_path=settings.qz_private_key_path,
+        path_env_aliases=("QZ_PRIVATE_KEY_PATH", "QZ_PRIVATE_KEY_FILE"),
+        inline_env_aliases=("QZ_PRIVATE_KEY_TEXT",),
+        default_demo_filename="private-key.pem",
+    )
+    if resolved.value is None:
+        raise QzSigningConfigurationError(
+            _missing_configuration_message(
+                label="private key",
+                inline_env_aliases=("QZ_PRIVATE_KEY_TEXT",),
+                path_env_aliases=("QZ_PRIVATE_KEY_PATH", "QZ_PRIVATE_KEY_FILE"),
+                default_demo_filename="private-key.pem",
+                candidate_paths=resolved.checked_paths,
+            )
+        )
+    private_key_pem = resolved.value.strip()
+    _validate_private_key_pem(private_key_pem)
+    return private_key_pem
+
+
+def load_qz_private_key() -> RSAPrivateKey:
+    pem_bytes = _load_qz_private_key_pem().encode("utf-8")
+    private_key = serialization.load_pem_private_key(pem_bytes, password=None)
+    if not isinstance(private_key, RSAPrivateKey):
+        raise QzSigningConfigurationError(
+            "QZ signing private key must be an RSA private key."
+        )
     return private_key
 
 
@@ -200,3 +428,146 @@ def sign_qz_message(message: str) -> str:
         hashes.SHA512(),
     )
     return base64.b64encode(signature).decode("ascii")
+
+
+def qz_public_route_error_message(*, enabled: bool) -> str:
+    return QZ_PUBLIC_UNAVAILABLE_MESSAGE if enabled else QZ_PUBLIC_DISABLED_MESSAGE
+
+
+def qz_signing_is_operational(*, enabled: bool) -> bool:
+    if not enabled:
+        return False
+    return inspect_qz_certificate_source().ok and inspect_qz_private_key_source().ok
+
+
+def _qz_csp_connect_src_ok() -> tuple[bool, str]:
+    response = Response()
+    apply_security_headers(response)
+    csp = str(response.headers.get("Content-Security-Policy", "") or "")
+    required_sources = (
+        "wss://localhost:8181",
+        "wss://localhost.qz.io:8181",
+    )
+    if all(source in csp for source in required_sources):
+        return True, "CSP allows secure QZ Tray websocket endpoints."
+    return False, "CSP is missing one or more secure QZ Tray websocket endpoints."
+
+
+def _certificate_route_status(
+    *,
+    enabled: bool,
+    certificate_status: QzConfigSourceStatus,
+) -> QzRouteStatus:
+    if not enabled:
+        return QzRouteStatus(
+            path="/qz/certificate",
+            ok=False,
+            status="warning",
+            summary="Disabled",
+            detail="Platform direct workstation printing is disabled.",
+        )
+    if certificate_status.ok:
+        return QzRouteStatus(
+            path="/qz/certificate",
+            ok=True,
+            status="ok",
+            summary="OK",
+            detail="Certificate route can return the configured certificate.",
+        )
+    return QzRouteStatus(
+        path="/qz/certificate",
+        ok=False,
+        status="error",
+        summary="Fail",
+        detail=certificate_status.detail,
+    )
+
+
+def _sign_route_status(
+    *,
+    enabled: bool,
+    private_key_status: QzConfigSourceStatus,
+) -> QzRouteStatus:
+    if not enabled:
+        return QzRouteStatus(
+            path="/qz/sign",
+            ok=False,
+            status="warning",
+            summary="Disabled",
+            detail="Platform direct workstation printing is disabled.",
+        )
+    if not private_key_status.ok:
+        return QzRouteStatus(
+            path="/qz/sign",
+            ok=False,
+            status="error",
+            summary="Fail",
+            detail=private_key_status.detail,
+        )
+    try:
+        sign_qz_message(_QZ_SAMPLE_SIGN_PAYLOAD)
+    except (ValueError, QzSigningConfigurationError) as exc:
+        return QzRouteStatus(
+            path="/qz/sign",
+            ok=False,
+            status="error",
+            summary="Fail",
+            detail=str(exc),
+        )
+    return QzRouteStatus(
+        path="/qz/sign",
+        ok=True,
+        status="ok",
+        summary="OK",
+        detail="Sign route can produce SHA-512 signatures.",
+    )
+
+
+def build_qz_signing_diagnostics(*, enabled: bool) -> QzSigningDiagnostics:
+    certificate_status = inspect_qz_certificate_source()
+    private_key_status = inspect_qz_private_key_source()
+    certificate_route = _certificate_route_status(
+        enabled=enabled,
+        certificate_status=certificate_status,
+    )
+    sign_route = _sign_route_status(
+        enabled=enabled,
+        private_key_status=private_key_status,
+    )
+    csp_connect_src_ok, csp_detail = _qz_csp_connect_src_ok()
+
+    signing_operational = bool(enabled and certificate_route.ok and sign_route.ok)
+    ready_for_tenants = bool(signing_operational and csp_connect_src_ok)
+
+    likely_causes: list[str] = []
+    if not enabled:
+        likely_causes.append(
+            "Platform direct workstation printing is disabled."
+        )
+    if not certificate_status.ok and certificate_status.detail:
+        likely_causes.append(certificate_status.detail)
+    if not private_key_status.ok and private_key_status.detail:
+        likely_causes.append(private_key_status.detail)
+    if signing_operational and not csp_connect_src_ok:
+        likely_causes.append(csp_detail)
+
+    browser_requirements = (
+        "Each workstation browser must have QZ Tray installed and running.",
+        "Users must allow or trust this site inside QZ Tray before direct printing will work.",
+        "If server checks pass but users still cannot print, the remaining issue is likely workstation or browser setup.",
+    )
+
+    return QzSigningDiagnostics(
+        enabled=enabled,
+        certificate=certificate_status,
+        private_key=private_key_status,
+        certificate_route=certificate_route,
+        sign_route=sign_route,
+        csp_connect_src_ok=csp_connect_src_ok,
+        csp_detail=csp_detail,
+        likely_causes=tuple(likely_causes),
+        browser_requirements=browser_requirements,
+        signing_operational=signing_operational,
+        ready_for_tenants=ready_for_tenants,
+    )
+
