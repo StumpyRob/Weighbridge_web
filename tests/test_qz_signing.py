@@ -111,6 +111,26 @@ def test_qz_sign_route_returns_sha512_signature_for_request(
     )
 
 
+def test_qz_signing_routes_work_with_inline_env_config_when_dev_mode_is_false(
+    client_anonymous,
+    monkeypatch,
+    tmp_path,
+):
+    _certificate_path, private_key_path, certificate_text = _write_qz_test_keys(tmp_path)
+
+    _clear_qz_signing_config(monkeypatch)
+    monkeypatch.setenv("QZ_CERTIFICATE_TEXT", certificate_text.replace("\n", "\\n"))
+    monkeypatch.setenv("QZ_PRIVATE_KEY_FILE", str(private_key_path))
+
+    certificate_response = client_anonymous.get("/qz/certificate")
+    sign_response = client_anonymous.post("/qz/sign", json={"request": "signed-request"})
+
+    assert certificate_response.status_code == 200
+    assert certificate_response.text.strip() == certificate_text.strip()
+    assert sign_response.status_code == 200
+    assert sign_response.text.strip()
+
+
 def test_qz_certificate_route_uses_railway_volume_qz_mount_when_present(
     client_anonymous,
     monkeypatch,
@@ -128,6 +148,27 @@ def test_qz_certificate_route_uses_railway_volume_qz_mount_when_present(
 
     assert response.status_code == 200
     assert response.text == certificate_text.strip()
+
+
+def test_qz_signing_does_not_use_desktop_demo_fallback_when_dev_mode_is_false(
+    client_anonymous,
+    monkeypatch,
+    tmp_path,
+):
+    certificate_dir = tmp_path / "Desktop" / "QZ Tray Demo Cert"
+    certificate_dir.mkdir(parents=True, exist_ok=True)
+    _write_qz_test_keys(certificate_dir)
+
+    _clear_qz_signing_config(monkeypatch)
+    monkeypatch.setattr(qz_signing.Path, "home", lambda: tmp_path)
+
+    certificate_response = client_anonymous.get("/qz/certificate")
+    sign_response = client_anonymous.post("/qz/sign", json={"request": "demo-request"})
+
+    assert certificate_response.status_code == 503
+    assert "QZ signing certificate is not configured." in certificate_response.text
+    assert sign_response.status_code == 503
+    assert "QZ signing private key is not configured." in sign_response.text
 
 
 def test_qz_certificate_route_returns_503_with_admin_config_error_when_missing(
