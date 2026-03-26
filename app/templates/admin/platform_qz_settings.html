@@ -4,10 +4,56 @@
 {% block title %}Platform QZ Settings | Weighbridge Web{% endblock %}
 
 {% block content %}
+  {% if qz_diagnostics.ready_for_tenants %}
+    {% set hero_state = "ready" %}
+    {% set hero_icon = "&#10003;" %}
+    {% set hero_title = "QZ Printing Ready" %}
+    {% set hero_message = "Direct workstation printing is operational." %}
+    {% set hero_hint = "" %}
+  {% elif not platform_qz_settings.qz_enabled %}
+    {% set hero_state = "disabled" %}
+    {% set hero_icon = "&#9888;" %}
+    {% set hero_title = "QZ Printing Disabled" %}
+    {% set hero_message = "Direct workstation printing is turned off at platform level." %}
+    {% set hero_hint = "Enable platform QZ printing when you want tenants to use workstation printers." %}
+  {% elif not qz_diagnostics.certificate.configured or not qz_diagnostics.private_key.configured %}
+    {% set hero_state = "warning" %}
+    {% set hero_icon = "&#9888;" %}
+    {% set hero_title = "QZ Printing Not Configured" %}
+    {% set hero_message = "Direct workstation printing will not work until a certificate and private key are configured." %}
+    {% set hero_hint = "You need to provide a QZ certificate and private key in the server configuration." %}
+  {% else %}
+    {% set hero_state = "warning" %}
+    {% set hero_icon = "&#9888;" %}
+    {% set hero_title = "QZ Printing Not Ready" %}
+    {% set hero_message = "Direct workstation printing is not operational yet." %}
+    {% set hero_hint = "Review the diagnostics below, correct the server configuration, then validate again." %}
+  {% endif %}
+
+  {% if platform_qz_settings.validation_has_run %}
+    {% set validation_label = platform_qz_settings.qz_last_validation_status | upper %}
+  {% else %}
+    {% set validation_label = "NOT RUN" %}
+  {% endif %}
+
+  {% if qz_diagnostics.ready_for_tenants %}
+    {% set signing_label = "Operational" %}
+    {% set signing_message = "Direct workstation printing is operational." %}
+  {% elif not platform_qz_settings.qz_enabled %}
+    {% set signing_label = "Disabled" %}
+    {% set signing_message = "Direct workstation printing is turned off at platform level." %}
+  {% elif qz_diagnostics.signing_operational and not qz_diagnostics.csp_connect_src_ok %}
+    {% set signing_label = "Attention needed" %}
+    {% set signing_message = "Browser compatibility checks need attention." %}
+  {% else %}
+    {% set signing_label = "Not ready" %}
+    {% set signing_message = platform_qz_settings.qz_last_validation_summary or "Validate after updating the server configuration." %}
+  {% endif %}
+
   <div class="page-header">
     <div>
       <h1>Platform QZ Settings</h1>
-      <p class="muted">Platform-managed signing and diagnostics for direct workstation printing.</p>
+      <p class="muted">Platform-managed setup for direct workstation printing.</p>
     </div>
     <div class="actions btn-group">
       <a class="btn btn--ghost" href="/platform/tenants">Back to Tenants</a>
@@ -27,57 +73,85 @@
       <div class="alert alert--danger">{{ error }}</div>
     {% endif %}
 
-    <section class="frame">
-      <div class="frame-header">
-        <h2>Current Status{{ help(help_text.platform_qz_settings_scope, "platform-qz-settings-scope-help") }}</h2>
+    <section class="platform-qz-hero platform-qz-hero--{{ hero_state }}">
+      <div class="platform-qz-hero__icon" aria-hidden="true">{{ hero_icon | safe }}</div>
+      <div class="platform-qz-hero__body">
+        <h2>{{ hero_title }}</h2>
+        <p>{{ hero_message }}</p>
+        {% if hero_hint %}
+          <p class="platform-qz-hero__hint">{{ hero_hint }}</p>
+        {% endif %}
       </div>
+      <div class="platform-qz-hero__meta">
+        <div class="summary-label">Last validation</div>
+        <strong>{{ validation_label }}</strong>
+        {% if platform_qz_settings.qz_last_validated_at %}
+          <div class="muted">{{ platform_qz_settings.qz_last_validated_at.strftime("%d/%m/%Y %H:%M") }}</div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="frame">
       <div class="frame-body">
-        <div class="invoice-summary-grid">
-          <div class="card">
-            <div class="summary-label">Enabled</div>
-            <strong>{{ "Yes" if platform_qz_settings.qz_enabled else "No" }}</strong>
-          </div>
-          <div class="card">
-            <div class="summary-label">Signing operational</div>
-            <strong>{{ "Yes" if qz_diagnostics.signing_operational else "No" }}</strong>
-          </div>
-          <div class="card">
-            <div class="summary-label">Ready for tenant use</div>
-            <strong>{{ "Yes" if qz_diagnostics.ready_for_tenants else "No" }}</strong>
-          </div>
-          <div class="card">
-            <div class="summary-label">Certificate configured</div>
-            <strong>{{ "Yes" if qz_diagnostics.certificate.configured else "No" }}</strong>
-          </div>
-          <div class="card">
-            <div class="summary-label">Private key configured</div>
-            <strong>{{ "Yes" if qz_diagnostics.private_key.configured else "No" }}</strong>
-          </div>
-          <div class="card">
-            <div class="summary-label">Last validation</div>
-            <strong>
-              {% if platform_qz_settings.validation_has_run %}
-                {{ platform_qz_settings.qz_last_validation_status | upper }}
-              {% else %}
-                NOT RUN
-              {% endif %}
-            </strong>
-            {% if platform_qz_settings.qz_last_validated_at %}
-              <div class="muted">{{ platform_qz_settings.qz_last_validated_at.strftime("%d/%m/%Y %H:%M") }}</div>
-            {% endif %}
-          </div>
-        </div>
+        <p class="platform-qz-scope-note">
+          QZ signing is configured once at platform level.
+          Tenant admins only control which printers are used.
+        </p>
       </div>
     </section>
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Scope{{ help(help_text.platform_qz_management_boundary, "platform-qz-management-boundary-help") }}</h2>
+        <h2>Current Status{{ help(help_text.platform_qz_settings_scope, "platform-qz-settings-scope-help") }}</h2>
       </div>
       <div class="frame-body">
-        <p>Platform admins manage QZ signing readiness once for the whole platform.</p>
-        <p>Tenant admins do not manage the certificate or private key. They only choose whether a destination prints directly to the workstation and which printer name to use.</p>
-        <p>Private key contents are never shown here. This page reports source, status, and diagnostics only.</p>
+        <div class="platform-qz-status-grid">
+          <article class="card platform-qz-status-card">
+            <div class="platform-qz-status-card__label">Certificate</div>
+            <div class="platform-qz-status-card__state">
+              <span class="platform-qz-status-icon platform-qz-status-icon--{{ 'ok' if qz_diagnostics.certificate.ok else 'error' }}" aria-hidden="true">
+                {{ "&#10003;" | safe if qz_diagnostics.certificate.ok else "&#10007;" | safe }}
+              </span>
+              <strong>{{ "Configured" if qz_diagnostics.certificate.ok else "Not ready" }}</strong>
+            </div>
+            {% if qz_diagnostics.certificate.ok %}
+              <p class="muted">{{ qz_diagnostics.certificate.summary }}</p>
+            {% else %}
+              <p>{{ qz_diagnostics.certificate.summary }}</p>
+              <p class="muted">{{ qz_diagnostics.certificate.next_step }}</p>
+            {% endif %}
+          </article>
+
+          <article class="card platform-qz-status-card">
+            <div class="platform-qz-status-card__label">Private Key</div>
+            <div class="platform-qz-status-card__state">
+              <span class="platform-qz-status-icon platform-qz-status-icon--{{ 'ok' if qz_diagnostics.private_key.ok else 'error' }}" aria-hidden="true">
+                {{ "&#10003;" | safe if qz_diagnostics.private_key.ok else "&#10007;" | safe }}
+              </span>
+              <strong>{{ "Configured" if qz_diagnostics.private_key.ok else "Not ready" }}</strong>
+            </div>
+            {% if qz_diagnostics.private_key.ok %}
+              <p class="muted">{{ qz_diagnostics.private_key.summary }}</p>
+            {% else %}
+              <p>{{ qz_diagnostics.private_key.summary }}</p>
+              <p class="muted">{{ qz_diagnostics.private_key.next_step }}</p>
+            {% endif %}
+          </article>
+
+          <article class="card platform-qz-status-card">
+            <div class="platform-qz-status-card__label">Signing</div>
+            <div class="platform-qz-status-card__state">
+              <span class="platform-qz-status-icon platform-qz-status-icon--{{ 'ok' if qz_diagnostics.ready_for_tenants else 'error' }}" aria-hidden="true">
+                {{ "&#10003;" | safe if qz_diagnostics.ready_for_tenants else "&#10007;" | safe }}
+              </span>
+              <strong>{{ signing_label }}</strong>
+            </div>
+            <p>{{ signing_message }}</p>
+            {% if platform_qz_settings.qz_last_validation_summary %}
+              <p class="muted">Last result: {{ platform_qz_settings.qz_last_validation_summary }}</p>
+            {% endif %}
+          </article>
+        </div>
       </div>
     </section>
 
@@ -98,7 +172,7 @@
             />
             <label for="qz_enabled">Allow direct workstation printing platform-wide</label>
           </div>
-          <p class="muted">Signing secrets stay backend-managed through environment values or mounted files. Use Validate to confirm the current source is operational.</p>
+          <p class="muted">Use Validate after updating server configuration to confirm direct printing is ready.</p>
           <div class="actions btn-group">
             <button type="submit" class="btn btn--primary">Save QZ Settings</button>
             <button type="submit" class="btn btn--secondary" formaction="/platform/qz-settings/validate">Validate Now</button>
@@ -107,89 +181,124 @@
       </div>
     </section>
 
-    <section class="frame">
-      <div class="frame-header">
-        <h2>Config Sources{{ help(help_text.platform_qz_config_source, "platform-qz-config-source-help") }}</h2>
-      </div>
+    <details class="frame platform-qz-disclosure">
+      <summary class="frame-header">
+        <h2>Advanced diagnostics{{ help(help_text.platform_qz_validation, "platform-qz-validation-help") }}</h2>
+      </summary>
       <div class="frame-body">
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Component</th>
-                <th>Status</th>
-                <th>Source</th>
-                <th>Resolved path</th>
-                <th>Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for source in [qz_diagnostics.certificate, qz_diagnostics.private_key] %}
-                {% set badge_class = "ok" if source.ok else ("warning" if source.validation_status == "missing" else "error") %}
-                <tr>
-                  <td>{{ source.label }}</td>
-                  <td><span class="health-badge health-badge--{{ badge_class }}">{{ source.validation_status | upper }}</span></td>
-                  <td>{{ source.source_label }}</td>
-                  <td>{% if source.resolved_path %}<code>{{ source.resolved_path }}</code>{% else %}-{% endif %}</td>
-                  <td>{{ source.detail or "-" }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <section class="frame">
-      <div class="frame-header">
-        <h2>Route Diagnostics{{ help(help_text.platform_qz_validation, "platform-qz-validation-help") }}</h2>
-      </div>
-      <div class="frame-body">
-        <div class="invoice-summary-grid">
-          {% for check in [qz_diagnostics.certificate_route, qz_diagnostics.sign_route] %}
-            <div class="card">
-              <div class="summary-label"><code>{{ check.path }}</code></div>
-              <div><span class="health-badge health-badge--{{ check.status }}">{{ check.summary }}</span></div>
-              <div class="muted">{{ check.detail or "-" }}</div>
+        <div class="platform-qz-status-grid">
+          <article class="card platform-qz-status-card">
+            <div class="platform-qz-status-card__label">Certificate Route</div>
+            <div class="platform-qz-status-card__state">
+              <span class="health-badge health-badge--{{ qz_diagnostics.certificate_route.status }}">{{ qz_diagnostics.certificate_route.summary }}</span>
             </div>
-          {% endfor %}
-          <div class="card">
-            <div class="summary-label">Browser CSP</div>
-            <div><span class="health-badge health-badge--{{ 'ok' if qz_diagnostics.csp_connect_src_ok else 'error' }}">{{ "OK" if qz_diagnostics.csp_connect_src_ok else "FAIL" }}</span></div>
-            <div class="muted">{{ qz_diagnostics.csp_detail }}</div>
-          </div>
-        </div>
+            <p class="muted"><code>/qz/certificate</code></p>
+            <p>
+              {% if qz_diagnostics.certificate_route.ok %}
+                Certificate route is responding correctly.
+              {% elif not platform_qz_settings.qz_enabled %}
+                Direct workstation printing is disabled at platform level.
+              {% else %}
+                Certificate route is not ready yet.
+              {% endif %}
+            </p>
+          </article>
 
-        <div class="audit" style="margin-top: 1rem;">
-          <div><strong>Signing operational:</strong> {{ "Yes" if qz_diagnostics.signing_operational else "No" }}</div>
-          <div><strong>Ready for tenant use:</strong> {{ "Yes" if qz_diagnostics.ready_for_tenants else "No" }}</div>
-          <div><strong>Last validation summary:</strong> {{ platform_qz_settings.qz_last_validation_summary or "Not run yet." }}</div>
+          <article class="card platform-qz-status-card">
+            <div class="platform-qz-status-card__label">Signing Route</div>
+            <div class="platform-qz-status-card__state">
+              <span class="health-badge health-badge--{{ qz_diagnostics.sign_route.status }}">{{ qz_diagnostics.sign_route.summary }}</span>
+            </div>
+            <p class="muted"><code>/qz/sign</code></p>
+            <p>
+              {% if qz_diagnostics.sign_route.ok %}
+                Signing test passed.
+              {% elif not platform_qz_settings.qz_enabled %}
+                Direct workstation printing is disabled at platform level.
+              {% else %}
+                Signing route is not ready yet.
+              {% endif %}
+            </p>
+          </article>
+
+          <article class="card platform-qz-status-card">
+            <div class="platform-qz-status-card__label">Browser Compatibility</div>
+            <div class="platform-qz-status-card__state">
+              <span class="health-badge health-badge--{{ 'ok' if qz_diagnostics.csp_connect_src_ok else 'warning' }}">
+                {{ "OK" if qz_diagnostics.csp_connect_src_ok else "Attention" }}
+              </span>
+            </div>
+            <p>{{ qz_diagnostics.csp_detail }}</p>
+          </article>
         </div>
 
         {% if qz_diagnostics.likely_causes %}
-          <div style="margin-top: 1rem;">
-            <strong>Likely causes</strong>
-            <ul>
+          <div class="platform-qz-next-steps">
+            <h3>What to do next</h3>
+            <ul class="platform-qz-list">
               {% for item in qz_diagnostics.likely_causes %}
                 <li>{{ item }}</li>
               {% endfor %}
             </ul>
           </div>
         {% endif %}
-      </div>
-    </section>
 
-    <section class="frame">
-      <div class="frame-header">
-        <h2>Browser-side Setup{{ help(help_text.platform_qz_browser_requirements, "platform-qz-browser-requirements-help") }}</h2>
+        <div class="platform-qz-next-steps">
+          <h3>Workstation requirements</h3>
+          <ul class="platform-qz-list">
+            {% for item in qz_diagnostics.browser_requirements %}
+              <li>{{ item }}</li>
+            {% endfor %}
+          </ul>
+        </div>
       </div>
+    </details>
+
+    <details class="frame platform-qz-disclosure">
+      <summary class="frame-header">
+        <h2>Show technical details{{ help(help_text.platform_qz_config_source, "platform-qz-config-source-help") }}</h2>
+      </summary>
       <div class="frame-body">
-        <ul>
-          {% for item in qz_diagnostics.browser_requirements %}
-            <li>{{ item }}</li>
+        <div class="platform-qz-detail-grid">
+          {% for source in [qz_diagnostics.certificate, qz_diagnostics.private_key] %}
+            <article class="card platform-qz-detail-card">
+              <h3>{{ source.label }}</h3>
+              <p class="muted">Status: {{ source.validation_status | upper }}</p>
+              <p><strong>Config source</strong><br />{{ source.source_label }}</p>
+              <p>
+                <strong>Resolved path</strong><br />
+                {% if source.resolved_path %}
+                  <code>{{ source.resolved_path }}</code>
+                {% else %}
+                  <span class="muted">None</span>
+                {% endif %}
+              </p>
+
+              {% if source.detail %}
+                <details class="platform-qz-inline-details">
+                  <summary>Raw error message</summary>
+                  <div class="platform-qz-inline-details__body">
+                    <code class="health-code">{{ source.detail }}</code>
+                  </div>
+                </details>
+              {% endif %}
+
+              {% if source.checked_paths %}
+                <details class="platform-qz-inline-details">
+                  <summary>Checked file paths</summary>
+                  <div class="platform-qz-inline-details__body">
+                    <ul class="platform-qz-list platform-qz-list--compact">
+                      {% for path in source.checked_paths %}
+                        <li><code>{{ path }}</code></li>
+                      {% endfor %}
+                    </ul>
+                  </div>
+                </details>
+              {% endif %}
+            </article>
           {% endfor %}
-        </ul>
+        </div>
       </div>
-    </section>
+    </details>
   </div>
 {% endblock %}

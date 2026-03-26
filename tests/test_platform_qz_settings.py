@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -155,14 +156,98 @@ def test_platform_qz_settings_page_reports_missing_status_and_routes(tmp_path, m
 
     assert response.status_code == 200
     assert ">Platform QZ Settings<" in response.text
-    assert "Platform admins manage QZ signing readiness once for the whole platform." in response.text
-    assert "Tenant admins do not manage the certificate or private key." in response.text
+    assert "QZ Printing Not Configured" in response.text
+    assert (
+        "Direct workstation printing will not work until a certificate and private key are configured."
+        in response.text
+    )
+    assert "QZ signing is configured once at platform level." in response.text
+    assert "Tenant admins only control which printers are used." in response.text
+    assert "Certificate is not configured." in response.text
+    assert "Private Key is not configured." in response.text
+    assert "Advanced diagnostics" in response.text
+    assert "Show technical details" in response.text
     assert "/qz/certificate" in response.text
     assert "/qz/sign" in response.text
-    assert "Certificate configured" in response.text
-    assert "Private key configured" in response.text
-    assert "Last validation summary:" in response.text
-    assert "Not run yet." in response.text
+    assert "Ready for tenant use" not in response.text
+    assert "Signing operational" not in response.text
+
+
+def test_platform_qz_settings_page_uses_ready_banner_when_operational(tmp_path, monkeypatch):
+    import app.routes.superadmin as superadmin_routes
+
+    app, SessionLocal = _build_app_and_session(
+        tmp_path,
+        db_name="platform-qz-ready.db",
+        monkeypatch=monkeypatch,
+    )
+    _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+    monkeypatch.setattr(
+        superadmin_routes,
+        "build_qz_signing_diagnostics",
+        lambda *, enabled: SimpleNamespace(
+            enabled=enabled,
+            certificate=SimpleNamespace(
+                ok=True,
+                configured=True,
+                summary="Certificate is configured.",
+                next_step="",
+                validation_status="ok",
+                source_label="Environment inline value (QZ_CERTIFICATE_TEXT)",
+                resolved_path=None,
+                detail="",
+                checked_paths=(),
+            ),
+            private_key=SimpleNamespace(
+                ok=True,
+                configured=True,
+                summary="Private Key is configured.",
+                next_step="",
+                validation_status="ok",
+                source_label="Environment inline value (QZ_PRIVATE_KEY_TEXT)",
+                resolved_path=None,
+                detail="",
+                checked_paths=(),
+            ),
+            certificate_route=SimpleNamespace(
+                ok=True,
+                status="ok",
+                summary="OK",
+                detail="Certificate route can return the configured certificate.",
+            ),
+            sign_route=SimpleNamespace(
+                ok=True,
+                status="ok",
+                summary="OK",
+                detail="Sign route can produce SHA-512 signatures.",
+            ),
+            csp_connect_src_ok=True,
+            csp_detail="CSP allows secure QZ Tray websocket endpoints.",
+            likely_causes=(),
+            browser_requirements=(),
+            signing_operational=True,
+            ready_for_tenants=True,
+        ),
+    )
+
+    with TestClient(app, base_url="https://admin.localhost") as client:
+        _login(
+            client,
+            email="superadmin@example.com",
+            password="TestPass123!",
+            next_path="/platform/qz-settings",
+        )
+        response = client.get("/platform/qz-settings")
+
+    assert response.status_code == 200
+    assert "QZ Printing Ready" in response.text
+    assert "Direct workstation printing is operational." in response.text
 
 
 def test_platform_qz_settings_update_and_validate_persist_status(tmp_path, monkeypatch):
@@ -208,14 +293,15 @@ def test_platform_qz_settings_update_and_validate_persist_status(tmp_path, monke
 
     assert validated_page.status_code == 200
     assert "QZ validation completed." in validated_page.text
-    assert "Platform direct workstation printing is disabled." in validated_page.text
+    assert "QZ Printing Disabled" in validated_page.text
+    assert "Direct workstation printing is turned off at platform level." in validated_page.text
 
     with SessionLocal() as db:
         state = db.query(PlatformSetting).order_by(PlatformSetting.id.asc()).first()
         assert state is not None
         assert bool(state.qz_enabled) is False
         assert str(state.qz_last_validation_status or "").lower() == "error"
-        assert "Platform direct workstation printing is disabled." in str(
+        assert "QZ printing is disabled at platform level." in str(
             state.qz_last_validation_summary or ""
         )
 

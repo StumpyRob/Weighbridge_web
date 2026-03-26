@@ -37,6 +37,8 @@ class QzConfigSourceStatus:
     validation_status: str
     resolved_path: str | None = None
     checked_paths: tuple[str, ...] = ()
+    summary: str = ""
+    next_step: str = ""
     detail: str = ""
 
     @property
@@ -177,7 +179,6 @@ def _missing_configuration_message(
     inline_env_aliases: tuple[str, ...],
     path_env_aliases: tuple[str, ...],
     default_demo_filename: str,
-    candidate_paths: tuple[str, ...],
 ) -> str:
     inline_hint = " or ".join(inline_env_aliases)
     path_hint = " or ".join(path_env_aliases)
@@ -188,13 +189,19 @@ def _missing_configuration_message(
             f"/config/qz/{default_demo_filename}",
         ]
     )
-    tried_paths = ", ".join(candidate_paths) or "(none)"
     return (
         f"QZ signing {label} is not configured. "
         f"Set {inline_hint} or {path_hint}, "
-        f"or mount {default_demo_filename} at one of: {mounted_locations}. "
-        f"Checked paths: {tried_paths}"
+        f"or mount {default_demo_filename} at one of: {mounted_locations}."
     )
+
+
+def _missing_configuration_next_step() -> str:
+    return "You need to provide a QZ certificate and private key in the server configuration."
+
+
+def _invalid_configuration_next_step() -> str:
+    return "Review the configured QZ certificate and private key in the server configuration."
 
 
 def _resolve_text_value(
@@ -303,12 +310,13 @@ def _inspect_source_status(
             source_label=resolved.source_label,
             validation_status="missing",
             checked_paths=resolved.checked_paths,
+            summary=f"{label} is not configured.",
+            next_step=_missing_configuration_next_step(),
             detail=_missing_configuration_message(
                 label=label.lower(),
                 inline_env_aliases=inline_env_aliases,
                 path_env_aliases=path_env_aliases,
                 default_demo_filename=default_demo_filename,
-                candidate_paths=resolved.checked_paths,
             ),
         )
 
@@ -323,6 +331,8 @@ def _inspect_source_status(
             validation_status="error",
             resolved_path=resolved.resolved_path,
             checked_paths=resolved.checked_paths,
+            summary=f"{label} is configured but could not be validated.",
+            next_step=_invalid_configuration_next_step(),
             detail=str(exc),
         )
 
@@ -334,6 +344,7 @@ def _inspect_source_status(
         validation_status="ok",
         resolved_path=resolved.resolved_path,
         checked_paths=resolved.checked_paths,
+        summary=f"{label} is configured.",
     )
 
 
@@ -351,7 +362,7 @@ def inspect_qz_certificate_source() -> QzConfigSourceStatus:
 
 def inspect_qz_private_key_source() -> QzConfigSourceStatus:
     return _inspect_source_status(
-        label="Private key",
+        label="Private Key",
         inline_value=settings.qz_private_key_text,
         configured_path=settings.qz_private_key_path,
         path_env_aliases=("QZ_PRIVATE_KEY_PATH", "QZ_PRIVATE_KEY_FILE"),
@@ -376,7 +387,6 @@ def load_qz_certificate_text() -> str:
                 inline_env_aliases=("QZ_CERTIFICATE_TEXT",),
                 path_env_aliases=("QZ_CERTIFICATE_PATH", "QZ_CERTIFICATE_FILE"),
                 default_demo_filename="digital-certificate.txt",
-                candidate_paths=resolved.checked_paths,
             )
         )
     certificate_text = resolved.value.strip()
@@ -399,7 +409,6 @@ def _load_qz_private_key_pem() -> str:
                 inline_env_aliases=("QZ_PRIVATE_KEY_TEXT",),
                 path_env_aliases=("QZ_PRIVATE_KEY_PATH", "QZ_PRIVATE_KEY_FILE"),
                 default_demo_filename="private-key.pem",
-                candidate_paths=resolved.checked_paths,
             )
         )
     private_key_pem = resolved.value.strip()
@@ -432,12 +441,6 @@ def sign_qz_message(message: str) -> str:
 
 def qz_public_route_error_message(*, enabled: bool) -> str:
     return QZ_PUBLIC_UNAVAILABLE_MESSAGE if enabled else QZ_PUBLIC_DISABLED_MESSAGE
-
-
-def qz_signing_is_operational(*, enabled: bool) -> bool:
-    if not enabled:
-        return False
-    return inspect_qz_certificate_source().ok and inspect_qz_private_key_source().ok
 
 
 def _qz_csp_connect_src_ok() -> tuple[bool, str]:
@@ -542,14 +545,16 @@ def build_qz_signing_diagnostics(*, enabled: bool) -> QzSigningDiagnostics:
     likely_causes: list[str] = []
     if not enabled:
         likely_causes.append(
-            "Platform direct workstation printing is disabled."
+            "QZ printing is disabled at platform level."
         )
-    if not certificate_status.ok and certificate_status.detail:
-        likely_causes.append(certificate_status.detail)
-    if not private_key_status.ok and private_key_status.detail:
-        likely_causes.append(private_key_status.detail)
+    if not certificate_status.ok and certificate_status.summary:
+        likely_causes.append(certificate_status.summary)
+    if not private_key_status.ok and private_key_status.summary:
+        likely_causes.append(private_key_status.summary)
+    if enabled and certificate_status.ok and private_key_status.ok and not sign_route.ok:
+        likely_causes.append("Signing test failed.")
     if signing_operational and not csp_connect_src_ok:
-        likely_causes.append(csp_detail)
+        likely_causes.append("Browser compatibility checks need attention.")
 
     browser_requirements = (
         "Each workstation browser must have QZ Tray installed and running.",
@@ -570,4 +575,3 @@ def build_qz_signing_diagnostics(*, enabled: bool) -> QzSigningDiagnostics:
         signing_operational=signing_operational,
         ready_for_tenants=ready_for_tenants,
     )
-

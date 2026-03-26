@@ -1141,15 +1141,15 @@ def platform_qz_settings_validate(
     current_user = _require_platform_superadmin(request, db)
     settings_state = get_platform_qz_settings(db)
     diagnostics = build_qz_signing_diagnostics(enabled=bool(settings_state.qz_enabled))
-    summary = "QZ direct printing is ready for tenant use."
+    summary = "QZ direct printing is operational."
     if not diagnostics.ready_for_tenants:
-        summary = next(
-            iter(diagnostics.likely_causes),
-            diagnostics.sign_route.detail
-            or diagnostics.certificate_route.detail
-            or diagnostics.csp_detail
-            or "QZ validation failed.",
-        )
+        if not settings_state.qz_enabled:
+            summary = "QZ printing is disabled at platform level."
+        else:
+            summary = next(
+                iter(diagnostics.likely_causes),
+                "QZ printing is not ready.",
+            )
     saved = record_platform_qz_validation(
         db,
         ok=bool(diagnostics.ready_for_tenants),
