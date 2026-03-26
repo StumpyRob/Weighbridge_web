@@ -485,6 +485,7 @@ def test_navbar_and_primary_styles_use_root_branding_variables(
     assert "fill:var(--dashboard-chart-bar-end);" in compact_css
     assert ".dashboard-svg-chart--throughput .dashboard-svg-chart__bar {" in normalized_css
     assert "fill:var(--dashboard-throughput-bar-end);" in compact_css
+    assert ".dashboard-bar-chart{" not in compact_css
     assert ".site-utility-bar{" in compact_css
     assert "color:var(--utility-bar-text);" in compact_css
     assert ".site-utility-bar__item--tenant{" in compact_css

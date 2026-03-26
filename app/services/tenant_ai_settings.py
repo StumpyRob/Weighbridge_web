@@ -32,12 +32,13 @@ def resolve_assistant_model_override(
 
 
 def resolve_dashboard_insights_enabled(
+    ai_assistant_enabled: bool,
     override: bool | None,
     default_enabled: bool,
 ) -> bool:
-    if override is None:
-        return bool(default_enabled)
-    return bool(override)
+    if override is not None:
+        return bool(override)
+    return bool(ai_assistant_enabled) and bool(default_enabled)
 
 
 def parse_dashboard_insights_override(value: object) -> bool | None:
@@ -67,6 +68,7 @@ def resolve_tenant_ai_settings(
         ),
         dashboard_insights_override=dashboard_insights_override,
         dashboard_insights_enabled=resolve_dashboard_insights_enabled(
+            bool(ai_assistant_enabled),
             dashboard_insights_override,
             platform_settings.ai_dashboard_insights_enabled,
         ),

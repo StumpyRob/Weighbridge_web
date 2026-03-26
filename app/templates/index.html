@@ -6,113 +6,88 @@
 {% block content %}
   {% macro dashboard_svg_chart(points, aria_label, mode="bar", throughput=False) -%}
     {% set point_count = points|length %}
+    {% set view_width = 360 %}
+    {% set view_height = 210 %}
+    {% set plot_left = 16 %}
+    {% set plot_top = 16 %}
+    {% set plot_right = view_width - 16 %}
+    {% set plot_bottom = 160 %}
+    {% set plot_width = plot_right - plot_left %}
+    {% set plot_height = plot_bottom - plot_top %}
+    {% set axis_y = 192 %}
+    {% set slot_width = plot_width / point_count if point_count else plot_width %}
+    {% set first_point_x = plot_left + (slot_width / 2) %}
+    {% set last_point_x = plot_left + (slot_width * (point_count - 1)) + (slot_width / 2) %}
     {% if mode == "bar" %}
-      <div
-        class="dashboard-svg-chart dashboard-svg-chart--{{ mode }}{% if throughput %} dashboard-svg-chart--throughput{% endif %}"
-        role="img"
-        aria-label="{{ aria_label }}"
-      >
-        <div class="dashboard-bar-chart">
-          <div class="dashboard-bar-chart__values" style="--dashboard-point-count: {{ point_count }}">
-            {% for point in points %}
-              {% if throughput %}
-                {% set value_parts = point.value_label.rsplit(' ', 1) %}
-                {% set value_text = value_parts[0] if value_parts else point.value_label %}
-              {% else %}
-                {% set value_text = point.count %}
-              {% endif %}
-              <div class="dashboard-bar-chart__value-cell">
-                <span class="dashboard-bar-chart__value">{{ value_text }}</span>
-              </div>
-            {% endfor %}
-          </div>
-          <div class="dashboard-bar-chart__plot">
-            <span class="dashboard-bar-chart__gridline dashboard-bar-chart__gridline--top" aria-hidden="true"></span>
-            <span class="dashboard-bar-chart__gridline dashboard-bar-chart__gridline--middle" aria-hidden="true"></span>
-            <span class="dashboard-bar-chart__gridline dashboard-bar-chart__gridline--bottom" aria-hidden="true"></span>
-            <div class="dashboard-bar-chart__columns" style="--dashboard-point-count: {{ point_count }}">
-              {% for point in points %}
-                <div
-                  class="dashboard-bar-chart__point"
-                  title="{% if throughput %}{{ point.value_label }} in {{ point.date_label }}{% else %}{{ point.count }} in {{ point.date_label }}{% endif %}"
-                  {% if throughput %}
-                    data-dashboard-throughput-point="{{ point.date_label }}"
-                    data-dashboard-throughput-kg="{{ point.weight_kg_raw }}"
-                  {% else %}
-                    data-dashboard-chart-day="{{ point.date_label }}"
-                  {% endif %}
-                >
-                  {% if (point.height_percent or 0) > 0 %}
-                    <span
-                      class="dashboard-bar-chart__bar"
-                      style="height: {{ point.height_percent }}%;"
-                      aria-hidden="true"
-                    ></span>
-                  {% endif %}
-                </div>
-              {% endfor %}
-            </div>
-          </div>
-          <div class="dashboard-bar-chart__labels" style="--dashboard-point-count: {{ point_count }}">
-            {% for point in points %}
-              <div class="dashboard-bar-chart__label-cell">
-                <span class="dashboard-bar-chart__label">{{ point.short_label }}</span>
-              </div>
-            {% endfor %}
-          </div>
-        </div>
-      </div>
+      {% set bar_width = slot_width * (0.18 if point_count <= 8 else 0.16) %}
     {% else %}
-      {% set view_width = 320 %}
-      {% set view_height = 210 %}
-      {% set plot_box_left = 12 %}
-      {% set plot_box_top = 28 %}
-      {% set plot_box_width = 296 %}
-      {% set plot_box_height = 130 %}
-      {% set plot_box_right = plot_box_left + plot_box_width %}
-      {% set plot_box_bottom = plot_box_top + plot_box_height %}
-      {% set plot_edge_padding = 12 %}
-      {% set plot_left = plot_box_left + plot_edge_padding %}
-      {% set plot_right = plot_box_right - plot_edge_padding %}
-      {% set plot_width = plot_right - plot_left %}
-      {% set plot_top = plot_box_top + 10 %}
-      {% set plot_bottom = plot_box_bottom - 8 %}
-      {% set plot_height = plot_bottom - plot_top %}
-      {% set axis_y = 183 %}
-      {% set divisor = point_count - 1 if point_count > 1 else 1 %}
-      {% set point_step = plot_width / divisor %}
-      {% set first_point_x = plot_left %}
-      {% set last_point_x = plot_left + (point_step * (point_count - 1)) %}
       {% set ns = namespace(
         line='',
         area='M ' ~ (first_point_x|round(2)) ~ ' ' ~ (plot_bottom|round(2))
       ) %}
-      <div
-        class="dashboard-svg-chart dashboard-svg-chart--{{ mode }}{% if throughput %} dashboard-svg-chart--throughput{% endif %}"
-        role="img"
-        aria-label="{{ aria_label }}"
-      >
-        <svg class="dashboard-svg-chart__svg" viewBox="0 0 {{ view_width }} {{ view_height }}" aria-hidden="true">
-          <rect
-            class="dashboard-svg-chart__plot-bg"
-            x="{{ plot_box_left }}"
-            y="{{ plot_box_top }}"
-            width="{{ plot_box_width }}"
-            height="{{ plot_box_height }}"
-            rx="16"
-          ></rect>
-          {% for ratio in [0, 50, 100] %}
-            {% set grid_y = plot_top + ((plot_height * ratio) / 100) %}
-            <line
-              class="dashboard-svg-chart__grid"
-              x1="{{ plot_left|round(2) }}"
-              y1="{{ grid_y|round(2) }}"
-              x2="{{ plot_right|round(2) }}"
-              y2="{{ grid_y|round(2) }}"
-            ></line>
-          {% endfor %}
+    {% endif %}
+    <div
+      class="dashboard-svg-chart dashboard-svg-chart--{{ mode }}{% if throughput %} dashboard-svg-chart--throughput{% endif %}"
+      role="img"
+      aria-label="{{ aria_label }}"
+    >
+      <svg class="dashboard-svg-chart__svg" viewBox="0 0 {{ view_width }} {{ view_height }}" aria-hidden="true">
+        {% for ratio in [0, 50, 100] %}
+          {% set grid_y = plot_top + ((plot_height * ratio) / 100) %}
+          <line
+            class="dashboard-svg-chart__grid"
+            x1="{{ plot_left|round(2) }}"
+            y1="{{ grid_y|round(2) }}"
+            x2="{{ plot_right|round(2) }}"
+            y2="{{ grid_y|round(2) }}"
+          ></line>
+        {% endfor %}
+        {% if mode == "bar" %}
           {% for point in points %}
-            {% set x = plot_left + (point_step * loop.index0) %}
+            {% set point_x = plot_left + (slot_width * loop.index0) + (slot_width / 2) %}
+            {% set raw_height = (plot_height * (point.height_percent or 0)) / 100 %}
+            {% set bar_height = raw_height if raw_height > 0 else 0 %}
+            {% if bar_height > 0 and bar_height < 4 %}
+              {% set bar_height = 4 %}
+            {% endif %}
+            {% set bar_y = plot_bottom - bar_height %}
+            <g
+              class="dashboard-svg-chart__point"
+              {% if throughput %}
+                data-dashboard-throughput-point="{{ point.date_label }}"
+                data-dashboard-throughput-kg="{{ point.weight_kg_raw }}"
+              {% else %}
+                data-dashboard-chart-day="{{ point.date_label }}"
+              {% endif %}
+            >
+              <title>
+                {% if throughput %}
+                  {{ point.value_label }} in {{ point.date_label }}
+                {% else %}
+                  {{ point.count }} in {{ point.date_label }}
+                {% endif %}
+              </title>
+              {% if bar_height > 0 %}
+                <rect
+                  class="dashboard-svg-chart__bar"
+                  x="{{ (point_x - (bar_width / 2))|round(2) }}"
+                  y="{{ bar_y|round(2) }}"
+                  width="{{ bar_width|round(2) }}"
+                  height="{{ bar_height|round(2) }}"
+                  rx="3"
+                ></rect>
+              {% endif %}
+              <text
+                class="dashboard-svg-chart__axis-label{% if point_count >= 8 %} dashboard-svg-chart__axis-label--dense{% endif %}"
+                x="{{ point_x|round(2) }}"
+                y="{{ axis_y }}"
+                text-anchor="middle"
+              >{{ point.short_label }}</text>
+            </g>
+          {% endfor %}
+        {% else %}
+          {% for point in points %}
+            {% set x = plot_left + (slot_width * loop.index0) + (slot_width / 2) %}
             {% set y = plot_bottom - ((plot_height * (point.height_percent or 0)) / 100) %}
             {% set ns.line = ns.line ~ (' ' if ns.line else '') ~ (x|round(2)) ~ ',' ~ (y|round(2)) %}
             {% set ns.area = ns.area ~ ' L ' ~ (x|round(2)) ~ ' ' ~ (y|round(2)) %}
@@ -123,7 +98,7 @@
           ></path>
           <polyline class="dashboard-svg-chart__line" points="{{ ns.line }}"></polyline>
           {% for point in points %}
-            {% set x = plot_left + (point_step * loop.index0) %}
+            {% set x = plot_left + (slot_width * loop.index0) + (slot_width / 2) %}
             {% set y = plot_bottom - ((plot_height * (point.height_percent or 0)) / 100) %}
             <g
               class="dashboard-svg-chart__point"
@@ -146,7 +121,7 @@
                   class="dashboard-svg-chart__marker"
                   cx="{{ x|round(2) }}"
                   cy="{{ y|round(2) }}"
-                  r="4.8"
+                  r="4.4"
                 ></circle>
               {% endif %}
               <text
@@ -157,9 +132,9 @@
               >{{ point.short_label }}</text>
             </g>
           {% endfor %}
-        </svg>
-      </div>
-    {% endif %}
+        {% endif %}
+      </svg>
+    </div>
   {%- endmacro %}
   {% if show_dashboard %}
     <div class="page-header">
@@ -274,7 +249,7 @@
       </section>
     {% endif %}
 
-    <div class="dashboard-chart-grid{% if dashboard.chart_points|length >= 14 or dashboard.weight_throughput.points|length >= 14 %} dashboard-chart-grid--stacked{% endif %}">
+    <div class="dashboard-chart-grid">
       <section class="frame">
         <div class="frame-header">{{ dashboard.chart_title }}{{ help(help_text.dashboard_ticket_activity, "dashboard-ticket-activity-help") }}</div>
         <div class="frame-body">

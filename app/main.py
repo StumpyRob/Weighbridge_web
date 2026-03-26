@@ -302,36 +302,6 @@ def _throughput_display_unit(max_weight_kg: Decimal, total_weight_kg: Decimal) -
     return "tonnes" if threshold >= Decimal("1000") else "kg"
 
 
-def _trim_dashboard_bar_points(
-    points: list[dict[str, object]],
-    *,
-    value_key: str,
-    edge_padding: int = 0,
-    min_points: int = 3,
-) -> list[dict[str, object]]:
-    if len(points) <= min_points:
-        return points
-
-    active_indices = [
-        index for index, point in enumerate(points) if bool(point.get(value_key))
-    ]
-    if not active_indices:
-        return points
-
-    visible_count = min(
-        len(points),
-        max(
-            min_points,
-            (active_indices[-1] - active_indices[0] + 1) + (edge_padding * 2),
-        ),
-    )
-    midpoint = (active_indices[0] + active_indices[-1]) / 2
-    start = round(midpoint - ((visible_count - 1) / 2))
-    start = max(0, min(int(start), len(points) - visible_count))
-    end = start + visible_count
-    return points[start:end]
-
-
 def _format_throughput_weight(value_kg: object, *, unit: str) -> str:
     amount = _normalize_decimal(value_kg)
     if unit == "tonnes":
@@ -577,20 +547,6 @@ def _build_dashboard_chart_points(
             if max_count and count
             else 0
         )
-
-    if period == "today":
-        chart_points = _trim_dashboard_bar_points(
-            chart_points,
-            value_key="count",
-            edge_padding=1,
-            min_points=3,
-        )
-    elif period == "7d":
-        chart_points = _trim_dashboard_bar_points(
-            chart_points,
-            value_key="count",
-            min_points=3,
-        )
     return chart_points, max_count, chart_title, chart_empty_message
 
 
@@ -698,20 +654,6 @@ def _build_weight_throughput_chart(
             max(14, round((float(weight_kg) / float(max_weight)) * 100))
             if max_weight > 0 and weight_kg > 0
             else 0
-        )
-
-    if period == "today":
-        chart_points = _trim_dashboard_bar_points(
-            chart_points,
-            value_key="weight_kg",
-            edge_padding=1,
-            min_points=3,
-        )
-    elif period == "7d":
-        chart_points = _trim_dashboard_bar_points(
-            chart_points,
-            value_key="weight_kg",
-            min_points=3,
         )
 
     return {
