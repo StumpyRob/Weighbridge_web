@@ -48,14 +48,31 @@ def _write_qz_test_keys(tmp_path: Path) -> tuple[Path, Path, str]:
     return certificate_path, private_key_path, certificate_text
 
 
+def _clear_qz_signing_config(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "dev_mode", False)
+    monkeypatch.setattr(settings, "qz_certificate_text", "")
+    monkeypatch.setattr(settings, "qz_private_key_text", "")
+    monkeypatch.setattr(settings, "qz_certificate_path", "")
+    monkeypatch.setattr(settings, "qz_private_key_path", "")
+    for env_name in (
+        "QZ_CERTIFICATE_TEXT",
+        "QZ_PRIVATE_KEY_TEXT",
+        "QZ_CERTIFICATE_PATH",
+        "QZ_PRIVATE_KEY_PATH",
+        "QZ_CERTIFICATE_FILE",
+        "QZ_PRIVATE_KEY_FILE",
+        "RAILWAY_VOLUME_MOUNT_PATH",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+
+
 def test_qz_certificate_route_returns_configured_certificate(
     client_anonymous,
     monkeypatch,
     tmp_path,
 ):
     certificate_path, private_key_path, certificate_text = _write_qz_test_keys(tmp_path)
-    monkeypatch.setattr(settings, "qz_certificate_text", "")
-    monkeypatch.setattr(settings, "qz_private_key_text", "")
+    _clear_qz_signing_config(monkeypatch)
     monkeypatch.setattr(settings, "qz_certificate_path", str(certificate_path))
     monkeypatch.setattr(settings, "qz_private_key_path", str(private_key_path))
 
@@ -73,8 +90,7 @@ def test_qz_sign_route_returns_sha512_signature_for_request(
     tmp_path,
 ):
     certificate_path, private_key_path, certificate_text = _write_qz_test_keys(tmp_path)
-    monkeypatch.setattr(settings, "qz_certificate_text", "")
-    monkeypatch.setattr(settings, "qz_private_key_text", "")
+    _clear_qz_signing_config(monkeypatch)
     monkeypatch.setattr(settings, "qz_certificate_path", str(certificate_path))
     monkeypatch.setattr(settings, "qz_private_key_path", str(private_key_path))
 
@@ -95,16 +111,64 @@ def test_qz_sign_route_returns_sha512_signature_for_request(
     )
 
 
+def test_qz_certificate_route_uses_railway_volume_qz_mount_when_present(
+    client_anonymous,
+    monkeypatch,
+    tmp_path,
+):
+    mount_root = tmp_path / "railway-volume"
+    qz_dir = mount_root / "qz"
+    qz_dir.mkdir(parents=True, exist_ok=True)
+    _certificate_path, _private_key_path, certificate_text = _write_qz_test_keys(qz_dir)
+
+    _clear_qz_signing_config(monkeypatch)
+    monkeypatch.setenv("RAILWAY_VOLUME_MOUNT_PATH", str(mount_root))
+
+    response = client_anonymous.get("/qz/certificate")
+
+    assert response.status_code == 200
+    assert response.text == certificate_text.strip()
+
+
+def test_qz_certificate_route_returns_503_with_admin_config_error_when_missing(
+    client_anonymous,
+    monkeypatch,
+):
+    _clear_qz_signing_config(monkeypatch)
+
+    response = client_anonymous.get("/qz/certificate")
+
+    assert response.status_code == 503
+    assert "QZ signing certificate is not configured." in response.text
+    assert "QZ_CERTIFICATE_TEXT" in response.text
+    assert "QZ_CERTIFICATE_PATH" in response.text
+    assert "QZ_CERTIFICATE_FILE" in response.text
+    assert "$RAILWAY_VOLUME_MOUNT_PATH/qz/digital-certificate.txt" in response.text
+
+
+def test_qz_sign_route_returns_503_with_admin_config_error_when_missing(
+    client_anonymous,
+    monkeypatch,
+):
+    _clear_qz_signing_config(monkeypatch)
+
+    response = client_anonymous.post("/qz/sign", json={"request": "demo-request"})
+
+    assert response.status_code == 503
+    assert "QZ signing private key is not configured." in response.text
+    assert "QZ_PRIVATE_KEY_TEXT" in response.text
+    assert "QZ_PRIVATE_KEY_PATH" in response.text
+    assert "QZ_PRIVATE_KEY_FILE" in response.text
+    assert "$RAILWAY_VOLUME_MOUNT_PATH/qz/private-key.pem" in response.text
+
+
 def test_qz_signing_service_loads_dev_demo_keys_from_desktop(monkeypatch, tmp_path):
     certificate_dir = tmp_path / "Desktop" / "QZ Tray Demo Cert"
     certificate_dir.mkdir(parents=True, exist_ok=True)
     _certificate_path, _private_key_path, certificate_text = _write_qz_test_keys(certificate_dir)
 
+    _clear_qz_signing_config(monkeypatch)
     monkeypatch.setattr(settings, "dev_mode", True)
-    monkeypatch.setattr(settings, "qz_certificate_text", "")
-    monkeypatch.setattr(settings, "qz_private_key_text", "")
-    monkeypatch.setattr(settings, "qz_certificate_path", "")
-    monkeypatch.setattr(settings, "qz_private_key_path", "")
     monkeypatch.setattr(qz_signing.Path, "home", lambda: tmp_path)
 
     assert qz_signing.load_qz_certificate_text() == certificate_text.strip()
