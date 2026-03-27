@@ -18,14 +18,6 @@ from ..permissions import PERM_MANAGE_SETTINGS, require_permission
 from ..services.print_payload import (
     build_print_payload,
 )
-from ..services.platform_qz_settings import (
-    get_platform_qz_settings,
-    platform_qz_ready_for_tenants,
-)
-from ..services.qz_printing import (
-    qz_direct_print_enabled_from_destination,
-    qz_printer_name_from_delivery_config,
-)
 from ..services.print_render import render_from_content
 from ..services.printing import (
     DELIVERY_TYPE_EMAIL_PDF,
@@ -239,12 +231,6 @@ def _destination_to_form(
         if destination and isinstance(destination.delivery_config, dict)
         else {}
     )
-    qz_printer_name = qz_printer_name_from_delivery_config(config)
-    qz_direct_print_enabled = qz_direct_print_enabled_from_destination(
-        delivery_type=destination.delivery_type if destination else DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
-        delivery_config=config,
-        local_browser_delivery_type=DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
-    )
     return {
         "name": str(destination.name if destination else ""),
         "description": str(
@@ -266,8 +252,6 @@ def _destination_to_form(
         "node_url": str(config.get("url", "")),
         "node_api_key": str(config.get("api_key", "")),
         "node_timeout_ms": str(config.get("timeout_ms", 5000)),
-        "qz_direct_print_enabled": qz_direct_print_enabled,
-        "qz_printer_name": qz_printer_name,
         "email_to": str(config.get("to", "")),
         "email_cc": str(config.get("cc", "")),
         "email_bcc": str(config.get("bcc", "")),
@@ -315,11 +299,6 @@ def _delivery_config_from_form(form: dict[str, str], delivery_type: str) -> dict
         timeout_ms = _parse_optional_int(form.get("node_timeout_ms"))
         if timeout_ms is not None:
             config["timeout_ms"] = timeout_ms
-    elif normalized == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
-        config["qz_direct_print_enabled"] = _is_truthy(form.get("qz_direct_print_enabled"))
-        qz_printer_name = str(form.get("qz_printer_name", "")).strip()
-        if qz_printer_name:
-            config["qz_printer_name"] = qz_printer_name
     elif normalized == DELIVERY_TYPE_EMAIL_PDF:
         for key in (
             "email_to",
@@ -466,7 +445,6 @@ def _destination_form_response(
             _destination_delete_block_error(destination, has_jobs=has_jobs) or ""
         )
         can_delete_destination = not bool(destination_delete_error)
-    platform_qz_settings = get_platform_qz_settings(db)
     return templates.TemplateResponse(
         request,
         "admin/printing_destination_form.html",
@@ -483,8 +461,6 @@ def _destination_form_response(
             "saved": request.query_params.get("saved") == "1",
             "can_delete_destination": can_delete_destination,
             "destination_delete_error": destination_delete_error,
-            "platform_qz_enabled": bool(platform_qz_settings.qz_enabled),
-            "platform_qz_ready": platform_qz_ready_for_tenants(db),
         },
         status_code=status_code,
     )
@@ -557,9 +533,6 @@ async def admin_print_destinations_create(
     if errors:
         form_data = _destination_to_form()
         form_data.update(incoming)
-        form_data["qz_direct_print_enabled"] = _is_truthy(
-            incoming.get("qz_direct_print_enabled")
-        )
         form_data["is_default"] = is_default
         form_data["is_active"] = is_active
         return _destination_form_response(
@@ -684,9 +657,6 @@ async def admin_print_destinations_update(
     if errors:
         form_data = _destination_to_form(destination)
         form_data.update(incoming)
-        form_data["qz_direct_print_enabled"] = _is_truthy(
-            incoming.get("qz_direct_print_enabled")
-        )
         form_data["is_default"] = is_default
         form_data["is_active"] = is_active
         return _destination_form_response(

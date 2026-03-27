@@ -31,7 +31,6 @@ from .models import (
     User,
     Vehicle,
     VehicleTare,
-    WorkstationPrinterProfile,
     Yard,
 )
 from .tenancy import current_platform_mode, current_tenant_id, is_tenant_scoped_entity
@@ -62,7 +61,6 @@ TENANT_FILTER_MODELS = (
     User,
     Vehicle,
     VehicleTare,
-    WorkstationPrinterProfile,
     Yard,
 )
 

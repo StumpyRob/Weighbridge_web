@@ -34,14 +34,6 @@ class PlatformSetting(Base):
     ai_default_response_style: Mapped[str | None] = mapped_column(sa.String(16), nullable=True)
     ai_default_focus: Mapped[str | None] = mapped_column(sa.String(16), nullable=True)
     ai_extra_global_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
-    qz_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    qz_certificate_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
-    qz_private_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
-    qz_certificate_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    qz_private_key_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    qz_last_validated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    qz_last_validation_status: Mapped[str | None] = mapped_column(sa.String(16), nullable=True)
-    qz_last_validation_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,

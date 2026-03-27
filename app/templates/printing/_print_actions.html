@@ -4,7 +4,6 @@
 {% set preview_variant = actions.preview_button_variant or "secondary" %}
 {% set download_variant = actions.download_button_variant or "secondary" %}
 {% set email_action = document_email_action if document_email_action is defined else None %}
-{% set qz_print = actions.qz_print if actions.qz_print is defined else None %}
 
 <div class="print-actions print-actions--{{ entity_type }}">
   <div class="print-actions__row">
@@ -29,20 +28,6 @@
       <button
         type="submit"
         class="btn btn--{{ send_variant }}"
-        {% if qz_print and qz_print.enabled %}
-          data-qz-print-button
-          data-qz-pdf-url="{{ tenant_path(qz_print.pdf_url) }}"
-          data-qz-certificate-url="{{ tenant_path('/qz/certificate') }}"
-          data-qz-sign-url="{{ tenant_path('/qz/sign') }}"
-          data-qz-resolve-url="{{ tenant_path('/printing/qz/resolve') }}"
-          data-qz-workstation-register-url="{{ tenant_path('/printing/qz/workstation/register') }}"
-          data-qz-workstation-label-url="{{ tenant_path('/printing/qz/workstation/label') }}"
-          data-qz-document-type="{{ qz_print.document_type or '' }}"
-          data-qz-printer-name="{{ qz_print.printer_name or '' }}"
-          data-qz-document-label="{{ qz_print.document_label or '' }}"
-          data-qz-success-base-url="{{ tenant_path(qz_print.success_base_url or '') }}"
-          data-qz-success-kind="{{ qz_print.success_kind or 'ticket' }}"
-        {% endif %}
         {% if not actions.send_enabled %}disabled aria-disabled="true"{% endif %}
       >
         {{ actions.send_label or "Print" }}
@@ -80,8 +65,4 @@
       {% endif %}
     {% endif %}
   </div>
-  {% if qz_print and qz_print.enabled %}
-    <p class="print-actions__note muted" data-qz-workstation-note hidden></p>
-    <p class="print-actions__status muted" data-qz-print-status role="status" aria-live="polite" hidden></p>
-  {% endif %}
 </div>

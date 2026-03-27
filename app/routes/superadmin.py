@@ -6,11 +6,10 @@ import shutil
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import delete, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from starlette.datastructures import UploadFile
 
 from .admin_users import _active_tenant_admin_count, _tenant_user_by_id
 from ..audit import diff as audit_diff
@@ -117,20 +116,6 @@ from ..services.platform_ai_settings import (
     save_platform_ai_settings,
     validate_platform_ai_settings,
 )
-from ..services.platform_qz_settings import (
-    PLATFORM_QZ_AUDIT_FIELDS,
-    PlatformQzSettingsState,
-    get_platform_qz_settings,
-    platform_qz_settings_snapshot,
-    record_platform_qz_validation,
-    save_platform_qz_settings,
-)
-from ..services.platform_qz_credentials import (
-    PlatformQzCredentialError,
-    get_platform_qz_credential_state,
-    save_platform_qz_credentials,
-)
-from ..services.qz_signing import build_qz_signing_diagnostics
 from ..services.tenant_ai_settings import (
     parse_dashboard_insights_override,
     resolve_tenant_ai_settings,
@@ -487,21 +472,6 @@ def _form_value(form, key: str) -> str:
     return str(form.get(key, "") or "").strip()
 
 
-async def _qz_credential_form_value(form, *, text_key: str, file_key: str, label: str) -> str | None:
-    file_obj = form.get(file_key)
-    if isinstance(file_obj, UploadFile) and str(file_obj.filename or "").strip():
-        payload = await file_obj.read()
-        if not payload:
-            raise ValueError(f"Uploaded {label.lower()} file is empty.")
-        try:
-            return payload.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise ValueError(f"Uploaded {label.lower()} file must be UTF-8 text.") from exc
-
-    value = _form_value(form, text_key)
-    return value or None
-
-
 def _platform_ai_settings_page_context(
     request: Request,
     *,
@@ -583,28 +553,6 @@ def _platform_email_settings_page_context(
     }
 
 
-def _platform_qz_settings_page_context(
-    request: Request,
-    *,
-    settings_state: PlatformQzSettingsState,
-    db: Session,
-    error: str = "",
-) -> dict[str, object]:
-    diagnostics = build_qz_signing_diagnostics(
-        enabled=bool(settings_state.qz_enabled),
-        db=db,
-    )
-    return {
-        "request": request,
-        "platform_qz_settings": settings_state,
-        "platform_qz_credentials": get_platform_qz_credential_state(db),
-        "qz_diagnostics": diagnostics,
-        "saved": request.query_params.get("saved") == "1",
-        "validated": request.query_params.get("validated") == "1",
-        "error": error or request.query_params.get("error", ""),
-    }
-
-
 def _audit_platform_email_settings_change(
     db: Session,
     request: Request,
@@ -628,63 +576,6 @@ def _audit_platform_email_settings_change(
         entity_id="global",
         summary="Updated platform email settings",
         details=changed,
-        user=current_user,
-        tenant_id=None,
-    )
-
-
-def _audit_platform_qz_settings_change(
-    db: Session,
-    request: Request,
-    *,
-    current_user: User,
-    before: PlatformQzSettingsState,
-    after: PlatformQzSettingsState,
-) -> None:
-    changed = audit_diff(
-        platform_qz_settings_snapshot(before),
-        platform_qz_settings_snapshot(after),
-        PLATFORM_QZ_AUDIT_FIELDS,
-    )
-    if not changed.get("changed"):
-        return
-    audit_log(
-        db,
-        request,
-        action="PLATFORM_QZ_SETTINGS_UPDATE",
-        entity_type="platform_setting",
-        entity_id="global",
-        summary="Updated platform QZ settings",
-        details=changed,
-        user=current_user,
-        tenant_id=None,
-    )
-
-
-def _audit_platform_qz_credentials_change(
-    db: Session,
-    request: Request,
-    *,
-    current_user: User,
-    update_result,
-) -> None:
-    if not update_result.any_changes:
-        return
-    audit_log(
-        db,
-        request,
-        action="PLATFORM_QZ_CREDENTIALS_UPDATE",
-        entity_type="platform_setting",
-        entity_id="global",
-        summary="Updated platform QZ credentials",
-        details={
-            "certificate_changed": update_result.certificate_changed,
-            "certificate_cleared": update_result.certificate_cleared,
-            "private_key_changed": update_result.private_key_changed,
-            "private_key_cleared": update_result.private_key_cleared,
-            "certificate_configured": update_result.state.certificate_configured,
-            "private_key_configured": update_result.state.private_key_configured,
-        },
         user=current_user,
         tenant_id=None,
     )
@@ -1045,24 +936,6 @@ def platform_email_settings_detail(
     )
 
 
-@router.get("/platform/qz-settings", response_class=HTMLResponse)
-@router.get("/admin/qz-settings", response_class=HTMLResponse)
-def platform_qz_settings_detail(
-    request: Request,
-    db: Session = Depends(get_db),
-) -> HTMLResponse:
-    _require_platform_superadmin(request, db)
-    return templates.TemplateResponse(
-        request,
-        "admin/platform_qz_settings.html",
-        _platform_qz_settings_page_context(
-            request,
-            settings_state=get_platform_qz_settings(db),
-            db=db,
-        ),
-    )
-
-
 @router.post("/platform/email-settings")
 @router.post("/admin/email-settings")
 async def platform_email_settings_update(
@@ -1099,86 +972,6 @@ async def platform_email_settings_update(
     )
     db.commit()
     return RedirectResponse(url="/platform/email-settings?saved=1", status_code=303)
-
-
-@router.post("/platform/qz-settings")
-@router.post("/admin/qz-settings")
-async def platform_qz_settings_update(
-    request: Request,
-    db: Session = Depends(get_db),
-) -> RedirectResponse:
-    current_user = _require_platform_superadmin(request, db)
-    form = await request.form()
-    before = get_platform_qz_settings(db)
-    saved = save_platform_qz_settings(
-        db,
-        PlatformQzSettingsState(
-            qz_enabled=_form_checkbox_checked(form, "qz_enabled"),
-            qz_last_validated_at=before.qz_last_validated_at,
-            qz_last_validation_status=before.qz_last_validation_status,
-            qz_last_validation_summary=before.qz_last_validation_summary,
-        ),
-    )
-    _audit_platform_qz_settings_change(
-        db,
-        request,
-        current_user=current_user,
-        before=before,
-        after=saved,
-    )
-    db.commit()
-    return RedirectResponse(url="/platform/qz-settings?saved=1", status_code=303)
-
-
-@router.post("/platform/qz-settings/credentials")
-@router.post("/admin/qz-settings/credentials")
-async def platform_qz_credentials_update(
-    request: Request,
-    db: Session = Depends(get_db),
-) -> Response:
-    current_user = _require_platform_superadmin(request, db)
-    form = await request.form()
-    try:
-        certificate_text = await _qz_credential_form_value(
-            form,
-            text_key="certificate_text",
-            file_key="certificate_file",
-            label="certificate",
-        )
-        private_key_text = await _qz_credential_form_value(
-            form,
-            text_key="private_key_text",
-            file_key="private_key_file",
-            label="private key",
-        )
-        update_result = save_platform_qz_credentials(
-            db,
-            certificate_text=certificate_text,
-            private_key_text=private_key_text,
-            clear_certificate=_form_checkbox_checked(form, "clear_certificate"),
-            clear_private_key=_form_checkbox_checked(form, "clear_private_key"),
-        )
-    except (PlatformQzCredentialError, ValueError) as exc:
-        return templates.TemplateResponse(
-            request,
-            "admin/platform_qz_settings.html",
-            _platform_qz_settings_page_context(
-                request,
-                settings_state=get_platform_qz_settings(db),
-                db=db,
-                error=str(exc),
-            ),
-            status_code=400,
-        )
-
-    _audit_platform_qz_credentials_change(
-        db,
-        request,
-        current_user=current_user,
-        update_result=update_result,
-    )
-    db.commit()
-    return RedirectResponse(url="/platform/qz-settings?saved=1", status_code=303)
 
 
 @router.post("/platform/email-settings/test")
@@ -1238,59 +1031,6 @@ async def platform_email_settings_send_test(
         url=f"/platform/email-settings?{urlencode({'test_error': result.error or 'Test email failed.', 'test_to': test_to})}",
         status_code=303,
     )
-
-
-@router.post("/platform/qz-settings/validate")
-@router.post("/admin/qz-settings/validate")
-def platform_qz_settings_validate(
-    request: Request,
-    db: Session = Depends(get_db),
-) -> RedirectResponse:
-    current_user = _require_platform_superadmin(request, db)
-    settings_state = get_platform_qz_settings(db)
-    diagnostics = build_qz_signing_diagnostics(
-        enabled=bool(settings_state.qz_enabled),
-        db=db,
-    )
-    summary = "QZ direct printing is operational."
-    if not diagnostics.ready_for_tenants:
-        if not settings_state.qz_enabled:
-            summary = "QZ printing is disabled at platform level."
-        else:
-            summary = next(
-                iter(diagnostics.likely_causes),
-                "QZ printing is not ready.",
-            )
-    saved = record_platform_qz_validation(
-        db,
-        ok=bool(diagnostics.ready_for_tenants),
-        summary=summary,
-    )
-    audit_log(
-        db,
-        request,
-        action="PLATFORM_QZ_SETTINGS_VALIDATE",
-        entity_type="platform_setting",
-        entity_id="global",
-        summary=(
-            "Validated platform QZ settings"
-            if saved.validation_ok
-            else "Platform QZ validation failed"
-        ),
-        details={
-            "status": saved.qz_last_validation_status,
-            "summary": saved.qz_last_validation_summary,
-            "ready_for_tenants": diagnostics.ready_for_tenants,
-            "signing_operational": diagnostics.signing_operational,
-            "certificate_route": diagnostics.certificate_route.summary,
-            "sign_route": diagnostics.sign_route.summary,
-            "csp_connect_src_ok": diagnostics.csp_connect_src_ok,
-        },
-        user=current_user,
-        tenant_id=None,
-    )
-    db.commit()
-    return RedirectResponse(url="/platform/qz-settings?validated=1", status_code=303)
 
 
 @router.post("/platform/tenants/new", response_class=HTMLResponse)

@@ -335,19 +335,6 @@ def test_ticket_detail_documents_frame_groups_ticket_actions(client, db_session)
     assert "Print" in response.text
     assert "Download PDF" in response.text
     assert f'href="/tickets/{ticket.id}/pdf"' in response.text
-    assert "data-qz-print-button" not in response.text
-    assert f'data-qz-pdf-url="/tickets/{ticket.id}/pdf"' not in response.text
-    assert 'data-qz-certificate-url="/qz/certificate"' not in response.text
-    assert 'data-qz-sign-url="/qz/sign"' not in response.text
-    assert 'data-qz-resolve-url="/printing/qz/resolve"' not in response.text
-    assert 'data-qz-workstation-register-url="/printing/qz/workstation/register"' not in response.text
-    assert 'data-qz-workstation-label-url="/printing/qz/workstation/label"' not in response.text
-    assert f'data-qz-success-base-url="/tickets/{ticket.id}"' not in response.text
-    assert 'data-qz-document-label="Ticket T-UI-1"' not in response.text
-    assert 'data-qz-document-type="TICKET"' not in response.text
-    assert "data-qz-print-status" not in response.text
-    assert "data-qz-workstation-note" not in response.text
-    assert "/static/js/qz_print.js" in response.text
     assert response.text.index("page-header__aside--documents") < response.text.index("Ticket Info")
     assert "Preview Ticket" not in response.text
     assert "Print locally (browser)" not in response.text
@@ -356,86 +343,3 @@ def test_ticket_detail_documents_frame_groups_ticket_actions(client, db_session)
         not in response.text
     )
     assert "Advanced printing" not in response.text
-
-
-def test_ticket_detail_qz_print_button_uses_configured_printer_name(
-    client,
-    db_session,
-    monkeypatch,
-):
-    import app.routes.tickets as tickets_routes
-
-    monkeypatch.setattr(tickets_routes, "platform_qz_ready_for_tenants", lambda _db: True)
-    ticket = _create_ticket(
-        db_session,
-        ticket_no="T-QZ-PRINTER-1",
-        status=TicketStatusEnum.COMPLETE.value,
-    )
-    template = _create_template(
-        db_session,
-        code="TICKET_QZ_TEMPLATE",
-        document_type="TICKET",
-        template_format="HTML",
-        content="<html><body>QZ {{ payload.ticket_no }}</body></html>",
-    )
-    _create_destination(
-        db_session,
-        name="Ticket QZ Destination",
-        document_type="TICKET",
-        template_id=template.id,
-        delivery_type="PRINT_LOCAL_BROWSER",
-        delivery_config={"qz_printer_name": "Office Ticket Printer"},
-        is_default=True,
-    )
-
-    response = client.get(f"/tickets/{ticket.id}")
-
-    assert response.status_code == 200
-    assert "data-qz-print-button" in response.text
-    assert 'data-qz-resolve-url="/printing/qz/resolve"' in response.text
-    assert 'data-qz-workstation-register-url="/printing/qz/workstation/register"' in response.text
-    assert 'data-qz-workstation-label-url="/printing/qz/workstation/label"' in response.text
-    assert 'data-qz-document-type="TICKET"' in response.text
-    assert 'data-qz-printer-name="Office Ticket Printer"' in response.text
-    assert "data-qz-workstation-note" in response.text
-
-
-def test_ticket_detail_qz_print_button_uses_explicit_qz_toggle(
-    client,
-    db_session,
-    monkeypatch,
-):
-    import app.routes.tickets as tickets_routes
-
-    monkeypatch.setattr(tickets_routes, "platform_qz_ready_for_tenants", lambda _db: True)
-    ticket = _create_ticket(
-        db_session,
-        ticket_no="T-QZ-TOGGLE-1",
-        status=TicketStatusEnum.COMPLETE.value,
-    )
-    template = _create_template(
-        db_session,
-        code="TICKET_QZ_TOGGLE_TEMPLATE",
-        document_type="TICKET",
-        template_format="HTML",
-        content="<html><body>QZ {{ payload.ticket_no }}</body></html>",
-    )
-    _create_destination(
-        db_session,
-        name="Ticket QZ Toggle Destination",
-        document_type="TICKET",
-        template_id=template.id,
-        delivery_type="PRINT_LOCAL_BROWSER",
-        delivery_config={
-            "qz_direct_print_enabled": True,
-            "qz_printer_name": "Explicit Toggle Printer",
-        },
-        is_default=True,
-    )
-
-    response = client.get(f"/tickets/{ticket.id}")
-
-    assert response.status_code == 200
-    assert "data-qz-print-button" in response.text
-    assert 'data-qz-document-type="TICKET"' in response.text
-    assert 'data-qz-printer-name="Explicit Toggle Printer"' in response.text

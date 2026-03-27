@@ -384,45 +384,6 @@ def test_ticket_edit_shows_wtn_buttons_only_for_complete_waste(client, db_sessio
     assert "WTN not signed" not in signed_waste_response.text
 
 
-def test_ticket_edit_shows_qz_wtn_button_when_platform_ready(client, db_session, monkeypatch):
-    monkeypatch.setattr(tickets_routes, "platform_qz_ready_for_tenants", lambda _db: True)
-    _template, destination = _create_wtn_template_and_destination(db_session)
-    destination.delivery_config = {
-        "qz_direct_print_enabled": True,
-        "qz_printer_name": "WTN Office Printer",
-    }
-    db_session.commit()
-
-    ticket = Ticket(
-        ticket_no="T-WTN-QZ-1",
-        datetime=datetime(2026, 2, 20, 10, 48, 0),
-        status=TicketStatusEnum.COMPLETE.value,
-        direction=DirectionEnum.INWARD.value,
-        transaction_type=TransactionTypeEnum.WASTEIN.value,
-        ewc_code_display="17 09 04",
-        ewc_description="Waste UI qz",
-        net_kg=Decimal("2200.000"),
-        dont_invoice=False,
-        paid=False,
-    )
-    db_session.add(ticket)
-    db_session.commit()
-
-    response = client.get(f"/tickets/{ticket.id}")
-
-    assert response.status_code == 200
-    assert "data-qz-print-button" in response.text
-    assert f'data-qz-pdf-url="/tickets/{ticket.id}/wtn/pdf"' in response.text
-    assert 'data-qz-resolve-url="/printing/qz/resolve"' in response.text
-    assert 'data-qz-workstation-register-url="/printing/qz/workstation/register"' in response.text
-    assert 'data-qz-workstation-label-url="/printing/qz/workstation/label"' in response.text
-    assert 'data-qz-document-type="WTN"' in response.text
-    assert 'data-qz-printer-name="WTN Office Printer"' in response.text
-    assert f'data-qz-success-base-url="/tickets/{ticket.id}"' in response.text
-    assert 'data-qz-success-kind="wtn"' in response.text
-    assert "data-qz-workstation-note" in response.text
-
-
 def test_wtn_send_succeeds_and_creates_job_when_compliant(client, db_session):
     _, destination = _create_wtn_template_and_destination(db_session)
 

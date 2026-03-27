@@ -76,11 +76,6 @@ from ..services.email_service import (
     render_email_template,
     send_email,
 )
-from ..services.platform_qz_settings import platform_qz_ready_for_tenants
-from ..services.qz_printing import (
-    qz_direct_print_enabled_from_destination,
-    qz_printer_name_from_delivery_config,
-)
 from ..services.signatures import normalize_png_data_url, png_has_visible_ink
 from ..services.pdf import render_html_pdf_bytes
 from ..services.print_payload import build_ticket_print_payload, build_wtn_payload
@@ -1595,24 +1590,6 @@ def _ticket_destination_display_name(destination: PrintDestination) -> str:
     return name or f"Destination {destination.id}"
 
 
-def _ticket_qz_printer_name(destination: PrintDestination | None) -> str:
-    if destination is None:
-        return ""
-    return qz_printer_name_from_delivery_config(
-        destination.delivery_config if isinstance(destination.delivery_config, dict) else {}
-    )
-
-
-def _ticket_qz_direct_print_enabled(destination: PrintDestination | None) -> bool:
-    if destination is None:
-        return False
-    return qz_direct_print_enabled_from_destination(
-        delivery_type=destination.delivery_type,
-        delivery_config=destination.delivery_config if isinstance(destination.delivery_config, dict) else {},
-        local_browser_delivery_type=DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
-    )
-
-
 def _friendly_print_error_label(raw_message: str) -> str:
     normalized = str(raw_message or "").strip().lower()
     if any(
@@ -1762,9 +1739,6 @@ def _ticket_print_actions_context(
     ticket_id = int(ticket.id)
     ticket_label = str(ticket.ticket_no or f"#{ticket_id}")
     download_url = f"/tickets/{ticket_id}/pdf" if send_enabled else ""
-    platform_qz_ready = platform_qz_ready_for_tenants(db)
-    qz_direct_print_enabled = _ticket_qz_direct_print_enabled(default_destination)
-    qz_printer_name = _ticket_qz_printer_name(default_destination)
     return {
         "has_print_destinations": bool(destinations),
         "print_primary_destination_name": primary_name,
@@ -1783,15 +1757,6 @@ def _ticket_print_actions_context(
             "download_url": download_url,
             "download_label": "Download PDF",
             "download_button_variant": "secondary",
-            "qz_print": {
-                "enabled": bool(send_enabled and platform_qz_ready and qz_direct_print_enabled),
-                "pdf_url": f"/tickets/{ticket_id}/pdf",
-                "printer_name": qz_printer_name,
-                "document_type": DOCUMENT_TYPE_TICKET,
-                "document_label": f"Ticket {ticket_label}",
-                "success_base_url": f"/tickets/{ticket_id}",
-                "success_kind": "ticket",
-            },
             "no_default_message": "Printing is not configured. Contact admin.",
         },
     }
@@ -1816,9 +1781,6 @@ def _ticket_wtn_actions_context(
     destinations = _load_active_wtn_destinations(db)
     default_destination = _default_wtn_destination(destinations)
     send_enabled = default_destination is not None
-    platform_qz_ready = platform_qz_ready_for_tenants(db)
-    qz_direct_print_enabled = _ticket_qz_direct_print_enabled(default_destination)
-    qz_printer_name = _ticket_qz_printer_name(default_destination)
     return {
         "show_wtn_actions": True,
         "wtn_missing_default": not send_enabled,
@@ -1836,15 +1798,6 @@ def _ticket_wtn_actions_context(
             "download_url": f"/tickets/{ticket.id}/wtn/pdf",
             "download_label": "Download PDF",
             "download_button_variant": "secondary",
-            "qz_print": {
-                "enabled": bool(send_enabled and platform_qz_ready and qz_direct_print_enabled),
-                "pdf_url": f"/tickets/{ticket.id}/wtn/pdf",
-                "printer_name": qz_printer_name,
-                "document_type": DOCUMENT_TYPE_WTN,
-                "document_label": f"WTN {ticket.ticket_no or ticket.id}",
-                "success_base_url": f"/tickets/{ticket.id}",
-                "success_kind": "wtn",
-            },
             "no_default_message": "Sending is not set up yet. Ask an admin.",
         },
         "wtn_disabled_hint": (

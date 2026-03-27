@@ -25,10 +25,6 @@ class Settings(BaseSettings):
     enable_cash_account_rules: bool = False
     enable_invoice_pdf_emailing: bool = False
     enable_invoice_pdf_printing: bool = False
-    qz_certificate_text: str = ""
-    qz_private_key_text: str = ""
-    qz_certificate_path: str = ""
-    qz_private_key_path: str = ""
     openai_api_key: str = ""
     base_domain: str = ""
     allowed_hosts: str = ""

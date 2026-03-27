@@ -196,7 +196,6 @@
                 {{ nav_link('/platform/tenants', 'Tenant Management', request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants'), 'TM') }}
                 {{ nav_link('/platform/ai-settings', 'AI Settings', request.url.path.startswith('/platform/ai-settings') or request.url.path.startswith('/admin/ai-settings'), 'AI') }}
                 {{ nav_link('/platform/email-settings', 'Email Settings', request.url.path.startswith('/platform/email-settings') or request.url.path.startswith('/admin/email-settings'), 'EM') }}
-                {{ nav_link('/platform/qz-settings', 'QZ Settings', request.url.path.startswith('/platform/qz-settings') or request.url.path.startswith('/admin/qz-settings'), 'QZ') }}
                 {{ nav_link('/admin/system-status', 'System Status', request.url.path.startswith('/admin/system-status'), 'SS') }}
               {% else %}
                 {% if permissions.view_dashboard %}
@@ -452,7 +451,6 @@
     </script>
     <script src="/static/js/help_tooltips.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/app_shell.js?v={{ BUILD_STAMP }}" defer></script>
-    <script src="/static/js/qz_print.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/toasts.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/table_rows.js?v={{ BUILD_STAMP }}" defer></script>
     {% if show_assistant %}

@@ -245,49 +245,6 @@ def test_invoice_detail_documents_frame_groups_invoice_actions(client, db_sessio
     assert "Print locally (browser)" not in response.text
 
 
-def test_invoice_detail_qz_print_button_uses_platform_ready_direct_print(
-    client,
-    db_session,
-    monkeypatch,
-):
-    import app.routes.invoices as invoices_routes
-
-    monkeypatch.setattr(invoices_routes, "platform_qz_ready_for_tenants", lambda _db: True)
-
-    invoice = _create_invoice_with_line(db_session, invoice_no="INV-QZ-1")
-    template = _create_template(
-        db_session,
-        code="INV_QZ_TEMPLATE",
-        content="<html><body>{{ invoice.invoice_no }}</body></html>",
-    )
-    _create_destination(
-        db_session,
-        name="Invoice QZ Destination",
-        template_id=template.id,
-        delivery_type="PRINT_LOCAL_BROWSER",
-        delivery_config={
-            "qz_direct_print_enabled": True,
-            "qz_printer_name": "Accounts Office Printer",
-        },
-    )
-
-    response = client.get(f"/invoices/{invoice.id}")
-
-    assert response.status_code == 200
-    assert "data-qz-print-button" in response.text
-    assert f'data-qz-pdf-url="/invoices/{invoice.id}/pdf"' in response.text
-    assert 'data-qz-certificate-url="/qz/certificate"' in response.text
-    assert 'data-qz-sign-url="/qz/sign"' in response.text
-    assert 'data-qz-resolve-url="/printing/qz/resolve"' in response.text
-    assert 'data-qz-workstation-register-url="/printing/qz/workstation/register"' in response.text
-    assert 'data-qz-workstation-label-url="/printing/qz/workstation/label"' in response.text
-    assert 'data-qz-document-type="INVOICE"' in response.text
-    assert 'data-qz-printer-name="Accounts Office Printer"' in response.text
-    assert f'data-qz-success-base-url="/invoices/{invoice.id}"' in response.text
-    assert 'data-qz-success-kind="invoice"' in response.text
-    assert "data-qz-workstation-note" in response.text
-
-
 def test_invoice_primary_email_action_opens_form_when_customer_email_missing(client, db_session):
     invoice = _create_invoice_with_line(db_session, invoice_no="INV-UI-NOEMAIL-1", invoice_email=None)
     template = _create_template(
