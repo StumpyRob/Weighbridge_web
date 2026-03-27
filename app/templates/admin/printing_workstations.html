@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Workstations | Weighbridge Web{% endblock %}
+
+{% block toast_messages %}
+  {% if message %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">{{ message }}</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Workstations</h1>
+      <p class="muted">Platform admins manage QZ signing once. Tenant admins manage which workstation printers are used here.</p>
+    </div>
+  </div>
+
+  {% include "admin/printing_nav.html" %}
+
+  {% if error %}
+    <div class="alert">{{ error }}</div>
+  {% endif %}
+
+  <section class="frame">
+    <div class="frame-body">
+      <p class="muted">
+        Each workstation can use a different printer for Tickets, WTNs, and Invoices.
+        Leave the printer name blank to use that PC's default printer.
+      </p>
+      <p class="muted">
+        Workstations appear here automatically after someone opens a QZ print screen in this workspace.
+      </p>
+    </div>
+  </section>
+
+  {% if items %}
+    <div class="printing-workstations">
+      {% for item in items %}
+        <section class="frame printing-workstation-card">
+          <form method="post" action="/admin/printing/workstations/{{ item.workstation_key }}/update">
+            <div class="frame-header printing-workstation-card__header">
+              <div>
+                <h2>{{ item.workstation_label or "Unnamed workstation" }}</h2>
+                <p class="muted printing-workstation-card__key">{{ item.workstation_key }}</p>
+              </div>
+              <div class="actions btn-group">
+                <button type="submit" class="btn btn--primary">Save</button>
+              </div>
+            </div>
+            <div class="frame-body">
+              <div class="field">
+                <label for="workstation-label-{{ loop.index }}">Workstation name</label>
+                <input
+                  type="text"
+                  id="workstation-label-{{ loop.index }}"
+                  name="workstation_label"
+                  value="{{ item.workstation_label }}"
+                  placeholder="Front Desk PC"
+                />
+              </div>
+
+              <div class="printing-workstation-doc-grid">
+                {% for document_type in document_types %}
+                  {% set profile = item.profiles.get(document_type) %}
+                  {% set key_prefix = document_type.lower() %}
+                  <section class="printing-workstation-doc-card">
+                    <div class="printing-workstation-doc-card__header">
+                      <h3>{{ document_labels.get(document_type, document_type) }}</h3>
+                      {% if profile and profile.is_active %}
+                        <span class="status-pill status-active">Active</span>
+                      {% else %}
+                        <span class="status-pill status-void">Inactive</span>
+                      {% endif %}
+                    </div>
+                    <div class="field checkbox">
+                      <input
+                        type="checkbox"
+                        id="{{ key_prefix }}-is-active-{{ loop.index0 }}-{{ item.workstation_key }}"
+                        name="{{ key_prefix }}_is_active"
+                        value="1"
+                        {% if profile and profile.is_active %}checked{% endif %}
+                      />
+                      <label for="{{ key_prefix }}-is-active-{{ loop.index0 }}-{{ item.workstation_key }}">Use workstation-specific printer</label>
+                    </div>
+                    <div class="field">
+                      <label for="{{ key_prefix }}-printer-name-{{ loop.index0 }}-{{ item.workstation_key }}">Printer name (optional)</label>
+                      <input
+                        type="text"
+                        id="{{ key_prefix }}-printer-name-{{ loop.index0 }}-{{ item.workstation_key }}"
+                        name="{{ key_prefix }}_printer_name"
+                        value="{{ profile.printer_name if profile else '' }}"
+                        placeholder="Office {{ document_labels.get(document_type, document_type) }} Printer"
+                      />
+                    </div>
+                    <p class="muted">Leave blank to use this workstation's default printer.</p>
+                  </section>
+                {% endfor %}
+              </div>
+            </div>
+          </form>
+        </section>
+      {% endfor %}
+    </div>
+  {% else %}
+    <section class="frame">
+      <div class="frame-body">
+        <p class="muted">No workstations have registered yet.</p>
+        <p class="muted">When a user opens a QZ print screen for the first time, that PC will appear here so you can name it and assign printers.</p>
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

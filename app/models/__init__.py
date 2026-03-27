@@ -39,6 +39,7 @@ from .lookups_misc import (
 )
 from .platform_setting import PlatformSetting
 from .product import Product
+from .qz_workstation_profile import WorkstationPrinterProfile
 from .ticket import (
     DirectionEnum,
     Ticket,
@@ -85,6 +86,7 @@ __all__ = [
     "PrintTemplate",
     "PrintTemplateVersion",
     "ProductGroup",
+    "WorkstationPrinterProfile",
     "Recycler",
     "SICCode",
     "Supplier",

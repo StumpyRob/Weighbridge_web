@@ -1140,6 +1140,14 @@ body.js-help-tooltips .help-tooltip {
   line-height: 1.35;
 }
 
+.print-actions__note {
+  margin: 0.35rem 0 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .print-actions__status.is-error {
   color: #b91c1c;
 }
@@ -1167,6 +1175,48 @@ body.js-help-tooltips .help-tooltip {
   width: auto;
   max-width: 100%;
   margin: 0 0 0 auto;
+}
+
+.printing-workstations {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.printing-workstation-card__header {
+  align-items: flex-start;
+}
+
+.printing-workstation-card__key {
+  margin-top: 0.25rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-all;
+}
+
+.printing-workstation-doc-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-top: 1rem;
+}
+
+.printing-workstation-doc-card {
+  border: 1px solid #d7dee7;
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 1rem;
+}
+
+.printing-workstation-doc-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.printing-workstation-doc-card__header h3 {
+  margin: 0;
 }
 
 .documents-panel--header .documents-panel__groups {

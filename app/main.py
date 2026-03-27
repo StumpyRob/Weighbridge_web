@@ -112,6 +112,7 @@ _LOGIN_REQUIRED_PREFIXES = (
     "/lookups",
     "/admin",
     "/platform",
+    "/printing/qz",
 )
 _LOGIN_EXEMPT_PATHS = (
     "/bootstrap",
@@ -137,6 +138,7 @@ _TENANT_ONLY_PREFIXES = (
     "/admin/users",
     "/admin/company",
     "/admin/printing",
+    "/printing/qz",
 )
 _PLATFORM_ONLY_PREFIXES = (
     "/platform",

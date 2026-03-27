@@ -93,9 +93,9 @@
             <input type="text" id="qz_printer_name" name="qz_printer_name" value="{{ form_data.qz_printer_name }}" placeholder="Office Ticket Printer" />
           </div>
           <div class="field" data-delivery-groups="PRINT_LOCAL_BROWSER">
-            <p class="muted">Leave the printer name blank to use the workstation default printer.</p>
+            <p class="muted">Used when no workstation-specific printer is set. Leave the printer name blank to use the workstation default printer.</p>
             {% if platform_qz_ready %}
-              <p class="muted">Platform setup is ready. Tenant admins only choose whether this destination prints directly from the workstation browser and which printer to target.</p>
+              <p class="muted">Platform setup is ready. Tenant admins choose whether this destination prints directly from the workstation browser and can set a fallback printer here or override it per workstation.</p>
             {% elif platform_qz_enabled %}
               <p class="muted">Direct workstation printing is enabled at platform level but not fully validated yet. You can save printer behaviour now, but users may need the platform administrator to finish setup before direct printing will work.</p>
             {% else %}

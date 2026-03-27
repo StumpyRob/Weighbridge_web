@@ -5,6 +5,7 @@ from .assistant import router as assistant_router
 from .auth import router as auth_router
 from .admin import router as admin_router
 from .admin_ewc import router as admin_ewc_router
+from .admin_printing_workstations import router as admin_printing_workstations_router
 from .admin_users import router as admin_users_router
 from .customers import router as customers_router
 from .admin_printing import router as admin_printing_router
@@ -12,6 +13,7 @@ from .admin_company import router as admin_company_router
 from .invoices import router as invoices_router
 from .products import router as products_router
 from .qz import router as qz_router
+from .qz_workstations import router as qz_workstations_router
 from .setup import router as setup_router
 from .superadmin import router as superadmin_router
 from .tickets import router as tickets_router
@@ -26,11 +28,16 @@ api_router.include_router(admin_router, tags=["admin"])
 api_router.include_router(admin_ewc_router, tags=["admin-ewc"])
 api_router.include_router(admin_users_router, tags=["admin-users"])
 api_router.include_router(admin_printing_router, tags=["admin-printing"])
+api_router.include_router(
+    admin_printing_workstations_router,
+    tags=["admin-printing-workstations"],
+)
 api_router.include_router(admin_company_router, tags=["admin-company"])
 api_router.include_router(customers_router, tags=["customers"])
 api_router.include_router(invoices_router, tags=["invoices"])
 api_router.include_router(products_router, tags=["products"])
 api_router.include_router(qz_router, tags=["qz"])
+api_router.include_router(qz_workstations_router, tags=["qz-workstations"])
 api_router.include_router(tickets_router, tags=["tickets"])
 api_router.include_router(vehicles_router, tags=["vehicles"])
 api_router.include_router(superadmin_router, tags=["superadmin"])

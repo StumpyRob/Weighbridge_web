@@ -278,9 +278,14 @@ def test_invoice_detail_qz_print_button_uses_platform_ready_direct_print(
     assert f'data-qz-pdf-url="/invoices/{invoice.id}/pdf"' in response.text
     assert 'data-qz-certificate-url="/qz/certificate"' in response.text
     assert 'data-qz-sign-url="/qz/sign"' in response.text
+    assert 'data-qz-resolve-url="/printing/qz/resolve"' in response.text
+    assert 'data-qz-workstation-register-url="/printing/qz/workstation/register"' in response.text
+    assert 'data-qz-workstation-label-url="/printing/qz/workstation/label"' in response.text
+    assert 'data-qz-document-type="INVOICE"' in response.text
     assert 'data-qz-printer-name="Accounts Office Printer"' in response.text
     assert f'data-qz-success-base-url="/invoices/{invoice.id}"' in response.text
     assert 'data-qz-success-kind="invoice"' in response.text
+    assert "data-qz-workstation-note" in response.text
 
 
 def test_invoice_primary_email_action_opens_form_when_customer_email_missing(client, db_session):

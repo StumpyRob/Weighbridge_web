@@ -1316,6 +1316,7 @@ def _invoice_print_actions_context(
                 "enabled": bool(send_enabled and platform_qz_ready and qz_direct_print_enabled),
                 "pdf_url": f"/invoices/{invoice_id}/pdf",
                 "printer_name": qz_printer_name,
+                "document_type": DOCUMENT_TYPE_INVOICE,
                 "document_label": f"Invoice {invoice_label}",
                 "success_base_url": f"/invoices/{invoice_id}",
                 "success_kind": "invoice",

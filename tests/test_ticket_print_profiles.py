@@ -339,9 +339,14 @@ def test_ticket_detail_documents_frame_groups_ticket_actions(client, db_session)
     assert f'data-qz-pdf-url="/tickets/{ticket.id}/pdf"' not in response.text
     assert 'data-qz-certificate-url="/qz/certificate"' not in response.text
     assert 'data-qz-sign-url="/qz/sign"' not in response.text
+    assert 'data-qz-resolve-url="/printing/qz/resolve"' not in response.text
+    assert 'data-qz-workstation-register-url="/printing/qz/workstation/register"' not in response.text
+    assert 'data-qz-workstation-label-url="/printing/qz/workstation/label"' not in response.text
     assert f'data-qz-success-base-url="/tickets/{ticket.id}"' not in response.text
     assert 'data-qz-document-label="Ticket T-UI-1"' not in response.text
+    assert 'data-qz-document-type="TICKET"' not in response.text
     assert "data-qz-print-status" not in response.text
+    assert "data-qz-workstation-note" not in response.text
     assert "/static/js/qz_print.js" in response.text
     assert response.text.index("page-header__aside--documents") < response.text.index("Ticket Info")
     assert "Preview Ticket" not in response.text
@@ -387,7 +392,12 @@ def test_ticket_detail_qz_print_button_uses_configured_printer_name(
 
     assert response.status_code == 200
     assert "data-qz-print-button" in response.text
+    assert 'data-qz-resolve-url="/printing/qz/resolve"' in response.text
+    assert 'data-qz-workstation-register-url="/printing/qz/workstation/register"' in response.text
+    assert 'data-qz-workstation-label-url="/printing/qz/workstation/label"' in response.text
+    assert 'data-qz-document-type="TICKET"' in response.text
     assert 'data-qz-printer-name="Office Ticket Printer"' in response.text
+    assert "data-qz-workstation-note" in response.text
 
 
 def test_ticket_detail_qz_print_button_uses_explicit_qz_toggle(
@@ -427,4 +437,5 @@ def test_ticket_detail_qz_print_button_uses_explicit_qz_toggle(
 
     assert response.status_code == 200
     assert "data-qz-print-button" in response.text
+    assert 'data-qz-document-type="TICKET"' in response.text
     assert 'data-qz-printer-name="Explicit Toggle Printer"' in response.text

@@ -1,10 +1,55 @@
 (function () {
   const BUTTON_SELECTOR = "[data-qz-print-button]";
   const STATUS_SELECTOR = "[data-qz-print-status]";
+  const WORKSTATION_NOTE_SELECTOR = "[data-qz-workstation-note]";
   const QZ_LIBRARY_SRC = "/static/vendor/qz-tray.js";
   const TOAST_ROOT_ID = "flash-toasts";
   const TOAST_HIDE_TRANSITION_MS = 250;
+  const WORKSTATION_ID_STORAGE_KEY = "qz_workstation_id";
+  const WORKSTATION_LABEL_STORAGE_KEY = "qz_workstation_label";
   let qzLoadPromise = null;
+
+  function storageGet(key) {
+    try {
+      return String(window.localStorage.getItem(key) || "").trim();
+    } catch (_error) {
+      return "";
+    }
+  }
+
+  function storageSet(key, value) {
+    try {
+      if (!value) {
+        window.localStorage.removeItem(key);
+        return;
+      }
+      window.localStorage.setItem(key, String(value));
+    } catch (_error) {
+      return;
+    }
+  }
+
+  function workstationId() {
+    let current = storageGet(WORKSTATION_ID_STORAGE_KEY);
+    if (current) {
+      return current;
+    }
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      current = window.crypto.randomUUID();
+    } else {
+      current = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (char) {
+        const random = Math.floor(Math.random() * 16);
+        const value = char === "x" ? random : (random & 0x3) | 0x8;
+        return value.toString(16);
+      });
+    }
+    storageSet(WORKSTATION_ID_STORAGE_KEY, current);
+    return current;
+  }
+
+  function preferredWorkstationLabel() {
+    return storageGet(WORKSTATION_LABEL_STORAGE_KEY);
+  }
 
   function findStatusElement(button) {
     const root = button.closest(".print-actions");
@@ -12,6 +57,20 @@
       return null;
     }
     return root.querySelector(STATUS_SELECTOR);
+  }
+
+  function findWorkstationNoteElement(button) {
+    const root = button.closest(".print-actions");
+    if (!root) {
+      return null;
+    }
+    return root.querySelector(WORKSTATION_NOTE_SELECTOR);
+  }
+
+  function clearElement(element) {
+    while (element && element.firstChild) {
+      element.removeChild(element.firstChild);
+    }
   }
 
   function setStatus(statusElement, message, tone) {
@@ -26,6 +85,67 @@
     } else if (tone === "success") {
       statusElement.classList.add("is-success");
     }
+  }
+
+  function hideWorkstationNote(noteElement) {
+    if (!(noteElement instanceof HTMLElement)) {
+      return;
+    }
+    clearElement(noteElement);
+    noteElement.hidden = true;
+  }
+
+  function setWorkstationNote(noteElement, options) {
+    if (!(noteElement instanceof HTMLElement)) {
+      return;
+    }
+    const message = String((options && options.message) || "").trim();
+    if (!message) {
+      hideWorkstationNote(noteElement);
+      return;
+    }
+
+    clearElement(noteElement);
+    noteElement.hidden = false;
+
+    const text = document.createElement("span");
+    text.textContent = message;
+    noteElement.appendChild(text);
+
+    if (options && typeof options.onAction === "function") {
+      const spacer = document.createTextNode(" ");
+      noteElement.appendChild(spacer);
+
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "btn btn--ghost btn--sm";
+      action.textContent = String(options.actionLabel || "Name this workstation?");
+      action.addEventListener("click", options.onAction);
+      noteElement.appendChild(action);
+    }
+  }
+
+  function applyWorkstationUiState(state) {
+    document.querySelectorAll(BUTTON_SELECTOR).forEach(function (button) {
+      if (!(button instanceof HTMLElement)) {
+        return;
+      }
+      const noteElement = findWorkstationNoteElement(button);
+      if (!(noteElement instanceof HTMLElement)) {
+        return;
+      }
+      if (!state || !state.needsWorkstationName) {
+        hideWorkstationNote(noteElement);
+        return;
+      }
+      setWorkstationNote(noteElement, {
+        message: "This workstation is not named yet.",
+        actionLabel: "Name this workstation?",
+        onAction: function () {
+          promptForWorkstationName(button);
+        },
+      });
+    });
   }
 
   function removeToast(toast) {
@@ -179,6 +299,40 @@
       }
       return text;
     });
+  }
+
+  async function postJson(url, payload) {
+    const response = await fetch(url, {
+      method: "POST",
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-CSRF-Token": csrfToken(),
+      },
+      body: JSON.stringify(payload || {}),
+    });
+    const text = String((await response.text()) || "").trim();
+    let parsed = null;
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+      } catch (_error) {
+        parsed = null;
+      }
+    }
+    if (!response.ok) {
+      const detail =
+        parsed && typeof parsed === "object" && parsed !== null
+          ? String(parsed.detail || "").trim()
+          : "";
+      throw new Error(detail || text || "Request failed.");
+    }
+    if (!text) {
+      return {};
+    }
+    return parsed && typeof parsed === "object" ? parsed : {};
   }
 
   function configureQzSecurity(qz, signingConfig) {
@@ -399,6 +553,137 @@
     };
   }
 
+  async function registerWorkstation(button) {
+    const registerUrl = String(
+      button.getAttribute("data-qz-workstation-register-url") || ""
+    ).trim();
+    if (!registerUrl) {
+      return {
+        workstation: {
+          key: workstationId(),
+          label: preferredWorkstationLabel(),
+          named: !!preferredWorkstationLabel(),
+        },
+        needsWorkstationName: !preferredWorkstationLabel(),
+      };
+    }
+
+    const response = await postJson(registerUrl, {
+      workstation_key: workstationId(),
+      workstation_label: preferredWorkstationLabel() || null,
+    });
+    const workstation = response.workstation || {};
+    const label = String(workstation.label || "").trim();
+    if (label) {
+      storageSet(WORKSTATION_LABEL_STORAGE_KEY, label);
+    }
+    const state = {
+      workstation: {
+        key: String(workstation.key || workstationId()).trim(),
+        label: label,
+        named: !!label,
+      },
+      needsWorkstationName: Boolean(response.needs_workstation_name || !label),
+    };
+    applyWorkstationUiState(state);
+    return state;
+  }
+
+  async function promptForWorkstationName(button) {
+    const labelUrl = String(
+      button.getAttribute("data-qz-workstation-label-url") || ""
+    ).trim();
+    if (!labelUrl) {
+      return;
+    }
+    const currentLabel = preferredWorkstationLabel();
+    const value = window.prompt("Name this workstation", currentLabel || "");
+    if (value === null) {
+      return;
+    }
+    const nextLabel = String(value || "").trim();
+    if (!nextLabel) {
+      showErrorToast("Workstation name required. Enter a short label such as Front Desk PC.");
+      return;
+    }
+    try {
+      const response = await postJson(labelUrl, {
+        workstation_key: workstationId(),
+        workstation_label: nextLabel,
+      });
+      const workstation = response.workstation || {};
+      const savedLabel = String(workstation.label || nextLabel).trim();
+      storageSet(WORKSTATION_LABEL_STORAGE_KEY, savedLabel);
+      applyWorkstationUiState({
+        workstation: {
+          key: String(workstation.key || workstationId()).trim(),
+          label: savedLabel,
+          named: true,
+        },
+        needsWorkstationName: false,
+      });
+    } catch (error) {
+      const message = String(error && error.message ? error.message : error || "").trim();
+      showErrorToast(message || "Workstation name could not be saved.");
+    }
+  }
+
+  async function resolvePrintTarget(button) {
+    const resolveUrl = String(button.getAttribute("data-qz-resolve-url") || "").trim();
+    const documentType = String(button.getAttribute("data-qz-document-type") || "").trim();
+    const fallbackPrinterName = String(
+      button.getAttribute("data-qz-printer-name") || ""
+    ).trim();
+
+    if (!resolveUrl || !documentType) {
+      const displayName = fallbackPrinterName || "Default Printer";
+      return {
+        printerName: fallbackPrinterName,
+        printerDisplayName: displayName,
+        hint: `Printing via QZ -> ${displayName}`,
+      };
+    }
+
+    const response = await postJson(resolveUrl, {
+      workstation_key: workstationId(),
+      document_type: documentType,
+    });
+    const workstation = response.workstation || {};
+    const label = String(workstation.label || "").trim();
+    if (label) {
+      storageSet(WORKSTATION_LABEL_STORAGE_KEY, label);
+    }
+    applyWorkstationUiState({
+      workstation: {
+        key: String(workstation.key || workstationId()).trim(),
+        label: label,
+        named: !!label,
+      },
+      needsWorkstationName: Boolean(response.needs_workstation_name || !label),
+    });
+
+    const printer = response.printer || {};
+    const printerName = String(printer.name || "").trim();
+    const displayName = String(printer.display_name || "").trim() || "Default Printer";
+    return {
+      printerName: printerName,
+      printerDisplayName: displayName,
+      hint: String(response.hint || "").trim() || `Printing via QZ -> ${displayName}`,
+    };
+  }
+
+  async function initializeQzButtons() {
+    const buttons = Array.from(document.querySelectorAll(BUTTON_SELECTOR));
+    if (!buttons.length) {
+      return;
+    }
+    try {
+      await registerWorkstation(buttons[0]);
+    } catch (_error) {
+      return;
+    }
+  }
+
   async function handleQzPrint(button) {
     const statusElement = findStatusElement(button);
     const pdfUrl = String(button.getAttribute("data-qz-pdf-url") || "").trim();
@@ -406,9 +691,6 @@
       button.getAttribute("data-qz-certificate-url") || ""
     ).trim();
     const signUrl = String(button.getAttribute("data-qz-sign-url") || "").trim();
-    const preferredPrinterName = String(
-      button.getAttribute("data-qz-printer-name") || ""
-    ).trim();
     const documentLabel =
       String(button.getAttribute("data-qz-document-label") || "").trim() || "Ticket";
     const successBaseUrl = String(
@@ -417,7 +699,7 @@
     const successKind = String(
       button.getAttribute("data-qz-success-kind") || "ticket"
     ).trim();
-    const originalLabel = button.textContent;
+    const originalLabel = button.textContent || "";
     const originalDisabled = button.disabled;
 
     try {
@@ -431,6 +713,10 @@
       }
 
       setStatus(statusElement, "Preparing direct print...", null);
+      await registerWorkstation(button);
+      const printTarget = await resolvePrintTarget(button);
+      setStatus(statusElement, printTarget.hint, null);
+
       const qz = await ensureQzLibrary();
       configureQzSecurity(qz, {
         certificateUrl: certificateUrl,
@@ -440,7 +726,7 @@
       setStatus(statusElement, "Connecting to QZ Tray...", null);
       await ensureQzConnection(qz);
 
-      const printerName = await resolvePrinter(qz, preferredPrinterName);
+      const printerName = await resolvePrinter(qz, printTarget.printerName);
       setStatus(statusElement, `Sending ${documentLabel} to ${printerName}...`, null);
 
       const pdfBase64 = await fetchPdfAsBase64(pdfUrl);
@@ -462,7 +748,10 @@
         window.location.assign(successUrl);
       }
     } catch (error) {
-      const errorState = classifyError(error, preferredPrinterName);
+      const errorState = classifyError(
+        error,
+        String(button.getAttribute("data-qz-printer-name") || "").trim()
+      );
       setStatus(statusElement, "", null);
       showErrorToast(`Direct print unavailable. ${errorState.message} ${errorState.recovery}`);
     } finally {
@@ -480,6 +769,14 @@
     event.preventDefault();
     handleQzPrint(submitter);
   });
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () {
+      initializeQzButtons();
+    });
+  } else {
+    initializeQzButtons();
+  }
 
   window.addEventListener("pagehide", function () {
     if (

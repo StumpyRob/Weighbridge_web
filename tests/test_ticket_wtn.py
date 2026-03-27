@@ -413,9 +413,14 @@ def test_ticket_edit_shows_qz_wtn_button_when_platform_ready(client, db_session,
     assert response.status_code == 200
     assert "data-qz-print-button" in response.text
     assert f'data-qz-pdf-url="/tickets/{ticket.id}/wtn/pdf"' in response.text
+    assert 'data-qz-resolve-url="/printing/qz/resolve"' in response.text
+    assert 'data-qz-workstation-register-url="/printing/qz/workstation/register"' in response.text
+    assert 'data-qz-workstation-label-url="/printing/qz/workstation/label"' in response.text
+    assert 'data-qz-document-type="WTN"' in response.text
     assert 'data-qz-printer-name="WTN Office Printer"' in response.text
     assert f'data-qz-success-base-url="/tickets/{ticket.id}"' in response.text
     assert 'data-qz-success-kind="wtn"' in response.text
+    assert "data-qz-workstation-note" in response.text
 
 
 def test_wtn_send_succeeds_and_creates_job_when_compliant(client, db_session):
