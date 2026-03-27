@@ -13,6 +13,7 @@ from cryptography.x509.oid import NameOID
 from app.config import settings
 from app.models import PlatformSetting
 from app.services import qz_signing
+from app.services.platform_qz_credentials import save_platform_qz_credentials
 
 
 def _write_qz_test_keys(tmp_path: Path) -> tuple[Path, Path, str]:
@@ -247,6 +248,103 @@ def test_qz_signing_diagnostics_report_ready_when_configured(monkeypatch, tmp_pa
 
     assert diagnostics.certificate.configured is True
     assert diagnostics.private_key.configured is True
+    assert diagnostics.certificate_route.ok is True
+    assert diagnostics.sign_route.ok is True
+    assert diagnostics.signing_operational is True
+    assert diagnostics.ready_for_tenants is True
+
+
+def test_qz_routes_prefer_saved_platform_credentials_over_legacy_fallback(
+    client_anonymous,
+    db_session,
+    monkeypatch,
+    tmp_path,
+):
+    legacy_dir = tmp_path / "legacy"
+    legacy_dir.mkdir(parents=True, exist_ok=True)
+    legacy_certificate_path, legacy_private_key_path, legacy_certificate_text = _write_qz_test_keys(
+        legacy_dir
+    )
+    _clear_qz_signing_config(monkeypatch)
+    monkeypatch.setattr(settings, "qz_certificate_path", str(legacy_certificate_path))
+    monkeypatch.setattr(settings, "qz_private_key_path", str(legacy_private_key_path))
+
+    stored_dir = tmp_path / "stored"
+    stored_dir.mkdir(parents=True, exist_ok=True)
+    stored_certificate_path, stored_private_key_path, stored_certificate_text = _write_qz_test_keys(
+        stored_dir
+    )
+    stored_private_key_text = stored_private_key_path.read_text(encoding="utf-8")
+    save_platform_qz_credentials(
+        db_session,
+        certificate_text=stored_certificate_text,
+        private_key_text=stored_private_key_text,
+    )
+    db_session.commit()
+
+    certificate_response = client_anonymous.get("/qz/certificate")
+    sign_response = client_anonymous.post("/qz/sign", json={"request": "stored-request"})
+
+    assert certificate_response.status_code == 200
+    assert certificate_response.text.strip() == stored_certificate_text.strip()
+    assert certificate_response.text.strip() != legacy_certificate_text.strip()
+    assert sign_response.status_code == 200
+
+    signature = base64.b64decode(sign_response.text.encode("ascii"))
+    certificate = x509.load_pem_x509_certificate(stored_certificate_text.encode("utf-8"))
+    certificate.public_key().verify(
+        signature,
+        b"stored-request",
+        padding.PKCS1v15(),
+        hashes.SHA512(),
+    )
+
+
+def test_qz_routes_keep_public_errors_generic_when_saved_credentials_are_invalid(
+    client_anonymous,
+    db_session,
+    monkeypatch,
+):
+    _clear_qz_signing_config(monkeypatch)
+    db_session.add(
+        PlatformSetting(
+            qz_certificate_encrypted="not-a-valid-token",
+            qz_private_key_encrypted="not-a-valid-token",
+        )
+    )
+    db_session.commit()
+
+    certificate_response = client_anonymous.get("/qz/certificate")
+    sign_response = client_anonymous.post("/qz/sign", json={"request": "demo-request"})
+
+    assert certificate_response.status_code == 503
+    assert certificate_response.text == qz_signing.QZ_PUBLIC_UNAVAILABLE_MESSAGE
+    assert "decrypted" not in certificate_response.text.lower()
+    assert sign_response.status_code == 503
+    assert sign_response.text == qz_signing.QZ_PUBLIC_UNAVAILABLE_MESSAGE
+    assert "decrypted" not in sign_response.text.lower()
+
+
+def test_qz_signing_diagnostics_report_ready_when_saved_platform_credentials_exist(
+    db_session,
+    monkeypatch,
+    tmp_path,
+):
+    _certificate_path, private_key_path, certificate_text = _write_qz_test_keys(tmp_path)
+    _clear_qz_signing_config(monkeypatch)
+    save_platform_qz_credentials(
+        db_session,
+        certificate_text=certificate_text,
+        private_key_text=private_key_path.read_text(encoding="utf-8"),
+    )
+    db_session.commit()
+
+    diagnostics = qz_signing.build_qz_signing_diagnostics(enabled=True, db=db_session)
+
+    assert diagnostics.certificate.configured is True
+    assert diagnostics.private_key.configured is True
+    assert diagnostics.certificate.source_type == "platform_setting"
+    assert diagnostics.private_key.source_type == "platform_setting"
     assert diagnostics.certificate_route.ok is True
     assert diagnostics.sign_route.ok is True
     assert diagnostics.signing_operational is True

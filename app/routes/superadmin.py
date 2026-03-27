@@ -6,10 +6,11 @@ import shutil
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import delete, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from starlette.datastructures import UploadFile
 
 from .admin_users import _active_tenant_admin_count, _tenant_user_by_id
 from ..audit import diff as audit_diff
@@ -123,6 +124,11 @@ from ..services.platform_qz_settings import (
     platform_qz_settings_snapshot,
     record_platform_qz_validation,
     save_platform_qz_settings,
+)
+from ..services.platform_qz_credentials import (
+    PlatformQzCredentialError,
+    get_platform_qz_credential_state,
+    save_platform_qz_credentials,
 )
 from ..services.qz_signing import build_qz_signing_diagnostics
 from ..services.tenant_ai_settings import (
@@ -481,6 +487,21 @@ def _form_value(form, key: str) -> str:
     return str(form.get(key, "") or "").strip()
 
 
+async def _qz_credential_form_value(form, *, text_key: str, file_key: str, label: str) -> str | None:
+    file_obj = form.get(file_key)
+    if isinstance(file_obj, UploadFile) and str(file_obj.filename or "").strip():
+        payload = await file_obj.read()
+        if not payload:
+            raise ValueError(f"Uploaded {label.lower()} file is empty.")
+        try:
+            return payload.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"Uploaded {label.lower()} file must be UTF-8 text.") from exc
+
+    value = _form_value(form, text_key)
+    return value or None
+
+
 def _platform_ai_settings_page_context(
     request: Request,
     *,
@@ -566,15 +587,21 @@ def _platform_qz_settings_page_context(
     request: Request,
     *,
     settings_state: PlatformQzSettingsState,
+    db: Session,
+    error: str = "",
 ) -> dict[str, object]:
-    diagnostics = build_qz_signing_diagnostics(enabled=bool(settings_state.qz_enabled))
+    diagnostics = build_qz_signing_diagnostics(
+        enabled=bool(settings_state.qz_enabled),
+        db=db,
+    )
     return {
         "request": request,
         "platform_qz_settings": settings_state,
+        "platform_qz_credentials": get_platform_qz_credential_state(db),
         "qz_diagnostics": diagnostics,
         "saved": request.query_params.get("saved") == "1",
         "validated": request.query_params.get("validated") == "1",
-        "error": request.query_params.get("error", ""),
+        "error": error or request.query_params.get("error", ""),
     }
 
 
@@ -629,6 +656,35 @@ def _audit_platform_qz_settings_change(
         entity_id="global",
         summary="Updated platform QZ settings",
         details=changed,
+        user=current_user,
+        tenant_id=None,
+    )
+
+
+def _audit_platform_qz_credentials_change(
+    db: Session,
+    request: Request,
+    *,
+    current_user: User,
+    update_result,
+) -> None:
+    if not update_result.any_changes:
+        return
+    audit_log(
+        db,
+        request,
+        action="PLATFORM_QZ_CREDENTIALS_UPDATE",
+        entity_type="platform_setting",
+        entity_id="global",
+        summary="Updated platform QZ credentials",
+        details={
+            "certificate_changed": update_result.certificate_changed,
+            "certificate_cleared": update_result.certificate_cleared,
+            "private_key_changed": update_result.private_key_changed,
+            "private_key_cleared": update_result.private_key_cleared,
+            "certificate_configured": update_result.state.certificate_configured,
+            "private_key_configured": update_result.state.private_key_configured,
+        },
         user=current_user,
         tenant_id=None,
     )
@@ -1002,6 +1058,7 @@ def platform_qz_settings_detail(
         _platform_qz_settings_page_context(
             request,
             settings_state=get_platform_qz_settings(db),
+            db=db,
         ),
     )
 
@@ -1068,6 +1125,57 @@ async def platform_qz_settings_update(
         current_user=current_user,
         before=before,
         after=saved,
+    )
+    db.commit()
+    return RedirectResponse(url="/platform/qz-settings?saved=1", status_code=303)
+
+
+@router.post("/platform/qz-settings/credentials")
+@router.post("/admin/qz-settings/credentials")
+async def platform_qz_credentials_update(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    current_user = _require_platform_superadmin(request, db)
+    form = await request.form()
+    try:
+        certificate_text = await _qz_credential_form_value(
+            form,
+            text_key="certificate_text",
+            file_key="certificate_file",
+            label="certificate",
+        )
+        private_key_text = await _qz_credential_form_value(
+            form,
+            text_key="private_key_text",
+            file_key="private_key_file",
+            label="private key",
+        )
+        update_result = save_platform_qz_credentials(
+            db,
+            certificate_text=certificate_text,
+            private_key_text=private_key_text,
+            clear_certificate=_form_checkbox_checked(form, "clear_certificate"),
+            clear_private_key=_form_checkbox_checked(form, "clear_private_key"),
+        )
+    except (PlatformQzCredentialError, ValueError) as exc:
+        return templates.TemplateResponse(
+            request,
+            "admin/platform_qz_settings.html",
+            _platform_qz_settings_page_context(
+                request,
+                settings_state=get_platform_qz_settings(db),
+                db=db,
+                error=str(exc),
+            ),
+            status_code=400,
+        )
+
+    _audit_platform_qz_credentials_change(
+        db,
+        request,
+        current_user=current_user,
+        update_result=update_result,
     )
     db.commit()
     return RedirectResponse(url="/platform/qz-settings?saved=1", status_code=303)
@@ -1140,7 +1248,10 @@ def platform_qz_settings_validate(
 ) -> RedirectResponse:
     current_user = _require_platform_superadmin(request, db)
     settings_state = get_platform_qz_settings(db)
-    diagnostics = build_qz_signing_diagnostics(enabled=bool(settings_state.qz_enabled))
+    diagnostics = build_qz_signing_diagnostics(
+        enabled=bool(settings_state.qz_enabled),
+        db=db,
+    )
     summary = "QZ direct printing is operational."
     if not diagnostics.ready_for_tenants:
         if not settings_state.qz_enabled:

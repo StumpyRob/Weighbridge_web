@@ -21,13 +21,13 @@
     {% set hero_icon = "&#9888;" %}
     {% set hero_title = "QZ Printing Not Configured" %}
     {% set hero_message = "Direct workstation printing will not work until a certificate and private key are configured." %}
-    {% set hero_hint = "You need to provide a QZ certificate and private key in the server configuration." %}
+    {% set hero_hint = "Add a QZ certificate and private key below." %}
   {% else %}
     {% set hero_state = "warning" %}
     {% set hero_icon = "&#9888;" %}
     {% set hero_title = "QZ Printing Not Ready" %}
     {% set hero_message = "Direct workstation printing is not operational yet." %}
-    {% set hero_hint = "Review the diagnostics below, correct the server configuration, then validate again." %}
+    {% set hero_hint = "Review the diagnostics below, update the QZ credentials if needed, then validate again." %}
   {% endif %}
 
   {% if platform_qz_settings.validation_has_run %}
@@ -47,7 +47,7 @@
     {% set signing_message = "Browser compatibility checks need attention." %}
   {% else %}
     {% set signing_label = "Not ready" %}
-    {% set signing_message = platform_qz_settings.qz_last_validation_summary or "Validate after updating the server configuration." %}
+    {% set signing_message = platform_qz_settings.qz_last_validation_summary or "Validate after updating the saved credentials." %}
   {% endif %}
 
   <div class="page-header">
@@ -112,14 +112,17 @@
               <span class="platform-qz-status-icon platform-qz-status-icon--{{ 'ok' if qz_diagnostics.certificate.ok else 'error' }}" aria-hidden="true">
                 {{ "&#10003;" | safe if qz_diagnostics.certificate.ok else "&#10007;" | safe }}
               </span>
-              <strong>{{ "Configured" if qz_diagnostics.certificate.ok else "Not ready" }}</strong>
+              <strong>
+                {% if qz_diagnostics.certificate.ok %}
+                  Configured
+                {% elif qz_diagnostics.certificate.configured %}
+                  Needs attention
+                {% else %}
+                  Not configured
+                {% endif %}
+              </strong>
             </div>
-            {% if qz_diagnostics.certificate.ok %}
-              <p class="muted">{{ qz_diagnostics.certificate.summary }}</p>
-            {% else %}
-              <p>{{ qz_diagnostics.certificate.summary }}</p>
-              <p class="muted">{{ qz_diagnostics.certificate.next_step }}</p>
-            {% endif %}
+            <p>{{ qz_diagnostics.certificate.summary }}</p>
           </article>
 
           <article class="card platform-qz-status-card">
@@ -128,14 +131,17 @@
               <span class="platform-qz-status-icon platform-qz-status-icon--{{ 'ok' if qz_diagnostics.private_key.ok else 'error' }}" aria-hidden="true">
                 {{ "&#10003;" | safe if qz_diagnostics.private_key.ok else "&#10007;" | safe }}
               </span>
-              <strong>{{ "Configured" if qz_diagnostics.private_key.ok else "Not ready" }}</strong>
+              <strong>
+                {% if qz_diagnostics.private_key.ok %}
+                  Configured
+                {% elif qz_diagnostics.private_key.configured %}
+                  Needs attention
+                {% else %}
+                  Not configured
+                {% endif %}
+              </strong>
             </div>
-            {% if qz_diagnostics.private_key.ok %}
-              <p class="muted">{{ qz_diagnostics.private_key.summary }}</p>
-            {% else %}
-              <p>{{ qz_diagnostics.private_key.summary }}</p>
-              <p class="muted">{{ qz_diagnostics.private_key.next_step }}</p>
-            {% endif %}
+            <p>{{ qz_diagnostics.private_key.summary }}</p>
           </article>
 
           <article class="card platform-qz-status-card">
@@ -157,6 +163,99 @@
 
     <section class="frame">
       <div class="frame-header">
+        <h2>Credentials{{ help(help_text.platform_qz_management_boundary, "platform-qz-management-boundary-help") }}</h2>
+      </div>
+      <div class="frame-body">
+        <p class="muted">Store the QZ certificate and private key here for normal platform operation. Legacy server configuration is only used when no saved platform credential exists.</p>
+
+        <div class="platform-qz-credential-grid">
+          <article class="card platform-qz-credential-card">
+            <div class="platform-qz-status-card__label">Certificate</div>
+            <p><strong>{{ "Configured" if platform_qz_credentials.certificate_configured else "Not configured" }}</strong></p>
+            {% if platform_qz_credentials.certificate_updated_at %}
+              <p class="muted">Last updated {{ platform_qz_credentials.certificate_updated_at.strftime("%d/%m/%Y %H:%M") }}</p>
+            {% endif %}
+            {% if qz_diagnostics.certificate.source_type == "platform_setting" %}
+              <p class="muted">Currently using the saved platform certificate.</p>
+            {% elif qz_diagnostics.certificate.ok %}
+              <p class="muted">Currently using legacy server configuration because no saved platform certificate exists.</p>
+            {% else %}
+              <p class="muted">No saved platform certificate yet.</p>
+            {% endif %}
+          </article>
+
+          <article class="card platform-qz-credential-card">
+            <div class="platform-qz-status-card__label">Private Key</div>
+            <p><strong>{{ "Configured" if platform_qz_credentials.private_key_configured else "Not configured" }}</strong></p>
+            {% if platform_qz_credentials.private_key_updated_at %}
+              <p class="muted">Last updated {{ platform_qz_credentials.private_key_updated_at.strftime("%d/%m/%Y %H:%M") }}</p>
+            {% endif %}
+            {% if qz_diagnostics.private_key.source_type == "platform_setting" %}
+              <p class="muted">Currently using the saved platform private key.</p>
+            {% elif qz_diagnostics.private_key.ok %}
+              <p class="muted">Currently using legacy server configuration because no saved platform private key exists.</p>
+            {% else %}
+              <p class="muted">No saved platform private key yet.</p>
+            {% endif %}
+          </article>
+        </div>
+
+        <form method="post" action="/platform/qz-settings/credentials" class="ticket-form" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+          <div class="form-grid platform-qz-credentials-form-grid">
+            <div class="field">
+              <label for="certificate_text">Certificate text</label>
+              <textarea
+                id="certificate_text"
+                name="certificate_text"
+                rows="8"
+                placeholder="-----BEGIN CERTIFICATE-----"
+                spellcheck="false"
+                autocomplete="off"
+              ></textarea>
+            </div>
+            <div class="field">
+              <label for="certificate_file">Or upload certificate file</label>
+              <input type="file" id="certificate_file" name="certificate_file" accept=".pem,.crt,.cer,.txt" />
+              {% if platform_qz_credentials.certificate_configured %}
+                <label class="platform-qz-inline-checkbox" for="clear_certificate">
+                  <input type="checkbox" id="clear_certificate" name="clear_certificate" value="1" />
+                  Clear saved certificate
+                </label>
+              {% endif %}
+            </div>
+            <div class="field">
+              <label for="private_key_text">Private key text</label>
+              <textarea
+                id="private_key_text"
+                name="private_key_text"
+                rows="8"
+                placeholder="-----BEGIN PRIVATE KEY-----"
+                spellcheck="false"
+                autocomplete="off"
+              ></textarea>
+              <p class="muted">Private key is write-only and is never shown back after save.</p>
+            </div>
+            <div class="field">
+              <label for="private_key_file">Or upload private key file</label>
+              <input type="file" id="private_key_file" name="private_key_file" accept=".pem,.key,.txt" />
+              {% if platform_qz_credentials.private_key_configured %}
+                <label class="platform-qz-inline-checkbox" for="clear_private_key">
+                  <input type="checkbox" id="clear_private_key" name="clear_private_key" value="1" />
+                  Clear saved private key
+                </label>
+              {% endif %}
+            </div>
+          </div>
+          <div class="actions btn-group">
+            <button type="submit" class="btn btn--primary">Save Credentials</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
         <h2>Platform Control{{ help(help_text.platform_qz_toggle, "platform-qz-toggle-help") }}</h2>
       </div>
       <div class="frame-body">
@@ -172,7 +271,7 @@
             />
             <label for="qz_enabled">Allow direct workstation printing platform-wide</label>
           </div>
-          <p class="muted">Use Validate after updating server configuration to confirm direct printing is ready.</p>
+          <p class="muted">Use Validate Now after saving credentials to confirm direct printing is ready.</p>
           <div class="actions btn-group">
             <button type="submit" class="btn btn--primary">Save QZ Settings</button>
             <button type="submit" class="btn btn--secondary" formaction="/platform/qz-settings/validate">Validate Now</button>

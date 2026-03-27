@@ -29,7 +29,7 @@ def qz_certificate(db: Session = Depends(get_db)) -> PlainTextResponse:
             raise QzSigningConfigurationError(
                 qz_public_route_error_message(enabled=False)
             )
-        certificate_text = load_qz_certificate_text()
+        certificate_text = load_qz_certificate_text(db=db)
     except QzSigningConfigurationError as exc:
         detail = str(exc).strip()
         if detail not in {
@@ -55,7 +55,7 @@ def qz_sign(
             raise QzSigningConfigurationError(
                 qz_public_route_error_message(enabled=False)
             )
-        signature = sign_qz_message(payload.request)
+        signature = sign_qz_message(payload.request, db=db)
     except ValueError as exc:
         return PlainTextResponse(str(exc), status_code=400)
     except QzSigningConfigurationError as exc:

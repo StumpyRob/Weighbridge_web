@@ -120,5 +120,8 @@ def platform_qz_ready_for_tenants(db: Session) -> bool:
     from .qz_signing import build_qz_signing_diagnostics
 
     settings_state = get_platform_qz_settings(db)
-    diagnostics = build_qz_signing_diagnostics(enabled=bool(settings_state.qz_enabled))
+    diagnostics = build_qz_signing_diagnostics(
+        enabled=bool(settings_state.qz_enabled),
+        db=db,
+    )
     return bool(diagnostics.ready_for_tenants)

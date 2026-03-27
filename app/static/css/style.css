@@ -2975,6 +2975,24 @@ body.js-help-tooltips .help-tooltip {
   height: 100%;
 }
 
+.platform-qz-credential-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.platform-qz-credential-card {
+  display: grid;
+  gap: 0.45rem;
+  align-content: start;
+  height: 100%;
+}
+
+.platform-qz-credential-card p {
+  margin: 0;
+}
+
 .platform-qz-status-card__label {
   font-size: 0.9rem;
   font-weight: 700;
@@ -3006,6 +3024,18 @@ body.js-help-tooltips .help-tooltip {
 .platform-qz-status-icon--error {
   background: #fef2f2;
   color: #991b1b;
+}
+
+.platform-qz-credentials-form-grid {
+  margin-top: 0.9rem;
+}
+
+.platform-qz-inline-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  font-weight: 500;
 }
 
 .platform-qz-disclosure > summary {

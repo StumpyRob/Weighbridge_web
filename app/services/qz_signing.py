@@ -6,13 +6,22 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi.responses import Response
-from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
+from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..security_hardening import apply_security_headers
+from .platform_qz_credentials import (
+    PlatformQzCredentialError,
+    get_platform_qz_credential_state,
+    load_platform_qz_certificate_text,
+    load_platform_qz_private_key_pem,
+    normalize_qz_credential_text,
+    validate_qz_certificate_text,
+    validate_qz_private_key_pem,
+)
 
 
 class QzSigningConfigurationError(RuntimeError):
@@ -84,13 +93,6 @@ class _QzResolvedTextValue:
     source_label: str
     resolved_path: str | None
     checked_paths: tuple[str, ...]
-
-
-def _normalized_multiline_value(value: str | None) -> str:
-    normalized = str(value or "").strip()
-    if not normalized:
-        return ""
-    return normalized.replace("\\n", "\n")
 
 
 def _candidate_dev_demo_file(filename: str) -> Path | None:
@@ -197,14 +199,20 @@ def _missing_configuration_message(
 
 
 def _missing_configuration_next_step() -> str:
-    return "You need to provide a QZ certificate and private key in the server configuration."
+    return (
+        "Save a QZ certificate and private key in Platform QZ Settings, "
+        "or complete the legacy server configuration."
+    )
 
 
 def _invalid_configuration_next_step() -> str:
-    return "Review the configured QZ certificate and private key in the server configuration."
+    return (
+        "Replace the QZ certificate or private key in Platform QZ Settings, "
+        "or correct the legacy server configuration."
+    )
 
 
-def _resolve_text_value(
+def _resolve_legacy_text_value(
     *,
     inline_value: str | None,
     configured_path: str | None,
@@ -212,7 +220,7 @@ def _resolve_text_value(
     inline_env_aliases: tuple[str, ...],
     default_demo_filename: str,
 ) -> _QzResolvedTextValue:
-    normalized_inline = _normalized_multiline_value(inline_value)
+    normalized_inline = normalize_qz_credential_text(inline_value)
     if normalized_inline:
         return _QzResolvedTextValue(
             value=normalized_inline,
@@ -223,7 +231,7 @@ def _resolve_text_value(
         )
 
     for env_name in inline_env_aliases:
-        normalized_env_inline = _normalized_multiline_value(os.getenv(env_name, ""))
+        normalized_env_inline = normalize_qz_credential_text(os.getenv(env_name, ""))
         if normalized_env_inline:
             return _QzResolvedTextValue(
                 value=normalized_env_inline,
@@ -259,30 +267,34 @@ def _resolve_text_value(
 
 
 def _validate_certificate_text(certificate_text: str) -> None:
-    if not certificate_text:
-        raise QzSigningConfigurationError("QZ signing certificate is empty.")
     try:
-        x509.load_pem_x509_certificate(certificate_text.encode("utf-8"))
-    except Exception as exc:
-        raise QzSigningConfigurationError(
-            f"QZ signing certificate is invalid: {exc}"
-        ) from exc
+        validate_qz_certificate_text(certificate_text)
+    except PlatformQzCredentialError as exc:
+        raise QzSigningConfigurationError(str(exc)) from exc
 
 
 def _validate_private_key_pem(private_key_pem: str) -> None:
-    if not private_key_pem:
-        raise QzSigningConfigurationError("QZ signing private key is empty.")
-    pem_bytes = private_key_pem.encode("utf-8")
     try:
-        private_key = serialization.load_pem_private_key(pem_bytes, password=None)
-    except Exception as exc:
-        raise QzSigningConfigurationError(
-            f"QZ signing private key is invalid: {exc}"
-        ) from exc
-    if not isinstance(private_key, RSAPrivateKey):
-        raise QzSigningConfigurationError(
-            "QZ signing private key must be an RSA private key."
-        )
+        validate_qz_private_key_pem(private_key_pem)
+    except PlatformQzCredentialError as exc:
+        raise QzSigningConfigurationError(str(exc)) from exc
+
+
+def _stored_source_error_status(
+    *,
+    label: str,
+    detail: str,
+) -> QzConfigSourceStatus:
+    return QzConfigSourceStatus(
+        label=label,
+        configured=True,
+        source_type="platform_setting",
+        source_label="Platform stored credential",
+        validation_status="error",
+        summary=f"{label} is configured but could not be validated.",
+        next_step=_invalid_configuration_next_step(),
+        detail=detail,
+    )
 
 
 def _inspect_source_status(
@@ -295,7 +307,7 @@ def _inspect_source_status(
     default_demo_filename: str,
     validator,
 ) -> QzConfigSourceStatus:
-    resolved = _resolve_text_value(
+    resolved = _resolve_legacy_text_value(
         inline_value=inline_value,
         configured_path=configured_path,
         path_env_aliases=path_env_aliases,
@@ -348,7 +360,22 @@ def _inspect_source_status(
     )
 
 
-def inspect_qz_certificate_source() -> QzConfigSourceStatus:
+def inspect_qz_certificate_source(*, db: Session | None = None) -> QzConfigSourceStatus:
+    if db is not None:
+        stored_state = get_platform_qz_credential_state(db)
+        if stored_state.certificate_configured:
+            try:
+                load_platform_qz_certificate_text(db)
+            except PlatformQzCredentialError as exc:
+                return _stored_source_error_status(label="Certificate", detail=str(exc))
+            return QzConfigSourceStatus(
+                label="Certificate",
+                configured=True,
+                source_type="platform_setting",
+                source_label="Platform stored credential",
+                validation_status="ok",
+                summary="Certificate is configured.",
+            )
     return _inspect_source_status(
         label="Certificate",
         inline_value=settings.qz_certificate_text,
@@ -360,7 +387,22 @@ def inspect_qz_certificate_source() -> QzConfigSourceStatus:
     )
 
 
-def inspect_qz_private_key_source() -> QzConfigSourceStatus:
+def inspect_qz_private_key_source(*, db: Session | None = None) -> QzConfigSourceStatus:
+    if db is not None:
+        stored_state = get_platform_qz_credential_state(db)
+        if stored_state.private_key_configured:
+            try:
+                load_platform_qz_private_key_pem(db)
+            except PlatformQzCredentialError as exc:
+                return _stored_source_error_status(label="Private Key", detail=str(exc))
+            return QzConfigSourceStatus(
+                label="Private Key",
+                configured=True,
+                source_type="platform_setting",
+                source_label="Platform stored credential",
+                validation_status="ok",
+                summary="Private Key is configured.",
+            )
     return _inspect_source_status(
         label="Private Key",
         inline_value=settings.qz_private_key_text,
@@ -372,8 +414,16 @@ def inspect_qz_private_key_source() -> QzConfigSourceStatus:
     )
 
 
-def load_qz_certificate_text() -> str:
-    resolved = _resolve_text_value(
+def load_qz_certificate_text(*, db: Session | None = None) -> str:
+    if db is not None and get_platform_qz_credential_state(db).certificate_configured:
+        try:
+            certificate_text = load_platform_qz_certificate_text(db)
+        except PlatformQzCredentialError as exc:
+            raise QzSigningConfigurationError(str(exc)) from exc
+        assert certificate_text is not None
+        return certificate_text
+
+    resolved = _resolve_legacy_text_value(
         inline_value=settings.qz_certificate_text,
         configured_path=settings.qz_certificate_path,
         path_env_aliases=("QZ_CERTIFICATE_PATH", "QZ_CERTIFICATE_FILE"),
@@ -394,8 +444,16 @@ def load_qz_certificate_text() -> str:
     return certificate_text
 
 
-def _load_qz_private_key_pem() -> str:
-    resolved = _resolve_text_value(
+def _load_qz_private_key_pem(*, db: Session | None = None) -> str:
+    if db is not None and get_platform_qz_credential_state(db).private_key_configured:
+        try:
+            private_key_pem = load_platform_qz_private_key_pem(db)
+        except PlatformQzCredentialError as exc:
+            raise QzSigningConfigurationError(str(exc)) from exc
+        assert private_key_pem is not None
+        return private_key_pem
+
+    resolved = _resolve_legacy_text_value(
         inline_value=settings.qz_private_key_text,
         configured_path=settings.qz_private_key_path,
         path_env_aliases=("QZ_PRIVATE_KEY_PATH", "QZ_PRIVATE_KEY_FILE"),
@@ -416,8 +474,8 @@ def _load_qz_private_key_pem() -> str:
     return private_key_pem
 
 
-def load_qz_private_key() -> RSAPrivateKey:
-    pem_bytes = _load_qz_private_key_pem().encode("utf-8")
+def load_qz_private_key(*, db: Session | None = None) -> RSAPrivateKey:
+    pem_bytes = _load_qz_private_key_pem(db=db).encode("utf-8")
     private_key = serialization.load_pem_private_key(pem_bytes, password=None)
     if not isinstance(private_key, RSAPrivateKey):
         raise QzSigningConfigurationError(
@@ -426,12 +484,12 @@ def load_qz_private_key() -> RSAPrivateKey:
     return private_key
 
 
-def sign_qz_message(message: str) -> str:
+def sign_qz_message(message: str, *, db: Session | None = None) -> str:
     payload = str(message or "")
     if not payload:
         raise ValueError("QZ request payload is required.")
 
-    signature = load_qz_private_key().sign(
+    signature = load_qz_private_key(db=db).sign(
         payload.encode("utf-8"),
         padding.PKCS1v15(),
         hashes.SHA512(),
@@ -490,6 +548,7 @@ def _sign_route_status(
     *,
     enabled: bool,
     private_key_status: QzConfigSourceStatus,
+    db: Session | None = None,
 ) -> QzRouteStatus:
     if not enabled:
         return QzRouteStatus(
@@ -508,7 +567,7 @@ def _sign_route_status(
             detail=private_key_status.detail,
         )
     try:
-        sign_qz_message(_QZ_SAMPLE_SIGN_PAYLOAD)
+        sign_qz_message(_QZ_SAMPLE_SIGN_PAYLOAD, db=db)
     except (ValueError, QzSigningConfigurationError) as exc:
         return QzRouteStatus(
             path="/qz/sign",
@@ -526,9 +585,13 @@ def _sign_route_status(
     )
 
 
-def build_qz_signing_diagnostics(*, enabled: bool) -> QzSigningDiagnostics:
-    certificate_status = inspect_qz_certificate_source()
-    private_key_status = inspect_qz_private_key_source()
+def build_qz_signing_diagnostics(
+    *,
+    enabled: bool,
+    db: Session | None = None,
+) -> QzSigningDiagnostics:
+    certificate_status = inspect_qz_certificate_source(db=db)
+    private_key_status = inspect_qz_private_key_source(db=db)
     certificate_route = _certificate_route_status(
         enabled=enabled,
         certificate_status=certificate_status,
@@ -536,6 +599,7 @@ def build_qz_signing_diagnostics(*, enabled: bool) -> QzSigningDiagnostics:
     sign_route = _sign_route_status(
         enabled=enabled,
         private_key_status=private_key_status,
+        db=db,
     )
     csp_connect_src_ok, csp_detail = _qz_csp_connect_src_ok()
 

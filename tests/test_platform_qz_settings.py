@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
+from cryptography.x509.oid import NameOID
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -131,6 +137,34 @@ def _seed_user(
         db.commit()
 
 
+def _build_qz_test_credentials() -> tuple[str, str]:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COUNTRY_NAME, "GB"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Weighbridge Web Test"),
+            x509.NameAttribute(NameOID.COMMON_NAME, "Platform QZ Settings Test"),
+        ]
+    )
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.now(UTC) - timedelta(days=1))
+        .not_valid_after(datetime.now(UTC) + timedelta(days=30))
+        .sign(private_key, hashes.SHA256())
+    )
+    certificate_text = certificate.public_bytes(Encoding.PEM).decode("utf-8")
+    private_key_text = private_key.private_bytes(
+        encoding=Encoding.PEM,
+        format=PrivateFormat.PKCS8,
+        encryption_algorithm=NoEncryption(),
+    ).decode("utf-8")
+    return certificate_text, private_key_text
+
+
 def test_platform_qz_settings_page_reports_missing_status_and_routes(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(
         tmp_path,
@@ -161,8 +195,10 @@ def test_platform_qz_settings_page_reports_missing_status_and_routes(tmp_path, m
         "Direct workstation printing will not work until a certificate and private key are configured."
         in response.text
     )
+    assert "Add a QZ certificate and private key below." in response.text
     assert "QZ signing is configured once at platform level." in response.text
     assert "Tenant admins only control which printers are used." in response.text
+    assert "Save Credentials" in response.text
     assert "Certificate is not configured." in response.text
     assert "Private Key is not configured." in response.text
     assert "Advanced diagnostics" in response.text
@@ -191,13 +227,14 @@ def test_platform_qz_settings_page_uses_ready_banner_when_operational(tmp_path, 
     monkeypatch.setattr(
         superadmin_routes,
         "build_qz_signing_diagnostics",
-        lambda *, enabled: SimpleNamespace(
+        lambda *, enabled, db=None: SimpleNamespace(
             enabled=enabled,
             certificate=SimpleNamespace(
                 ok=True,
                 configured=True,
                 summary="Certificate is configured.",
                 next_step="",
+                source_type="platform_setting",
                 validation_status="ok",
                 source_label="Environment inline value (QZ_CERTIFICATE_TEXT)",
                 resolved_path=None,
@@ -209,6 +246,7 @@ def test_platform_qz_settings_page_uses_ready_banner_when_operational(tmp_path, 
                 configured=True,
                 summary="Private Key is configured.",
                 next_step="",
+                source_type="platform_setting",
                 validation_status="ok",
                 source_label="Environment inline value (QZ_PRIVATE_KEY_TEXT)",
                 resolved_path=None,
@@ -306,6 +344,113 @@ def test_platform_qz_settings_update_and_validate_persist_status(tmp_path, monke
         )
 
 
+def test_superadmin_can_save_platform_qz_credentials_without_rendering_private_key(
+    tmp_path,
+    monkeypatch,
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path,
+        db_name="platform-qz-credentials.db",
+        monkeypatch=monkeypatch,
+    )
+    _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+    certificate_text, private_key_text = _build_qz_test_credentials()
+
+    with TestClient(app, base_url="https://admin.localhost") as client:
+        _login(
+            client,
+            email="superadmin@example.com",
+            password="TestPass123!",
+            next_path="/platform/qz-settings",
+        )
+        csrf = _prime_csrf(client, path="/platform/qz-settings")
+        response = client.post(
+            "/platform/qz-settings/credentials",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "certificate_text": certificate_text,
+                "private_key_text": private_key_text,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        page = client.get("/platform/qz-settings")
+
+    assert page.status_code == 200
+    assert "Private key is write-only and is never shown back after save." in page.text
+    assert certificate_text.strip() not in page.text
+    assert private_key_text.strip() not in page.text
+    assert "Currently using the saved platform certificate." in page.text
+    assert "Currently using the saved platform private key." in page.text
+
+    with SessionLocal() as db:
+        state = db.query(PlatformSetting).order_by(PlatformSetting.id.asc()).first()
+        assert state is not None
+        assert bool(state.qz_certificate_encrypted)
+        assert bool(state.qz_private_key_encrypted)
+        assert state.qz_certificate_updated_at is not None
+        assert state.qz_private_key_updated_at is not None
+
+
+def test_platform_qz_validate_uses_saved_credentials(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path,
+        db_name="platform-qz-validate-stored.db",
+        monkeypatch=monkeypatch,
+    )
+    _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+    certificate_text, private_key_text = _build_qz_test_credentials()
+
+    with TestClient(app, base_url="https://admin.localhost") as client:
+        _login(
+            client,
+            email="superadmin@example.com",
+            password="TestPass123!",
+            next_path="/platform/qz-settings",
+        )
+        csrf = _prime_csrf(client, path="/platform/qz-settings")
+        save_response = client.post(
+            "/platform/qz-settings/credentials",
+            data={
+                CSRF_FORM_FIELD: csrf,
+                "certificate_text": certificate_text,
+                "private_key_text": private_key_text,
+            },
+            follow_redirects=False,
+        )
+        assert save_response.status_code == 303
+
+        csrf = _prime_csrf(client, path="/platform/qz-settings")
+        validate_response = client.post(
+            "/platform/qz-settings/validate",
+            data={CSRF_FORM_FIELD: csrf},
+            follow_redirects=False,
+        )
+        assert validate_response.status_code == 303
+        page = client.get(validate_response.headers["location"])
+
+    assert page.status_code == 200
+    assert "QZ validation completed." in page.text
+
+    with SessionLocal() as db:
+        state = db.query(PlatformSetting).order_by(PlatformSetting.id.asc()).first()
+        assert state is not None
+        assert str(state.qz_last_validation_status or "").lower() == "ok"
+        assert "operational" in str(state.qz_last_validation_summary or "").lower()
+
+
 def test_tenant_admin_cannot_access_platform_qz_settings_pages(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(
         tmp_path,
@@ -331,9 +476,16 @@ def test_tenant_admin_cannot_access_platform_qz_settings_pages(tmp_path, monkeyp
         )
         platform_page = client.get("/platform/qz-settings")
         admin_alias_page = client.get("/admin/qz-settings")
+        csrf = _prime_csrf(client, path="/admin")
+        credential_update = client.post(
+            "/platform/qz-settings/credentials",
+            data={CSRF_FORM_FIELD: csrf},
+            follow_redirects=False,
+        )
 
     assert platform_page.status_code == 404
     assert admin_alias_page.status_code == 404
+    assert credential_update.status_code == 404
 
 
 def test_tenant_admin_can_configure_destination_behavior_without_secret_visibility(
