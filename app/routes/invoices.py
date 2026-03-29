@@ -101,6 +101,11 @@ def _voided_by_actor(request: Request) -> str:
     return "system"
 
 
+def _request_user_id(request: Request) -> int | None:
+    current_user = getattr(getattr(request, "state", None), "current_user", None)
+    return getattr(current_user, "id", None)
+
+
 @router.get("/invoices", response_class=HTMLResponse)
 def invoices_list(
     request: Request,
@@ -646,6 +651,7 @@ async def invoices_print_dispatch(
     db: Session = Depends(get_db),
 ) -> Response:
     require_permission(request, PERM_GENERATE_INVOICES)
+    created_by_user_id = _request_user_id(request)
     invoice = db.get(Invoice, invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found.")
@@ -689,7 +695,7 @@ async def invoices_print_dispatch(
                 destination_id=destination.id,
                 template_id=rendered_template_id,
                 invoice_id=invoice.id,
-                created_by_user_id=None,
+                created_by_user_id=created_by_user_id,
                 payload_bytes=pdf_bytes,
                 base_url=str(request.base_url),
                 email_subject=str(delivery_config.get("subject_template", "")).format(
@@ -720,7 +726,7 @@ async def invoices_print_dispatch(
                 destination_id=destination.id,
                 template_id=rendered_template_id,
                 invoice_id=invoice.id,
-                created_by_user_id=None,
+                created_by_user_id=created_by_user_id,
                 base_url=str(request.base_url),
             )
     except HTTPException:

@@ -200,6 +200,11 @@ def _voided_by_actor(request: Request) -> str:
     return "system"
 
 
+def _request_user_id(request: Request) -> int | None:
+    current_user = getattr(getattr(request, "state", None), "current_user", None)
+    return getattr(current_user, "id", None)
+
+
 @router.get("/tickets", response_class=HTMLResponse)
 def tickets_list(
     request: Request,
@@ -334,6 +339,7 @@ def tickets_print_last_again(
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
     _require_tickets_manage(request)
+    created_by_user_id = _request_user_id(request)
     last_job = (
         db.execute(
             select(PrintJob)
@@ -352,10 +358,14 @@ def tickets_print_last_again(
         return RedirectResponse(
             url="/tickets?reprint_error=No+successful+print+job+found+to+reprint.",
             status_code=303,
-        )
+    )
 
     try:
-        replay_result = replay_print_job(db, last_job)
+        replay_result = replay_print_job(
+            db,
+            last_job,
+            created_by_user_id=created_by_user_id,
+        )
     except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
         detail = str(exc) or "Print delivery failed."
         error_label = _friendly_print_error_label(detail)
@@ -2296,6 +2306,7 @@ def tickets_receipt(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
+    created_by_user_id = _request_user_id(request)
     ticket = db.get(Ticket, ticket_id)
     if not ticket:
         return HTMLResponse("Ticket not found.", status_code=404)
@@ -2314,7 +2325,7 @@ def tickets_receipt(
             destination_id=None,
             template_id=None,
             ticket_id=ticket.id,
-            created_by_user_id=None,
+            created_by_user_id=created_by_user_id,
             base_url=str(request.base_url),
         )
     except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
@@ -2330,6 +2341,7 @@ async def tickets_print_dispatch(
     db: Session = Depends(get_db),
 ):
     _require_tickets_manage(request)
+    created_by_user_id = _request_user_id(request)
     ticket = db.get(Ticket, ticket_id)
     expects_json = _request_expects_json(request)
     if not ticket:
@@ -2406,7 +2418,7 @@ async def tickets_print_dispatch(
             destination_id=destination.id,
             template_id=rendered.template_id,
             ticket_id=ticket.id,
-            created_by_user_id=None,
+            created_by_user_id=created_by_user_id,
             base_url=str(request.base_url),
         )
     except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
@@ -3002,6 +3014,7 @@ async def tickets_wtn_send(
     db: Session = Depends(get_db),
 ) -> Response:
     _require_tickets_manage(request)
+    created_by_user_id = _request_user_id(request)
     ticket = db.get(Ticket, ticket_id)
     expects_json = _request_expects_json(request)
     if ticket is None:
@@ -3098,7 +3111,7 @@ async def tickets_wtn_send(
             destination_id=destination.id,
             template_id=rendered.template_id,
             ticket_id=ticket.id,
-            created_by_user_id=None,
+            created_by_user_id=created_by_user_id,
             payload_bytes=payload_bytes,
             base_url=str(request.base_url),
         )

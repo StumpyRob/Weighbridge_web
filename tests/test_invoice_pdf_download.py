@@ -16,6 +16,7 @@ from app.models import (
     PrintDestination,
     PrintJob,
     PrintTemplate,
+    User,
 )
 from app.services.email_service import EmailSendResult
 from app.services.pdf import PdfRendererStatus
@@ -398,6 +399,10 @@ def test_invoice_print_email_destination_creates_job_and_calls_sender(
     assert job.document_type == "INVOICE"
     assert job.destination_id == destination.id
     assert job.delivery_type == "EMAIL_PDF"
+    current_user_id = db_session.execute(
+        select(User.id).order_by(User.id.asc()).limit(1)
+    ).scalar_one()
+    assert job.created_by_user_id == current_user_id
 
     assert called.get("document_type") == "INVOICE"
     assert called.get("invoice_id") == invoice.id

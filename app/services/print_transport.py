@@ -1,14 +1,43 @@
 from __future__ import annotations
 
+import base64
+from dataclasses import dataclass
 import socket
 import subprocess
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 
 from ..config import settings
 
 PrintMode = Literal["usb", "network", "cups", "local_browser", "local_node_http"]
+NODE_HTTP_TEXT_MIME_TYPE = "text/plain; charset=utf-8"
+
+
+@dataclass(slots=True)
+class PrintTransportResult:
+    provider_job_ref: str | None = None
+    provider_response_json: dict[str, Any] | None = None
+
+
+class PrintNodeHttpError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider_job_ref: str | None = None,
+        provider_response_json: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.provider_job_ref = provider_job_ref
+        self.provider_response_json = provider_response_json
+
+
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
 
 
 def _send_network(job: bytes, config: dict) -> None:
@@ -58,13 +87,15 @@ def _send_cups(job: bytes, config: dict) -> None:
 
 
 def _send_local_node_http(
+    job: bytes,
     config: dict,
     *,
     document_type: str,
-    rendered_content: str,
-    content_type: str,
     job_id: int,
-) -> None:
+    job_name: str,
+    payload_format: str,
+    payload_mime_type: str,
+) -> PrintTransportResult:
     url = str(config.get("url", "")).strip()
     if not url:
         raise ValueError("LOCAL_NODE_HTTP url is required.")
@@ -81,11 +112,35 @@ def _send_local_node_http(
     if api_key:
         headers["X-API-Key"] = api_key
 
+    printer_name = str(config.get("printer_name", "")).strip()
+    if not printer_name:
+        raise ValueError("LOCAL_NODE_HTTP printer_name is required.")
+
+    copies_raw = config.get("copies", 1)
+    try:
+        copies = int(copies_raw)
+    except (TypeError, ValueError):
+        raise ValueError("LOCAL_NODE_HTTP copies must be an integer.")
+    if copies < 1:
+        raise ValueError("LOCAL_NODE_HTTP copies must be >= 1.")
+
+    normalized_payload_format = str(payload_format or "").strip().upper()
+    if normalized_payload_format != "TEXT":
+        raise NotImplementedError("PRINT_NODE_HTTP currently supports TEXT payloads only.")
+
+    resolved_job_name = (
+        str(job_name or "").strip() or f"{str(document_type or '').strip().upper() or 'PRINT'} print job {job_id}"
+    )
+    resolved_payload_mime_type = NODE_HTTP_TEXT_MIME_TYPE
     payload = {
+        "job_id": str(int(job_id or 0)),
         "document_type": document_type,
-        "rendered_content": rendered_content,
-        "content_type": content_type,
-        "job_id": job_id,
+        "job_name": resolved_job_name,
+        "printer_name": printer_name,
+        "copies": copies,
+        "payload_format": normalized_payload_format,
+        "payload_mime_type": resolved_payload_mime_type,
+        "payload_base64": base64.b64encode(job).decode("ascii"),
     }
     try:
         response = httpx.post(url, json=payload, headers=headers, timeout=timeout_seconds)
@@ -94,10 +149,56 @@ def _send_local_node_http(
     except httpx.HTTPError as exc:
         raise RuntimeError(f"Print node request failed: {url} ({exc})") from exc
 
-    if response.status_code >= 400:
+    provider_response_json: dict[str, Any] | None = None
+    provider_job_ref: str | None = None
+    try:
+        parsed = response.json()
+    except ValueError:
+        parsed = None
+    if isinstance(parsed, dict):
+        provider_response_json = parsed
+        provider_job_ref = _optional_text(parsed.get("provider_job_ref"))
+
+    if response.status_code < 200 or response.status_code >= 300:
         body = response.text.strip()
-        message = body[:500] if body else f"HTTP {response.status_code}"
-        raise RuntimeError(f"Print node rejected job: {message}")
+        message = (
+            _optional_text(provider_response_json.get("message"))
+            if provider_response_json is not None
+            else None
+        )
+        if not message:
+            message = body[:500] if body else f"HTTP {response.status_code}"
+        raise PrintNodeHttpError(
+            f"Print node rejected job: {message}",
+            provider_job_ref=provider_job_ref,
+            provider_response_json=provider_response_json,
+        )
+
+    if provider_response_json is None:
+        raise PrintNodeHttpError("Print node returned invalid JSON response.")
+
+    if "ok" not in provider_response_json:
+        raise PrintNodeHttpError(
+            "Print node response missing ok flag.",
+            provider_job_ref=provider_job_ref,
+            provider_response_json=provider_response_json,
+        )
+
+    if provider_response_json.get("ok") is not True:
+        message = (
+            _optional_text(provider_response_json.get("message"))
+            or "Print node returned ok=false."
+        )
+        raise PrintNodeHttpError(
+            f"Print node rejected job: {message}",
+            provider_job_ref=provider_job_ref,
+            provider_response_json=provider_response_json,
+        )
+
+    return PrintTransportResult(
+        provider_job_ref=provider_job_ref,
+        provider_response_json=provider_response_json,
+    )
 
 
 def send(
@@ -109,7 +210,10 @@ def send(
     rendered_content: str = "",
     content_type: str = "TEXT",
     job_id: int = 0,
-) -> bytes | None:
+    job_name: str = "",
+    payload_format: str = "",
+    payload_mime_type: str = "",
+) -> bytes | PrintTransportResult | None:
     if mode == "network":
         _send_network(job, config)
         return None
@@ -119,12 +223,17 @@ def send(
     if mode == "local_browser":
         return job
     if mode == "local_node_http":
-        _send_local_node_http(
+        resolved_payload_format = str(payload_format or content_type or "").strip().upper() or "TEXT"
+        resolved_payload_mime_type = str(payload_mime_type or "").strip() or (
+            NODE_HTTP_TEXT_MIME_TYPE if resolved_payload_format == "TEXT" else ""
+        )
+        return _send_local_node_http(
+            job,
             config,
             document_type=document_type,
-            rendered_content=rendered_content,
-            content_type=content_type,
             job_id=job_id,
+            job_name=job_name,
+            payload_format=resolved_payload_format,
+            payload_mime_type=resolved_payload_mime_type,
         )
-        return None
     raise ValueError(f"Unsupported print mode: {mode}")

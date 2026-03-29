@@ -96,7 +96,7 @@
           </div>
 
           <div class="field" data-delivery-groups="PRINT_NODE_HTTP">
-            <label for="node_url">Node URL</label>
+            <label for="node_url">Site agent URL</label>
             <input type="url" id="node_url" name="node_url" value="{{ form_data.node_url }}" placeholder="http://127.0.0.1:9123/print" />
           </div>
           <div class="field" data-delivery-groups="PRINT_NODE_HTTP">
@@ -106,6 +106,14 @@
           <div class="field" data-delivery-groups="PRINT_NODE_HTTP">
             <label for="node_timeout_ms">Timeout (ms)</label>
             <input type="number" id="node_timeout_ms" name="node_timeout_ms" min="1" value="{{ form_data.node_timeout_ms }}" placeholder="5000" />
+          </div>
+          <div class="field" data-delivery-groups="PRINT_NODE_HTTP">
+            <label for="node_printer_name">Printer name</label>
+            <input type="text" id="node_printer_name" name="node_printer_name" value="{{ form_data.node_printer_name }}" placeholder="Reception Printer" />
+          </div>
+          <div class="field" data-delivery-groups="PRINT_NODE_HTTP">
+            <label for="node_copies">Copies</label>
+            <input type="number" id="node_copies" name="node_copies" min="1" value="{{ form_data.node_copies }}" placeholder="1" />
           </div>
 
           <div class="field" data-delivery-groups="EMAIL_PDF">

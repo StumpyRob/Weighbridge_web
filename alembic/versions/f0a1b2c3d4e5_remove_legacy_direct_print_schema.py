@@ -8,17 +8,16 @@ Create Date: 2026-03-27 01:30:00.000000
 from __future__ import annotations
 
 import json
-from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = "f0a1b2c3d4e5"
-down_revision: Union[str, Sequence[str], None] = "e8f9a0b1c2d3"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision = "f0a1b2c3d4e5"
+down_revision = "e8f9a0b1c2d3"
+branch_labels = None
+depends_on = None
 
 
 def _drop_legacy_direct_print_columns_if_present() -> None:

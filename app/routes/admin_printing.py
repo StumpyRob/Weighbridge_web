@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session
 
 from ..audit import diff as audit_diff
 from ..audit import log as audit_log
+from ..auth import user_display_name
 from ..constants import CODE_MAX, DESC_MAX
 from ..db import get_db
-from ..models import Invoice, PrintDestination, PrintJob, PrintTemplate, Ticket
+from ..models import Invoice, PrintDestination, PrintJob, PrintTemplate, Ticket, User
 from ..permissions import PERM_MANAGE_SETTINGS, require_permission
 from ..services.print_payload import (
     build_print_payload,
@@ -52,7 +53,7 @@ DOCUMENT_TYPE_VALUES = {value for value, _ in DOCUMENT_TYPE_OPTIONS}
 DELIVERY_TYPE_OPTIONS = (
     (DELIVERY_TYPE_PRINT_LOCAL_BROWSER, "Print: Local Browser"),
     (DELIVERY_TYPE_PRINT_NETWORK_RAW_9100, "Print: Network RAW 9100"),
-    (DELIVERY_TYPE_PRINT_NODE_HTTP, "Print: Node HTTP"),
+    (DELIVERY_TYPE_PRINT_NODE_HTTP, "Print: Site Agent HTTP"),
     (DELIVERY_TYPE_EMAIL_PDF, "Email: PDF"),
 )
 DELIVERY_TYPE_VALUES = {value for value, _ in DELIVERY_TYPE_OPTIONS}
@@ -252,6 +253,8 @@ def _destination_to_form(
         "node_url": str(config.get("url", "")),
         "node_api_key": str(config.get("api_key", "")),
         "node_timeout_ms": str(config.get("timeout_ms", 5000)),
+        "node_printer_name": str(config.get("printer_name", "")),
+        "node_copies": str(config.get("copies", 1)),
         "email_to": str(config.get("to", "")),
         "email_cc": str(config.get("cc", "")),
         "email_bcc": str(config.get("bcc", "")),
@@ -299,6 +302,12 @@ def _delivery_config_from_form(form: dict[str, str], delivery_type: str) -> dict
         timeout_ms = _parse_optional_int(form.get("node_timeout_ms"))
         if timeout_ms is not None:
             config["timeout_ms"] = timeout_ms
+        printer_name = str(form.get("node_printer_name", "")).strip()
+        if printer_name:
+            config["printer_name"] = printer_name
+        copies = _parse_optional_int(form.get("node_copies"))
+        if copies is not None:
+            config["copies"] = copies
     elif normalized == DELIVERY_TYPE_EMAIL_PDF:
         for key in (
             "email_to",
@@ -318,6 +327,43 @@ def _delivery_config_from_form(form: dict[str, str], delivery_type: str) -> dict
         if isinstance(parsed, dict):
             config.update(parsed)
     return config
+
+
+def _validate_print_destination(
+    *,
+    template: PrintTemplate | None,
+    document_type: str,
+    delivery_type: str,
+    delivery_config: dict,
+    errors: list[str],
+) -> None:
+    if template is None:
+        return
+
+    if delivery_type == DELIVERY_TYPE_EMAIL_PDF and document_type != DOCUMENT_TYPE_INVOICE:
+        errors.append("EMAIL_PDF destinations are only supported for Invoice.")
+
+    if delivery_type != DELIVERY_TYPE_PRINT_NODE_HTTP:
+        return
+
+    if _normalize_format(getattr(template, "format", None)) != PRINT_CONTENT_TYPE_TEXT:
+        errors.append("PRINT_NODE_HTTP destinations currently support TEXT templates only.")
+
+    url = str(delivery_config.get("url", "")).strip()
+    if not url:
+        errors.append("PRINT_NODE_HTTP destination requires a URL.")
+
+    printer_name = str(delivery_config.get("printer_name", "")).strip()
+    if not printer_name:
+        errors.append("PRINT_NODE_HTTP destination requires a printer name.")
+
+    copies_raw = delivery_config.get("copies")
+    try:
+        copies = int(copies_raw)
+    except (TypeError, ValueError):
+        copies = None
+    if copies is None or copies < 1:
+        errors.append("PRINT_NODE_HTTP destination requires copies >= 1.")
 
 
 def _set_unique_default_destination(
@@ -515,9 +561,6 @@ async def admin_print_destinations_create(
     elif str(template.document_type or "").strip().upper() != document_type:
         errors.append("Template document type must match destination document type.")
 
-    if delivery_type == DELIVERY_TYPE_EMAIL_PDF and document_type != DOCUMENT_TYPE_INVOICE:
-        errors.append("EMAIL_PDF destinations are only supported for Invoice.")
-
     if name and db.execute(
         select(PrintDestination.id).where(func.lower(PrintDestination.name) == name.lower())
     ).first():
@@ -529,6 +572,14 @@ async def admin_print_destinations_create(
             delivery_config = _delivery_config_from_form(incoming, delivery_type)
         except (ValueError, json.JSONDecodeError):
             errors.append("Delivery config JSON is invalid.")
+    if not errors:
+        _validate_print_destination(
+            template=template,
+            document_type=document_type,
+            delivery_type=delivery_type,
+            delivery_config=delivery_config,
+            errors=errors,
+        )
 
     if errors:
         form_data = _destination_to_form()
@@ -644,15 +695,20 @@ async def admin_print_destinations_update(
     if duplicate:
         errors.append("Destination name already exists.")
 
-    if delivery_type == DELIVERY_TYPE_EMAIL_PDF and document_type != DOCUMENT_TYPE_INVOICE:
-        errors.append("EMAIL_PDF destinations are only supported for Invoice.")
-
     delivery_config: dict = {}
     if not errors:
         try:
             delivery_config = _delivery_config_from_form(incoming, delivery_type)
         except (ValueError, json.JSONDecodeError):
             errors.append("Delivery config JSON is invalid.")
+    if not errors:
+        _validate_print_destination(
+            template=template,
+            document_type=document_type,
+            delivery_type=delivery_type,
+            delivery_config=delivery_config,
+            errors=errors,
+        )
 
     if errors:
         form_data = _destination_to_form(destination)
@@ -1471,6 +1527,24 @@ def admin_print_job_detail(
     template = db.get(PrintTemplate, job.template_id) if job.template_id else None
     ticket = db.get(Ticket, job.ticket_id) if job.ticket_id else None
     invoice = db.get(Invoice, job.invoice_id) if job.invoice_id else None
+    requested_by_user = db.get(User, job.created_by_user_id) if job.created_by_user_id else None
+    if requested_by_user is not None:
+        requested_by_label = user_display_name(requested_by_user)
+    elif job.created_by_user_id:
+        requested_by_label = f"User #{job.created_by_user_id}"
+    else:
+        requested_by_label = "-"
+    provider_response_pretty = "-"
+    if job.provider_response_json is not None:
+        try:
+            provider_response_pretty = json.dumps(
+                job.provider_response_json,
+                indent=2,
+                sort_keys=True,
+                default=str,
+            )
+        except (TypeError, ValueError):
+            provider_response_pretty = str(job.provider_response_json)
     return templates.TemplateResponse(
         request,
         "admin/printing_job_detail.html",
@@ -1482,6 +1556,9 @@ def admin_print_job_detail(
             "template": template,
             "ticket": ticket,
             "invoice": invoice,
+            "requested_by_user": requested_by_user,
+            "requested_by_label": requested_by_label,
+            "provider_response_pretty": provider_response_pretty,
             "saved": request.query_params.get("saved") == "1",
             "retry_error": request.query_params.get("retry_error", ""),
         },

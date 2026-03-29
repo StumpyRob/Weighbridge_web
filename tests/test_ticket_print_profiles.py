@@ -1,4 +1,5 @@
 ﻿from datetime import datetime
+import base64
 from urllib.parse import parse_qs, urlparse
 
 from sqlalchemy import select
@@ -12,6 +13,7 @@ from app.models import (
     Ticket,
     TicketStatusEnum,
     TransactionTypeEnum,
+    User,
 )
 from app.templating import templates
 
@@ -343,3 +345,173 @@ def test_ticket_detail_documents_frame_groups_ticket_actions(client, db_session)
         not in response.text
     )
     assert "Advanced printing" not in response.text
+
+
+def test_admin_node_http_destination_persists_printer_name_and_copies(client, db_session):
+    template = _create_template(
+        db_session,
+        code="TICKET_NODE_HTTP_TEMPLATE",
+        document_type="TICKET",
+        template_format="TEXT",
+        content="NODE {{ payload.ticket_no }}",
+    )
+
+    response = client.post(
+        "/admin/printing/destinations/new",
+        data={
+            "name": "Ticket Site Agent",
+            "description": "Node HTTP text destination",
+            "document_type": "TICKET",
+            "template_id": str(template.id),
+            "delivery_type": "PRINT_NODE_HTTP",
+            "node_url": "http://127.0.0.1:9123/print",
+            "node_api_key": "test-key",
+            "node_timeout_ms": "7000",
+            "node_printer_name": "Front Desk Printer",
+            "node_copies": "2",
+            "is_default": "1",
+            "is_active": "1",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+
+    destination = db_session.execute(
+        select(PrintDestination)
+        .where(PrintDestination.name == "Ticket Site Agent")
+        .order_by(PrintDestination.id.desc())
+    ).scalars().first()
+
+    assert destination is not None
+    assert destination.delivery_type == "PRINT_NODE_HTTP"
+    assert destination.delivery_config["url"] == "http://127.0.0.1:9123/print"
+    assert destination.delivery_config["api_key"] == "test-key"
+    assert destination.delivery_config["timeout_ms"] == 7000
+    assert destination.delivery_config["printer_name"] == "Front Desk Printer"
+    assert destination.delivery_config["copies"] == 2
+
+    edit_page = client.get(f"/admin/printing/destinations/{destination.id}/edit")
+
+    assert edit_page.status_code == 200
+    assert 'value="Front Desk Printer"' in edit_page.text
+    assert 'name="node_copies"' in edit_page.text
+    assert 'value="2"' in edit_page.text
+    assert "Print: Site Agent HTTP" in edit_page.text
+
+
+def test_admin_node_http_destination_rejects_non_text_templates(client, db_session):
+    template = _create_template(
+        db_session,
+        code="TICKET_NODE_HTTP_HTML_TEMPLATE",
+        document_type="TICKET",
+        template_format="HTML",
+        content="<html><body>{{ payload.ticket_no }}</body></html>",
+    )
+
+    response = client.post(
+        "/admin/printing/destinations/new",
+        data={
+            "name": "Ticket Site Agent HTML",
+            "description": "Invalid HTML destination",
+            "document_type": "TICKET",
+            "template_id": str(template.id),
+            "delivery_type": "PRINT_NODE_HTTP",
+            "node_url": "http://127.0.0.1:9123/print",
+            "node_printer_name": "Front Desk Printer",
+            "node_copies": "1",
+            "is_default": "1",
+            "is_active": "1",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "PRINT_NODE_HTTP destinations currently support TEXT templates only." in response.text
+
+    destination = db_session.execute(
+        select(PrintDestination).where(PrintDestination.name == "Ticket Site Agent HTML")
+    ).scalars().first()
+    assert destination is None
+
+
+def test_admin_print_job_detail_shows_requester_payload_and_provider_metadata(
+    client,
+    db_session,
+):
+    ticket = _create_ticket(
+        db_session,
+        ticket_no="T-ADMIN-JOB-1",
+        status=TicketStatusEnum.COMPLETE.value,
+    )
+    template = _create_template(
+        db_session,
+        code="TICKET_ADMIN_JOB_TEMPLATE",
+        document_type="TICKET",
+        template_format="TEXT",
+        content="ADMIN {{ payload.ticket_no }}",
+    )
+    destination = _create_destination(
+        db_session,
+        name="Admin Job Destination",
+        document_type="TICKET",
+        template_id=template.id,
+        delivery_type="PRINT_NODE_HTTP",
+        delivery_config={
+            "url": "http://127.0.0.1:9123/v1/print",
+            "api_key": "live-secret",
+            "printer_name": "Front Desk Printer",
+            "copies": 1,
+        },
+        is_default=True,
+    )
+    current_user = db_session.execute(
+        select(User).order_by(User.id.asc()).limit(1)
+    ).scalars().one()
+    job = PrintJob(
+        created_by_user_id=current_user.id,
+        document_type="TICKET",
+        destination_id=destination.id,
+        template_id=template.id,
+        ticket_id=ticket.id,
+        delivery_type="PRINT_NODE_HTTP",
+        delivery_config_json={
+            "url": "http://127.0.0.1:9123/v1/print",
+            "api_key": "REDACTED",
+            "printer_name": "Front Desk Printer",
+            "copies": 1,
+        },
+        rendered_content="ADMIN T-ADMIN-JOB-1",
+        rendered_bytes_base64=base64.b64encode(b"ADMIN T-ADMIN-JOB-1").decode("ascii"),
+        payload_format="TEXT",
+        payload_mime_type="text/plain; charset=utf-8",
+        provider_job_ref="agent-123",
+        provider_response_json={
+            "ok": True,
+            "provider_job_ref": "agent-123",
+            "message": "Accepted by agent",
+        },
+        status="SENT",
+        attempt_count=1,
+    )
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+
+    response = client.get(f"/admin/printing/jobs/{job.id}")
+
+    assert response.status_code == 200
+    assert "Requested by" in response.text
+    assert current_user.email in response.text
+    assert "Payload format" in response.text
+    assert "TEXT" in response.text
+    assert "Payload MIME type" in response.text
+    assert "text/plain; charset=utf-8" in response.text
+    assert "Provider job ref" in response.text
+    assert "agent-123" in response.text
+    assert "Provider response JSON" in response.text
+    assert "Accepted by agent" in response.text
+    assert "Rendered Content" in response.text
+    assert "ADMIN T-ADMIN-JOB-1" in response.text
+    assert "Delivery Config Snapshot" in response.text
+    assert "REDACTED" in response.text
+    assert "live-secret" not in response.text
