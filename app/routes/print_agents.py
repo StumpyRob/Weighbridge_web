@@ -1,0 +1,431 @@
+from __future__ import annotations
+
+import base64
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session
+
+from ..db import get_db
+from ..models import PrintAgent, PrintDestination, PrintJob
+from ..models.base import utcnow
+from ..permissions import PERM_MANAGE_SETTINGS, require_permission
+from ..services.print_agents import (
+    PRINT_AGENT_STATUS_OFFLINE,
+    authenticate_print_agent,
+    complete_print_agent_pairing as complete_print_agent_pairing_session,
+    create_print_agent_pairing,
+    exchange_print_agent_pairing as exchange_print_agent_pairing_session,
+    generate_print_agent_credentials,
+    mark_print_agent_online,
+    PrintAgentPairingError,
+)
+from ..services.printing import (
+    DELIVERY_TYPE_PRINT_AGENT_PULL,
+    PRINT_JOB_STATUS_FAILED,
+    PRINT_JOB_STATUS_IN_PROGRESS,
+    PRINT_JOB_STATUS_PENDING,
+    PRINT_JOB_STATUS_SENT,
+    resolve_job_payload,
+)
+from ..tenancy import require_tenant
+
+
+router = APIRouter(prefix="/api/print", tags=["print-agents"])
+
+
+class PrintAgentRegisterRequest(BaseModel):
+    name: str | None = None
+
+
+class PrintAgentPairingRequest(BaseModel):
+    name: str | None = None
+
+
+class PrintAgentPairingCompleteRequest(BaseModel):
+    pairing_code: str
+    name: str | None = None
+
+
+class PrintAgentPairingExchangeRequest(BaseModel):
+    pairing_id: str
+    exchange_token: str
+
+
+class PrintJobCompleteRequest(BaseModel):
+    provider_job_ref: str | None = None
+    provider_response_json: dict[str, Any] | None = None
+
+
+class PrintJobFailRequest(BaseModel):
+    error: str
+    provider_job_ref: str | None = None
+    provider_response_json: dict[str, Any] | None = None
+
+
+def _assigned_agent_id(destination: PrintDestination | None) -> str:
+    if destination is None or not isinstance(destination.delivery_config, dict):
+        return ""
+    return str(destination.delivery_config.get("agent_id", "")).strip()
+
+
+def _job_name(job: PrintJob) -> str:
+    document_type = str(job.document_type or "").strip().upper() or "PRINT"
+    return f"{document_type} print job {job.id}"
+
+
+def _current_user_id(request: Request) -> int | None:
+    current_user = getattr(getattr(request, "state", None), "current_user", None)
+    user_id = getattr(current_user, "id", None)
+    try:
+        return int(user_id) if user_id is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalized_agent_name(name: str | None) -> str | None:
+    return str(name or "").strip() or None
+
+
+def _require_authenticated_agent(request: Request, db: Session) -> PrintAgent:
+    require_tenant(request)
+    raw_key = str(request.headers.get("X-Agent-Key", "")).strip()
+    if not raw_key:
+        raise HTTPException(status_code=401, detail="X-Agent-Key header is required.")
+    agent = authenticate_print_agent(db, raw_key)
+    if agent is None:
+        raise HTTPException(status_code=401, detail="Invalid agent key.")
+    mark_print_agent_online(agent)
+    return agent
+
+
+def _job_delivery_config(job: PrintJob, destination: PrintDestination | None) -> dict[str, object]:
+    snapshot = (
+        dict(job.delivery_config_json)
+        if isinstance(job.delivery_config_json, dict)
+        else {}
+    )
+    live = (
+        dict(destination.delivery_config)
+        if destination is not None and isinstance(destination.delivery_config, dict)
+        else {}
+    )
+    merged = dict(live)
+    merged.update(snapshot)
+    return merged
+
+
+def _job_printer_settings(
+    job: PrintJob,
+    destination: PrintDestination | None,
+) -> tuple[str, int]:
+    config = _job_delivery_config(job, destination)
+    printer_name = str(config.get("printer_name", "")).strip()
+    copies_raw = config.get("copies", 1)
+    try:
+        copies = int(copies_raw)
+    except (TypeError, ValueError):
+        copies = 1
+    if copies < 1:
+        copies = 1
+    return printer_name, copies
+
+
+def _load_pull_job_for_agent(
+    db: Session,
+    *,
+    job_id: int,
+    agent: PrintAgent,
+) -> tuple[PrintJob, PrintDestination]:
+    job = db.get(PrintJob, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Print job not found.")
+    if str(job.delivery_type or "").strip().upper() != DELIVERY_TYPE_PRINT_AGENT_PULL:
+        raise HTTPException(status_code=404, detail="Print job not found.")
+    destination = db.get(PrintDestination, job.destination_id) if job.destination_id else None
+    if destination is None:
+        raise HTTPException(status_code=404, detail="Print job not found.")
+    if str(destination.delivery_type or "").strip().upper() != DELIVERY_TYPE_PRINT_AGENT_PULL:
+        raise HTTPException(status_code=404, detail="Print job not found.")
+    if _assigned_agent_id(destination) != str(agent.id):
+        raise HTTPException(status_code=404, detail="Print job not found.")
+    return job, destination
+
+
+def _provider_job_ref_from_payload(
+    explicit_value: str | None,
+    provider_response_json: dict[str, Any] | None,
+) -> str | None:
+    resolved = str(explicit_value or "").strip()
+    if resolved:
+        return resolved
+    if isinstance(provider_response_json, dict):
+        candidate = str(provider_response_json.get("provider_job_ref", "")).strip()
+        if candidate:
+            return candidate
+    return None
+
+
+@router.post("/agents/register")
+def register_print_agent(
+    payload: PrintAgentRegisterRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    require_permission(request, PERM_MANAGE_SETTINGS)
+    require_tenant(request)
+    agent_id, raw_api_key, hashed_api_key = generate_print_agent_credentials()
+    name = _normalized_agent_name(payload.name)
+    agent = PrintAgent(
+        id=agent_id,
+        name=name,
+        api_key=hashed_api_key,
+        status=PRINT_AGENT_STATUS_OFFLINE,
+        last_seen_at=None,
+    )
+    db.add(agent)
+    db.commit()
+    return {"agent_id": agent.id, "api_key": raw_api_key}
+
+
+@router.post("/agents/pairing/request")
+def request_print_agent_pairing(
+    payload: PrintAgentPairingRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    require_tenant(request)
+    pairing, pairing_code, exchange_token = create_print_agent_pairing(
+        db,
+        requested_name=_normalized_agent_name(payload.name),
+    )
+    db.commit()
+    return {
+        "pairing_id": pairing.id,
+        "pairing_code": pairing_code,
+        "exchange_token": exchange_token,
+        "expires_at": pairing.expires_at,
+        "status": pairing.status,
+    }
+
+
+@router.post("/agents/pairing/complete")
+def complete_print_agent_pairing(
+    payload: PrintAgentPairingCompleteRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    require_permission(request, PERM_MANAGE_SETTINGS)
+    require_tenant(request)
+    try:
+        pairing, agent = complete_print_agent_pairing_session(
+            db,
+            pairing_code=payload.pairing_code,
+            paired_by_user_id=_current_user_id(request),
+            agent_name=_normalized_agent_name(payload.name),
+        )
+    except PrintAgentPairingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    db.commit()
+    return {
+        "ok": True,
+        "pairing_id": pairing.id,
+        "agent_id": agent.id,
+        "status": pairing.status,
+        "name": agent.name,
+    }
+
+
+@router.post("/agents/pairing/exchange")
+def exchange_print_agent_pairing(
+    payload: PrintAgentPairingExchangeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    require_tenant(request)
+    try:
+        pairing, agent, raw_api_key = exchange_print_agent_pairing_session(
+            db,
+            pairing_id=payload.pairing_id,
+            exchange_token=payload.exchange_token,
+        )
+    except PrintAgentPairingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    db.commit()
+    return {
+        "agent_id": agent.id,
+        "api_key": raw_api_key,
+        "status": pairing.status,
+        "name": agent.name,
+    }
+
+
+@router.post("/agents/heartbeat")
+def print_agent_heartbeat(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    agent = _require_authenticated_agent(request, db)
+    db.commit()
+    return {"ok": True, "agent_id": agent.id, "status": agent.status}
+
+
+@router.get("/agents/jobs/next")
+def print_agent_next_job(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    agent = _require_authenticated_agent(request, db)
+    next_job: PrintJob | None = None
+    next_destination: PrintDestination | None = None
+    for job in db.execute(
+        select(PrintJob)
+        .where(
+            PrintJob.status == PRINT_JOB_STATUS_PENDING,
+            PrintJob.delivery_type == DELIVERY_TYPE_PRINT_AGENT_PULL,
+        )
+        .order_by(PrintJob.created_at.asc(), PrintJob.id.asc())
+    ).scalars():
+        destination = db.get(PrintDestination, job.destination_id) if job.destination_id else None
+        if _assigned_agent_id(destination) == str(agent.id):
+            next_job = job
+            next_destination = destination
+            break
+
+    db.commit()
+    if next_job is None:
+        return {"job": None}
+
+    _payload_bytes, payload_format, payload_mime_type = resolve_job_payload(next_job)
+    printer_name, copies = _job_printer_settings(next_job, next_destination)
+    return {
+        "job": {
+            "job_id": next_job.id,
+            "document_type": str(next_job.document_type or "").strip().upper(),
+            "job_name": _job_name(next_job),
+            "payload_format": payload_format,
+            "payload_mime_type": payload_mime_type,
+            "printer_name": printer_name,
+            "copies": copies,
+        }
+    }
+
+
+@router.post("/jobs/{job_id:int}/claim")
+def print_agent_claim_job(
+    job_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    agent = _require_authenticated_agent(request, db)
+    job, destination = _load_pull_job_for_agent(db, job_id=job_id, agent=agent)
+    if str(job.status or "").strip().upper() != PRINT_JOB_STATUS_PENDING:
+        raise HTTPException(status_code=409, detail="Print job is not pending.")
+
+    row_count = db.execute(
+        update(PrintJob)
+        .where(
+            PrintJob.id == job.id,
+            PrintJob.status == PRINT_JOB_STATUS_PENDING,
+        )
+        .values(
+            status=PRINT_JOB_STATUS_IN_PROGRESS,
+            agent_id=str(agent.id),
+            attempt_count=int(job.attempt_count or 0) + 1,
+            last_error=None,
+        )
+    ).rowcount
+    if not row_count:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Print job has already been claimed.")
+
+    db.commit()
+    refreshed = db.get(PrintJob, job.id)
+    printer_name, copies = _job_printer_settings(job, destination)
+    return {
+        "ok": True,
+        "job_id": job.id,
+        "status": str(refreshed.status or ""),
+        "printer_name": printer_name,
+        "copies": copies,
+    }
+
+
+@router.get("/jobs/{job_id:int}/payload")
+def print_agent_job_payload(
+    job_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    agent = _require_authenticated_agent(request, db)
+    job, destination = _load_pull_job_for_agent(db, job_id=job_id, agent=agent)
+    if str(job.status or "").strip().upper() != PRINT_JOB_STATUS_IN_PROGRESS:
+        raise HTTPException(status_code=409, detail="Print job has not been claimed.")
+    if str(job.agent_id or "").strip() != str(agent.id):
+        raise HTTPException(status_code=404, detail="Print job not found.")
+
+    payload_bytes, payload_format, payload_mime_type = resolve_job_payload(job)
+    printer_name, copies = _job_printer_settings(job, destination)
+    db.commit()
+    return {
+        "job_id": job.id,
+        "payload_base64": base64.b64encode(payload_bytes).decode("ascii"),
+        "payload_format": payload_format,
+        "payload_mime_type": payload_mime_type,
+        "printer_name": printer_name,
+        "copies": copies,
+    }
+
+
+@router.post("/jobs/{job_id:int}/complete")
+def print_agent_complete_job(
+    job_id: int,
+    payload: PrintJobCompleteRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    agent = _require_authenticated_agent(request, db)
+    job, _destination = _load_pull_job_for_agent(db, job_id=job_id, agent=agent)
+    if str(job.status or "").strip().upper() != PRINT_JOB_STATUS_IN_PROGRESS:
+        raise HTTPException(status_code=409, detail="Print job is not in progress.")
+    if str(job.agent_id or "").strip() != str(agent.id):
+        raise HTTPException(status_code=404, detail="Print job not found.")
+
+    job.provider_job_ref = _provider_job_ref_from_payload(
+        payload.provider_job_ref,
+        payload.provider_response_json,
+    )
+    job.provider_response_json = payload.provider_response_json
+    job.last_error = None
+    job.status = PRINT_JOB_STATUS_SENT
+    job.sent_at = utcnow()
+    db.commit()
+    return {"ok": True, "job_id": job.id, "status": job.status}
+
+
+@router.post("/jobs/{job_id:int}/fail")
+def print_agent_fail_job(
+    job_id: int,
+    payload: PrintJobFailRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    agent = _require_authenticated_agent(request, db)
+    job, _destination = _load_pull_job_for_agent(db, job_id=job_id, agent=agent)
+    if str(job.status or "").strip().upper() != PRINT_JOB_STATUS_IN_PROGRESS:
+        raise HTTPException(status_code=409, detail="Print job is not in progress.")
+    if str(job.agent_id or "").strip() != str(agent.id):
+        raise HTTPException(status_code=404, detail="Print job not found.")
+
+    job.provider_job_ref = _provider_job_ref_from_payload(
+        payload.provider_job_ref,
+        payload.provider_response_json,
+    )
+    job.provider_response_json = payload.provider_response_json
+    job.last_error = str(payload.error or "").strip() or "Agent delivery failed."
+    job.status = PRINT_JOB_STATUS_FAILED
+    job.sent_at = None
+    db.commit()
+    return {"ok": True, "job_id": job.id, "status": job.status}

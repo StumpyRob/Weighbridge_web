@@ -14,7 +14,16 @@ from ..audit import log as audit_log
 from ..auth import user_display_name
 from ..constants import CODE_MAX, DESC_MAX
 from ..db import get_db
-from ..models import Invoice, PrintDestination, PrintJob, PrintTemplate, Ticket, User
+from ..models import (
+    Invoice,
+    PrintAgent,
+    PrintAgentPairing,
+    PrintDestination,
+    PrintJob,
+    PrintTemplate,
+    Ticket,
+    User,
+)
 from ..permissions import PERM_MANAGE_SETTINGS, require_permission
 from ..services.print_payload import (
     build_print_payload,
@@ -25,15 +34,23 @@ from ..services.printing import (
     DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
     DELIVERY_TYPE_PRINT_NETWORK_RAW_9100,
     DELIVERY_TYPE_PRINT_NODE_HTTP,
+    DELIVERY_TYPE_PRINT_AGENT_PULL,
     DOCUMENT_TYPE_INVOICE,
     DOCUMENT_TYPE_TICKET,
     DOCUMENT_TYPE_WTN,
     PRINT_CONTENT_TYPE_HTML,
     PRINT_CONTENT_TYPE_TEXT,
     PRINT_JOB_STATUS_FAILED,
+    PRINT_JOB_STATUS_IN_PROGRESS,
+    PRINT_JOB_STATUS_PENDING,
     PRINT_JOB_STATUS_QUEUED,
     PRINT_JOB_STATUS_SENT,
     retry_print_job,
+)
+from ..services.print_agents import (
+    PrintAgentPairingError,
+    complete_print_agent_pairing as complete_print_agent_pairing_session,
+    is_print_agent_pairing_expired,
 )
 from ..templating import templates
 
@@ -54,6 +71,7 @@ DELIVERY_TYPE_OPTIONS = (
     (DELIVERY_TYPE_PRINT_LOCAL_BROWSER, "Print: Local Browser"),
     (DELIVERY_TYPE_PRINT_NETWORK_RAW_9100, "Print: Network RAW 9100"),
     (DELIVERY_TYPE_PRINT_NODE_HTTP, "Print: Site Agent HTTP"),
+    (DELIVERY_TYPE_PRINT_AGENT_PULL, "Print: Agent Pull"),
     (DELIVERY_TYPE_EMAIL_PDF, "Email: PDF"),
 )
 DELIVERY_TYPE_VALUES = {value for value, _ in DELIVERY_TYPE_OPTIONS}
@@ -74,11 +92,15 @@ DESTINATION_DELETE_IN_USE_ERROR = (
 JOB_STATUS_FILTER_OPTIONS = (
     (PRINT_JOB_STATUS_SENT, "Sent"),
     (PRINT_JOB_STATUS_FAILED, "Failed"),
+    (PRINT_JOB_STATUS_PENDING, "Pending"),
+    (PRINT_JOB_STATUS_IN_PROGRESS, "In Progress"),
     (PRINT_JOB_STATUS_QUEUED, "Queued"),
 )
 
 
 def _active_printing_tab(path: str) -> str:
+    if "/agents" in path:
+        return "agents"
     if "/templates" in path:
         return "templates"
     if "/jobs" in path:
@@ -125,6 +147,15 @@ def _normalize_delivery_type(value: str | None) -> str:
     if normalized in DELIVERY_TYPE_VALUES:
         return normalized
     return DELIVERY_TYPE_PRINT_LOCAL_BROWSER
+
+
+def _current_user_id(request: Request) -> int | None:
+    current_user = getattr(getattr(request, "state", None), "current_user", None)
+    user_id = getattr(current_user, "id", None)
+    try:
+        return int(user_id) if user_id is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _printing_redirect_url(
@@ -255,6 +286,9 @@ def _destination_to_form(
         "node_timeout_ms": str(config.get("timeout_ms", 5000)),
         "node_printer_name": str(config.get("printer_name", "")),
         "node_copies": str(config.get("copies", 1)),
+        "pull_agent_id": str(config.get("agent_id", "")),
+        "pull_printer_name": str(config.get("printer_name", "")),
+        "pull_copies": str(config.get("copies", 1)),
         "email_to": str(config.get("to", "")),
         "email_cc": str(config.get("cc", "")),
         "email_bcc": str(config.get("bcc", "")),
@@ -308,6 +342,16 @@ def _delivery_config_from_form(form: dict[str, str], delivery_type: str) -> dict
         copies = _parse_optional_int(form.get("node_copies"))
         if copies is not None:
             config["copies"] = copies
+    elif normalized == DELIVERY_TYPE_PRINT_AGENT_PULL:
+        agent_id = str(form.get("pull_agent_id", "")).strip()
+        if agent_id:
+            config["agent_id"] = agent_id
+        printer_name = str(form.get("pull_printer_name", "")).strip()
+        if printer_name:
+            config["printer_name"] = printer_name
+        copies = _parse_optional_int(form.get("pull_copies"))
+        if copies is not None:
+            config["copies"] = copies
     elif normalized == DELIVERY_TYPE_EMAIL_PDF:
         for key in (
             "email_to",
@@ -330,6 +374,7 @@ def _delivery_config_from_form(form: dict[str, str], delivery_type: str) -> dict
 
 
 def _validate_print_destination(
+    db: Session,
     *,
     template: PrintTemplate | None,
     document_type: str,
@@ -342,6 +387,26 @@ def _validate_print_destination(
 
     if delivery_type == DELIVERY_TYPE_EMAIL_PDF and document_type != DOCUMENT_TYPE_INVOICE:
         errors.append("EMAIL_PDF destinations are only supported for Invoice.")
+
+    if delivery_type == DELIVERY_TYPE_PRINT_AGENT_PULL:
+        if _normalize_format(getattr(template, "format", None)) != PRINT_CONTENT_TYPE_TEXT:
+            errors.append("PRINT_AGENT_PULL destinations currently support TEXT templates only.")
+        agent_id = str(delivery_config.get("agent_id", "")).strip()
+        if not agent_id:
+            errors.append("PRINT_AGENT_PULL destination requires an assigned agent.")
+        elif db.get(PrintAgent, agent_id) is None:
+            errors.append("Assigned print agent was not found.")
+        printer_name = str(delivery_config.get("printer_name", "")).strip()
+        if not printer_name:
+            errors.append("PRINT_AGENT_PULL destination requires a printer name.")
+        copies_raw = delivery_config.get("copies")
+        try:
+            copies = int(copies_raw)
+        except (TypeError, ValueError):
+            copies = None
+        if copies is None or copies < 1:
+            errors.append("PRINT_AGENT_PULL destination requires copies >= 1.")
+        return
 
     if delivery_type != DELIVERY_TYPE_PRINT_NODE_HTTP:
         return
@@ -388,6 +453,72 @@ def _set_unique_default_destination(
 @router.get("/admin/printing")
 def admin_printing_root() -> RedirectResponse:
     return RedirectResponse(url="/admin/printing/destinations", status_code=303)
+
+
+@router.get("/admin/printing/agents", response_class=HTMLResponse)
+def admin_print_agents(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    return _print_agents_page_response(request, db=db)
+
+
+@router.post("/admin/printing/agents/pair", response_class=HTMLResponse)
+async def admin_print_agents_pair(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    form = await request.form()
+    pairing_code = str(form.get("pairing_code", "")).strip()
+    agent_name = str(form.get("agent_name", "")).strip()
+    form_data = {
+        "pairing_code": pairing_code,
+        "agent_name": agent_name,
+    }
+    if not pairing_code:
+        return _print_agents_page_response(
+            request,
+            db=db,
+            form_data=form_data,
+            error="Pairing code is required.",
+            status_code=400,
+        )
+
+    try:
+        pairing, agent = complete_print_agent_pairing_session(
+            db,
+            pairing_code=pairing_code,
+            paired_by_user_id=_current_user_id(request),
+            agent_name=agent_name,
+        )
+    except PrintAgentPairingError as exc:
+        return _print_agents_page_response(
+            request,
+            db=db,
+            form_data=form_data,
+            error=exc.message,
+            status_code=400 if exc.status_code == 404 else exc.status_code,
+        )
+
+    audit_log(
+        db,
+        request,
+        action="PAIR",
+        entity_type="print_agent",
+        entity_id=agent.id,
+        summary=f"Paired print agent {agent.name or agent.id}",
+        details={
+            "pairing_id": pairing.id,
+            "requested_name": pairing.requested_name,
+            "paired_name": pairing.paired_name,
+            "status": pairing.status,
+        },
+    )
+    db.commit()
+    return RedirectResponse(
+        url=f"/admin/printing/agents?paired=1&agent_id={agent.id}",
+        status_code=303,
+    )
 
 
 @router.get("/admin/printing/destinations", response_class=HTMLResponse)
@@ -485,6 +616,14 @@ def _destination_form_response(
     )
     can_delete_destination = False
     destination_delete_error = ""
+    print_agents = list(
+        db.execute(
+            select(PrintAgent).order_by(
+                func.coalesce(PrintAgent.name, "").asc(),
+                PrintAgent.id.asc(),
+            )
+        ).scalars()
+    )
     if destination is not None:
         has_jobs = _destination_has_jobs(db, int(destination.id))
         destination_delete_error = (
@@ -503,10 +642,75 @@ def _destination_form_response(
             "error": error,
             "document_type_options": DOCUMENT_TYPE_OPTIONS,
             "delivery_type_options": DELIVERY_TYPE_OPTIONS,
+            "print_agents": print_agents,
             "template_options": template_options,
             "saved": request.query_params.get("saved") == "1",
             "can_delete_destination": can_delete_destination,
             "destination_delete_error": destination_delete_error,
+        },
+        status_code=status_code,
+    )
+
+
+def _pairing_display_status(pairing: PrintAgentPairing) -> str:
+    status = str(pairing.status or "").strip().upper() or "-"
+    if status != "EXCHANGED" and is_print_agent_pairing_expired(pairing):
+        return "EXPIRED"
+    return status
+
+
+def _print_agents_page_response(
+    request: Request,
+    *,
+    db: Session,
+    form_data: dict[str, str] | None = None,
+    error: str = "",
+    status_code: int = 200,
+) -> HTMLResponse:
+    paired_agents = list(
+        db.execute(
+            select(PrintAgent).order_by(
+                func.coalesce(PrintAgent.name, "").asc(),
+                PrintAgent.id.asc(),
+            )
+        ).scalars()
+    )
+    pending_pairings = list(
+        db.execute(
+            select(PrintAgentPairing)
+            .where(PrintAgentPairing.status != "EXCHANGED")
+            .order_by(PrintAgentPairing.created_at.desc(), PrintAgentPairing.id.desc())
+        ).scalars()
+    )
+    pending_pairing_rows = [
+        {"pairing": pairing, "display_status": _pairing_display_status(pairing)}
+        for pairing in pending_pairings
+    ]
+
+    success = ""
+    if request.query_params.get("paired") == "1":
+        agent_id = str(request.query_params.get("agent_id", "")).strip()
+        paired_agent = db.get(PrintAgent, agent_id) if agent_id else None
+        if paired_agent is not None:
+            success = f"Paired print agent {paired_agent.name or paired_agent.id}."
+        else:
+            success = "Print agent paired."
+
+    resolved_form_data = {
+        "pairing_code": str((form_data or {}).get("pairing_code", "")),
+        "agent_name": str((form_data or {}).get("agent_name", "")),
+    }
+    return templates.TemplateResponse(
+        request,
+        "admin/printing_agents.html",
+        {
+            "request": request,
+            "active_tab": _active_printing_tab(str(request.url.path)),
+            "paired_agents": paired_agents,
+            "pending_pairing_rows": pending_pairing_rows,
+            "form_data": resolved_form_data,
+            "error": error,
+            "success": success,
         },
         status_code=status_code,
     )
@@ -574,6 +778,7 @@ async def admin_print_destinations_create(
             errors.append("Delivery config JSON is invalid.")
     if not errors:
         _validate_print_destination(
+            db,
             template=template,
             document_type=document_type,
             delivery_type=delivery_type,
@@ -703,6 +908,7 @@ async def admin_print_destinations_update(
             errors.append("Delivery config JSON is invalid.")
     if not errors:
         _validate_print_destination(
+            db,
             template=template,
             document_type=document_type,
             delivery_type=delivery_type,

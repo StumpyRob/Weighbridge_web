@@ -1,12 +1,15 @@
 ﻿from datetime import datetime
 import base64
 from urllib.parse import parse_qs, urlparse
+import uuid
 
 from sqlalchemy import select
 
 import app.services.printing as printing_service
 from app.models import (
     DirectionEnum,
+    PrintAgent,
+    PrintAgentPairing,
     PrintDestination,
     PrintJob,
     PrintTemplate,
@@ -15,6 +18,7 @@ from app.models import (
     TransactionTypeEnum,
     User,
 )
+from app.services.print_agents import hash_print_agent_key
 from app.templating import templates
 
 
@@ -92,6 +96,110 @@ def test_admin_printing_root_redirects_to_destinations(client):
 
     assert response.status_code == 303
     assert response.headers["location"] == "/admin/printing/destinations"
+
+
+def test_admin_print_agents_page_loads(client):
+    response = client.get("/admin/printing/agents")
+
+    assert response.status_code == 200
+    assert "Print Agents" in response.text
+    assert "Complete Pairing" in response.text
+    assert "Pending Pairings" in response.text
+
+
+def test_admin_print_agents_page_shows_pending_pairings(client):
+    pairing_request = client.post(
+        "/api/print/agents/pairing/request",
+        json={"name": "Reception Agent"},
+    )
+    assert pairing_request.status_code == 200
+
+    response = client.get("/admin/printing/agents")
+
+    assert response.status_code == 200
+    assert "Reception Agent" in response.text
+    assert "Pending" in response.text
+
+
+def test_admin_print_agents_page_shows_paired_agents(client, db_session):
+    agent = PrintAgent(
+        id=str(uuid.uuid4()),
+        name="Office Agent",
+        api_key=hash_print_agent_key("office-agent-key"),
+        status="OFFLINE",
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    response = client.get("/admin/printing/agents")
+
+    assert response.status_code == 200
+    assert "Office Agent" in response.text
+    assert agent.id in response.text
+    assert "Offline" in response.text
+
+
+def test_admin_print_agents_pair_valid_code_works(client, db_session):
+    pairing_request = client.post(
+        "/api/print/agents/pairing/request",
+        json={"name": "Local Agent"},
+    )
+    assert pairing_request.status_code == 200
+    pairing_payload = pairing_request.json()
+
+    response = client.post(
+        "/admin/printing/agents/pair",
+        data={
+            "pairing_code": pairing_payload["pairing_code"],
+            "agent_name": "Friendly Agent",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Paired print agent Friendly Agent." in response.text
+    assert "Friendly Agent" in response.text
+
+    destination_agent = db_session.execute(
+        select(PrintAgent).where(PrintAgent.name == "Friendly Agent")
+    ).scalars().first()
+    assert destination_agent is not None
+
+
+def test_admin_print_agents_pair_invalid_code_fails_cleanly(client):
+    response = client.post(
+        "/admin/printing/agents/pair",
+        data={"pairing_code": "BAD-CODE"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 400
+    assert "Print agent pairing code was not found." in response.text
+
+
+def test_admin_print_agents_pair_expired_code_fails_cleanly(client, db_session):
+    pairing_request = client.post(
+        "/api/print/agents/pairing/request",
+        json={"name": "Expiring Agent"},
+    )
+    assert pairing_request.status_code == 200
+    pairing_payload = pairing_request.json()
+
+    pairing = db_session.execute(
+        select(PrintAgentPairing).where(PrintAgentPairing.id == pairing_payload["pairing_id"])
+    ).scalars().first()
+    assert pairing is not None
+    pairing.expires_at = datetime(2026, 3, 29, 11, 0, 0)
+    db_session.commit()
+
+    response = client.post(
+        "/admin/printing/agents/pair",
+        data={"pairing_code": pairing_payload["pairing_code"]},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 410
+    assert "Print agent pairing code has expired." in response.text
 
 
 def test_admin_destinations_enforces_single_default_per_document_type(client, db_session):
@@ -398,6 +506,96 @@ def test_admin_node_http_destination_persists_printer_name_and_copies(client, db
     assert 'name="node_copies"' in edit_page.text
     assert 'value="2"' in edit_page.text
     assert "Print: Site Agent HTTP" in edit_page.text
+
+
+def test_admin_agent_pull_destination_persists_assigned_agent_and_printer_settings(
+    client,
+    db_session,
+):
+    template = _create_template(
+        db_session,
+        code="TICKET_AGENT_PULL_TEMPLATE",
+        document_type="TICKET",
+        template_format="TEXT",
+        content="PULL {{ payload.ticket_no }}",
+    )
+    agent = PrintAgent(
+        id=str(uuid.uuid4()),
+        name="Yard Agent",
+        api_key=hash_print_agent_key("agent-pull-key"),
+        status="OFFLINE",
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    response = client.post(
+        "/admin/printing/destinations/new",
+        data={
+            "name": "Ticket Agent Pull",
+            "description": "Polling destination",
+            "document_type": "TICKET",
+            "template_id": str(template.id),
+            "delivery_type": "PRINT_AGENT_PULL",
+            "pull_agent_id": agent.id,
+            "pull_printer_name": "Polling Printer",
+            "pull_copies": "2",
+            "is_default": "1",
+            "is_active": "1",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+
+    destination = db_session.execute(
+        select(PrintDestination)
+        .where(PrintDestination.name == "Ticket Agent Pull")
+        .order_by(PrintDestination.id.desc())
+    ).scalars().first()
+
+    assert destination is not None
+    assert destination.delivery_type == "PRINT_AGENT_PULL"
+    assert destination.delivery_config["agent_id"] == agent.id
+    assert destination.delivery_config["printer_name"] == "Polling Printer"
+    assert destination.delivery_config["copies"] == 2
+
+
+def test_admin_agent_pull_destination_rejects_non_text_templates(client, db_session):
+    template = _create_template(
+        db_session,
+        code="TICKET_AGENT_PULL_HTML_TEMPLATE",
+        document_type="TICKET",
+        template_format="HTML",
+        content="<html><body>{{ payload.ticket_no }}</body></html>",
+    )
+    agent = PrintAgent(
+        id=str(uuid.uuid4()),
+        name="Yard Agent",
+        api_key=hash_print_agent_key("agent-pull-html-key"),
+        status="OFFLINE",
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    response = client.post(
+        "/admin/printing/destinations/new",
+        data={
+            "name": "Ticket Agent Pull HTML",
+            "description": "Invalid polling destination",
+            "document_type": "TICKET",
+            "template_id": str(template.id),
+            "delivery_type": "PRINT_AGENT_PULL",
+            "pull_agent_id": agent.id,
+            "pull_printer_name": "Polling Printer",
+            "pull_copies": "1",
+            "is_default": "1",
+            "is_active": "1",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 400
+    assert "PRINT_AGENT_PULL destinations currently support TEXT templates only." in response.text
 
 
 def test_admin_node_http_destination_rejects_non_text_templates(client, db_session):

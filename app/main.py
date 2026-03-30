@@ -1,4 +1,5 @@
 import logging
+import re
 from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -126,6 +127,17 @@ _PUBLIC_ALLOWED_PREFIXES = (
     "/static/",
     "/media/",
 )
+_AGENT_AUTH_CSRF_EXEMPT_PREFIXES = (
+    "/api/print/agents/heartbeat",
+)
+_AGENT_PUBLIC_CSRF_EXEMPT_PATHS = {
+    "/api/print/agents/pairing/request",
+    "/api/print/agents/pairing/exchange",
+}
+_AGENT_AUTH_CSRF_EXEMPT_JOB_RE = re.compile(
+    r"^/api/print/jobs/\d+/(claim|complete|fail)$",
+    re.IGNORECASE,
+)
 _TENANT_ONLY_PREFIXES = (
     "/tickets",
     "/customers",
@@ -212,6 +224,18 @@ def _path_allowed_for_public_host(path: str) -> bool:
     if target in _PUBLIC_ALLOWED_EXACT_PATHS:
         return True
     return any(target.startswith(prefix) for prefix in _PUBLIC_ALLOWED_PREFIXES)
+
+
+def _csrf_exempt_for_agent_key(request: Request) -> bool:
+    request_path = _request_scope_path(request)
+    if request_path in _AGENT_PUBLIC_CSRF_EXEMPT_PATHS:
+        return True
+    raw_agent_key = str(request.headers.get("X-Agent-Key", "")).strip()
+    if not raw_agent_key:
+        return False
+    if any(request_path.startswith(prefix) for prefix in _AGENT_AUTH_CSRF_EXEMPT_PREFIXES):
+        return True
+    return bool(_AGENT_AUTH_CSRF_EXEMPT_JOB_RE.fullmatch(request_path))
 
 
 def _ticket_status_value(status: TicketStatusEnum | str) -> str:
@@ -1348,7 +1372,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                     return _finalize_response(authenticated)
 
             # 5) Enforce CSRF once for mutating requests.
-            if is_state_changing_method(request.method):
+            if is_state_changing_method(request.method) and not _csrf_exempt_for_agent_key(request):
                 submitted_token = str(request.headers.get(CSRF_HEADER_NAME, "")).strip()
                 if not submitted_token:
                     content_type = str(request.headers.get("content-type", "")).lower()

@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Print Agents | Weighbridge Web{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Print Agents</h1>
+      <p class="muted">Pair local print agents to this tenant and review basic agent status before assigning pull-mode destinations.</p>
+    </div>
+  </div>
+
+  {% include "admin/printing_nav.html" %}
+
+  {% if success %}
+    <div class="alert alert-success">{{ success }}</div>
+  {% endif %}
+  {% if error %}
+    <div class="alert">{{ error }}</div>
+  {% endif %}
+
+  <section class="card" style="margin-bottom: 1.5rem;">
+    <div class="card__body">
+      <h2 style="margin-top: 0;">Pair A Local Agent</h2>
+      <p class="muted">Install or run the local print agent on the site machine, copy the pairing code shown on the agent status page, paste it here, then pair it to this tenant. After pairing, the agent will exchange for permanent credentials automatically.</p>
+      <form method="post" action="/admin/printing/agents/pair" class="filters filters-inline">
+        <div class="field">
+          <label for="pairing_code">Pairing code</label>
+          <input type="text" id="pairing_code" name="pairing_code" value="{{ form_data.pairing_code }}" placeholder="ABCD-EFGH" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="agent_name">Friendly agent name</label>
+          <input type="text" id="agent_name" name="agent_name" value="{{ form_data.agent_name }}" placeholder="Reception Office Agent" />
+        </div>
+        <div class="actions btn-group" style="align-self: end;">
+          <button type="submit" class="btn btn--primary">Complete Pairing</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section style="margin-bottom: 1.5rem;">
+    <h2>Paired Agents</h2>
+    <div class="table-wrap list-table-wrap">
+      <table class="data-table list-table">
+        <thead>
+          <tr>
+            <th>Agent name</th>
+            <th>Agent ID</th>
+            <th>Status</th>
+            <th>Last seen</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in paired_agents %}
+            <tr>
+              <td>{{ item.name or "-" }}</td>
+              <td><code>{{ item.id }}</code></td>
+              <td>
+                {% if item.status == "ONLINE" %}
+                  <span class="status-pill status-active">Online</span>
+                {% elif item.status == "OFFLINE" %}
+                  <span class="status-pill status-void">Offline</span>
+                {% else %}
+                  <span class="status-pill status-info">{{ item.status or "-" }}</span>
+                {% endif %}
+              </td>
+              <td>{{ item.last_seen_at.strftime("%d/%m/%Y %H:%M:%S") if item.last_seen_at else "-" }}</td>
+              <td>{{ item.created_at.strftime("%d/%m/%Y %H:%M:%S") if item.created_at else "-" }}</td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="5" class="empty">No paired agents yet.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Pending Pairings</h2>
+    <div class="table-wrap list-table-wrap">
+      <table class="data-table list-table">
+        <thead>
+          <tr>
+            <th>Requested name</th>
+            <th>Status</th>
+            <th>Expires</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in pending_pairing_rows %}
+            {% set pairing = row.pairing %}
+            <tr>
+              <td>{{ pairing.requested_name or "-" }}</td>
+              <td>
+                {% if row.display_status == "PAIRED" %}
+                  <span class="status-pill status-info">Paired</span>
+                {% elif row.display_status == "PENDING" %}
+                  <span class="status-pill status-info">Pending</span>
+                {% elif row.display_status == "EXPIRED" %}
+                  <span class="status-pill status-void">Expired</span>
+                {% else %}
+                  <span class="status-pill status-info">{{ row.display_status }}</span>
+                {% endif %}
+              </td>
+              <td>{{ pairing.expires_at.strftime("%d/%m/%Y %H:%M:%S") if pairing.expires_at else "-" }}</td>
+              <td>{{ pairing.created_at.strftime("%d/%m/%Y %H:%M:%S") if pairing.created_at else "-" }}</td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="4" class="empty">No pending pairings.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

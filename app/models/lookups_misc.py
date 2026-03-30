@@ -315,6 +315,68 @@ class ProductGroup(Base):
     )
 
 
+class PrintAgent(Base):
+    __tablename__ = "print_agents"
+    __table_args__ = (
+        sa.Index("ix_print_agents_tenant_id", "tenant_id"),
+        sa.Index("ix_print_agents_status", "status"),
+        sa.Index("ix_print_agents_last_seen_at", "last_seen_at"),
+        sa.UniqueConstraint("api_key", name="uq_print_agents_api_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, default=1
+    )
+    name: Mapped[str | None] = mapped_column(String(NAME_MAX), nullable=True)
+    api_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="OFFLINE")
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
+
+
+class PrintAgentPairing(Base):
+    __tablename__ = "print_agent_pairings"
+    __table_args__ = (
+        sa.Index("ix_print_agent_pairings_tenant_id", "tenant_id"),
+        sa.Index("ix_print_agent_pairings_status", "status"),
+        sa.Index("ix_print_agent_pairings_expires_at", "expires_at"),
+        sa.Index("ix_print_agent_pairings_print_agent_id", "print_agent_id"),
+        sa.UniqueConstraint(
+            "pairing_code_hash", name="uq_print_agent_pairings_pairing_code_hash"
+        ),
+        sa.UniqueConstraint(
+            "exchange_token_hash", name="uq_print_agent_pairings_exchange_token_hash"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, default=1
+    )
+    requested_name: Mapped[str | None] = mapped_column(String(NAME_MAX), nullable=True)
+    paired_name: Mapped[str | None] = mapped_column(String(NAME_MAX), nullable=True)
+    pairing_code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    exchange_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING")
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    paired_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    paired_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    exchanged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    print_agent_id: Mapped[str | None] = mapped_column(
+        ForeignKey("print_agents.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
+
+
 class PrintDestination(Base):
     __tablename__ = "print_destinations"
     __table_args__ = (
@@ -415,6 +477,9 @@ class PrintJob(Base):
     )
     template_id: Mapped[int | None] = mapped_column(
         ForeignKey("print_templates.id"), nullable=True
+    )
+    agent_id: Mapped[str | None] = mapped_column(
+        ForeignKey("print_agents.id"), nullable=True
     )
     ticket_id: Mapped[int | None] = mapped_column(ForeignKey("tickets.id"), nullable=True)
     invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id"), nullable=True)

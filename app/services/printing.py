@@ -18,12 +18,16 @@ from .print_transport import (
 )
 
 PRINT_JOB_STATUS_QUEUED = "QUEUED"
+PRINT_JOB_STATUS_PENDING = "PENDING"
+PRINT_JOB_STATUS_IN_PROGRESS = "IN_PROGRESS"
 PRINT_JOB_STATUS_SENT = "SENT"
 PRINT_JOB_STATUS_FAILED = "FAILED"
 
 PRINT_CONTENT_TYPE_TEXT = "TEXT"
 PRINT_CONTENT_TYPE_HTML = "HTML"
 PRINT_CONTENT_TYPE_PDF = "PDF"
+PRINT_CONTENT_MIME_TYPE_HTML = "text/html; charset=utf-8"
+PRINT_CONTENT_MIME_TYPE_PDF = "application/pdf"
 
 DOCUMENT_TYPE_TICKET = "TICKET"
 DOCUMENT_TYPE_INVOICE = "INVOICE"
@@ -32,6 +36,7 @@ DOCUMENT_TYPE_WTN = "WTN"
 DELIVERY_TYPE_PRINT_LOCAL_BROWSER = "PRINT_LOCAL_BROWSER"
 DELIVERY_TYPE_PRINT_NETWORK_RAW_9100 = "PRINT_NETWORK_RAW_9100"
 DELIVERY_TYPE_PRINT_NODE_HTTP = "PRINT_NODE_HTTP"
+DELIVERY_TYPE_PRINT_AGENT_PULL = "PRINT_AGENT_PULL"
 DELIVERY_TYPE_EMAIL_PDF = "EMAIL_PDF"
 
 
@@ -72,6 +77,7 @@ def _normalize_delivery_type(value: str | None) -> str:
         "LOCAL_BROWSER": DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
         "NETWORK_RAW_9100": DELIVERY_TYPE_PRINT_NETWORK_RAW_9100,
         "LOCAL_NODE_HTTP": DELIVERY_TYPE_PRINT_NODE_HTTP,
+        DELIVERY_TYPE_PRINT_AGENT_PULL: DELIVERY_TYPE_PRINT_AGENT_PULL,
         DELIVERY_TYPE_PRINT_LOCAL_BROWSER: DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
         DELIVERY_TYPE_PRINT_NETWORK_RAW_9100: DELIVERY_TYPE_PRINT_NETWORK_RAW_9100,
         DELIVERY_TYPE_PRINT_NODE_HTTP: DELIVERY_TYPE_PRINT_NODE_HTTP,
@@ -153,10 +159,30 @@ def _payload_metadata_for_resend(job: PrintJob, rendered_content: str) -> tuple[
         payload_format = _content_type_from_rendered(rendered_content)
 
     payload_mime_type = str(job.payload_mime_type or "").strip()
-    if not payload_mime_type and payload_format == PRINT_CONTENT_TYPE_TEXT:
-        payload_mime_type = NODE_HTTP_TEXT_MIME_TYPE
+    if not payload_mime_type:
+        payload_mime_type = _payload_mime_type_for_content_type(payload_format)
 
     return payload_format, payload_mime_type
+
+
+def _payload_mime_type_for_content_type(content_type: str) -> str:
+    normalized = _normalize_content_type(content_type)
+    if normalized == PRINT_CONTENT_TYPE_HTML:
+        return PRINT_CONTENT_MIME_TYPE_HTML
+    if normalized == PRINT_CONTENT_TYPE_PDF:
+        return PRINT_CONTENT_MIME_TYPE_PDF
+    return NODE_HTTP_TEXT_MIME_TYPE
+
+
+def resolve_job_payload(job: PrintJob) -> tuple[bytes, str, str]:
+    payload_bytes, payload_source = _job_bytes_for_retry(job)
+    rendered_content = (
+        str(job.rendered_content or "")
+        if payload_source == "text"
+        else payload_bytes.decode("utf-8", errors="replace")
+    )
+    payload_format, payload_mime_type = _payload_metadata_for_resend(job, rendered_content)
+    return payload_bytes, payload_format, payload_mime_type
 
 
 def _apply_job_delivery_success(job: PrintJob) -> None:
@@ -283,6 +309,11 @@ def execute_rendered_print(
     normalized_content_type = _normalize_content_type(content_type)
     outbound_content = str(rendered_content or "")
     serialized_payload = payload_bytes or outbound_content.encode("utf-8")
+    initial_status = (
+        PRINT_JOB_STATUS_PENDING
+        if normalized_delivery_type == DELIVERY_TYPE_PRINT_AGENT_PULL
+        else PRINT_JOB_STATUS_QUEUED
+    )
 
     job = PrintJob(
         created_by_user_id=created_by_user_id,
@@ -298,7 +329,7 @@ def execute_rendered_print(
         ),
         rendered_content=outbound_content,
         rendered_bytes_base64=_serialized_bytes(serialized_payload),
-        status=PRINT_JOB_STATUS_QUEUED,
+        status=initial_status,
         attempt_count=0,
         last_error=None,
         sent_at=None,
@@ -306,7 +337,8 @@ def execute_rendered_print(
     db.add(job)
     db.flush()
 
-    job.attempt_count = int(job.attempt_count or 0) + 1
+    if normalized_delivery_type != DELIVERY_TYPE_PRINT_AGENT_PULL:
+        job.attempt_count = int(job.attempt_count or 0) + 1
     try:
         if normalized_delivery_type == DELIVERY_TYPE_PRINT_NODE_HTTP:
             if normalized_content_type != PRINT_CONTENT_TYPE_TEXT:
@@ -323,6 +355,16 @@ def execute_rendered_print(
             )
             job.rendered_content = outbound_content
             job.rendered_bytes_base64 = _serialized_bytes(serialized_payload)
+
+        if normalized_delivery_type == DELIVERY_TYPE_PRINT_AGENT_PULL:
+            if normalized_content_type == PRINT_CONTENT_TYPE_TEXT:
+                serialized_payload = payload_bytes or outbound_content.encode("utf-8")
+                job.rendered_bytes_base64 = _serialized_bytes(serialized_payload)
+            job.payload_format = normalized_content_type
+            job.payload_mime_type = _payload_mime_type_for_content_type(normalized_content_type)
+            job.status = PRINT_JOB_STATUS_PENDING
+            db.commit()
+            return PrintExecutionResult(job=job)
 
         if normalized_delivery_type == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
             _apply_job_delivery_success(job)
@@ -390,7 +432,8 @@ def retry_print_job(db: Session, job: PrintJob) -> PrintExecutionResult:
     payload_format, payload_mime_type = _payload_metadata_for_resend(job, rendered_content)
     normalized_content_type = payload_format
 
-    job.attempt_count = int(job.attempt_count or 0) + 1
+    if delivery_type != DELIVERY_TYPE_PRINT_AGENT_PULL:
+        job.attempt_count = int(job.attempt_count or 0) + 1
     try:
         if delivery_type == DELIVERY_TYPE_PRINT_NODE_HTTP:
             if payload_format != PRINT_CONTENT_TYPE_TEXT:
@@ -406,6 +449,21 @@ def retry_print_job(db: Session, job: PrintJob) -> PrintExecutionResult:
             )
             job.rendered_content = outbound_content
             job.rendered_bytes_base64 = _serialized_bytes(payload_bytes)
+
+        if delivery_type == DELIVERY_TYPE_PRINT_AGENT_PULL:
+            job.payload_format = payload_format
+            job.payload_mime_type = payload_mime_type or _payload_mime_type_for_content_type(
+                payload_format
+            )
+            job.rendered_bytes_base64 = _serialized_bytes(payload_bytes)
+            job.provider_job_ref = None
+            job.provider_response_json = None
+            job.last_error = None
+            job.sent_at = None
+            job.agent_id = None
+            job.status = PRINT_JOB_STATUS_PENDING
+            db.commit()
+            return PrintExecutionResult(job=job)
 
         if delivery_type == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
             _apply_job_delivery_success(job)

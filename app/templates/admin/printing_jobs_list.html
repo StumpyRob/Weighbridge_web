@@ -92,6 +92,10 @@
                 <span class="status-pill status-open">Sent</span>
               {% elif item.status == "FAILED" %}
                 <span class="status-pill status-void">Failed</span>
+              {% elif item.status == "PENDING" %}
+                <span class="status-pill status-info">Pending</span>
+              {% elif item.status == "IN_PROGRESS" %}
+                <span class="status-pill status-info">In Progress</span>
               {% elif item.status == "QUEUED" %}
                 <span class="status-pill status-info">Queued</span>
               {% else %}
