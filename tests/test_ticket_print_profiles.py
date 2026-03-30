@@ -19,6 +19,7 @@ from app.models import (
     User,
 )
 from app.services.print_agents import hash_print_agent_key
+from app.services.print_agents import hash_print_agent_pairing_code
 from app.templating import templates
 
 
@@ -200,6 +201,161 @@ def test_admin_print_agents_pair_expired_code_fails_cleanly(client, db_session):
 
     assert response.status_code == 410
     assert "Print agent pairing code has expired." in response.text
+
+
+def test_admin_print_agents_can_cancel_pending_pairing(client, db_session):
+    pairing_request = client.post(
+        "/api/print/agents/pairing/request",
+        json={"name": "Cancel Me"},
+    )
+    assert pairing_request.status_code == 200
+    pairing_payload = pairing_request.json()
+
+    response = client.post(
+        f"/admin/printing/agents/pairings/{pairing_payload['pairing_id']}/cancel",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Canceled print agent pairing Cancel Me." in response.text
+    pairing = db_session.execute(
+        select(PrintAgentPairing).where(
+            PrintAgentPairing.id == pairing_payload["pairing_id"]
+        )
+    ).scalars().first()
+    assert pairing is None
+
+
+def test_admin_print_agents_canceled_pairing_no_longer_appears(client):
+    pairing_request = client.post(
+        "/api/print/agents/pairing/request",
+        json={"name": "Stale Pairing"},
+    )
+    assert pairing_request.status_code == 200
+    pairing_payload = pairing_request.json()
+
+    response = client.post(
+        f"/admin/printing/agents/pairings/{pairing_payload['pairing_id']}/cancel",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "No pending pairings." in response.text
+
+
+def test_admin_print_agents_can_revoke_unassigned_agent(client, db_session):
+    agent = PrintAgent(
+        id=str(uuid.uuid4()),
+        name="Old Yard Agent",
+        api_key=hash_print_agent_key("old-yard-agent-key"),
+        status="OFFLINE",
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    response = client.post(
+        f"/admin/printing/agents/{agent.id}/revoke",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Revoked print agent Old Yard Agent." in response.text
+    db_session.refresh(agent)
+    assert agent.status == "REVOKED"
+
+    heartbeat = client.post(
+        "/api/print/agents/heartbeat",
+        headers={"X-Agent-Key": "old-yard-agent-key"},
+    )
+    assert heartbeat.status_code == 401
+
+
+def test_admin_print_agents_revoke_assigned_agent_is_blocked(client, db_session):
+    agent = PrintAgent(
+        id=str(uuid.uuid4()),
+        name="Assigned Agent",
+        api_key=hash_print_agent_key("assigned-agent-key"),
+        status="OFFLINE",
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    template = _create_template(
+        db_session,
+        code="ASSIGNED_PULL_TEMPLATE",
+        document_type="TICKET",
+        template_format="TEXT",
+        content="PULL {{ payload.ticket_no }}",
+    )
+    _create_destination(
+        db_session,
+        name="Assigned Pull Destination",
+        document_type="TICKET",
+        template_id=template.id,
+        delivery_type="PRINT_AGENT_PULL",
+        delivery_config={
+            "agent_id": agent.id,
+            "printer_name": "Assigned Printer",
+            "copies": 1,
+        },
+        is_default=False,
+    )
+
+    response = client.post(
+        f"/admin/printing/agents/{agent.id}/revoke",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Cannot revoke print agent Assigned Agent while assigned to PRINT_AGENT_PULL destination" in response.text
+    db_session.refresh(agent)
+    assert agent.status == "OFFLINE"
+
+
+def test_admin_print_agents_cleanup_actions_are_tenant_scoped(client, db_session):
+    other_pairing = PrintAgentPairing(
+        id=str(uuid.uuid4()),
+        tenant_id=2,
+        requested_name="Other Tenant Pairing",
+        paired_name=None,
+        pairing_code_hash=hash_print_agent_pairing_code("OTHR-PAIR"),
+        exchange_token_hash=hash_print_agent_key("other-tenant-token"),
+        status="PENDING",
+        expires_at=datetime(2026, 3, 30, 13, 0, 0),
+        paired_at=None,
+        paired_by_user_id=None,
+        exchanged_at=None,
+        print_agent_id=None,
+    )
+    other_agent = PrintAgent(
+        id=str(uuid.uuid4()),
+        tenant_id=2,
+        name="Other Tenant Agent",
+        api_key=hash_print_agent_key("other-tenant-agent-key"),
+        status="OFFLINE",
+    )
+    db_session.add(other_pairing)
+    db_session.add(other_agent)
+    db_session.commit()
+
+    cancel_response = client.post(
+        f"/admin/printing/agents/pairings/{other_pairing.id}/cancel",
+        follow_redirects=True,
+    )
+    revoke_response = client.post(
+        f"/admin/printing/agents/{other_agent.id}/revoke",
+        follow_redirects=True,
+    )
+
+    assert cancel_response.status_code == 200
+    assert "Print agent pairing was not found." in cancel_response.text
+    assert revoke_response.status_code == 200
+    assert "Print agent was not found." in revoke_response.text
+
+    db_session.refresh(other_pairing)
+    db_session.refresh(other_agent)
+    assert other_pairing.status == "PENDING"
+    assert other_agent.status == "OFFLINE"
 
 
 def test_admin_destinations_enforces_single_default_per_document_type(client, db_session):

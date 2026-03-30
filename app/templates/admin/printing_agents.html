@@ -50,6 +50,7 @@
             <th>Status</th>
             <th>Last seen</th>
             <th>Created</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -60,6 +61,8 @@
               <td>
                 {% if item.status == "ONLINE" %}
                   <span class="status-pill status-active">Online</span>
+                {% elif item.status == "REVOKED" %}
+                  <span class="status-pill status-void">Revoked</span>
                 {% elif item.status == "OFFLINE" %}
                   <span class="status-pill status-void">Offline</span>
                 {% else %}
@@ -68,10 +71,25 @@
               </td>
               <td>{{ item.last_seen_at.strftime("%d/%m/%Y %H:%M:%S") if item.last_seen_at else "-" }}</td>
               <td>{{ item.created_at.strftime("%d/%m/%Y %H:%M:%S") if item.created_at else "-" }}</td>
+              <td>
+                {% if item.status != "REVOKED" %}
+                  <form method="post" action="/admin/printing/agents/{{ item.id }}/revoke">
+                    <button
+                      type="submit"
+                      class="btn btn--danger btn--sm"
+                      onclick="return window.confirm('Revoke print agent {{ item.name or item.id }}?');"
+                    >
+                      Revoke
+                    </button>
+                  </form>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
             </tr>
           {% else %}
             <tr>
-              <td colspan="5" class="empty">No paired agents yet.</td>
+              <td colspan="6" class="empty">No paired agents yet.</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -89,6 +107,7 @@
             <th>Status</th>
             <th>Expires</th>
             <th>Created</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -109,10 +128,25 @@
               </td>
               <td>{{ pairing.expires_at.strftime("%d/%m/%Y %H:%M:%S") if pairing.expires_at else "-" }}</td>
               <td>{{ pairing.created_at.strftime("%d/%m/%Y %H:%M:%S") if pairing.created_at else "-" }}</td>
+              <td>
+                {% if row.can_cancel %}
+                  <form method="post" action="/admin/printing/agents/pairings/{{ pairing.id }}/cancel">
+                    <button
+                      type="submit"
+                      class="btn btn--ghost btn--sm"
+                      onclick="return window.confirm('Cancel this pending print agent pairing?');"
+                    >
+                      Cancel
+                    </button>
+                  </form>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
             </tr>
           {% else %}
             <tr>
-              <td colspan="4" class="empty">No pending pairings.</td>
+              <td colspan="5" class="empty">No pending pairings.</td>
             </tr>
           {% endfor %}
         </tbody>

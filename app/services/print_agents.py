@@ -13,6 +13,7 @@ from ..models.base import utcnow
 
 PRINT_AGENT_STATUS_ONLINE = "ONLINE"
 PRINT_AGENT_STATUS_OFFLINE = "OFFLINE"
+PRINT_AGENT_STATUS_REVOKED = "REVOKED"
 PRINT_AGENT_PAIRING_STATUS_PENDING = "PENDING"
 PRINT_AGENT_PAIRING_STATUS_PAIRED = "PAIRED"
 PRINT_AGENT_PAIRING_STATUS_EXCHANGED = "EXCHANGED"
@@ -233,10 +234,21 @@ def authenticate_print_agent(db: Session, api_key: str | None) -> PrintAgent | N
     if not hashed_key:
         return None
     return db.execute(
-        select(PrintAgent).where(PrintAgent.api_key == hashed_key).limit(1)
+        select(PrintAgent)
+        .where(
+            PrintAgent.api_key == hashed_key,
+            PrintAgent.status != PRINT_AGENT_STATUS_REVOKED,
+        )
+        .limit(1)
     ).scalars().first()
 
 
 def mark_print_agent_online(agent: PrintAgent) -> None:
     agent.status = PRINT_AGENT_STATUS_ONLINE
     agent.last_seen_at = utcnow()
+
+
+def revoke_print_agent(agent: PrintAgent) -> None:
+    _raw_api_key, hashed_api_key = generate_print_agent_api_key()
+    agent.api_key = hashed_api_key
+    agent.status = PRINT_AGENT_STATUS_REVOKED
