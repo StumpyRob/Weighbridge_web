@@ -269,6 +269,153 @@ def test_admin_print_agents_can_revoke_unassigned_agent(client, db_session):
     )
     assert heartbeat.status_code == 401
 
+    page = client.get("/admin/printing/agents")
+    assert page.status_code == 200
+    assert "Old Yard Agent" not in page.text
+
+
+def test_admin_print_agents_show_revoked_filter_includes_revoked_agents(client, db_session):
+    active_agent = PrintAgent(
+        id=str(uuid.uuid4()),
+        name="Active Yard Agent",
+        api_key=hash_print_agent_key("active-yard-agent-key"),
+        status="OFFLINE",
+    )
+    revoked_agent = PrintAgent(
+        id=str(uuid.uuid4()),
+        name="Revoked Yard Agent",
+        api_key=hash_print_agent_key("revoked-yard-agent-key"),
+        status="REVOKED",
+    )
+    db_session.add(active_agent)
+    db_session.add(revoked_agent)
+    db_session.commit()
+
+    hidden_response = client.get("/admin/printing/agents")
+    shown_response = client.get("/admin/printing/agents?show_revoked=1")
+
+    assert hidden_response.status_code == 200
+    assert "Active Yard Agent" in hidden_response.text
+    assert "Revoked Yard Agent" not in hidden_response.text
+    assert shown_response.status_code == 200
+    assert "Active Yard Agent" in shown_response.text
+    assert "Revoked Yard Agent" in shown_response.text
+
+
+def test_admin_print_agents_bulk_cancel_expired_pending_pairings_only_affects_expired_pending(
+    client,
+    db_session,
+):
+    expired_pending = PrintAgentPairing(
+        id=str(uuid.uuid4()),
+        requested_name="Expired Pending",
+        paired_name=None,
+        pairing_code_hash=hash_print_agent_pairing_code("EXPD-PEND"),
+        exchange_token_hash=hash_print_agent_key("expired-pending-token"),
+        status="PENDING",
+        expires_at=datetime(2000, 3, 29, 11, 0, 0),
+        paired_at=None,
+        paired_by_user_id=None,
+        exchanged_at=None,
+        print_agent_id=None,
+    )
+    current_pending = PrintAgentPairing(
+        id=str(uuid.uuid4()),
+        requested_name="Current Pending",
+        paired_name=None,
+        pairing_code_hash=hash_print_agent_pairing_code("CURR-PEND"),
+        exchange_token_hash=hash_print_agent_key("current-pending-token"),
+        status="PENDING",
+        expires_at=datetime(2099, 3, 30, 13, 0, 0),
+        paired_at=None,
+        paired_by_user_id=None,
+        exchanged_at=None,
+        print_agent_id=None,
+    )
+    expired_paired = PrintAgentPairing(
+        id=str(uuid.uuid4()),
+        requested_name="Expired Paired",
+        paired_name="Expired Paired",
+        pairing_code_hash=hash_print_agent_pairing_code("EXPD-PAIR"),
+        exchange_token_hash=hash_print_agent_key("expired-paired-token"),
+        status="PAIRED",
+        expires_at=datetime(2000, 3, 29, 11, 0, 0),
+        paired_at=datetime(2026, 3, 29, 10, 0, 0),
+        paired_by_user_id=None,
+        exchanged_at=None,
+        print_agent_id=None,
+    )
+    db_session.add(expired_pending)
+    db_session.add(current_pending)
+    db_session.add(expired_paired)
+    db_session.commit()
+    expired_pending_id = expired_pending.id
+    current_pending_id = current_pending.id
+    expired_paired_id = expired_paired.id
+
+    response = client.post(
+        "/admin/printing/agents/pairings/cancel-expired",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert "Canceled 1 expired pending print agent pairing(s)." in response.text
+
+    db_session.expire_all()
+    assert db_session.get(PrintAgentPairing, expired_pending_id) is None
+    assert db_session.get(PrintAgentPairing, current_pending_id) is not None
+    assert db_session.get(PrintAgentPairing, expired_paired_id) is not None
+
+
+def test_admin_print_agents_bulk_cancel_expired_pending_pairings_is_tenant_scoped(
+    client,
+    db_session,
+):
+    current_tenant_expired = PrintAgentPairing(
+        id=str(uuid.uuid4()),
+        requested_name="Current Tenant Expired",
+        paired_name=None,
+        pairing_code_hash=hash_print_agent_pairing_code("CURR-EXPD"),
+        exchange_token_hash=hash_print_agent_key("curr-expired-token"),
+        status="PENDING",
+        expires_at=datetime(2000, 3, 29, 11, 0, 0),
+        paired_at=None,
+        paired_by_user_id=None,
+        exchanged_at=None,
+        print_agent_id=None,
+    )
+    other_tenant_expired = PrintAgentPairing(
+        id=str(uuid.uuid4()),
+        tenant_id=2,
+        requested_name="Other Tenant Expired",
+        paired_name=None,
+        pairing_code_hash=hash_print_agent_pairing_code("OTHR-EXPD"),
+        exchange_token_hash=hash_print_agent_key("other-expired-token"),
+        status="PENDING",
+        expires_at=datetime(2000, 3, 29, 11, 0, 0),
+        paired_at=None,
+        paired_by_user_id=None,
+        exchanged_at=None,
+        print_agent_id=None,
+    )
+    db_session.add(current_tenant_expired)
+    db_session.add(other_tenant_expired)
+    db_session.commit()
+    current_tenant_expired_id = current_tenant_expired.id
+    other_tenant_expired_id = other_tenant_expired.id
+
+    response = client.post(
+        "/admin/printing/agents/pairings/cancel-expired",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    db_session.expire_all()
+    assert db_session.get(PrintAgentPairing, current_tenant_expired_id) is None
+    other_tenant_expired = db_session.get(PrintAgentPairing, other_tenant_expired_id)
+    assert other_tenant_expired is not None
+    assert other_tenant_expired.status == "PENDING"
+
 
 def test_admin_print_agents_revoke_assigned_agent_is_blocked(client, db_session):
     agent = PrintAgent(

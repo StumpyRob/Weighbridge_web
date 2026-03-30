@@ -19,11 +19,32 @@
     <div class="alert">{{ error }}</div>
   {% endif %}
 
+  <form method="get" action="/admin/printing/agents" class="filters filters-inline" style="margin-bottom: 1.5rem;">
+    <div class="field checkbox">
+      <input type="hidden" name="show_revoked" value="0" />
+      <input type="checkbox" id="show_revoked" name="show_revoked" value="1" {% if show_revoked %}checked{% endif %} />
+      <label for="show_revoked">
+        Show revoked agents{% if hidden_revoked_count and not show_revoked %} ({{ hidden_revoked_count }} hidden){% endif %}
+      </label>
+    </div>
+    <div class="field checkbox">
+      <input type="hidden" name="show_expired_pairings" value="0" />
+      <input type="checkbox" id="show_expired_pairings" name="show_expired_pairings" value="1" {% if show_expired_pairings %}checked{% endif %} />
+      <label for="show_expired_pairings">
+        Show expired pending pairings{% if expired_pending_count and not show_expired_pairings %} ({{ expired_pending_count }} hidden){% endif %}
+      </label>
+    </div>
+    <div class="actions btn-group">
+      <button type="submit" class="btn btn--secondary">Apply</button>
+      <a class="btn btn--outline" href="/admin/printing/agents">Reset</a>
+    </div>
+  </form>
+
   <section class="card" style="margin-bottom: 1.5rem;">
     <div class="card__body">
       <h2 style="margin-top: 0;">Pair A Local Agent</h2>
       <p class="muted">Install or run the local print agent on the site machine, copy the pairing code shown on the agent status page, paste it here, then pair it to this tenant. After pairing, the agent will exchange for permanent credentials automatically.</p>
-      <form method="post" action="/admin/printing/agents/pair" class="filters filters-inline">
+      <form method="post" action="/admin/printing/agents/pair?show_revoked={{ 1 if show_revoked else 0 }}&show_expired_pairings={{ 1 if show_expired_pairings else 0 }}" class="filters filters-inline">
         <div class="field">
           <label for="pairing_code">Pairing code</label>
           <input type="text" id="pairing_code" name="pairing_code" value="{{ form_data.pairing_code }}" placeholder="ABCD-EFGH" autocomplete="off" />
@@ -54,7 +75,8 @@
           </tr>
         </thead>
         <tbody>
-          {% for item in paired_agents %}
+          {% for row in agent_rows %}
+            {% set item = row.agent %}
             <tr>
               <td>{{ item.name or "-" }}</td>
               <td><code>{{ item.id }}</code></td>
@@ -72,8 +94,8 @@
               <td>{{ item.last_seen_at.strftime("%d/%m/%Y %H:%M:%S") if item.last_seen_at else "-" }}</td>
               <td>{{ item.created_at.strftime("%d/%m/%Y %H:%M:%S") if item.created_at else "-" }}</td>
               <td>
-                {% if item.status != "REVOKED" %}
-                  <form method="post" action="/admin/printing/agents/{{ item.id }}/revoke">
+                {% if row.can_revoke %}
+                  <form method="post" action="/admin/printing/agents/{{ item.id }}/revoke?show_revoked={{ 1 if show_revoked else 0 }}&show_expired_pairings={{ 1 if show_expired_pairings else 0 }}">
                     <button
                       type="submit"
                       class="btn btn--danger btn--sm"
@@ -82,6 +104,8 @@
                       Revoke
                     </button>
                   </form>
+                {% elif row.revoke_block_reason %}
+                  <span class="muted">{{ row.revoke_block_reason }}</span>
                 {% else %}
                   -
                 {% endif %}
@@ -98,7 +122,27 @@
   </section>
 
   <section>
-    <h2>Pending Pairings</h2>
+    <div class="page-header" style="margin-bottom: 0.75rem;">
+      <div>
+        <h2 style="margin-bottom: 0.25rem;">Pending Pairings</h2>
+        {% if expired_pending_count and not show_expired_pairings %}
+          <p class="muted">{{ expired_pending_count }} expired pending pairing{% if expired_pending_count != 1 %}s are{% else %} is{% endif %} hidden by the current filter.</p>
+        {% endif %}
+      </div>
+      {% if expired_pending_count %}
+        <div class="actions btn-group">
+          <form method="post" action="/admin/printing/agents/pairings/cancel-expired?show_revoked={{ 1 if show_revoked else 0 }}&show_expired_pairings={{ 1 if show_expired_pairings else 0 }}">
+            <button
+              type="submit"
+              class="btn btn--ghost btn--sm"
+              onclick="return window.confirm('Cancel all expired pending print agent pairings?');"
+            >
+              Cancel All Expired Pending Pairings
+            </button>
+          </form>
+        </div>
+      {% endif %}
+    </div>
     <div class="table-wrap list-table-wrap">
       <table class="data-table list-table">
         <thead>
@@ -130,7 +174,7 @@
               <td>{{ pairing.created_at.strftime("%d/%m/%Y %H:%M:%S") if pairing.created_at else "-" }}</td>
               <td>
                 {% if row.can_cancel %}
-                  <form method="post" action="/admin/printing/agents/pairings/{{ pairing.id }}/cancel">
+                  <form method="post" action="/admin/printing/agents/pairings/{{ pairing.id }}/cancel?show_revoked={{ 1 if show_revoked else 0 }}&show_expired_pairings={{ 1 if show_expired_pairings else 0 }}">
                     <button
                       type="submit"
                       class="btn btn--ghost btn--sm"

@@ -131,6 +131,12 @@ def _parse_optional_int(value: str | None) -> int | None:
         return None
 
 
+def _resolve_show_flag(raw: object, *, default: int = 0) -> int:
+    if raw is None:
+        return 1 if default else 0
+    return 1 if _is_truthy(str(raw)) else 0
+
+
 def _normalize_document_type(value: str | None) -> str:
     normalized = str(value or "").strip().upper()
     if normalized in DOCUMENT_TYPE_VALUES:
@@ -533,9 +539,10 @@ def admin_print_agents_cancel_pairing(
     tenant_id = request_tenant_id(request)
     pairing = db.get(PrintAgentPairing, str(pairing_id or "").strip())
     if pairing is None or int(getattr(pairing, "tenant_id", 0) or 0) != tenant_id:
-        return _print_agents_redirect(error="Print agent pairing was not found.")
+        return _print_agents_redirect(request, error="Print agent pairing was not found.")
     if not _pairing_can_cancel(pairing) or pairing.print_agent_id:
         return _print_agents_redirect(
+            request,
             error="Only pending pairing sessions can be canceled."
         )
 
@@ -555,7 +562,55 @@ def admin_print_agents_cancel_pairing(
     )
     db.delete(pairing)
     db.commit()
-    return _print_agents_redirect(success=f"Canceled print agent pairing {pairing_label}.")
+    return _print_agents_redirect(
+        request,
+        success=f"Canceled print agent pairing {pairing_label}.",
+    )
+
+
+@router.post("/admin/printing/agents/pairings/cancel-expired")
+def admin_print_agents_cancel_expired_pairings(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    tenant_id = request_tenant_id(request)
+    pairings = list(
+        db.execute(
+            select(PrintAgentPairing).where(
+                PrintAgentPairing.tenant_id == tenant_id,
+                PrintAgentPairing.status == "PENDING",
+            )
+        ).scalars()
+    )
+    expired_pairings = [row for row in pairings if is_print_agent_pairing_expired(row)]
+    if not expired_pairings:
+        return _print_agents_redirect(
+            request,
+            success="No expired pending print agent pairings to cancel.",
+        )
+
+    count = len(expired_pairings)
+    sample_ids = [row.id for row in expired_pairings[:10]]
+    for pairing in expired_pairings:
+        db.delete(pairing)
+    audit_log(
+        db,
+        request,
+        action="DELETE",
+        entity_type="print_agent_pairing",
+        entity_id=None,
+        summary=f"Canceled {count} expired print agent pairing(s)",
+        details={
+            "count": count,
+            "pairing_ids": sample_ids,
+            "tenant_id": tenant_id,
+        },
+    )
+    db.commit()
+    return _print_agents_redirect(
+        request,
+        success=f"Canceled {count} expired pending print agent pairing(s).",
+    )
 
 
 @router.post("/admin/printing/agents/{agent_id}/revoke")
@@ -567,9 +622,10 @@ def admin_print_agents_revoke(
     tenant_id = request_tenant_id(request)
     agent = db.get(PrintAgent, str(agent_id or "").strip())
     if agent is None or int(getattr(agent, "tenant_id", 0) or 0) != tenant_id:
-        return _print_agents_redirect(error="Print agent was not found.")
+        return _print_agents_redirect(request, error="Print agent was not found.")
     if str(agent.status or "").strip().upper() == PRINT_AGENT_STATUS_REVOKED:
         return _print_agents_redirect(
+            request,
             success=f"Print agent {agent.name or agent.id} is already revoked."
         )
 
@@ -581,6 +637,7 @@ def admin_print_agents_revoke(
     if blocking_destinations:
         destination_names = ", ".join(row.name for row in blocking_destinations[:3])
         return _print_agents_redirect(
+            request,
             error=(
                 f"Cannot revoke print agent {agent.name or agent.id} while assigned to "
                 f"PRINT_AGENT_PULL destination(s): {destination_names}."
@@ -602,7 +659,10 @@ def admin_print_agents_revoke(
         },
     )
     db.commit()
-    return _print_agents_redirect(success=f"Revoked print agent {agent.name or agent.id}.")
+    return _print_agents_redirect(
+        request,
+        success=f"Revoked print agent {agent.name or agent.id}.",
+    )
 
 
 @router.get("/admin/printing/destinations", response_class=HTMLResponse)
@@ -783,6 +843,15 @@ def _print_agents_page_response(
     status_code: int = 200,
 ) -> HTMLResponse:
     tenant_id = request_tenant_id(request)
+    show_revoked = bool(
+        _resolve_show_flag(request.query_params.get("show_revoked"), default=0)
+    )
+    show_expired_pairings = bool(
+        _resolve_show_flag(
+            request.query_params.get("show_expired_pairings"),
+            default=0,
+        )
+    )
     paired_agents = list(
         db.execute(
             select(PrintAgent)
@@ -793,6 +862,53 @@ def _print_agents_page_response(
             )
         ).scalars()
     )
+    paired_agents.sort(
+        key=lambda row: (
+            1 if str(row.status or "").strip().upper() == PRINT_AGENT_STATUS_REVOKED else 0,
+            str(row.name or "").lower(),
+            str(row.id or "").lower(),
+        )
+    )
+    hidden_revoked_count = sum(
+        1
+        for item in paired_agents
+        if str(item.status or "").strip().upper() == PRINT_AGENT_STATUS_REVOKED
+    )
+    visible_agents = (
+        paired_agents
+        if show_revoked
+        else [
+            item
+            for item in paired_agents
+            if str(item.status or "").strip().upper() != PRINT_AGENT_STATUS_REVOKED
+        ]
+    )
+    agent_rows = []
+    for item in visible_agents:
+        blocking_destinations = _pull_destinations_for_agent(
+            db,
+            tenant_id=tenant_id,
+            agent_id=item.id,
+        )
+        blocking_names = [row.name for row in blocking_destinations]
+        can_revoke = (
+            str(item.status or "").strip().upper() != PRINT_AGENT_STATUS_REVOKED
+            and not blocking_names
+        )
+        revoke_block_reason = ""
+        if not can_revoke and blocking_names:
+            joined_names = ", ".join(blocking_names[:3])
+            if len(blocking_names) > 3:
+                joined_names = f"{joined_names}, ..."
+            revoke_block_reason = f"Assigned to {joined_names}"
+        agent_rows.append(
+            {
+                "agent": item,
+                "can_revoke": can_revoke,
+                "revoke_block_reason": revoke_block_reason,
+            }
+        )
+
     pending_pairings = list(
         db.execute(
             select(PrintAgentPairing)
@@ -803,14 +919,29 @@ def _print_agents_page_response(
             .order_by(PrintAgentPairing.created_at.desc(), PrintAgentPairing.id.desc())
         ).scalars()
     )
-    pending_pairing_rows = [
-        {
-            "pairing": pairing,
-            "display_status": _pairing_display_status(pairing),
-            "can_cancel": _pairing_can_cancel(pairing),
-        }
-        for pairing in pending_pairings
-    ]
+    pending_pairing_rows = []
+    expired_pending_count = 0
+    for pairing in pending_pairings:
+        display_status = _pairing_display_status(pairing)
+        is_expired_pending = display_status == "EXPIRED" and _pairing_can_cancel(pairing)
+        if is_expired_pending:
+            expired_pending_count += 1
+            if not show_expired_pairings:
+                continue
+        pending_pairing_rows.append(
+            {
+                "pairing": pairing,
+                "display_status": display_status,
+                "can_cancel": _pairing_can_cancel(pairing),
+            }
+        )
+    pending_pairing_rows.sort(
+        key=lambda row: row["pairing"].created_at or datetime.min,
+        reverse=True,
+    )
+    pending_pairing_rows.sort(
+        key=lambda row: 1 if row["display_status"] == "EXPIRED" else 0
+    )
 
     success = str(request.query_params.get("success_message", "")).strip()
     if not success and request.query_params.get("paired") == "1":
@@ -832,22 +963,35 @@ def _print_agents_page_response(
         {
             "request": request,
             "active_tab": _active_printing_tab(str(request.url.path)),
-            "paired_agents": paired_agents,
+            "agent_rows": agent_rows,
             "pending_pairing_rows": pending_pairing_rows,
             "form_data": resolved_form_data,
             "error": resolved_error,
             "success": success,
+            "show_revoked": show_revoked,
+            "show_expired_pairings": show_expired_pairings,
+            "hidden_revoked_count": hidden_revoked_count,
+            "expired_pending_count": expired_pending_count,
         },
         status_code=status_code,
     )
 
 
-def _print_agents_redirect(*, success: str = "", error: str = "") -> RedirectResponse:
+def _print_agents_redirect(
+    request: Request,
+    *,
+    success: str = "",
+    error: str = "",
+) -> RedirectResponse:
     params: dict[str, str] = {}
     if success:
         params["success_message"] = success
     if error:
         params["error_message"] = error
+    if _resolve_show_flag(request.query_params.get("show_revoked"), default=0):
+        params["show_revoked"] = "1"
+    if _resolve_show_flag(request.query_params.get("show_expired_pairings"), default=0):
+        params["show_expired_pairings"] = "1"
     url = "/admin/printing/agents"
     if params:
         url = f"{url}?{urlencode(params)}"
