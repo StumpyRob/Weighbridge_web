@@ -13,6 +13,7 @@ from app.models import (
     DirectionEnum,
     Driver,
     Haulier,
+    PrintAgent,
     PrintDestination,
     PrintJob,
     PrintTemplate,
@@ -26,6 +27,7 @@ from app.models import (
     PlatformSetting,
 )
 from app.services.email_service import EmailSendResult
+from app.services.print_agents import hash_print_agent_key
 from app.services.print_payload import build_ticket_print_payload
 
 
@@ -35,7 +37,8 @@ def _set_ticket_browser_destination(
     code: str,
     template_format: str,
     content: str,
-) -> None:
+    auto_print_on_complete: bool = False,
+) -> PrintDestination:
     template = PrintTemplate(
         code=code,
         description=code,
@@ -53,12 +56,16 @@ def _set_ticket_browser_destination(
         document_type="TICKET",
         template_id=template.id,
         delivery_type="PRINT_LOCAL_BROWSER",
-        delivery_config={},
+        delivery_config=(
+            {"auto_print_on_complete": True} if auto_print_on_complete else {}
+        ),
         is_default=True,
         is_active=True,
     )
     db_session.add(destination)
     db_session.commit()
+    db_session.refresh(destination)
+    return destination
 
 
 def _set_ticket_node_http_destination(
@@ -69,7 +76,8 @@ def _set_ticket_node_http_destination(
     printer_name: str = "Front Desk Printer",
     copies: int = 1,
     api_key: str = "site-secret",
-) -> None:
+    auto_print_on_complete: bool = False,
+) -> PrintDestination:
     template = PrintTemplate(
         code=code,
         description=code,
@@ -93,12 +101,57 @@ def _set_ticket_node_http_destination(
             "timeout_ms": 5000,
             "printer_name": printer_name,
             "copies": copies,
+            **({"auto_print_on_complete": True} if auto_print_on_complete else {}),
         },
         is_default=True,
         is_active=True,
     )
     db_session.add(destination)
     db_session.commit()
+    db_session.refresh(destination)
+    return destination
+
+
+def _set_ticket_pull_destination(
+    db_session,
+    *,
+    code: str,
+    content: str,
+    agent_id: str,
+    printer_name: str = "Yard Printer",
+    copies: int = 1,
+    auto_print_on_complete: bool = False,
+) -> PrintDestination:
+    template = PrintTemplate(
+        code=code,
+        description=code,
+        document_type="TICKET",
+        format="TEXT",
+        content=content,
+        is_active=True,
+    )
+    db_session.add(template)
+    db_session.flush()
+
+    destination = PrintDestination(
+        name=f"{code} Destination",
+        description=f"{code} Destination",
+        document_type="TICKET",
+        template_id=template.id,
+        delivery_type="PRINT_AGENT_PULL",
+        delivery_config={
+            "agent_id": agent_id,
+            "printer_name": printer_name,
+            "copies": copies,
+            **({"auto_print_on_complete": True} if auto_print_on_complete else {}),
+        },
+        is_default=True,
+        is_active=True,
+    )
+    db_session.add(destination)
+    db_session.commit()
+    db_session.refresh(destination)
+    return destination
 
 
 def _create_complete_sale_ticket(
@@ -129,6 +182,55 @@ def _create_complete_sale_ticket(
     db_session.commit()
     db_session.refresh(ticket)
     return ticket
+
+
+def _create_open_sale_ticket(db_session, *, ticket_no: str) -> Ticket:
+    customer = Customer(
+        account_code=f"AC-{ticket_no}",
+        name=f"Customer {ticket_no}",
+    )
+    unit = Unit(name=f"Each {ticket_no}", unit_type="COUNT", is_active=True)
+    product = Product(
+        code=f"P-{ticket_no}",
+        description=f"Product {ticket_no}",
+        unit=unit,
+        unit_price=Decimal("12.50"),
+    )
+    db_session.add_all([customer, unit, product])
+    db_session.flush()
+
+    ticket = Ticket(
+        ticket_no=ticket_no,
+        datetime=datetime(2026, 3, 31, 9, 0, 0),
+        status=TicketStatusEnum.OPEN.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.SALE.value,
+        customer_id=customer.id,
+        product_id=product.id,
+        dont_invoice=False,
+        paid=False,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+    db_session.refresh(ticket)
+    return ticket
+
+
+def _complete_ticket(client, ticket: Ticket):
+    return client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "complete",
+            "datetime": ticket.datetime.strftime("%Y-%m-%dT%H:%M"),
+            "direction": "INWARD",
+            "transaction_type": "SALE",
+            "customer_id": str(ticket.customer_id or ""),
+            "product_id": str(ticket.product_id or ""),
+            "qty": "1",
+            "unit_price": "",
+        },
+        follow_redirects=False,
+    )
 
 
 def _upsert_company_setting(db_session, **values) -> CompanySetting:
@@ -960,6 +1062,7 @@ def test_ticket_direct_print_node_http_route_sends_expected_payload_and_persists
     }
     assert job.status == "SENT"
     assert job.created_by_user_id == current_user_id
+    assert job.trigger_source == "MANUAL"
     assert job.payload_format == "TEXT"
     assert job.payload_mime_type == "text/plain; charset=utf-8"
     assert job.provider_job_ref == "ticket-route-agent-1"
@@ -1053,6 +1156,222 @@ def test_ticket_direct_print_local_browser_route_remains_unchanged(client, db_se
     assert job is not None
     assert job.delivery_type == "PRINT_LOCAL_BROWSER"
     assert job.status == "SENT"
+    assert job.trigger_source == "MANUAL"
+
+
+def test_ticket_completion_does_not_auto_print_when_disabled(client, db_session):
+    ticket = _create_open_sale_ticket(db_session, ticket_no="T-AUTO-DISABLED-1")
+    _set_ticket_browser_destination(
+        db_session,
+        code="TICKET_AUTO_DISABLED",
+        template_format="TEXT",
+        content="Ticket {{ payload.ticket_no }}",
+        auto_print_on_complete=False,
+    )
+
+    response = _complete_ticket(client, ticket)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/tickets/{ticket.id}?completed=1"
+    jobs = (
+        db_session.query(PrintJob)
+        .filter(PrintJob.ticket_id == ticket.id, PrintJob.document_type == "TICKET")
+        .all()
+    )
+    assert jobs == []
+
+
+def test_ticket_completion_auto_prints_once_for_browser_destination(client, db_session):
+    ticket = _create_open_sale_ticket(db_session, ticket_no="T-AUTO-BROWSER-1")
+    _set_ticket_browser_destination(
+        db_session,
+        code="TICKET_AUTO_BROWSER",
+        template_format="TEXT",
+        content="Ticket {{ payload.ticket_no }}",
+        auto_print_on_complete=True,
+    )
+
+    response = _complete_ticket(client, ticket)
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith(f"/tickets/{ticket.id}/preview?")
+    assert "completed=1" in response.headers["location"]
+    assert "auto_printed=1" in response.headers["location"]
+    jobs = (
+        db_session.query(PrintJob)
+        .filter(PrintJob.ticket_id == ticket.id, PrintJob.document_type == "TICKET")
+        .order_by(PrintJob.id.asc())
+        .all()
+    )
+    assert len(jobs) == 1
+    assert jobs[0].delivery_type == "PRINT_LOCAL_BROWSER"
+    assert jobs[0].status == "SENT"
+    assert jobs[0].trigger_source == "AUTO_ON_COMPLETE"
+
+
+def test_ticket_manual_print_still_works_with_auto_print_destination(client, db_session):
+    ticket = _create_complete_sale_ticket(db_session, ticket_no="T-AUTO-MANUAL-1")
+    _set_ticket_browser_destination(
+        db_session,
+        code="TICKET_AUTO_MANUAL",
+        template_format="TEXT",
+        content="Ticket {{ payload.ticket_no }}",
+        auto_print_on_complete=True,
+    )
+
+    response = client.post(f"/tickets/{ticket.id}/print", follow_redirects=False)
+
+    assert response.status_code == 303
+    job = (
+        db_session.query(PrintJob)
+        .filter(PrintJob.ticket_id == ticket.id, PrintJob.document_type == "TICKET")
+        .order_by(PrintJob.id.desc())
+        .first()
+    )
+    assert job is not None
+    assert job.trigger_source == "MANUAL"
+    assert job.status == "SENT"
+
+
+def test_ticket_non_completion_save_does_not_create_duplicate_auto_print_job(
+    client,
+    db_session,
+):
+    ticket = _create_open_sale_ticket(db_session, ticket_no="T-AUTO-SAVE-1")
+    _set_ticket_browser_destination(
+        db_session,
+        code="TICKET_AUTO_SAVE",
+        template_format="TEXT",
+        content="Ticket {{ payload.ticket_no }}",
+        auto_print_on_complete=True,
+    )
+
+    response = client.post(
+        f"/tickets/{ticket.id}",
+        data={
+            "action": "save",
+            "datetime": ticket.datetime.strftime("%Y-%m-%dT%H:%M"),
+            "direction": "INWARD",
+            "transaction_type": "SALE",
+            "customer_id": str(ticket.customer_id or ""),
+            "product_id": str(ticket.product_id or ""),
+            "qty": "1",
+            "unit_price": "",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    jobs = (
+        db_session.query(PrintJob)
+        .filter(PrintJob.ticket_id == ticket.id, PrintJob.document_type == "TICKET")
+        .all()
+    )
+    assert jobs == []
+
+
+def test_ticket_completion_auto_prints_using_pull_pipeline(client, db_session):
+    agent = PrintAgent(
+        id="agent-auto-pull-1",
+        name="Auto Pull Agent",
+        api_key=hash_print_agent_key("agent-auto-pull-key"),
+        status="OFFLINE",
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    ticket = _create_open_sale_ticket(db_session, ticket_no="T-AUTO-PULL-1")
+    _set_ticket_pull_destination(
+        db_session,
+        code="TICKET_AUTO_PULL",
+        content="PULL {{ payload.ticket_no }}",
+        agent_id=agent.id,
+        printer_name="Yard Pull Printer",
+        copies=2,
+        auto_print_on_complete=True,
+    )
+
+    response = _complete_ticket(client, ticket)
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith(f"/tickets/{ticket.id}?")
+    assert "completed=1" in response.headers["location"]
+    assert "auto_printed=1" in response.headers["location"]
+    job = (
+        db_session.query(PrintJob)
+        .filter(PrintJob.ticket_id == ticket.id, PrintJob.document_type == "TICKET")
+        .order_by(PrintJob.id.desc())
+        .first()
+    )
+    assert job is not None
+    assert job.delivery_type == "PRINT_AGENT_PULL"
+    assert job.status == "PENDING"
+    assert job.trigger_source == "AUTO_ON_COMPLETE"
+    assert job.delivery_config_json["printer_name"] == "Yard Pull Printer"
+    assert job.delivery_config_json["copies"] == 2
+
+
+def test_ticket_completion_auto_prints_using_node_http_pipeline(
+    client,
+    db_session,
+    monkeypatch,
+):
+    import app.services.print_transport as transport_service
+
+    ticket = _create_open_sale_ticket(db_session, ticket_no="T-AUTO-NODE-1")
+    _set_ticket_node_http_destination(
+        db_session,
+        code="TICKET_AUTO_NODE",
+        content="Ticket {{ payload.ticket_no }}",
+        printer_name="Auto Front Desk",
+        copies=3,
+        api_key="auto-node-secret",
+        auto_print_on_complete=True,
+    )
+
+    called: dict[str, object] = {}
+
+    def _fake_post(url, *, json, headers, timeout):
+        called["url"] = url
+        called["json"] = dict(json)
+        called["headers"] = dict(headers)
+        called["timeout"] = timeout
+        return transport_service.httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "provider_job_ref": "auto-node-job-1",
+                "message": "Accepted",
+            },
+        )
+
+    monkeypatch.setattr(transport_service.httpx, "post", _fake_post)
+
+    response = _complete_ticket(client, ticket)
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith(f"/tickets/{ticket.id}?")
+    assert "completed=1" in response.headers["location"]
+    assert "auto_printed=1" in response.headers["location"]
+    job = (
+        db_session.query(PrintJob)
+        .filter(PrintJob.ticket_id == ticket.id, PrintJob.document_type == "TICKET")
+        .order_by(PrintJob.id.desc())
+        .first()
+    )
+    assert job is not None
+    assert job.delivery_type == "PRINT_NODE_HTTP"
+    assert job.status == "SENT"
+    assert job.trigger_source == "AUTO_ON_COMPLETE"
+    assert job.provider_job_ref == "auto-node-job-1"
+    assert called["url"] == "http://127.0.0.1:9123/v1/print"
+    assert called["headers"] == {
+        "Content-Type": "application/json",
+        "X-API-Key": "auto-node-secret",
+    }
+    assert called["timeout"] == 5.0
+    assert called["json"]["printer_name"] == "Auto Front Desk"
+    assert called["json"]["copies"] == 3
 
 
 def test_ticket_print_last_again_creates_replayed_job_for_current_user(

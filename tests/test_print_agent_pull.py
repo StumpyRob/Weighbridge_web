@@ -33,12 +33,18 @@ def _create_print_agent(
     *,
     raw_api_key: str,
     name: str | None = None,
+    tenant_id: int = 1,
+    printers_json: list[dict[str, object]] | None = None,
+    printers_synced_at: datetime | None = None,
 ) -> PrintAgent:
     agent = PrintAgent(
         id=str(uuid.uuid4()),
+        tenant_id=tenant_id,
         name=name,
         api_key=hash_print_agent_key(raw_api_key),
         status=PRINT_AGENT_STATUS_OFFLINE,
+        printers_json=printers_json,
+        printers_synced_at=printers_synced_at,
     )
     db_session.add(agent)
     db_session.commit()
@@ -287,6 +293,98 @@ def test_print_agent_heartbeat_updates_last_seen(client_anonymous, db_session):
     db_session.refresh(agent)
     assert agent.status == "ONLINE"
     assert agent.last_seen_at is not None
+
+
+def test_print_agent_printer_sync_stores_snapshot_and_synced_at(client_anonymous, db_session):
+    agent = _create_print_agent(
+        db_session,
+        raw_api_key="agent-sync-key",
+        name="Sync Agent",
+    )
+    client_anonymous.headers.pop(CSRF_HEADER_NAME, None)
+
+    response = client_anonymous.post(
+        "/api/print/agents/printers/sync",
+        headers={"X-Agent-Key": "agent-sync-key"},
+        json={
+            "printers": [
+                {
+                    "name": "  Zebra ZSB-DP14  ",
+                    "is_default": False,
+                    "is_online": True,
+                },
+                {
+                    "name": "Microsoft Print to PDF",
+                    "is_default": True,
+                    "is_online": True,
+                },
+                {
+                    "name": "zebra zsb-dp14",
+                    "is_default": True,
+                    "is_online": False,
+                },
+                {
+                    "name": "   ",
+                    "is_default": False,
+                    "is_online": True,
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["printer_count"] == 2
+
+    db_session.refresh(agent)
+    assert agent.status == "ONLINE"
+    assert agent.printers_synced_at is not None
+    assert agent.printers_json == [
+        {
+            "name": "Zebra ZSB-DP14",
+            "is_default": False,
+            "is_online": True,
+        },
+        {
+            "name": "Microsoft Print to PDF",
+            "is_default": True,
+            "is_online": True,
+        },
+    ]
+
+
+def test_print_agent_printer_sync_requires_agent_key(client_anonymous):
+    client_anonymous.headers.pop(CSRF_HEADER_NAME, None)
+
+    response = client_anonymous.post(
+        "/api/print/agents/printers/sync",
+        json={"printers": []},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "X-Agent-Key header is required."
+
+
+def test_print_agent_printer_sync_is_tenant_scoped(client_anonymous, db_session):
+    other_tenant_agent = _create_print_agent(
+        db_session,
+        raw_api_key="other-tenant-sync-key",
+        name="Other Tenant Agent",
+        tenant_id=2,
+    )
+    client_anonymous.headers.pop(CSRF_HEADER_NAME, None)
+
+    response = client_anonymous.post(
+        "/api/print/agents/printers/sync",
+        headers={"X-Agent-Key": "other-tenant-sync-key"},
+        json={"printers": [{"name": "Other Tenant Printer", "is_online": True}]},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid agent key."
+
+    db_session.refresh(other_tenant_agent)
+    assert other_tenant_agent.printers_json is None
+    assert other_tenant_agent.printers_synced_at is None
 
 
 def test_print_agent_poll_returns_correct_job(client_anonymous, db_session):

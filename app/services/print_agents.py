@@ -53,6 +53,32 @@ def generate_print_agent_api_key() -> tuple[str, str]:
     return api_key, hash_print_agent_key(api_key)
 
 
+def normalize_print_agent_printers(printers: object) -> list[dict[str, object]]:
+    if not isinstance(printers, list):
+        return []
+
+    normalized: list[dict[str, object]] = []
+    seen_names: set[str] = set()
+    for item in printers:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        if not name:
+            continue
+        normalized_name_key = name.casefold()
+        if normalized_name_key in seen_names:
+            continue
+        seen_names.add(normalized_name_key)
+        normalized.append(
+            {
+                "name": name,
+                "is_default": bool(item.get("is_default", False)),
+                "is_online": bool(item.get("is_online", False)),
+            }
+        )
+    return normalized
+
+
 def generate_print_agent_credentials() -> tuple[str, str, str]:
     agent_id = str(uuid.uuid4())
     api_key, hashed_api_key = generate_print_agent_api_key()

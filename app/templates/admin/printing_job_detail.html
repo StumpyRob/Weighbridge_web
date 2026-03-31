@@ -10,20 +10,34 @@
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}
+  {% if retry_success_message %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">{{ retry_success_message }}</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+  {% if retry_error %}
+    <div class="flash-toast flash-toast--error" data-flash-toast>
+      <div class="flash-toast__content">Retry failed. {{ retry_error }}</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
   <div class="page-header">
     <div>
       <h1>Print Job #{{ job.id }}{{ help(help_text.printing_job_concept, "printing-job-detail-title-help") }}</h1>
-      <p class="muted">Status: {{ job.status }}</p>
+      <p class="muted">Status: {{ job.status }}{% if retried_before %} · Retried before{% endif %}</p>
     </div>
     <div class="actions btn-group">
       <a class="btn btn--secondary" href="/admin/printing/jobs">Back</a>
-      <form method="post" action="/admin/printing/jobs/{{ job.id }}/retry">
-        <button type="submit" class="btn btn--primary">Retry</button>
-        {{ help(help_text.printing_jobs_retry, "printing-job-detail-retry-help") }}
-      </form>
+      {% if can_retry %}
+        <form method="post" action="/admin/printing/jobs/{{ job.id }}/retry?return_to=detail">
+          <button type="submit" class="btn btn--primary">Retry</button>
+          {{ help(help_text.printing_jobs_retry, "printing-job-detail-retry-help") }}
+        </form>
+      {% endif %}
     </div>
   </div>
 
@@ -39,13 +53,17 @@
         <div class="field"><label>Created</label><div class="readonly">{{ job.created_at.strftime("%d/%m/%Y %H:%M:%S") if job.created_at else "-" }}</div></div>
         <div class="field"><label>Sent</label><div class="readonly">{{ job.sent_at.strftime("%d/%m/%Y %H:%M:%S") if job.sent_at else "-" }}</div></div>
         <div class="field"><label>Requested by</label><div class="readonly">{{ requested_by_label }}</div></div>
+        <div class="field"><label>Document reference</label><div class="readonly">{{ document_reference }}</div></div>
         <div class="field"><label>Document type</label><div class="readonly">{{ job.document_type }}</div></div>
         <div class="field"><label>Delivery type</label><div class="readonly">{{ job.delivery_type }}</div></div>
+        <div class="field"><label>Trigger source</label><div class="readonly">{{ trigger_source_label }}</div></div>
         <div class="field"><label>Destination</label><div class="readonly">{{ destination.name if destination else "-" }}</div></div>
+        <div class="field"><label>Printer / target</label><div class="readonly">{{ printer_or_target }}</div></div>
         <div class="field"><label>Template</label><div class="readonly">{{ template.code if template else "-" }}</div></div>
         <div class="field"><label>Ticket</label><div class="readonly">{{ ticket.ticket_no if ticket else "-" }}</div></div>
         <div class="field"><label>Invoice</label><div class="readonly">{{ invoice.invoice_no if invoice else "-" }}</div></div>
         <div class="field"><label>Attempts</label><div class="readonly">{{ job.attempt_count }}</div></div>
+        <div class="field"><label>Retried before</label><div class="readonly">{{ "Yes" if retried_before else "No" }}</div></div>
         <div class="field"><label>Payload format</label><div class="readonly">{{ job.payload_format or "-" }}</div></div>
         <div class="field"><label>Payload MIME type</label><div class="readonly">{{ job.payload_mime_type or "-" }}</div></div>
         <div class="field"><label>Provider job ref</label><div class="readonly">{{ job.provider_job_ref or "-" }}</div></div>

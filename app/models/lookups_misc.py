@@ -332,6 +332,8 @@ class PrintAgent(Base):
     api_key: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="OFFLINE")
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    printers_json: Mapped[list[dict[str, object]] | None] = mapped_column(JSON, nullable=True)
+    printers_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow
@@ -493,6 +495,7 @@ class PrintJob(Base):
     payload_mime_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     provider_job_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
     provider_response_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    trigger_source: Mapped[str] = mapped_column(String(32), nullable=False, default="MANUAL")
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)

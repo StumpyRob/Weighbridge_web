@@ -129,6 +129,7 @@ _PUBLIC_ALLOWED_PREFIXES = (
 )
 _AGENT_AUTH_CSRF_EXEMPT_PREFIXES = (
     "/api/print/agents/heartbeat",
+    "/api/print/agents/printers/sync",
 )
 _AGENT_PUBLIC_CSRF_EXEMPT_PATHS = {
     "/api/print/agents/pairing/request",
@@ -230,12 +231,11 @@ def _csrf_exempt_for_agent_key(request: Request) -> bool:
     request_path = _request_scope_path(request)
     if request_path in _AGENT_PUBLIC_CSRF_EXEMPT_PATHS:
         return True
-    raw_agent_key = str(request.headers.get("X-Agent-Key", "")).strip()
-    if not raw_agent_key:
-        return False
     if any(request_path.startswith(prefix) for prefix in _AGENT_AUTH_CSRF_EXEMPT_PREFIXES):
         return True
-    return bool(_AGENT_AUTH_CSRF_EXEMPT_JOB_RE.fullmatch(request_path))
+    if _AGENT_AUTH_CSRF_EXEMPT_JOB_RE.fullmatch(request_path):
+        return True
+    return False
 
 
 def _ticket_status_value(status: TicketStatusEnum | str) -> str:

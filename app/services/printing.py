@@ -22,6 +22,8 @@ PRINT_JOB_STATUS_PENDING = "PENDING"
 PRINT_JOB_STATUS_IN_PROGRESS = "IN_PROGRESS"
 PRINT_JOB_STATUS_SENT = "SENT"
 PRINT_JOB_STATUS_FAILED = "FAILED"
+PRINT_JOB_TRIGGER_SOURCE_MANUAL = "MANUAL"
+PRINT_JOB_TRIGGER_SOURCE_AUTO_ON_COMPLETE = "AUTO_ON_COMPLETE"
 
 PRINT_CONTENT_TYPE_TEXT = "TEXT"
 PRINT_CONTENT_TYPE_HTML = "HTML"
@@ -84,6 +86,13 @@ def _normalize_delivery_type(value: str | None) -> str:
         DELIVERY_TYPE_EMAIL_PDF: DELIVERY_TYPE_EMAIL_PDF,
     }
     return mapping.get(normalized, DELIVERY_TYPE_PRINT_LOCAL_BROWSER)
+
+
+def _normalize_print_job_trigger_source(value: str | None) -> str:
+    normalized = str(value or "").strip().upper()
+    if normalized == PRINT_JOB_TRIGGER_SOURCE_AUTO_ON_COMPLETE:
+        return PRINT_JOB_TRIGGER_SOURCE_AUTO_ON_COMPLETE
+    return PRINT_JOB_TRIGGER_SOURCE_MANUAL
 
 
 def resolve_destination_template(
@@ -303,10 +312,12 @@ def execute_rendered_print(
     email_subject: str | None = None,
     email_body: str | None = None,
     email_sender: Callable[..., None] | None = None,
+    trigger_source: str = PRINT_JOB_TRIGGER_SOURCE_MANUAL,
 ) -> PrintExecutionResult:
     normalized_delivery_type = _normalize_delivery_type(delivery_type)
     normalized_document_type = _normalize_document_type(document_type)
     normalized_content_type = _normalize_content_type(content_type)
+    normalized_trigger_source = _normalize_print_job_trigger_source(trigger_source)
     outbound_content = str(rendered_content or "")
     serialized_payload = payload_bytes or outbound_content.encode("utf-8")
     initial_status = (
@@ -329,6 +340,7 @@ def execute_rendered_print(
         ),
         rendered_content=outbound_content,
         rendered_bytes_base64=_serialized_bytes(serialized_payload),
+        trigger_source=normalized_trigger_source,
         status=initial_status,
         attempt_count=0,
         last_error=None,

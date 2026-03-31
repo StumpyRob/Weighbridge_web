@@ -117,6 +117,8 @@
       {% endset %}
       {% set print_sent = request.query_params.get("print_sent") == "1" %}
       {% set print_failed = request.query_params.get("print_failed") == "1" %}
+      {% set auto_printed = request.query_params.get("auto_printed") == "1" %}
+      {% set auto_print_failed = request.query_params.get("auto_print_failed") == "1" %}
       {% set print_job_id = request.query_params.get("print_job_id", "") %}
       {% set print_destination = request.query_params.get("print_destination", "") %}
       {% set print_error = request.query_params.get("print_error", "") %}
@@ -143,7 +145,7 @@
           {% if print_sent %}
             <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1" data-timeout-ms="7000">
               <div class="flash-toast__content">
-                Ticket sent{% if print_destination %}: {{ print_destination }}{% endif %}{% if print_job_id %} (Job {{ print_job_id }}){% endif %}.
+                {% if auto_printed %}Ticket auto-printed{% else %}Ticket sent{% endif %}{% if print_destination %}: {{ print_destination }}{% endif %}{% if print_job_id %} (Job {{ print_job_id }}){% endif %}.
               </div>
               <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
             </div>
@@ -159,7 +161,7 @@
           {% if print_failed %}
             <div class="flash-toast flash-toast--error" data-flash-toast>
               <div class="flash-toast__content">
-                {{ print_error or "Print failed" }}{% if print_job_id %} (Job {{ print_job_id }}){% endif %}.
+                {{ print_error or ("Auto print failed" if auto_print_failed else "Print failed") }}{% if print_job_id %} (Job {{ print_job_id }}){% endif %}.
                 {% if print_error_detail %}
                   {{ print_error_detail }}
                 {% endif %}

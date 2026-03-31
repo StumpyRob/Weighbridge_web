@@ -70,6 +70,8 @@
             <th>Agent ID</th>
             <th>Status</th>
             <th>Last seen</th>
+            <th>Printers</th>
+            <th>Last printer sync</th>
             <th>Created</th>
             <th>Actions</th>
           </tr>
@@ -92,6 +94,22 @@
                 {% endif %}
               </td>
               <td>{{ item.last_seen_at.strftime("%d/%m/%Y %H:%M:%S") if item.last_seen_at else "-" }}</td>
+              <td>
+                {% if row.printer_count %}
+                  <div>{{ row.printer_count }} known</div>
+                  <details>
+                    <summary>View list</summary>
+                    <div class="muted">
+                      {% for printer in row.known_printers %}
+                        <div>{{ printer.label }}</div>
+                      {% endfor %}
+                    </div>
+                  </details>
+                {% else %}
+                  <span class="muted">0 known</span>
+                {% endif %}
+              </td>
+              <td>{{ row.printers_synced_at_label or "-" }}</td>
               <td>{{ item.created_at.strftime("%d/%m/%Y %H:%M:%S") if item.created_at else "-" }}</td>
               <td>
                 {% if row.can_revoke %}
@@ -113,7 +131,7 @@
             </tr>
           {% else %}
             <tr>
-              <td colspan="6" class="empty">No paired agents yet.</td>
+              <td colspan="8" class="empty">No paired agents yet.</td>
             </tr>
           {% endfor %}
         </tbody>

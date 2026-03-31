@@ -169,7 +169,7 @@
 
 {% if is_complete and (print_status or printed) and print_job_id %}
   <div class="ticket-print-status-inline" role="status">
-    Last action: Printed ticket to <strong>{{ printed_to or print_primary_destination_name or "Configured output" }}</strong>
+    Last action: {% if request.query_params.get("auto_printed") == "1" %}Auto-printed{% else %}Printed{% endif %} ticket to <strong>{{ printed_to or print_primary_destination_name or "Configured output" }}</strong>
     (Job #<code>{{ print_job_id }}</code>)
     {% if print_sent_at %}at {{ print_sent_at }}{% endif %}.
   </div>

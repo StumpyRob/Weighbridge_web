@@ -140,6 +140,38 @@ def test_admin_print_agents_page_shows_paired_agents(client, db_session):
     assert "Offline" in response.text
 
 
+def test_admin_print_agents_page_shows_printer_sync_summary(client, db_session):
+    agent = PrintAgent(
+        id=str(uuid.uuid4()),
+        name="Office Agent",
+        api_key=hash_print_agent_key("office-agent-printer-key"),
+        status="OFFLINE",
+        printers_json=[
+            {
+                "name": "Zebra ZSB-DP14",
+                "is_default": False,
+                "is_online": True,
+            },
+            {
+                "name": "Microsoft Print to PDF",
+                "is_default": True,
+                "is_online": True,
+            },
+        ],
+        printers_synced_at=datetime(2026, 3, 31, 10, 15, 0),
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    response = client.get("/admin/printing/agents")
+
+    assert response.status_code == 200
+    assert "2 known" in response.text
+    assert "31/03/2026 10:15:00" in response.text
+    assert "Zebra ZSB-DP14" in response.text
+    assert "Microsoft Print to PDF (default, online)" in response.text
+
+
 def test_admin_print_agents_pair_valid_code_works(client, db_session):
     pairing_request = client.post(
         "/api/print/agents/pairing/request",
@@ -811,6 +843,56 @@ def test_admin_node_http_destination_persists_printer_name_and_copies(client, db
     assert "Print: Site Agent HTTP" in edit_page.text
 
 
+def test_admin_ticket_destination_persists_auto_print_on_complete_setting(
+    client,
+    db_session,
+):
+    template = _create_template(
+        db_session,
+        code="TICKET_AUTO_PRINT_TEMPLATE",
+        document_type="TICKET",
+        template_format="TEXT",
+        content="AUTO {{ payload.ticket_no }}",
+    )
+
+    new_page = client.get("/admin/printing/destinations/new?document_type=TICKET")
+
+    assert new_page.status_code == 200
+    assert "Auto print when ticket is completed" in new_page.text
+
+    response = client.post(
+        "/admin/printing/destinations/new",
+        data={
+            "name": "Ticket Auto Print Destination",
+            "description": "Auto print ticket destination",
+            "document_type": "TICKET",
+            "template_id": str(template.id),
+            "delivery_type": "PRINT_LOCAL_BROWSER",
+            "auto_print_on_complete": "1",
+            "is_default": "1",
+            "is_active": "1",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+
+    destination = db_session.execute(
+        select(PrintDestination)
+        .where(PrintDestination.name == "Ticket Auto Print Destination")
+        .order_by(PrintDestination.id.desc())
+    ).scalars().first()
+
+    assert destination is not None
+    assert destination.delivery_config["auto_print_on_complete"] is True
+
+    edit_page = client.get(f"/admin/printing/destinations/{destination.id}/edit")
+
+    assert edit_page.status_code == 200
+    assert "Auto print when ticket is completed" in edit_page.text
+    assert 'id="auto_print_on_complete"' in edit_page.text
+
+
 def test_admin_agent_pull_destination_persists_assigned_agent_and_printer_settings(
     client,
     db_session,
@@ -827,6 +909,19 @@ def test_admin_agent_pull_destination_persists_assigned_agent_and_printer_settin
         name="Yard Agent",
         api_key=hash_print_agent_key("agent-pull-key"),
         status="OFFLINE",
+        printers_json=[
+            {
+                "name": "Polling Printer",
+                "is_default": True,
+                "is_online": True,
+            },
+            {
+                "name": "Backup Printer",
+                "is_default": False,
+                "is_online": True,
+            },
+        ],
+        printers_synced_at=datetime(2026, 3, 31, 9, 30, 0),
     )
     db_session.add(agent)
     db_session.commit()
@@ -860,6 +955,107 @@ def test_admin_agent_pull_destination_persists_assigned_agent_and_printer_settin
     assert destination.delivery_type == "PRINT_AGENT_PULL"
     assert destination.delivery_config["agent_id"] == agent.id
     assert destination.delivery_config["printer_name"] == "Polling Printer"
+    assert destination.delivery_config["copies"] == 2
+
+    edit_page = client.get(f"/admin/printing/destinations/{destination.id}/edit")
+
+    assert edit_page.status_code == 200
+    assert "Polling Printer (default, online)" in edit_page.text
+    assert "Backup Printer (online)" in edit_page.text
+    assert "2 printers synced at 31/03/2026 09:30:00." in edit_page.text
+
+
+def test_admin_agent_pull_destination_form_handles_no_synced_printers_cleanly(
+    client,
+    db_session,
+):
+    template = _create_template(
+        db_session,
+        code="TICKET_AGENT_PULL_NO_SYNC_TEMPLATE",
+        document_type="TICKET",
+        template_format="TEXT",
+        content="PULL {{ payload.ticket_no }}",
+    )
+    agent = PrintAgent(
+        id=str(uuid.uuid4()),
+        name="Yard Agent Without Sync",
+        api_key=hash_print_agent_key("agent-pull-no-sync-key"),
+        status="OFFLINE",
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    destination = _create_destination(
+        db_session,
+        name="Ticket Agent Pull Manual",
+        document_type="TICKET",
+        template_id=template.id,
+        delivery_type="PRINT_AGENT_PULL",
+        delivery_config={
+            "agent_id": agent.id,
+            "printer_name": "Fallback Printer",
+            "copies": 1,
+        },
+        is_default=False,
+    )
+
+    response = client.get(f"/admin/printing/destinations/{destination.id}/edit")
+
+    assert response.status_code == 200
+    assert "No printers synced from this agent yet" in response.text
+    assert 'name="pull_printer_name_manual"' in response.text
+    assert 'value="Fallback Printer"' in response.text
+
+
+def test_admin_agent_pull_destination_manual_fallback_persists_when_no_synced_printers(
+    client,
+    db_session,
+):
+    template = _create_template(
+        db_session,
+        code="TICKET_AGENT_PULL_MANUAL_TEMPLATE",
+        document_type="TICKET",
+        template_format="TEXT",
+        content="PULL {{ payload.ticket_no }}",
+    )
+    agent = PrintAgent(
+        id=str(uuid.uuid4()),
+        name="Manual Fallback Agent",
+        api_key=hash_print_agent_key("agent-pull-manual-key"),
+        status="OFFLINE",
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    response = client.post(
+        "/admin/printing/destinations/new",
+        data={
+            "name": "Ticket Agent Pull Manual Fallback",
+            "description": "Polling destination without synced printers",
+            "document_type": "TICKET",
+            "template_id": str(template.id),
+            "delivery_type": "PRINT_AGENT_PULL",
+            "pull_agent_id": agent.id,
+            "pull_printer_name_manual": "Fallback Printer",
+            "pull_copies": "2",
+            "is_default": "1",
+            "is_active": "1",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+
+    destination = db_session.execute(
+        select(PrintDestination)
+        .where(PrintDestination.name == "Ticket Agent Pull Manual Fallback")
+        .order_by(PrintDestination.id.desc())
+    ).scalars().first()
+
+    assert destination is not None
+    assert destination.delivery_type == "PRINT_AGENT_PULL"
+    assert destination.delivery_config["agent_id"] == agent.id
+    assert destination.delivery_config["printer_name"] == "Fallback Printer"
     assert destination.delivery_config["copies"] == 2
 
 
@@ -1016,3 +1212,331 @@ def test_admin_print_job_detail_shows_requester_payload_and_provider_metadata(
     assert "Delivery Config Snapshot" in response.text
     assert "REDACTED" in response.text
     assert "live-secret" not in response.text
+    assert "Trigger source" in response.text
+    assert "Manual" in response.text
+    assert "Front Desk Printer" in response.text
+    assert f"/admin/printing/jobs/{job.id}/retry?return_to=detail" not in response.text
+
+
+def test_admin_print_jobs_list_highlights_failed_jobs_and_shows_retry_action(
+    client,
+    db_session,
+):
+    ticket = _create_ticket(
+        db_session,
+        ticket_no="T-ADMIN-JOBS-LIST-1",
+        status=TicketStatusEnum.COMPLETE.value,
+    )
+    template = _create_template(
+        db_session,
+        code="TICKET_ADMIN_JOBS_LIST_TEMPLATE",
+        document_type="TICKET",
+        template_format="TEXT",
+        content="LIST {{ payload.ticket_no }}",
+    )
+    destination = _create_destination(
+        db_session,
+        name="List Retry Destination",
+        document_type="TICKET",
+        template_id=template.id,
+        delivery_type="PRINT_NODE_HTTP",
+        delivery_config={
+            "url": "http://127.0.0.1:9123/v1/print",
+            "api_key": "live-secret",
+            "printer_name": "List Printer",
+            "copies": 1,
+        },
+        is_default=True,
+    )
+    failed_job = PrintJob(
+        document_type="TICKET",
+        destination_id=destination.id,
+        template_id=template.id,
+        ticket_id=ticket.id,
+        delivery_type="PRINT_NODE_HTTP",
+        delivery_config_json={
+            "url": "http://127.0.0.1:9123/v1/print",
+            "api_key": "REDACTED",
+            "printer_name": "List Printer",
+            "copies": 1,
+        },
+        rendered_content="LIST T-ADMIN-JOBS-LIST-1",
+        rendered_bytes_base64=base64.b64encode(b"LIST T-ADMIN-JOBS-LIST-1").decode("ascii"),
+        payload_format="TEXT",
+        payload_mime_type="text/plain; charset=utf-8",
+        trigger_source="AUTO_ON_COMPLETE",
+        status="FAILED",
+        attempt_count=1,
+        last_error="Printer offline",
+    )
+    sent_job = PrintJob(
+        document_type="TICKET",
+        destination_id=destination.id,
+        template_id=template.id,
+        ticket_id=ticket.id,
+        delivery_type="PRINT_NODE_HTTP",
+        delivery_config_json={
+            "url": "http://127.0.0.1:9123/v1/print",
+            "api_key": "REDACTED",
+            "printer_name": "List Printer",
+            "copies": 1,
+        },
+        rendered_content="LIST T-ADMIN-JOBS-LIST-1 SENT",
+        rendered_bytes_base64=base64.b64encode(b"LIST T-ADMIN-JOBS-LIST-1 SENT").decode("ascii"),
+        payload_format="TEXT",
+        payload_mime_type="text/plain; charset=utf-8",
+        trigger_source="MANUAL",
+        status="SENT",
+        attempt_count=1,
+    )
+    db_session.add_all([failed_job, sent_job])
+    db_session.commit()
+    db_session.refresh(failed_job)
+    db_session.refresh(sent_job)
+
+    response = client.get("/admin/printing/jobs")
+
+    assert response.status_code == 200
+    assert "Ticket T-ADMIN-JOBS-LIST-1" in response.text
+    assert "Auto on complete" in response.text
+    assert "List Printer" in response.text
+    assert "Printer offline" in response.text
+    assert f"/admin/printing/jobs/{failed_job.id}/retry?return_to=list" in response.text
+    assert f"/admin/printing/jobs/{sent_job.id}/retry?return_to=list" not in response.text
+
+
+def test_admin_print_job_detail_shows_failed_retry_context_and_retry_action(
+    client,
+    db_session,
+):
+    ticket = _create_ticket(
+        db_session,
+        ticket_no="T-ADMIN-JOB-FAIL-1",
+        status=TicketStatusEnum.COMPLETE.value,
+    )
+    template = _create_template(
+        db_session,
+        code="TICKET_ADMIN_JOB_FAIL_TEMPLATE",
+        document_type="TICKET",
+        template_format="TEXT",
+        content="FAIL {{ payload.ticket_no }}",
+    )
+    destination = _create_destination(
+        db_session,
+        name="Admin Failed Job Destination",
+        document_type="TICKET",
+        template_id=template.id,
+        delivery_type="PRINT_NODE_HTTP",
+        delivery_config={
+            "url": "http://127.0.0.1:9123/v1/print",
+            "api_key": "live-secret",
+            "printer_name": "Retry Printer",
+            "copies": 1,
+        },
+        is_default=True,
+    )
+    job = PrintJob(
+        document_type="TICKET",
+        destination_id=destination.id,
+        template_id=template.id,
+        ticket_id=ticket.id,
+        delivery_type="PRINT_NODE_HTTP",
+        delivery_config_json={
+            "url": "http://127.0.0.1:9123/v1/print",
+            "api_key": "REDACTED",
+            "printer_name": "Retry Printer",
+            "copies": 1,
+        },
+        rendered_content="FAIL T-ADMIN-JOB-FAIL-1",
+        rendered_bytes_base64=base64.b64encode(b"FAIL T-ADMIN-JOB-FAIL-1").decode("ascii"),
+        payload_format="TEXT",
+        payload_mime_type="text/plain; charset=utf-8",
+        trigger_source="AUTO_ON_COMPLETE",
+        status="FAILED",
+        attempt_count=2,
+        last_error="Agent offline",
+    )
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+
+    response = client.get(f"/admin/printing/jobs/{job.id}")
+
+    assert response.status_code == 200
+    assert "Auto on complete" in response.text
+    assert "Retried before" in response.text
+    assert "Yes" in response.text
+    assert "Last error: Agent offline" in response.text
+    assert f"/admin/printing/jobs/{job.id}/retry?return_to=detail" in response.text
+
+
+def test_admin_retry_failed_print_agent_pull_job_uses_existing_retry_path(
+    client,
+    db_session,
+):
+    agent = PrintAgent(
+        id=str(uuid.uuid4()),
+        name="Retry Pull Agent",
+        api_key=hash_print_agent_key("retry-pull-agent-key"),
+        status="OFFLINE",
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    ticket = _create_ticket(
+        db_session,
+        ticket_no="T-ADMIN-RETRY-PULL-1",
+        status=TicketStatusEnum.COMPLETE.value,
+    )
+    template = _create_template(
+        db_session,
+        code="TICKET_ADMIN_RETRY_PULL_TEMPLATE",
+        document_type="TICKET",
+        template_format="TEXT",
+        content="PULL {{ payload.ticket_no }}",
+    )
+    destination = _create_destination(
+        db_session,
+        name="Admin Retry Pull Destination",
+        document_type="TICKET",
+        template_id=template.id,
+        delivery_type="PRINT_AGENT_PULL",
+        delivery_config={
+            "agent_id": agent.id,
+            "printer_name": "Yard Pull Printer",
+            "copies": 1,
+        },
+        is_default=True,
+    )
+    job = PrintJob(
+        document_type="TICKET",
+        destination_id=destination.id,
+        template_id=template.id,
+        ticket_id=ticket.id,
+        delivery_type="PRINT_AGENT_PULL",
+        delivery_config_json={
+            "agent_id": agent.id,
+            "printer_name": "Yard Pull Printer",
+            "copies": 1,
+        },
+        rendered_content="PULL T-ADMIN-RETRY-PULL-1",
+        rendered_bytes_base64=base64.b64encode(b"PULL T-ADMIN-RETRY-PULL-1").decode("ascii"),
+        payload_format="TEXT",
+        payload_mime_type="text/plain; charset=utf-8",
+        status="FAILED",
+        attempt_count=1,
+        last_error="Printer jam",
+    )
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+
+    response = client.post(
+        f"/admin/printing/jobs/{job.id}/retry?return_to=detail",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith(f"/admin/printing/jobs/{job.id}?")
+    assert "retry_success_message=" in response.headers["location"]
+    db_session.refresh(job)
+    assert job.status == "PENDING"
+    assert job.attempt_count == 1
+    assert job.last_error is None
+    assert job.provider_job_ref is None
+    assert job.provider_response_json is None
+
+
+def test_admin_retry_failed_print_node_http_job_still_works(
+    client,
+    db_session,
+    monkeypatch,
+):
+    import app.services.print_transport as transport_service
+
+    ticket = _create_ticket(
+        db_session,
+        ticket_no="T-ADMIN-RETRY-NODE-1",
+        status=TicketStatusEnum.COMPLETE.value,
+    )
+    template = _create_template(
+        db_session,
+        code="TICKET_ADMIN_RETRY_NODE_TEMPLATE",
+        document_type="TICKET",
+        template_format="TEXT",
+        content="NODE {{ payload.ticket_no }}",
+    )
+    destination = _create_destination(
+        db_session,
+        name="Admin Retry Node Destination",
+        document_type="TICKET",
+        template_id=template.id,
+        delivery_type="PRINT_NODE_HTTP",
+        delivery_config={
+            "url": "http://127.0.0.1:9123/v1/print",
+            "api_key": "live-secret",
+            "printer_name": "Retry Node Printer",
+            "copies": 2,
+        },
+        is_default=True,
+    )
+    job = PrintJob(
+        document_type="TICKET",
+        destination_id=destination.id,
+        template_id=template.id,
+        ticket_id=ticket.id,
+        delivery_type="PRINT_NODE_HTTP",
+        delivery_config_json={
+            "url": "http://127.0.0.1:9123/v1/print",
+            "api_key": "REDACTED",
+            "printer_name": "Retry Node Printer",
+            "copies": 2,
+        },
+        rendered_content="NODE T-ADMIN-RETRY-NODE-1",
+        rendered_bytes_base64=base64.b64encode(b"NODE T-ADMIN-RETRY-NODE-1").decode("ascii"),
+        payload_format="TEXT",
+        payload_mime_type="text/plain; charset=utf-8",
+        status="FAILED",
+        attempt_count=1,
+        last_error="Connection refused",
+    )
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+
+    called: dict[str, object] = {}
+
+    def _fake_post(url, *, json, headers, timeout):
+        called["url"] = url
+        called["json"] = dict(json)
+        called["headers"] = dict(headers)
+        called["timeout"] = timeout
+        return transport_service.httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "provider_job_ref": "admin-retry-node-1",
+                "message": "Accepted",
+            },
+        )
+
+    monkeypatch.setattr(transport_service.httpx, "post", _fake_post)
+
+    response = client.post(
+        f"/admin/printing/jobs/{job.id}/retry?return_to=list",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/admin/printing/jobs?")
+    assert "retry_success_message=" in response.headers["location"]
+    db_session.refresh(job)
+    assert job.status == "SENT"
+    assert job.attempt_count == 2
+    assert job.provider_job_ref == "admin-retry-node-1"
+    assert called["headers"] == {
+        "Content-Type": "application/json",
+        "X-API-Key": "live-secret",
+    }
+    assert called["json"]["printer_name"] == "Retry Node Printer"
+    assert called["json"]["copies"] == 2

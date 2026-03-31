@@ -10,6 +10,18 @@
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}
+  {% if retry_success_message %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">{{ retry_success_message }}</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+  {% if retry_error_message %}
+    <div class="flash-toast flash-toast--error" data-flash-toast>
+      <div class="flash-toast__content">Retry failed. {{ retry_error_message }}</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
@@ -72,20 +84,21 @@
           <th class="jobs-col-ticket">Document</th>
           <th class="jobs-col-doc-type">Type</th>
           <th class="jobs-col-status">Status{{ help(help_text.printing_jobs_status, "printing-jobs-col-status-help") }}</th>
+          <th class="jobs-col-trigger">Trigger</th>
           <th class="jobs-col-when">When</th>
           <th class="jobs-col-target">Destination</th>
-          <th class="jobs-col-template">Template</th>
+          <th class="jobs-col-printer">Printer / Target</th>
           <th class="jobs-col-error">Error</th>
+          <th class="jobs-col-actions">Actions</th>
         </tr>
       </thead>
       <tbody>
-        {% for item in items %}
-          {% set destination = destinations_by_id.get(item.destination_id) if item.destination_id else None %}
-          {% set template = templates_by_id.get(item.template_id) if item.template_id else None %}
-          {% set document_ref = job_document_refs.get(item.id, '-') %}
+        {% for row in job_rows %}
+          {% set item = row.job %}
+          {% set destination = row.destination %}
           <tr data-row-link="/admin/printing/jobs/{{ item.id }}"{% if item.status == "FAILED" %} class="printing-job-row--failed"{% endif %}>
             <td class="jobs-col-id">{{ item.id }}</td>
-            <td class="jobs-col-ticket">{{ document_ref }}</td>
+            <td class="jobs-col-ticket">{{ row.document_ref }}</td>
             <td class="jobs-col-doc-type">{{ item.document_type }}</td>
             <td class="jobs-col-status">
               {% if item.status == "SENT" %}
@@ -102,29 +115,37 @@
                 <span class="status-pill status-info">{{ item.status }}</span>
               {% endif %}
             </td>
+            <td class="jobs-col-trigger">{{ row.trigger_source_label }}</td>
             <td class="jobs-col-when">{{ item.created_at.strftime("%d/%m/%Y %H:%M:%S") if item.created_at else '-' }}</td>
             <td class="jobs-col-target">
               <span class="table-cell-truncate" title="{{ destination.name if destination else '-' }}">{{ destination.name if destination else "-" }}</span>
             </td>
-            <td class="jobs-col-template">
-              {% if template %}
-                <span class="table-cell-truncate printing-job-code" title="{{ template.description if template.description else template.code }}">{{ template.code or ('Template ' ~ template.id) }}</span>
+            <td class="jobs-col-printer">
+              <span class="table-cell-truncate" title="{{ row.printer_or_target }}">{{ row.printer_or_target }}</span>
+            </td>
+            <td class="jobs-col-error">
+              {% if item.status == "FAILED" and row.error_summary != "-" %}
+                <span class="printing-job-error" title="{{ row.error_summary }}">
+                  <span class="printing-job-error-badge" aria-hidden="true">!</span>
+                  <span class="table-cell-truncate">{{ row.error_summary }}</span>
+                </span>
               {% else %}
                 -
               {% endif %}
             </td>
-            <td class="jobs-col-error">
-              {% if item.status == "FAILED" and item.last_error %}
-                <span class="printing-job-error" title="{{ item.last_error }}">
-                  <span class="printing-job-error-badge" aria-hidden="true">!</span>
-                  <span class="table-cell-truncate">{{ item.last_error }}</span>
-                </span>
+            <td class="jobs-col-actions">
+              {% if row.can_retry %}
+                <form method="post" action="/admin/printing/jobs/{{ item.id }}/retry?return_to=list">
+                  <button type="submit" class="btn btn--secondary btn--sm">Retry</button>
+                </form>
+              {% else %}
+                -
               {% endif %}
             </td>
           </tr>
         {% else %}
           <tr>
-            <td colspan="8" class="empty">No print jobs found.</td>
+            <td colspan="10" class="empty">No print jobs found.</td>
           </tr>
         {% endfor %}
       </tbody>

@@ -40,6 +40,8 @@ from ..services.printing import (
     DOCUMENT_TYPE_WTN,
     PRINT_CONTENT_TYPE_HTML,
     PRINT_CONTENT_TYPE_TEXT,
+    PRINT_JOB_TRIGGER_SOURCE_AUTO_ON_COMPLETE,
+    PRINT_JOB_TRIGGER_SOURCE_MANUAL,
     PRINT_JOB_STATUS_FAILED,
     PRINT_JOB_STATUS_IN_PROGRESS,
     PRINT_JOB_STATUS_PENDING,
@@ -51,6 +53,7 @@ from ..services.print_agents import (
     PrintAgentPairingError,
     complete_print_agent_pairing as complete_print_agent_pairing_session,
     is_print_agent_pairing_expired,
+    normalize_print_agent_printers,
     revoke_print_agent,
     PRINT_AGENT_STATUS_REVOKED,
 )
@@ -135,6 +138,74 @@ def _resolve_show_flag(raw: object, *, default: int = 0) -> int:
     if raw is None:
         return 1 if default else 0
     return 1 if _is_truthy(str(raw)) else 0
+
+
+def _format_admin_datetime(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    return value.strftime("%d/%m/%Y %H:%M:%S")
+
+
+def _print_job_trigger_source_label(value: str | None) -> str:
+    normalized = str(value or "").strip().upper()
+    if normalized == PRINT_JOB_TRIGGER_SOURCE_AUTO_ON_COMPLETE:
+        return "Auto on complete"
+    if normalized == PRINT_JOB_TRIGGER_SOURCE_MANUAL:
+        return "Manual"
+    return normalized or "Manual"
+
+
+def _print_job_printer_or_target(job: PrintJob) -> str:
+    config = (
+        dict(job.delivery_config_json)
+        if isinstance(job.delivery_config_json, dict)
+        else {}
+    )
+    printer_name = str(config.get("printer_name", "")).strip()
+    if printer_name:
+        return printer_name
+    host = str(config.get("host", "")).strip()
+    if host:
+        port = _parse_optional_int(str(config.get("port", "")).strip())
+        return f"{host}:{port}" if port is not None else host
+    if str(job.delivery_type or "").strip().upper() == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
+        return "Browser dialog"
+    return "-"
+
+
+def _print_job_can_retry(job: PrintJob) -> bool:
+    return str(job.status or "").strip().upper() == PRINT_JOB_STATUS_FAILED
+
+
+def _print_job_retry_success_message(job: PrintJob) -> str:
+    status = str(job.status or "").strip().upper()
+    if status == PRINT_JOB_STATUS_PENDING:
+        return f"Retry queued for print job #{job.id}."
+    if status == PRINT_JOB_STATUS_SENT:
+        return f"Retry succeeded for print job #{job.id}."
+    return f"Retry updated print job #{job.id} to {status or 'UNKNOWN'}."
+
+
+def _print_job_retry_redirect_url(
+    *,
+    job_id: int,
+    return_to: str,
+    success_message: str = "",
+    error_message: str = "",
+) -> str:
+    normalized_return_to = str(return_to or "").strip().lower()
+    if normalized_return_to == "list":
+        base_path = "/admin/printing/jobs"
+    else:
+        base_path = f"/admin/printing/jobs/{job_id}"
+    params: dict[str, str] = {}
+    if success_message:
+        params["retry_success_message"] = success_message
+    if error_message:
+        params["retry_error_message"] = error_message
+    if params:
+        return f"{base_path}?{urlencode(params)}"
+    return base_path
 
 
 def _normalize_document_type(value: str | None) -> str:
@@ -234,6 +305,10 @@ def _print_destination_snapshot(
             else None
         ),
         "delivery_type": str(destination.delivery_type or "").strip() or None,
+        "auto_print_on_complete": bool(
+            isinstance(destination.delivery_config, dict)
+            and destination.delivery_config.get("auto_print_on_complete")
+        ),
         "is_default": bool(destination.is_default),
         "is_active": bool(destination.is_active),
     }
@@ -297,6 +372,7 @@ def _destination_to_form(
         "node_copies": str(config.get("copies", 1)),
         "pull_agent_id": str(config.get("agent_id", "")),
         "pull_printer_name": str(config.get("printer_name", "")),
+        "pull_printer_name_manual": str(config.get("printer_name", "")),
         "pull_copies": str(config.get("copies", 1)),
         "email_to": str(config.get("to", "")),
         "email_cc": str(config.get("cc", "")),
@@ -304,9 +380,92 @@ def _destination_to_form(
         "email_subject_template": str(config.get("email_subject_template", "")),
         "email_body_template": str(config.get("email_body_template", "")),
         "attach_pdf": bool(config.get("attach_pdf", True)),
+        "auto_print_on_complete": bool(config.get("auto_print_on_complete", False)),
         "is_default": bool(destination.is_default) if destination else False,
         "is_active": bool(destination.is_active) if destination else True,
     }
+
+
+def _resolve_pull_printer_form_value(form: dict[str, object]) -> str:
+    printer_name = str(form.get("pull_printer_name", "")).strip()
+    if printer_name:
+        return printer_name
+    return str(form.get("pull_printer_name_manual", "")).strip()
+
+
+def _sync_pull_printer_form_fields(form_data: dict[str, str | bool]) -> None:
+    resolved_printer_name = _resolve_pull_printer_form_value(form_data)
+    manual_value = str(form_data.get("pull_printer_name_manual", "")).strip()
+    form_data["pull_printer_name"] = resolved_printer_name
+    form_data["pull_printer_name_manual"] = manual_value or resolved_printer_name
+
+
+def _print_agent_printer_options(
+    agent: PrintAgent | None,
+    *,
+    selected_printer_name: str = "",
+) -> list[dict[str, object]]:
+    printers = normalize_print_agent_printers(
+        getattr(agent, "printers_json", None) if agent is not None else None
+    )
+    options: list[dict[str, object]] = []
+    seen_names: set[str] = set()
+    for printer in printers:
+        name = str(printer.get("name", "")).strip()
+        if not name:
+            continue
+        status_bits = []
+        if bool(printer.get("is_default")):
+            status_bits.append("default")
+        if bool(printer.get("is_online")):
+            status_bits.append("online")
+        label = name if not status_bits else f"{name} ({', '.join(status_bits)})"
+        options.append(
+            {
+                "name": name,
+                "label": label,
+                "is_default": bool(printer.get("is_default")),
+                "is_online": bool(printer.get("is_online")),
+            }
+        )
+        seen_names.add(name.casefold())
+
+    resolved_selected_printer = str(selected_printer_name or "").strip()
+    if resolved_selected_printer and resolved_selected_printer.casefold() not in seen_names:
+        options.insert(
+            0,
+            {
+                "name": resolved_selected_printer,
+                "label": f"{resolved_selected_printer} (saved)",
+                "is_default": False,
+                "is_online": False,
+            },
+        )
+    return options
+
+
+def _print_agent_printer_inventory(
+    print_agents: list[PrintAgent],
+    *,
+    selected_agent_id: str = "",
+    selected_printer_name: str = "",
+) -> dict[str, dict[str, object]]:
+    inventory: dict[str, dict[str, object]] = {}
+    for agent in print_agents:
+        synced_printers = normalize_print_agent_printers(agent.printers_json)
+        extra_selected_printer = (
+            selected_printer_name if str(agent.id) == str(selected_agent_id) else ""
+        )
+        inventory[str(agent.id)] = {
+            "printer_count": len(synced_printers),
+            "printers": _print_agent_printer_options(
+                agent,
+                selected_printer_name=extra_selected_printer,
+            ),
+            "has_synced_printers": bool(synced_printers),
+            "synced_at_label": _format_admin_datetime(agent.printers_synced_at),
+        }
+    return inventory
 
 
 def _template_to_form(template: PrintTemplate | None = None) -> dict[str, str | bool]:
@@ -322,7 +481,12 @@ def _template_to_form(template: PrintTemplate | None = None) -> dict[str, str | 
     }
 
 
-def _delivery_config_from_form(form: dict[str, str], delivery_type: str) -> dict:
+def _delivery_config_from_form(
+    form: dict[str, str],
+    delivery_type: str,
+    *,
+    document_type: str,
+) -> dict:
     normalized = _normalize_delivery_type(delivery_type)
     config: dict[str, object] = {}
     if normalized == DELIVERY_TYPE_PRINT_NETWORK_RAW_9100:
@@ -355,7 +519,7 @@ def _delivery_config_from_form(form: dict[str, str], delivery_type: str) -> dict
         agent_id = str(form.get("pull_agent_id", "")).strip()
         if agent_id:
             config["agent_id"] = agent_id
-        printer_name = str(form.get("pull_printer_name", "")).strip()
+        printer_name = _resolve_pull_printer_form_value(form)
         if printer_name:
             config["printer_name"] = printer_name
         copies = _parse_optional_int(form.get("pull_copies"))
@@ -379,6 +543,13 @@ def _delivery_config_from_form(form: dict[str, str], delivery_type: str) -> dict
         parsed = json.loads(raw_json)
         if isinstance(parsed, dict):
             config.update(parsed)
+
+    if document_type == DOCUMENT_TYPE_TICKET and _is_truthy(
+        str(form.get("auto_print_on_complete", ""))
+    ):
+        config["auto_print_on_complete"] = True
+    else:
+        config.pop("auto_print_on_complete", None)
     return config
 
 
@@ -755,6 +926,7 @@ def _destination_form_response(
     db: Session,
 ) -> HTMLResponse:
     tenant_id = request_tenant_id(request)
+    _sync_pull_printer_form_fields(form_data)
     template_options = sorted(
         list(db.execute(select(PrintTemplate)).scalars()),
         key=_template_order_key,
@@ -780,6 +952,22 @@ def _destination_form_response(
             _destination_delete_block_error(destination, has_jobs=has_jobs) or ""
         )
         can_delete_destination = not bool(destination_delete_error)
+    selected_pull_agent_id = str(form_data.get("pull_agent_id", "")).strip()
+    selected_pull_printer_name = str(form_data.get("pull_printer_name", "")).strip()
+    pull_agent_printer_inventory = _print_agent_printer_inventory(
+        print_agents,
+        selected_agent_id=selected_pull_agent_id,
+        selected_printer_name=selected_pull_printer_name,
+    )
+    selected_pull_agent_inventory = pull_agent_printer_inventory.get(
+        selected_pull_agent_id,
+        {
+            "printer_count": 0,
+            "printers": [],
+            "has_synced_printers": False,
+            "synced_at_label": "",
+        },
+    )
     return templates.TemplateResponse(
         request,
         "admin/printing_destination_form.html",
@@ -797,6 +985,17 @@ def _destination_form_response(
             "saved": request.query_params.get("saved") == "1",
             "can_delete_destination": can_delete_destination,
             "destination_delete_error": destination_delete_error,
+            "pull_agent_printer_inventory": pull_agent_printer_inventory,
+            "pull_selected_agent_printer_options": selected_pull_agent_inventory["printers"],
+            "pull_selected_agent_has_synced_printers": selected_pull_agent_inventory[
+                "has_synced_printers"
+            ],
+            "pull_selected_agent_printer_count": selected_pull_agent_inventory[
+                "printer_count"
+            ],
+            "pull_selected_agent_synced_at_label": selected_pull_agent_inventory[
+                "synced_at_label"
+            ],
         },
         status_code=status_code,
     )
@@ -891,6 +1090,7 @@ def _print_agents_page_response(
             agent_id=item.id,
         )
         blocking_names = [row.name for row in blocking_destinations]
+        synced_printers = normalize_print_agent_printers(item.printers_json)
         can_revoke = (
             str(item.status or "").strip().upper() != PRINT_AGENT_STATUS_REVOKED
             and not blocking_names
@@ -906,6 +1106,9 @@ def _print_agents_page_response(
                 "agent": item,
                 "can_revoke": can_revoke,
                 "revoke_block_reason": revoke_block_reason,
+                "printer_count": len(synced_printers),
+                "known_printers": _print_agent_printer_options(item),
+                "printers_synced_at_label": _format_admin_datetime(item.printers_synced_at),
             }
         )
 
@@ -1055,7 +1258,11 @@ async def admin_print_destinations_create(
     delivery_config: dict = {}
     if not errors:
         try:
-            delivery_config = _delivery_config_from_form(incoming, delivery_type)
+            delivery_config = _delivery_config_from_form(
+                incoming,
+                delivery_type,
+                document_type=document_type,
+            )
         except (ValueError, json.JSONDecodeError):
             errors.append("Delivery config JSON is invalid.")
     if not errors:
@@ -1073,6 +1280,7 @@ async def admin_print_destinations_create(
         form_data.update(incoming)
         form_data["is_default"] = is_default
         form_data["is_active"] = is_active
+        _sync_pull_printer_form_fields(form_data)
         return _destination_form_response(
             request,
             mode="new",
@@ -1185,7 +1393,11 @@ async def admin_print_destinations_update(
     delivery_config: dict = {}
     if not errors:
         try:
-            delivery_config = _delivery_config_from_form(incoming, delivery_type)
+            delivery_config = _delivery_config_from_form(
+                incoming,
+                delivery_type,
+                document_type=document_type,
+            )
         except (ValueError, json.JSONDecodeError):
             errors.append("Delivery config JSON is invalid.")
     if not errors:
@@ -1203,6 +1415,7 @@ async def admin_print_destinations_update(
         form_data.update(incoming)
         form_data["is_default"] = is_default
         form_data["is_active"] = is_active
+        _sync_pull_printer_form_fields(form_data)
         return _destination_form_response(
             request,
             mode="edit",
@@ -1244,6 +1457,7 @@ async def admin_print_destinations_update(
             "template_id",
             "template_code",
             "delivery_type",
+            "auto_print_on_complete",
             "is_default",
             "is_active",
         ],
@@ -1972,6 +2186,23 @@ def admin_print_jobs_list(
         else:
             job_document_refs[row.id] = "-"
 
+    job_rows: list[dict[str, object]] = []
+    for item in items:
+        destination = destinations_by_id.get(item.destination_id) if item.destination_id else None
+        template = templates_by_id.get(item.template_id) if item.template_id else None
+        job_rows.append(
+            {
+                "job": item,
+                "destination": destination,
+                "template": template,
+                "document_ref": job_document_refs.get(item.id, "-"),
+                "trigger_source_label": _print_job_trigger_source_label(item.trigger_source),
+                "printer_or_target": _print_job_printer_or_target(item),
+                "can_retry": _print_job_can_retry(item),
+                "error_summary": str(item.last_error or "").strip() or "-",
+            }
+        )
+
     return templates.TemplateResponse(
         request,
         "admin/printing_jobs_list.html",
@@ -1979,6 +2210,7 @@ def admin_print_jobs_list(
             "request": request,
             "active_tab": _active_printing_tab(str(request.url.path)),
             "items": items,
+            "job_rows": job_rows,
             "destinations": destinations,
             "destinations_by_id": destinations_by_id,
             "templates_by_id": templates_by_id,
@@ -1993,6 +2225,8 @@ def admin_print_jobs_list(
                 "date_to": date_to.isoformat() if date_to else "",
             },
             "saved": request.query_params.get("saved") == "1",
+            "retry_success_message": request.query_params.get("retry_success_message", ""),
+            "retry_error_message": request.query_params.get("retry_error_message", ""),
         },
     )
 
@@ -2033,6 +2267,12 @@ def admin_print_job_detail(
             )
         except (TypeError, ValueError):
             provider_response_pretty = str(job.provider_response_json)
+    if invoice is not None:
+        document_reference = f"Invoice {invoice.invoice_no}"
+    elif ticket is not None:
+        document_reference = f"Ticket {ticket.ticket_no}"
+    else:
+        document_reference = "-"
     return templates.TemplateResponse(
         request,
         "admin/printing_job_detail.html",
@@ -2047,8 +2287,17 @@ def admin_print_job_detail(
             "requested_by_user": requested_by_user,
             "requested_by_label": requested_by_label,
             "provider_response_pretty": provider_response_pretty,
+            "document_reference": document_reference,
+            "printer_or_target": _print_job_printer_or_target(job),
+            "trigger_source_label": _print_job_trigger_source_label(job.trigger_source),
+            "can_retry": _print_job_can_retry(job),
+            "retried_before": int(job.attempt_count or 0) > 1,
             "saved": request.query_params.get("saved") == "1",
-            "retry_error": request.query_params.get("retry_error", ""),
+            "retry_success_message": request.query_params.get(
+                "retry_success_message",
+                "",
+            ),
+            "retry_error": request.query_params.get("retry_error_message", ""),
         },
     )
 
@@ -2059,6 +2308,7 @@ def admin_print_job_retry(
     request: Request,
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
+    return_to = str(request.query_params.get("return_to", "")).strip()
     job = db.get(PrintJob, job_id)
     if job is None:
         return RedirectResponse(url="/admin/printing/jobs", status_code=303)
@@ -2066,10 +2316,10 @@ def admin_print_job_retry(
         retry_print_job(db, job)
     except Exception as exc:
         return RedirectResponse(
-            url=_printing_redirect_url(
-                request,
-                base_path=f"/admin/printing/jobs/{job.id}",
-                extra={"retry_error": str(exc)},
+            url=_print_job_retry_redirect_url(
+                job_id=job.id,
+                return_to=return_to,
+                error_message=str(exc),
             ),
             status_code=303,
         )
@@ -2089,6 +2339,10 @@ def admin_print_job_retry(
     )
     db.commit()
     return RedirectResponse(
-        url=_printing_redirect_url(request, base_path=f"/admin/printing/jobs/{job.id}"),
+        url=_print_job_retry_redirect_url(
+            job_id=job.id,
+            return_to=return_to,
+            success_message=_print_job_retry_success_message(job),
+        ),
         status_code=303,
     )

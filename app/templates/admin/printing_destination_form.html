@@ -129,8 +129,50 @@
             </select>
           </div>
           <div class="field" data-delivery-groups="PRINT_AGENT_PULL">
-            <label for="pull_printer_name">Printer name</label>
-            <input type="text" id="pull_printer_name" name="pull_printer_name" value="{{ form_data.pull_printer_name }}" placeholder="Reception Printer" />
+            <label for="pull_printer_name">Printer</label>
+            <select
+              id="pull_printer_name"
+              name="pull_printer_name"
+              {% if not form_data.pull_agent_id or not pull_selected_agent_has_synced_printers %}disabled{% endif %}
+            >
+              <option value="">
+                {% if form_data.pull_agent_id %}
+                  Select printer
+                {% else %}
+                  Select agent first
+                {% endif %}
+              </option>
+              {% for item in pull_selected_agent_printer_options %}
+                <option value="{{ item.name }}" {% if form_data.pull_printer_name == item.name %}selected{% endif %}>
+                  {{ item.label }}
+                </option>
+              {% endfor %}
+            </select>
+            <p class="muted" id="pull_printer_sync_message">
+              {% if not form_data.pull_agent_id %}
+                Select an agent to load synced printers.
+              {% elif pull_selected_agent_has_synced_printers %}
+                {{ pull_selected_agent_printer_count }} printer{% if pull_selected_agent_printer_count != 1 %}s{% endif %} synced{% if pull_selected_agent_synced_at_label %} at {{ pull_selected_agent_synced_at_label }}{% endif %}.
+              {% else %}
+                No printers synced from this agent yet.
+              {% endif %}
+            </p>
+          </div>
+          <div
+            class="field"
+            data-delivery-groups="PRINT_AGENT_PULL"
+            id="pull_printer_name_manual_wrap"
+            {% if not form_data.pull_agent_id or pull_selected_agent_has_synced_printers %}style="display: none;"{% endif %}
+          >
+            <label for="pull_printer_name_manual">Manual printer name</label>
+            <input
+              type="text"
+              id="pull_printer_name_manual"
+              name="pull_printer_name_manual"
+              value="{{ form_data.pull_printer_name_manual }}"
+              placeholder="Reception Printer"
+              {% if not form_data.pull_agent_id or pull_selected_agent_has_synced_printers %}disabled{% endif %}
+            />
           </div>
           <div class="field" data-delivery-groups="PRINT_AGENT_PULL">
             <label for="pull_copies">Copies</label>
@@ -176,6 +218,21 @@
     <section class="frame compact">
       <div class="frame-header"><h2>Behaviour</h2></div>
       <div class="frame-body">
+        <div
+          class="field checkbox"
+          id="auto_print_on_complete_wrap"
+          {% if form_data.document_type != "TICKET" %}style="display: none;"{% endif %}
+        >
+          <input
+            type="checkbox"
+            id="auto_print_on_complete"
+            name="auto_print_on_complete"
+            value="1"
+            {% if form_data.auto_print_on_complete %}checked{% endif %}
+            {% if form_data.document_type != "TICKET" %}disabled{% endif %}
+          />
+          <label for="auto_print_on_complete">Auto print when ticket is completed</label>
+        </div>
         <div class="field checkbox">
           <input type="checkbox" id="is_default" name="is_default" value="1" {% if form_data.is_default %}checked{% endif %} />
           <label for="is_default">Default for document type{{ help(help_text.printing_default_destination, "printing-destination-is-default-help") }}</label>
@@ -225,13 +282,32 @@
     </section>
   {% endif %}
 
+  <script id="pull-agent-printer-inventory" type="application/json">{{ pull_agent_printer_inventory | tojson }}</script>
   <script>
     (function () {
       const deliverySelect = document.getElementById("delivery_type");
+      const documentTypeSelect = document.getElementById("document_type");
       if (!(deliverySelect instanceof HTMLSelectElement)) {
         return;
       }
       const sections = Array.from(document.querySelectorAll("[data-delivery-groups]"));
+      const autoPrintWrap = document.getElementById("auto_print_on_complete_wrap");
+      const autoPrintInput = document.getElementById("auto_print_on_complete");
+      const pullAgentSelect = document.getElementById("pull_agent_id");
+      const pullPrinterSelect = document.getElementById("pull_printer_name");
+      const pullPrinterManualWrap = document.getElementById("pull_printer_name_manual_wrap");
+      const pullPrinterManualInput = document.getElementById("pull_printer_name_manual");
+      const pullPrinterSyncMessage = document.getElementById("pull_printer_sync_message");
+      const pullAgentPrinterInventoryNode = document.getElementById("pull-agent-printer-inventory");
+      let pullAgentPrinterInventory = {};
+
+      if (pullAgentPrinterInventoryNode && pullAgentPrinterInventoryNode.textContent) {
+        try {
+          pullAgentPrinterInventory = JSON.parse(pullAgentPrinterInventoryNode.textContent);
+        } catch (error) {
+          pullAgentPrinterInventory = {};
+        }
+      }
 
       function supportsMode(section, mode) {
         const groups = String(section.getAttribute("data-delivery-groups") || "")
@@ -250,8 +326,141 @@
         });
       }
 
+      function syncDocumentTypeVisibility() {
+        if (
+          !(documentTypeSelect instanceof HTMLSelectElement) ||
+          !(autoPrintWrap instanceof HTMLElement) ||
+          !(autoPrintInput instanceof HTMLInputElement)
+        ) {
+          return;
+        }
+        const isTicketDocument =
+          String(documentTypeSelect.value || "").trim().toUpperCase() === "TICKET";
+        autoPrintWrap.style.display = isTicketDocument ? "" : "none";
+        autoPrintInput.disabled = !isTicketDocument;
+      }
+
+      function currentPullPrinterValue() {
+        if (
+          pullPrinterSelect instanceof HTMLSelectElement &&
+          !pullPrinterSelect.disabled &&
+          String(pullPrinterSelect.value || "").trim()
+        ) {
+          return String(pullPrinterSelect.value || "").trim();
+        }
+        if (pullPrinterManualInput instanceof HTMLInputElement) {
+          return String(pullPrinterManualInput.value || "").trim();
+        }
+        return "";
+      }
+
+      function selectedPullAgentInventory(agentId) {
+        if (!agentId) {
+          return {
+            printer_count: 0,
+            printers: [],
+            has_synced_printers: false,
+            synced_at_label: "",
+          };
+        }
+        const resolved = pullAgentPrinterInventory[String(agentId)] || {};
+        return {
+          printer_count: Number(resolved.printer_count || 0),
+          printers: Array.isArray(resolved.printers) ? resolved.printers : [],
+          has_synced_printers: Boolean(resolved.has_synced_printers),
+          synced_at_label: String(resolved.synced_at_label || "").trim(),
+        };
+      }
+
+      function resetPullPrinterOptions(printers, selectedValue, emptyLabel) {
+        if (!(pullPrinterSelect instanceof HTMLSelectElement)) {
+          return;
+        }
+        pullPrinterSelect.innerHTML = "";
+        pullPrinterSelect.add(new Option(emptyLabel, ""));
+        printers.forEach(function (printer) {
+          const name = String((printer && printer.name) || "").trim();
+          if (!name) {
+            return;
+          }
+          const label = String((printer && printer.label) || name).trim() || name;
+          const option = new Option(label, name);
+          if (name === selectedValue) {
+            option.selected = true;
+          }
+          pullPrinterSelect.add(option);
+        });
+      }
+
+      function syncPullPrinterFields() {
+        if (
+          !(pullAgentSelect instanceof HTMLSelectElement) ||
+          !(pullPrinterSelect instanceof HTMLSelectElement) ||
+          !(pullPrinterManualWrap instanceof HTMLElement) ||
+          !(pullPrinterManualInput instanceof HTMLInputElement) ||
+          !(pullPrinterSyncMessage instanceof HTMLElement)
+        ) {
+          return;
+        }
+
+        const selectedAgentId = String(pullAgentSelect.value || "").trim();
+        const previousPrinterValue = currentPullPrinterValue();
+        const inventory = selectedPullAgentInventory(selectedAgentId);
+        const hasSelectedAgent = selectedAgentId.length > 0;
+        const hasSyncedPrinters = hasSelectedAgent && inventory.has_synced_printers;
+
+        resetPullPrinterOptions(
+          inventory.printers,
+          previousPrinterValue,
+          hasSelectedAgent ? "Select printer" : "Select agent first"
+        );
+        pullPrinterSelect.disabled = !hasSyncedPrinters;
+
+        const showManualInput = hasSelectedAgent && !hasSyncedPrinters;
+        pullPrinterManualWrap.style.display = showManualInput ? "" : "none";
+        pullPrinterManualInput.disabled = !showManualInput;
+
+        if (hasSyncedPrinters) {
+          pullPrinterManualInput.value = String(pullPrinterSelect.value || "").trim();
+          const syncedAtLabel = inventory.synced_at_label;
+          const printerCount = inventory.printer_count || inventory.printers.length;
+          pullPrinterSyncMessage.textContent =
+            printerCount +
+            " printer" +
+            (printerCount === 1 ? "" : "s") +
+            " synced" +
+            (syncedAtLabel ? " at " + syncedAtLabel : "") +
+            ".";
+          return;
+        }
+
+        if (showManualInput && !pullPrinterManualInput.value) {
+          pullPrinterManualInput.value = previousPrinterValue;
+        }
+
+        pullPrinterSyncMessage.textContent = hasSelectedAgent
+          ? "No printers synced from this agent yet."
+          : "Select an agent to load synced printers.";
+      }
+
       deliverySelect.addEventListener("change", syncVisibility);
+      if (documentTypeSelect instanceof HTMLSelectElement) {
+        documentTypeSelect.addEventListener("change", syncDocumentTypeVisibility);
+      }
+      if (pullAgentSelect instanceof HTMLSelectElement) {
+        pullAgentSelect.addEventListener("change", syncPullPrinterFields);
+      }
+      if (
+        pullPrinterSelect instanceof HTMLSelectElement &&
+        pullPrinterManualInput instanceof HTMLInputElement
+      ) {
+        pullPrinterSelect.addEventListener("change", function () {
+          pullPrinterManualInput.value = String(pullPrinterSelect.value || "").trim();
+        });
+      }
       syncVisibility();
+      syncDocumentTypeVisibility();
+      syncPullPrinterFields();
     })();
   </script>
 {% endblock %}

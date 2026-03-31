@@ -4,7 +4,7 @@ import base64
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,7 @@ from ..services.print_agents import (
     exchange_print_agent_pairing as exchange_print_agent_pairing_session,
     generate_print_agent_credentials,
     mark_print_agent_online,
+    normalize_print_agent_printers,
     PrintAgentPairingError,
 )
 from ..services.printing import (
@@ -30,7 +31,7 @@ from ..services.printing import (
     PRINT_JOB_STATUS_SENT,
     resolve_job_payload,
 )
-from ..tenancy import require_tenant
+from ..tenancy import request_tenant_id, require_tenant
 
 
 router = APIRouter(prefix="/api/print", tags=["print-agents"])
@@ -65,6 +66,16 @@ class PrintJobFailRequest(BaseModel):
     provider_response_json: dict[str, Any] | None = None
 
 
+class PrintAgentPrinterSyncEntry(BaseModel):
+    name: str
+    is_default: bool | None = None
+    is_online: bool | None = None
+
+
+class PrintAgentPrinterSyncRequest(BaseModel):
+    printers: list[PrintAgentPrinterSyncEntry] = Field(default_factory=list)
+
+
 def _assigned_agent_id(destination: PrintDestination | None) -> str:
     if destination is None or not isinstance(destination.delivery_config, dict):
         return ""
@@ -90,12 +101,12 @@ def _normalized_agent_name(name: str | None) -> str | None:
 
 
 def _require_authenticated_agent(request: Request, db: Session) -> PrintAgent:
-    require_tenant(request)
+    tenant_id = request_tenant_id(request)
     raw_key = str(request.headers.get("X-Agent-Key", "")).strip()
     if not raw_key:
         raise HTTPException(status_code=401, detail="X-Agent-Key header is required.")
     agent = authenticate_print_agent(db, raw_key)
-    if agent is None:
+    if agent is None or int(getattr(agent, "tenant_id", 0) or 0) != tenant_id:
         raise HTTPException(status_code=401, detail="Invalid agent key.")
     mark_print_agent_online(agent)
     return agent
@@ -270,6 +281,34 @@ def print_agent_heartbeat(
     agent = _require_authenticated_agent(request, db)
     db.commit()
     return {"ok": True, "agent_id": agent.id, "status": agent.status}
+
+
+@router.post("/agents/printers/sync")
+def print_agent_sync_printers(
+    payload: PrintAgentPrinterSyncRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    agent = _require_authenticated_agent(request, db)
+    normalized_printers = normalize_print_agent_printers(
+        [
+            {
+                "name": printer.name,
+                "is_default": printer.is_default,
+                "is_online": printer.is_online,
+            }
+            for printer in payload.printers
+        ]
+    )
+    agent.printers_json = normalized_printers
+    agent.printers_synced_at = utcnow()
+    db.commit()
+    return {
+        "ok": True,
+        "agent_id": agent.id,
+        "printer_count": len(normalized_printers),
+        "printers_synced_at": agent.printers_synced_at,
+    }
 
 
 @router.get("/agents/jobs/next")

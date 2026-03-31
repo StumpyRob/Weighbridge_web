@@ -90,6 +90,9 @@ from ..services.printing import (
     PRINT_CONTENT_TYPE_HTML,
     PRINT_CONTENT_TYPE_PDF,
     PRINT_CONTENT_TYPE_TEXT,
+    PRINT_JOB_TRIGGER_SOURCE_AUTO_ON_COMPLETE,
+    PRINT_JOB_TRIGGER_SOURCE_MANUAL,
+    PrintExecutionResult,
     RenderedPrint,
     execute_rendered_print,
     replay_print_job,
@@ -1827,20 +1830,144 @@ def _rendered_document_html(rendered_content: str, content_type: str) -> str:
 def _ticket_render_document(
     db: Session,
     ticket: Ticket,
+    *,
+    destination: PrintDestination | None = None,
 ) -> tuple[PrintDestination, RenderedPrint]:
     payload = build_ticket_print_payload(db, ticket)
-    destination = _resolve_ticket_print_destination(
+    resolved_destination = destination or _resolve_ticket_print_destination(
         db,
         require_default=True,
     )
-    if destination is None:
+    if resolved_destination is None:
         raise ValueError("Printing is not configured. Contact admin.")
     rendered = render_destination_content(
         db,
         payload=payload,
+        destination=resolved_destination,
+    )
+    return resolved_destination, rendered
+
+
+def _ticket_destination_auto_print_on_complete(
+    destination: PrintDestination | None,
+) -> bool:
+    config = (
+        dict(destination.delivery_config)
+        if destination is not None and isinstance(destination.delivery_config, dict)
+        else {}
+    )
+    return bool(config.get("auto_print_on_complete"))
+
+
+def _ticket_destination_delivery(
+    destination: PrintDestination,
+) -> tuple[str, dict[str, object]]:
+    return (
+        str(destination.delivery_type or "").strip().upper(),
+        dict(destination.delivery_config)
+        if isinstance(destination.delivery_config, dict)
+        else {},
+    )
+
+
+def _ticket_execute_print(
+    db: Session,
+    *,
+    ticket: Ticket,
+    destination: PrintDestination,
+    created_by_user_id: int | None,
+    base_url: str,
+    trigger_source: str,
+) -> PrintExecutionResult:
+    _resolved_destination, rendered = _ticket_render_document(
+        db,
+        ticket,
         destination=destination,
     )
-    return destination, rendered
+    delivery_type, delivery_config = _ticket_destination_delivery(destination)
+    return execute_rendered_print(
+        db,
+        document_type=DOCUMENT_TYPE_TICKET,
+        rendered_content=rendered.rendered_content,
+        content_type=rendered.content_type,
+        delivery_type=delivery_type,
+        delivery_config=delivery_config,
+        destination_id=destination.id,
+        template_id=rendered.template_id,
+        ticket_id=ticket.id,
+        created_by_user_id=created_by_user_id,
+        base_url=base_url,
+        trigger_source=trigger_source,
+    )
+
+
+def _ticket_print_success_query_data(
+    *,
+    destination_name: str,
+    job_id: int,
+    print_sent_at: str,
+    completed: bool = False,
+    auto_printed: bool = False,
+) -> dict[str, str]:
+    query_data = {
+        "print_sent": "1",
+        "printed": "1",
+        "print_status": "1",
+        "printed_to": destination_name,
+        "print_destination": destination_name,
+        "print_sent_at": print_sent_at,
+        "print_job_id": str(job_id),
+    }
+    if completed:
+        query_data["completed"] = "1"
+    if auto_printed:
+        query_data["auto_printed"] = "1"
+    return query_data
+
+
+def _ticket_print_preview_query_data(
+    *,
+    destination_name: str,
+    job_id: int,
+    print_sent_at: str,
+    completed: bool = False,
+    auto_printed: bool = False,
+) -> dict[str, str]:
+    query_data = {
+        "job_id": str(job_id),
+        "printed_to": destination_name,
+        "print_destination": destination_name,
+        "print_sent_at": print_sent_at,
+    }
+    if completed:
+        query_data["completed"] = "1"
+    if auto_printed:
+        query_data["auto_printed"] = "1"
+    return query_data
+
+
+def _ticket_print_failure_query_data(
+    *,
+    error_label: str,
+    detail: str,
+    destination_name: str,
+    failed_job_id: int | None,
+    completed: bool = False,
+    auto_print_failed: bool = False,
+) -> dict[str, str]:
+    query_data = {
+        "print_failed": "1",
+        "print_error": error_label,
+        "print_error_detail": detail[:200],
+        "print_destination": destination_name,
+    }
+    if failed_job_id is not None:
+        query_data["print_job_id"] = str(failed_job_id)
+    if completed:
+        query_data["completed"] = "1"
+    if auto_print_failed:
+        query_data["auto_print_failed"] = "1"
+    return query_data
 
 
 def _ticket_filename(ticket: Ticket) -> str:
@@ -2197,6 +2324,8 @@ def tickets_print_browser(
     printed_to: str | None = Query(None),
     print_destination: str | None = Query(None),
     print_sent_at: str | None = Query(None),
+    completed: int | None = Query(None),
+    auto_printed: int | None = Query(None),
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     ticket = db.get(Ticket, ticket_id)
@@ -2245,6 +2374,10 @@ def tickets_print_browser(
                 "print_job_id": str(job_id),
             }
         )
+    if completed:
+        back_params["completed"] = "1"
+    if auto_printed:
+        back_params["auto_printed"] = "1"
     back_url = f"/tickets/{ticket.id}"
     if back_params:
         back_url = f"{back_url}?{urlencode(back_params)}"
@@ -2388,13 +2521,12 @@ async def tickets_print_dispatch(
         )
 
     try:
-        _resolved_destination, rendered = _ticket_render_document(db, ticket)
-        delivery_type = str(destination.delivery_type or "").strip().upper()
-        delivery_config = (
-            dict(destination.delivery_config)
-            if isinstance(destination.delivery_config, dict)
-            else {}
+        _resolved_destination, rendered = _ticket_render_document(
+            db,
+            ticket,
+            destination=destination,
         )
+        delivery_type, delivery_config = _ticket_destination_delivery(destination)
     except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
         message = str(exc) or "Print failed."
         if expects_json:
@@ -2420,6 +2552,7 @@ async def tickets_print_dispatch(
             ticket_id=ticket.id,
             created_by_user_id=created_by_user_id,
             base_url=str(request.base_url),
+            trigger_source=PRINT_JOB_TRIGGER_SOURCE_MANUAL,
         )
     except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
         detail = str(exc) or "Print delivery failed."
@@ -2441,14 +2574,12 @@ async def tickets_print_dispatch(
                 },
                 status_code=400,
             )
-        query_data = {
-            "print_failed": "1",
-            "print_error": error_label,
-            "print_error_detail": detail[:200],
-            "print_destination": _ticket_destination_display_name(destination),
-        }
-        if failed_job_id is not None:
-            query_data["print_job_id"] = str(failed_job_id)
+        query_data = _ticket_print_failure_query_data(
+            error_label=error_label,
+            detail=detail,
+            destination_name=_ticket_destination_display_name(destination),
+            failed_job_id=failed_job_id,
+        )
         return RedirectResponse(
             url=f"/tickets/{ticket.id}?{urlencode(query_data)}",
             status_code=303,
@@ -2456,15 +2587,11 @@ async def tickets_print_dispatch(
 
     destination_name = _ticket_destination_display_name(destination)
     print_sent_at = datetime.now().strftime("%H:%M")
-    success_query_data = {
-        "print_sent": "1",
-        "printed": "1",
-        "print_status": "1",
-        "printed_to": destination_name,
-        "print_destination": destination_name,
-        "print_sent_at": print_sent_at,
-        "print_job_id": str(result.job.id),
-    }
+    success_query_data = _ticket_print_success_query_data(
+        destination_name=destination_name,
+        job_id=result.job.id,
+        print_sent_at=print_sent_at,
+    )
 
     is_local_browser = delivery_type == DELIVERY_TYPE_PRINT_LOCAL_BROWSER
     if expects_json:
@@ -2477,12 +2604,11 @@ async def tickets_print_dispatch(
         }
         if is_local_browser:
             browser_query = urlencode(
-                {
-                    "job_id": str(result.job.id),
-                    "printed_to": destination_name,
-                    "print_destination": destination_name,
-                    "print_sent_at": print_sent_at,
-                }
+                _ticket_print_preview_query_data(
+                    destination_name=destination_name,
+                    job_id=result.job.id,
+                    print_sent_at=print_sent_at,
+                )
             )
             payload_json["browser_print_url"] = (
                 f"/tickets/{ticket.id}/preview?{browser_query}"
@@ -2491,12 +2617,11 @@ async def tickets_print_dispatch(
 
     if is_local_browser:
         browser_query = urlencode(
-            {
-                "job_id": str(result.job.id),
-                "printed_to": destination_name,
-                "print_destination": destination_name,
-                "print_sent_at": print_sent_at,
-            }
+            _ticket_print_preview_query_data(
+                destination_name=destination_name,
+                job_id=result.job.id,
+                print_sent_at=print_sent_at,
+            )
         )
         return RedirectResponse(
             url=f"/tickets/{ticket.id}/preview?{browser_query}",
@@ -3302,6 +3427,9 @@ async def tickets_update(
 
     if action == "complete":
         before_complete_values = _ticket_audit_values(ticket)
+        was_complete_before = (
+            _status_value(ticket.status) == TicketStatusEnum.COMPLETE.value
+        )
         ticket.direction = payload["direction"]
         ticket.transaction_type = payload["transaction_type"]
         weight_warning = _net_negative_values(payload["gross_kg"], payload["tare_kg"])
@@ -3475,7 +3603,79 @@ async def tickets_update(
             details=complete_change_details,
         )
         db.commit()
-        return RedirectResponse(url=f"/tickets/{ticket_id}?completed=1", status_code=303)
+        auto_print_destination = None
+        if not was_complete_before:
+            auto_print_destination = _resolve_ticket_print_destination(
+                db,
+                require_default=False,
+            )
+        if auto_print_destination is None or not _ticket_destination_auto_print_on_complete(
+            auto_print_destination
+        ):
+            return RedirectResponse(url=f"/tickets/{ticket_id}?completed=1", status_code=303)
+
+        try:
+            result = _ticket_execute_print(
+                db,
+                ticket=ticket,
+                destination=auto_print_destination,
+                created_by_user_id=_request_user_id(request),
+                base_url=str(request.base_url),
+                trigger_source=PRINT_JOB_TRIGGER_SOURCE_AUTO_ON_COMPLETE,
+            )
+        except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
+            detail = str(exc) or "Print delivery failed."
+            error_label = _friendly_print_error_label(detail)
+            failed_job_id = _latest_print_job_id_for_ticket(
+                db,
+                ticket_id=ticket.id,
+                destination_id=auto_print_destination.id,
+                status="FAILED",
+            )
+            query_data = _ticket_print_failure_query_data(
+                error_label=error_label,
+                detail=detail,
+                destination_name=_ticket_destination_display_name(auto_print_destination),
+                failed_job_id=failed_job_id,
+                completed=True,
+                auto_print_failed=True,
+            )
+            return RedirectResponse(
+                url=f"/tickets/{ticket.id}?{urlencode(query_data)}",
+                status_code=303,
+            )
+
+        auto_destination_name = _ticket_destination_display_name(auto_print_destination)
+        auto_delivery_type, _auto_delivery_config = _ticket_destination_delivery(
+            auto_print_destination
+        )
+        print_sent_at = datetime.now().strftime("%H:%M")
+        if auto_delivery_type == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
+            browser_query = urlencode(
+                _ticket_print_preview_query_data(
+                    destination_name=auto_destination_name,
+                    job_id=result.job.id,
+                    print_sent_at=print_sent_at,
+                    completed=True,
+                    auto_printed=True,
+                )
+            )
+            return RedirectResponse(
+                url=f"/tickets/{ticket.id}/preview?{browser_query}",
+                status_code=303,
+            )
+
+        success_query_data = _ticket_print_success_query_data(
+            destination_name=auto_destination_name,
+            job_id=result.job.id,
+            print_sent_at=print_sent_at,
+            completed=True,
+            auto_printed=True,
+        )
+        return RedirectResponse(
+            url=f"/tickets/{ticket.id}?{urlencode(success_query_data)}",
+            status_code=303,
+        )
 
     if action == "void":
         if not _can_void_ticket(ticket):
