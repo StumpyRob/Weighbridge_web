@@ -1289,9 +1289,12 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                     if not host_allowed:
                         return _plain_error("Unknown tenant", 404)
 
-                ensure_demo_tenant(db, create_missing=False)
+                reserved_demo_tenant = ensure_demo_tenant(db, create_missing=False)
                 if db.new or db.dirty:
                     db.commit()
+                if maybe_auto_reset_demo_tenant(db, request, tenant=reserved_demo_tenant):
+                    if reserved_demo_tenant is not None:
+                        db.refresh(reserved_demo_tenant)
 
                 if tenant_path_subdomain:
                     request.state.request_subdomain = tenant_path_subdomain

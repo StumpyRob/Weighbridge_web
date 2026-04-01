@@ -4079,6 +4079,87 @@ def test_reserved_demo_auto_reset_schedule_resets_on_next_request(tmp_path, monk
         assert _login(demo_client, email="demo@demo.com", password="password") == 303
 
 
+def test_reserved_demo_auto_reset_schedule_also_runs_during_platform_requests(tmp_path, monkeypatch):
+    reset_now = datetime(2026, 4, 1, 12, 0, 0)
+    monkeypatch.setattr("app.services.demo_tenant_reset.utcnow", lambda: reset_now)
+
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-demo-auto-reset-platform.db", monkeypatch=monkeypatch
+    )
+
+    demo_tenant = _seed_tenant(
+        SessionLocal,
+        name="Demo",
+        subdomain=settings.effective_demo_tenant_subdomain,
+        is_active=True,
+        is_demo=True,
+    )
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=demo_tenant,
+        company_name="Demo Co",
+        primary_color="#335577",
+    )
+    stale_user_id = _seed_user(
+        SessionLocal,
+        email="stale-demo@example.com",
+        password="DemoPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=demo_tenant,
+    )
+    _seed_user(
+        SessionLocal,
+        email="superadmin@example.com",
+        password="TestPass123!",
+        role=ROLE_SUPERADMIN,
+        tenant_id=None,
+    )
+
+    with SessionLocal() as db:
+        demo = db.get(Tenant, demo_tenant)
+        assert demo is not None
+        demo.demo_reset_interval_days = 1
+        demo.demo_reset_time_minutes = 60
+        demo.demo_last_reset_at = datetime(2026, 3, 30, 7, 59, 0)
+        db.add(Customer(tenant_id=demo_tenant, account_code="STALE-001", name="Stale Customer"))
+        db.commit()
+
+    with _client(app, base_url="https://admin.localhost") as admin_client:
+        login_page = admin_client.get("/login")
+        assert login_page.status_code == 200
+        assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
+        detail = admin_client.get(f"/platform/tenants/{demo_tenant}")
+        assert detail.status_code == 200
+
+    with SessionLocal() as db:
+        demo = db.get(Tenant, demo_tenant)
+        assert demo is not None
+        assert demo.demo_last_reset_at == reset_now
+        assert _tenant_row_count(db, User, demo_tenant) == 1
+        assert db.get(User, stale_user_id) is None
+        assert (
+            db.execute(
+                select(Customer).where(
+                    Customer.tenant_id == demo_tenant,
+                    Customer.account_code == "STALE-001",
+                )
+            ).scalars().first()
+            is None
+        )
+        reset_event = db.execute(
+            select(AuditEvent)
+            .where(
+                AuditEvent.action == "TENANT_RESET_DEMO",
+                AuditEvent.entity_id == str(demo_tenant),
+            )
+            .order_by(AuditEvent.id.desc())
+            .limit(1)
+        ).scalars().first()
+        assert reset_event is not None
+        assert isinstance(reset_event.details_json, dict)
+        assert reset_event.details_json.get("reason") == "automatic"
+
+
 def test_platform_superadmin_reset_demo_deletes_tenant_ai_usage_logs_before_users(
     tmp_path, monkeypatch
 ):
