@@ -27,6 +27,8 @@ from ..models import (
     Invoice,
     InvoiceLine,
     InvoiceVoid,
+    PrintAgent,
+    PrintAgentPairing,
     PrintDestination,
     PrintJob,
     PrintTemplate,
@@ -81,6 +83,8 @@ DEMO_LOGO_SOURCE = (
 
 _DELETE_CASCADE_MODELS = (
     PrintJob,
+    PrintAgentPairing,
+    PrintAgent,
     CustomerProductPrice,
     CustomerAdjustment,
     VehicleTare,

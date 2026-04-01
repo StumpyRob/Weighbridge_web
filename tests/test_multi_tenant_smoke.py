@@ -42,6 +42,8 @@ from app.models import (
     Invoice,
     InvoiceSequence,
     InvoiceLine,
+    PrintAgent,
+    PrintAgentPairing,
     PrintDestination,
     PrintTemplate,
     Product,
@@ -2471,7 +2473,7 @@ def test_superadmin_can_delete_empty_tenant_and_delete_blocks_linked_data(tmp_pa
         company_name="Demo Co",
         primary_color="#773333",
     )
-    _seed_user(
+    demo_admin_id = _seed_user(
         SessionLocal,
         email="demo-admin@example.com",
         password="DemoPass123!",
@@ -3193,7 +3195,7 @@ def test_demo_tenant_reset_action_is_only_available_for_demo_tenants(tmp_path, m
         company_name="Tenant A",
         primary_color="#245577",
     )
-    _seed_user(
+    demo_admin_id = _seed_user(
         SessionLocal,
         email="demo-admin@example.com",
         password="DemoPass123!",
@@ -3319,7 +3321,7 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         primary_color="#2a4f74",
     )
 
-    _seed_user(
+    demo_admin_id = _seed_user(
         SessionLocal,
         email="demo-admin@example.com",
         password="DemoPass123!",
@@ -3669,6 +3671,31 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
 
     with SessionLocal() as db:
         assert db.execute(select(func.count(EwcCode.id))).scalar_one() == 0
+        agent = PrintAgent(
+            id="demo-reset-agent-manual",
+            tenant_id=demo_tenant,
+            name="Demo Reset Agent",
+            api_key="demo-reset-agent-manual-key",
+            status="ONLINE",
+        )
+        db.add(agent)
+        db.add(
+            PrintAgentPairing(
+                id="demo-reset-pairing-manual",
+                tenant_id=demo_tenant,
+                requested_name="Demo Reset Agent",
+                paired_name="Demo Reset Agent",
+                pairing_code_hash="a" * 64,
+                exchange_token_hash="b" * 64,
+                status="PAIRED",
+                expires_at=utcnow() + timedelta(days=1),
+                paired_at=utcnow(),
+                paired_by_user_id=demo_admin_id,
+                exchanged_at=utcnow(),
+                print_agent_id=agent.id,
+            )
+        )
+        db.commit()
 
     demo_logo_dir = uploads_root / "tenants" / str(demo_tenant) / "company"
     demo_logo_file = demo_logo_dir / "demo-logo.png"
@@ -3725,6 +3752,8 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert demo is not None
         assert bool(demo.is_active) is True
         assert bool(demo.is_demo) is True
+        assert _tenant_row_count(db, PrintAgent, demo_tenant) == 0
+        assert _tenant_row_count(db, PrintAgentPairing, demo_tenant) == 0
 
         demo_user = db.execute(
             select(User).where(
@@ -4020,6 +4049,30 @@ def test_reserved_demo_auto_reset_schedule_resets_on_next_request(tmp_path, monk
         assert demo.demo_reset_time_minutes == 255
         assert demo.demo_last_reset_at is not None
         demo.demo_last_reset_at = utcnow() - timedelta(days=3)
+        agent = PrintAgent(
+            id="demo-reset-agent-auto",
+            tenant_id=demo_tenant,
+            name="Auto Reset Agent",
+            api_key="demo-reset-agent-auto-key",
+            status="ONLINE",
+        )
+        db.add(agent)
+        db.add(
+            PrintAgentPairing(
+                id="demo-reset-pairing-auto",
+                tenant_id=demo_tenant,
+                requested_name="Auto Reset Agent",
+                paired_name="Auto Reset Agent",
+                pairing_code_hash="c" * 64,
+                exchange_token_hash="d" * 64,
+                status="PAIRED",
+                expires_at=utcnow() + timedelta(days=1),
+                paired_at=utcnow(),
+                paired_by_user_id=stale_user_id,
+                exchanged_at=utcnow(),
+                print_agent_id=agent.id,
+            )
+        )
         db.add(Customer(tenant_id=demo_tenant, account_code="STALE-001", name="Stale Customer"))
         db.commit()
 
@@ -4033,6 +4086,8 @@ def test_reserved_demo_auto_reset_schedule_resets_on_next_request(tmp_path, monk
         assert demo is not None
         assert demo.demo_last_reset_at is not None
         assert demo.demo_last_reset_at > utcnow() - timedelta(minutes=2)
+        assert _tenant_row_count(db, PrintAgent, demo_tenant) == 0
+        assert _tenant_row_count(db, PrintAgentPairing, demo_tenant) == 0
         assert _tenant_row_count(db, User, demo_tenant) == 1
         assert db.get(User, stale_user_id) is None
         default_demo_user = (
