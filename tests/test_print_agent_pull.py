@@ -352,6 +352,50 @@ def test_print_agent_printer_sync_stores_snapshot_and_synced_at(client_anonymous
     ]
 
 
+def test_print_agent_printer_sync_replaces_removed_printers(client_anonymous, db_session):
+    agent = _create_print_agent(
+        db_session,
+        raw_api_key="agent-sync-replace-key",
+        name="Sync Replace Agent",
+    )
+    client_anonymous.headers.pop(CSRF_HEADER_NAME, None)
+
+    first = client_anonymous.post(
+        "/api/print/agents/printers/sync",
+        headers={"X-Agent-Key": "agent-sync-replace-key"},
+        json={
+            "printers": [
+                {"name": "Front Desk Printer", "is_default": True, "is_online": True},
+                {"name": "Warehouse Printer", "is_default": False, "is_online": True},
+            ]
+        },
+    )
+
+    assert first.status_code == 200
+
+    second = client_anonymous.post(
+        "/api/print/agents/printers/sync",
+        headers={"X-Agent-Key": "agent-sync-replace-key"},
+        json={
+            "printers": [
+                {"name": "Warehouse Printer", "is_default": True, "is_online": False},
+            ]
+        },
+    )
+
+    assert second.status_code == 200
+    assert second.json()["printer_count"] == 1
+
+    db_session.refresh(agent)
+    assert agent.printers_json == [
+        {
+            "name": "Warehouse Printer",
+            "is_default": True,
+            "is_online": False,
+        }
+    ]
+
+
 def test_print_agent_printer_sync_requires_agent_key(client_anonymous):
     client_anonymous.headers.pop(CSRF_HEADER_NAME, None)
 

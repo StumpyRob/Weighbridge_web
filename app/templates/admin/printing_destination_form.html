@@ -152,6 +152,9 @@
               {% if not form_data.pull_agent_id %}
                 Select an agent to load synced printers.
               {% elif pull_selected_agent_has_synced_printers %}
+                {% if pull_selected_agent_selected_printer_missing %}
+                  Saved printer is no longer synced from this agent. Select a current printer and save.
+                {% endif %}
                 {{ pull_selected_agent_printer_count }} printer{% if pull_selected_agent_printer_count != 1 %}s{% endif %} synced{% if pull_selected_agent_synced_at_label %} at {{ pull_selected_agent_synced_at_label }}{% endif %}.
               {% else %}
                 No printers synced from this agent yet.
@@ -368,6 +371,7 @@
           printer_count: Number(resolved.printer_count || 0),
           printers: Array.isArray(resolved.printers) ? resolved.printers : [],
           has_synced_printers: Boolean(resolved.has_synced_printers),
+          selected_printer_missing: Boolean(resolved.selected_printer_missing),
           synced_at_label: String(resolved.synced_at_label || "").trim(),
         };
       }
@@ -408,6 +412,12 @@
         const inventory = selectedPullAgentInventory(selectedAgentId);
         const hasSelectedAgent = selectedAgentId.length > 0;
         const hasSyncedPrinters = hasSelectedAgent && inventory.has_synced_printers;
+        const selectedPrinterMissing =
+          hasSyncedPrinters &&
+          Boolean(previousPrinterValue) &&
+          !inventory.printers.some(function (printer) {
+            return String((printer && printer.name) || "").trim() === previousPrinterValue;
+          });
 
         resetPullPrinterOptions(
           inventory.printers,
@@ -424,13 +434,17 @@
           pullPrinterManualInput.value = String(pullPrinterSelect.value || "").trim();
           const syncedAtLabel = inventory.synced_at_label;
           const printerCount = inventory.printer_count || inventory.printers.length;
-          pullPrinterSyncMessage.textContent =
+          const syncSummary =
             printerCount +
             " printer" +
             (printerCount === 1 ? "" : "s") +
             " synced" +
             (syncedAtLabel ? " at " + syncedAtLabel : "") +
             ".";
+          pullPrinterSyncMessage.textContent = selectedPrinterMissing
+            ? "Saved printer is no longer synced from this agent. Select a current printer and save. " +
+              syncSummary
+            : syncSummary;
           return;
         }
 
@@ -456,6 +470,7 @@
       ) {
         pullPrinterSelect.addEventListener("change", function () {
           pullPrinterManualInput.value = String(pullPrinterSelect.value || "").trim();
+          syncPullPrinterFields();
         });
       }
       syncVisibility();

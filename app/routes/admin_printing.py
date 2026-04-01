@@ -95,6 +95,26 @@ DESTINATION_DELETE_DEFAULT_ACTIVE_ERROR = (
 DESTINATION_DELETE_IN_USE_ERROR = (
     "Destination is in use by one or more jobs and cannot be deleted."
 )
+_MANAGED_DELIVERY_CONFIG_KEYS = {
+    "agent_id",
+    "api_key",
+    "attach_pdf",
+    "auto_print_on_complete",
+    "bcc",
+    "body_template",
+    "cc",
+    "copies",
+    "email_body_template",
+    "email_subject_template",
+    "host",
+    "port",
+    "printer_name",
+    "subject_template",
+    "timeout_ms",
+    "timeout_seconds",
+    "to",
+    "url",
+}
 JOB_STATUS_FILTER_OPTIONS = (
     (PRINT_JOB_STATUS_SENT, "Sent"),
     (PRINT_JOB_STATUS_FAILED, "Failed"),
@@ -377,8 +397,12 @@ def _destination_to_form(
         "email_to": str(config.get("to", "")),
         "email_cc": str(config.get("cc", "")),
         "email_bcc": str(config.get("bcc", "")),
-        "email_subject_template": str(config.get("email_subject_template", "")),
-        "email_body_template": str(config.get("email_body_template", "")),
+        "email_subject_template": str(
+            config.get("email_subject_template", config.get("subject_template", ""))
+        ),
+        "email_body_template": str(
+            config.get("email_body_template", config.get("body_template", ""))
+        ),
         "attach_pdf": bool(config.get("attach_pdf", True)),
         "auto_print_on_complete": bool(config.get("auto_print_on_complete", False)),
         "is_default": bool(destination.is_default) if destination else False,
@@ -400,16 +424,29 @@ def _sync_pull_printer_form_fields(form_data: dict[str, str | bool]) -> None:
     form_data["pull_printer_name_manual"] = manual_value or resolved_printer_name
 
 
+def _normalized_printer_name_key(value: str | None) -> str:
+    return str(value or "").strip().casefold()
+
+
+def _print_agent_has_synced_printer(agent: PrintAgent | None, printer_name: str | None) -> bool:
+    normalized_printer_name = _normalized_printer_name_key(printer_name)
+    if not normalized_printer_name:
+        return False
+    return any(
+        _normalized_printer_name_key(str(item.get("name", ""))) == normalized_printer_name
+        for item in normalize_print_agent_printers(
+            getattr(agent, "printers_json", None) if agent is not None else None
+        )
+    )
+
+
 def _print_agent_printer_options(
     agent: PrintAgent | None,
-    *,
-    selected_printer_name: str = "",
 ) -> list[dict[str, object]]:
     printers = normalize_print_agent_printers(
         getattr(agent, "printers_json", None) if agent is not None else None
     )
     options: list[dict[str, object]] = []
-    seen_names: set[str] = set()
     for printer in printers:
         name = str(printer.get("name", "")).strip()
         if not name:
@@ -428,19 +465,6 @@ def _print_agent_printer_options(
                 "is_online": bool(printer.get("is_online")),
             }
         )
-        seen_names.add(name.casefold())
-
-    resolved_selected_printer = str(selected_printer_name or "").strip()
-    if resolved_selected_printer and resolved_selected_printer.casefold() not in seen_names:
-        options.insert(
-            0,
-            {
-                "name": resolved_selected_printer,
-                "label": f"{resolved_selected_printer} (saved)",
-                "is_default": False,
-                "is_online": False,
-            },
-        )
     return options
 
 
@@ -453,19 +477,30 @@ def _print_agent_printer_inventory(
     inventory: dict[str, dict[str, object]] = {}
     for agent in print_agents:
         synced_printers = normalize_print_agent_printers(agent.printers_json)
-        extra_selected_printer = (
-            selected_printer_name if str(agent.id) == str(selected_agent_id) else ""
+        selected_printer_missing = (
+            str(agent.id) == str(selected_agent_id)
+            and bool(synced_printers)
+            and not _print_agent_has_synced_printer(agent, selected_printer_name)
+            and bool(str(selected_printer_name or "").strip())
         )
         inventory[str(agent.id)] = {
             "printer_count": len(synced_printers),
-            "printers": _print_agent_printer_options(
-                agent,
-                selected_printer_name=extra_selected_printer,
-            ),
+            "printers": _print_agent_printer_options(agent),
             "has_synced_printers": bool(synced_printers),
+            "selected_printer_missing": selected_printer_missing,
             "synced_at_label": _format_admin_datetime(agent.printers_synced_at),
         }
     return inventory
+
+
+def _parsed_delivery_config_json(form: dict[str, str]) -> dict[str, object]:
+    raw_json = str(form.get("delivery_config", "")).strip()
+    if not raw_json:
+        return {}
+    parsed = json.loads(raw_json)
+    if isinstance(parsed, dict):
+        return dict(parsed)
+    return {}
 
 
 def _template_to_form(template: PrintTemplate | None = None) -> dict[str, str | bool]:
@@ -488,7 +523,9 @@ def _delivery_config_from_form(
     document_type: str,
 ) -> dict:
     normalized = _normalize_delivery_type(delivery_type)
-    config: dict[str, object] = {}
+    config = _parsed_delivery_config_json(form)
+    for key in _MANAGED_DELIVERY_CONFIG_KEYS:
+        config.pop(key, None)
     if normalized == DELIVERY_TYPE_PRINT_NETWORK_RAW_9100:
         host = str(form.get("raw_host", "")).strip()
         if host:
@@ -526,23 +563,22 @@ def _delivery_config_from_form(
         if copies is not None:
             config["copies"] = copies
     elif normalized == DELIVERY_TYPE_EMAIL_PDF:
-        for key in (
-            "email_to",
-            "email_cc",
-            "email_bcc",
-            "email_subject_template",
-            "email_body_template",
-        ):
-            value = str(form.get(key, "")).strip()
-            if value:
-                config[key.replace("email_", "")] = value
+        to_value = str(form.get("email_to", "")).strip()
+        if to_value:
+            config["to"] = to_value
+        cc_value = str(form.get("email_cc", "")).strip()
+        if cc_value:
+            config["cc"] = cc_value
+        bcc_value = str(form.get("email_bcc", "")).strip()
+        if bcc_value:
+            config["bcc"] = bcc_value
+        subject_template = str(form.get("email_subject_template", "")).strip()
+        if subject_template:
+            config["subject_template"] = subject_template
+        body_template = str(form.get("email_body_template", "")).strip()
+        if body_template:
+            config["body_template"] = body_template
         config["attach_pdf"] = _is_truthy(form.get("attach_pdf"))
-
-    raw_json = str(form.get("delivery_config", "")).strip()
-    if raw_json:
-        parsed = json.loads(raw_json)
-        if isinstance(parsed, dict):
-            config.update(parsed)
 
     if document_type == DOCUMENT_TYPE_TICKET and _is_truthy(
         str(form.get("auto_print_on_complete", ""))
@@ -572,13 +608,20 @@ def _validate_print_destination(
         if _normalize_format(getattr(template, "format", None)) != PRINT_CONTENT_TYPE_TEXT:
             errors.append("PRINT_AGENT_PULL destinations currently support TEXT templates only.")
         agent_id = str(delivery_config.get("agent_id", "")).strip()
+        agent = db.get(PrintAgent, agent_id) if agent_id else None
         if not agent_id:
             errors.append("PRINT_AGENT_PULL destination requires an assigned agent.")
-        elif db.get(PrintAgent, agent_id) is None:
+        elif agent is None:
             errors.append("Assigned print agent was not found.")
         printer_name = str(delivery_config.get("printer_name", "")).strip()
         if not printer_name:
             errors.append("PRINT_AGENT_PULL destination requires a printer name.")
+        elif agent is not None:
+            synced_printers = normalize_print_agent_printers(agent.printers_json)
+            if synced_printers and not _print_agent_has_synced_printer(agent, printer_name):
+                errors.append(
+                    "Selected print agent printer is no longer synced. Choose a current printer and save again."
+                )
         copies_raw = delivery_config.get("copies")
         try:
             copies = int(copies_raw)
@@ -965,6 +1008,7 @@ def _destination_form_response(
             "printer_count": 0,
             "printers": [],
             "has_synced_printers": False,
+            "selected_printer_missing": False,
             "synced_at_label": "",
         },
     )
@@ -989,6 +1033,9 @@ def _destination_form_response(
             "pull_selected_agent_printer_options": selected_pull_agent_inventory["printers"],
             "pull_selected_agent_has_synced_printers": selected_pull_agent_inventory[
                 "has_synced_printers"
+            ],
+            "pull_selected_agent_selected_printer_missing": selected_pull_agent_inventory[
+                "selected_printer_missing"
             ],
             "pull_selected_agent_printer_count": selected_pull_agent_inventory[
                 "printer_count"

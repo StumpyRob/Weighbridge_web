@@ -1,5 +1,6 @@
 ﻿from datetime import datetime
 import base64
+import json
 from urllib.parse import parse_qs, urlparse
 import uuid
 
@@ -1005,6 +1006,128 @@ def test_admin_agent_pull_destination_form_handles_no_synced_printers_cleanly(
     assert "No printers synced from this agent yet" in response.text
     assert 'name="pull_printer_name_manual"' in response.text
     assert 'value="Fallback Printer"' in response.text
+
+
+def test_admin_agent_pull_destination_edit_removes_missing_synced_printer_and_saves_current_selection(
+    client,
+    db_session,
+):
+    template = _create_template(
+        db_session,
+        code="TICKET_AGENT_PULL_EDIT_TEMPLATE",
+        document_type="TICKET",
+        template_format="TEXT",
+        content="PULL {{ payload.ticket_no }}",
+    )
+    agent = PrintAgent(
+        id=str(uuid.uuid4()),
+        name="Yard Agent",
+        api_key=hash_print_agent_key("agent-pull-edit-key"),
+        status="OFFLINE",
+        printers_json=[
+            {
+                "name": "Removed Printer",
+                "is_default": True,
+                "is_online": True,
+            },
+            {
+                "name": "Current Printer",
+                "is_default": False,
+                "is_online": True,
+            },
+        ],
+        printers_synced_at=datetime(2026, 3, 31, 9, 30, 0),
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    destination = _create_destination(
+        db_session,
+        name="Ticket Agent Pull Existing",
+        document_type="TICKET",
+        template_id=template.id,
+        delivery_type="PRINT_AGENT_PULL",
+        delivery_config={
+            "agent_id": agent.id,
+            "printer_name": "Removed Printer",
+            "copies": 1,
+        },
+        is_default=False,
+    )
+
+    stale_delivery_config = json.dumps(destination.delivery_config, indent=2, sort_keys=True)
+    agent.printers_json = [
+        {
+            "name": "Current Printer",
+            "is_default": True,
+            "is_online": True,
+        },
+        {
+            "name": "Backup Printer",
+            "is_default": False,
+            "is_online": True,
+        },
+    ]
+    agent.printers_synced_at = datetime(2026, 4, 1, 8, 15, 0)
+    db_session.commit()
+
+    edit_page = client.get(f"/admin/printing/destinations/{destination.id}/edit")
+
+    assert edit_page.status_code == 200
+    assert (
+        "Saved printer is no longer synced from this agent. Select a current printer and save."
+        in edit_page.text
+    )
+    assert "Current Printer (default, online)" in edit_page.text
+    assert "Backup Printer (online)" in edit_page.text
+    assert "Removed Printer (saved)" not in edit_page.text
+
+    invalid = client.post(
+        f"/admin/printing/destinations/{destination.id}/edit",
+        data={
+            "name": destination.name,
+            "description": destination.description or "",
+            "document_type": destination.document_type,
+            "template_id": str(template.id),
+            "delivery_type": "PRINT_AGENT_PULL",
+            "pull_agent_id": agent.id,
+            "pull_printer_name": "Removed Printer",
+            "pull_copies": "1",
+            "delivery_config": stale_delivery_config,
+            "is_active": "1",
+        },
+        follow_redirects=True,
+    )
+
+    assert invalid.status_code == 400
+    assert (
+        "Selected print agent printer is no longer synced. Choose a current printer and save again."
+        in invalid.text
+    )
+
+    response = client.post(
+        f"/admin/printing/destinations/{destination.id}/edit",
+        data={
+            "name": destination.name,
+            "description": destination.description or "",
+            "document_type": destination.document_type,
+            "template_id": str(template.id),
+            "delivery_type": "PRINT_AGENT_PULL",
+            "pull_agent_id": agent.id,
+            "pull_printer_name": "Current Printer",
+            "pull_copies": "2",
+            "delivery_config": stale_delivery_config,
+            "is_active": "1",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+
+    db_session.refresh(destination)
+    assert destination.delivery_config["agent_id"] == agent.id
+    assert destination.delivery_config["printer_name"] == "Current Printer"
+    assert destination.delivery_config["copies"] == 2
 
 
 def test_admin_agent_pull_destination_manual_fallback_persists_when_no_synced_printers(
