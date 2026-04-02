@@ -47,6 +47,7 @@ from ..services.printing import (
     PRINT_JOB_STATUS_PENDING,
     PRINT_JOB_STATUS_QUEUED,
     PRINT_JOB_STATUS_SENT,
+    resolve_job_document_filename,
     retry_print_job,
 )
 from ..services.print_agents import (
@@ -109,6 +110,7 @@ _MANAGED_DELIVERY_CONFIG_KEYS = {
     "host",
     "port",
     "printer_name",
+    "printer_role",
     "subject_template",
     "timeout_ms",
     "timeout_seconds",
@@ -184,6 +186,9 @@ def _print_job_printer_or_target(job: PrintJob) -> str:
     printer_name = str(config.get("printer_name", "")).strip()
     if printer_name:
         return printer_name
+    printer_role = str(config.get("printer_role", "")).strip()
+    if printer_role:
+        return f"Role: {printer_role}"
     host = str(config.get("host", "")).strip()
     if host:
         port = _parse_optional_int(str(config.get("port", "")).strip())
@@ -391,6 +396,7 @@ def _destination_to_form(
         "node_printer_name": str(config.get("printer_name", "")),
         "node_copies": str(config.get("copies", 1)),
         "pull_agent_id": str(config.get("agent_id", "")),
+        "pull_printer_role": str(config.get("printer_role", "")),
         "pull_printer_name": str(config.get("printer_name", "")),
         "pull_printer_name_manual": str(config.get("printer_name", "")),
         "pull_copies": str(config.get("copies", 1)),
@@ -556,6 +562,9 @@ def _delivery_config_from_form(
         agent_id = str(form.get("pull_agent_id", "")).strip()
         if agent_id:
             config["agent_id"] = agent_id
+        printer_role = str(form.get("pull_printer_role", "")).strip()
+        if printer_role:
+            config["printer_role"] = printer_role
         printer_name = _resolve_pull_printer_form_value(form)
         if printer_name:
             config["printer_name"] = printer_name
@@ -605,20 +614,19 @@ def _validate_print_destination(
         errors.append("EMAIL_PDF destinations are only supported for Invoice.")
 
     if delivery_type == DELIVERY_TYPE_PRINT_AGENT_PULL:
-        if _normalize_format(getattr(template, "format", None)) != PRINT_CONTENT_TYPE_TEXT:
-            errors.append("PRINT_AGENT_PULL destinations currently support TEXT templates only.")
         agent_id = str(delivery_config.get("agent_id", "")).strip()
         agent = db.get(PrintAgent, agent_id) if agent_id else None
         if not agent_id:
             errors.append("PRINT_AGENT_PULL destination requires an assigned agent.")
         elif agent is None:
             errors.append("Assigned print agent was not found.")
+        printer_role = str(delivery_config.get("printer_role", "")).strip()
         printer_name = str(delivery_config.get("printer_name", "")).strip()
-        if not printer_name:
-            errors.append("PRINT_AGENT_PULL destination requires a printer name.")
+        if not printer_name and not printer_role:
+            errors.append("PRINT_AGENT_PULL destination requires a printer role or printer name.")
         elif agent is not None:
             synced_printers = normalize_print_agent_printers(agent.printers_json)
-            if synced_printers and not _print_agent_has_synced_printer(agent, printer_name):
+            if printer_name and synced_printers and not _print_agent_has_synced_printer(agent, printer_name):
                 errors.append(
                     "Selected print agent printer is no longer synced. Choose a current printer and save again."
                 )
@@ -2335,6 +2343,7 @@ def admin_print_job_detail(
             "requested_by_label": requested_by_label,
             "provider_response_pretty": provider_response_pretty,
             "document_reference": document_reference,
+            "document_filename": resolve_job_document_filename(db, job),
             "printer_or_target": _print_job_printer_or_target(job),
             "trigger_source_label": _print_job_trigger_source_label(job.trigger_source),
             "can_retry": _print_job_can_retry(job),

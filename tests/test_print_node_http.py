@@ -102,6 +102,7 @@ def test_local_node_http_sends_expected_json_payload_and_api_key(monkeypatch):
     assert called["json"] == {
         "job_id": "123",
         "document_type": "TICKET",
+        "document_filename": "TICKET-123.txt",
         "job_name": "TICKET print job 123",
         "printer_name": "Front Desk Printer",
         "copies": 2,
@@ -310,30 +311,45 @@ def test_execute_rendered_print_node_http_persists_failure_response_json_when_po
     assert job.last_error == "Print node rejected job: Printer not found"
 
 
-def test_execute_rendered_print_node_http_non_text_fails_clearly(db_session):
-    with pytest.raises(
-        NotImplementedError,
-        match="PRINT_NODE_HTTP currently supports TEXT payloads only.",
-    ):
-        execute_rendered_print(
-            db_session,
-            document_type=DOCUMENT_TYPE_TICKET,
-            rendered_content="<html><body>Ticket T-3003</body></html>",
-            content_type=PRINT_CONTENT_TYPE_HTML,
-            delivery_type=DELIVERY_TYPE_PRINT_NODE_HTTP,
-            delivery_config={
-                "url": "http://127.0.0.1:9123/v1/print",
-                "printer_name": "Front Desk Printer",
-                "copies": 1,
+def test_execute_rendered_print_node_http_html_is_converted_to_pdf(db_session, monkeypatch):
+    called: dict[str, object] = {}
+
+    def _fake_post(_url, *, json, headers, timeout):
+        called["json"] = dict(json)
+        called["headers"] = dict(headers)
+        called["timeout"] = timeout
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "provider_job_ref": "agent-html-1",
+                "message": "Accepted",
             },
         )
 
-    job = db_session.execute(
-        select(PrintJob).order_by(PrintJob.id.desc())
-    ).scalars().first()
-    assert job is not None
-    assert job.status == "FAILED"
-    assert job.last_error == "PRINT_NODE_HTTP currently supports TEXT payloads only."
+    monkeypatch.setattr(transport_service.httpx, "post", _fake_post)
+
+    result = execute_rendered_print(
+        db_session,
+        document_type=DOCUMENT_TYPE_TICKET,
+        rendered_content="<html><body>Ticket T-3003</body></html>",
+        content_type=PRINT_CONTENT_TYPE_HTML,
+        delivery_type=DELIVERY_TYPE_PRINT_NODE_HTTP,
+        delivery_config={
+            "url": "http://127.0.0.1:9123/v1/print",
+            "printer_name": "Front Desk Printer",
+            "copies": 1,
+        },
+    )
+
+    assert result.job.status == "SENT"
+    assert result.job.payload_format == "PDF"
+    assert result.job.payload_mime_type == "application/pdf"
+    assert base64.b64decode(result.job.rendered_bytes_base64.encode("ascii")).startswith(b"%PDF")
+    assert called["json"]["payload_format"] == "PDF"
+    assert called["json"]["payload_mime_type"] == "application/pdf"
+    assert called["json"]["document_filename"].endswith(".pdf")
+    assert base64.b64decode(called["json"]["payload_base64"].encode("ascii")).startswith(b"%PDF")
 
 
 def test_retry_print_job_node_http_uses_live_destination_api_key(
@@ -407,6 +423,7 @@ def test_retry_print_job_node_http_uses_live_destination_api_key(
     assert called["json"] == {
         "job_id": str(job.id),
         "document_type": "TICKET",
+        "document_filename": "Ticket-ticket-job.txt",
         "job_name": f"TICKET print job {job.id}",
         "printer_name": "Front Desk Printer",
         "copies": 2,
@@ -517,6 +534,7 @@ def test_retry_print_job_node_http_legacy_text_job_without_payload_metadata_stil
 
     def _fake_post(_url, *, json, headers, timeout):
         _ = (headers, timeout)
+        assert json["document_filename"] == "Ticket-ticket-job.txt"
         assert json["payload_format"] == "TEXT"
         assert json["payload_mime_type"] == NODE_HTTP_TEXT_MIME_TYPE
         assert json["payload_base64"] == base64.b64encode(b"Legacy ticket text").decode("ascii")

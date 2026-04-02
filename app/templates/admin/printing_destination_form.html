@@ -129,7 +129,18 @@
             </select>
           </div>
           <div class="field" data-delivery-groups="PRINT_AGENT_PULL">
-            <label for="pull_printer_name">Printer</label>
+            <label for="pull_printer_role">Printer role</label>
+            <input
+              type="text"
+              id="pull_printer_role"
+              name="pull_printer_role"
+              value="{{ form_data.pull_printer_role }}"
+              placeholder="ticket, wtn, invoice, yard-main"
+            />
+            <p class="muted">Preferred main path. The local print agent can map this role to a workstation-specific printer.</p>
+          </div>
+          <div class="field" data-delivery-groups="PRINT_AGENT_PULL">
+            <label for="pull_printer_name">Printer name override</label>
             <select
               id="pull_printer_name"
               name="pull_printer_name"
@@ -167,7 +178,7 @@
             id="pull_printer_name_manual_wrap"
             {% if not form_data.pull_agent_id or pull_selected_agent_has_synced_printers %}style="display: none;"{% endif %}
           >
-            <label for="pull_printer_name_manual">Manual printer name</label>
+            <label for="pull_printer_name_manual">Manual printer name override</label>
             <input
               type="text"
               id="pull_printer_name_manual"

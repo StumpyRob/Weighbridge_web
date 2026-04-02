@@ -23,6 +23,7 @@ from app.services.print_agents import (
 from app.services.printing import (
     DELIVERY_TYPE_PRINT_AGENT_PULL,
     DOCUMENT_TYPE_TICKET,
+    PRINT_CONTENT_TYPE_PDF,
     PRINT_CONTENT_TYPE_TEXT,
     execute_rendered_print,
 )
@@ -465,8 +466,11 @@ def test_print_agent_poll_returns_correct_job(client_anonymous, db_session):
     assert payload["job"]["job_id"] == job.id
     assert payload["job"]["document_type"] == "TICKET"
     assert payload["job"]["job_name"] == f"TICKET print job {job.id}"
-    assert payload["job"]["payload_format"] == "TEXT"
-    assert payload["job"]["payload_mime_type"] == "text/plain; charset=utf-8"
+    assert payload["job"]["document_filename"].endswith(".pdf")
+    assert payload["job"]["payload_format"] == "PDF"
+    assert payload["job"]["payload_mime_type"] == "application/pdf"
+    assert payload["job"]["payload_url"].endswith(f"/api/print/jobs/{job.id}/payload")
+    assert "payload_base64" not in payload["job"]
     assert payload["job"]["printer_name"] == "Front Desk Printer"
     assert payload["job"]["copies"] == 2
 
@@ -496,6 +500,8 @@ def test_print_agent_claim_updates_job_and_prevents_double_claim(client_anonymou
 
     assert first.status_code == 200
     assert first.json()["printer_name"] == "Claim Printer"
+    assert first.json()["job"]["payload_format"] == "PDF"
+    assert first.json()["job"]["payload_url"].endswith(f"/api/print/jobs/{job.id}/payload")
     assert first.json()["copies"] == 3
     assert second.status_code == 409
     db_session.refresh(job)
@@ -529,15 +535,13 @@ def test_print_agent_payload_returns_claimed_job_payload(client_anonymous, db_se
     )
 
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["job_id"] == job.id
-    assert payload["payload_format"] == "TEXT"
-    assert payload["payload_mime_type"] == "text/plain; charset=utf-8"
-    assert payload["printer_name"] == "Payload Printer"
-    assert payload["copies"] == 4
-    assert base64.b64decode(payload["payload_base64"].encode("ascii")) == (
-        b"Ticket T-PAYLOAD-1\nCustomer: ACME"
-    )
+    assert response.headers["x-print-job-id"] == str(job.id)
+    assert response.headers["x-print-payload-format"] == "PDF"
+    assert response.headers["x-print-payload-mime-type"] == "application/pdf"
+    assert response.headers["x-print-printer-name"] == "Payload Printer"
+    assert response.headers["x-print-copies"] == "4"
+    assert response.headers["content-disposition"].endswith('.pdf"')
+    assert response.content.startswith(b"%PDF")
 
 
 def test_print_agent_complete_marks_job_sent(client_anonymous, db_session):
@@ -640,5 +644,6 @@ def test_ticket_print_pull_destination_creates_pending_job(client, db_session):
     assert job.destination_id == destination.id
     assert job.delivery_type == DELIVERY_TYPE_PRINT_AGENT_PULL
     assert job.status == "PENDING"
-    assert job.payload_format == "TEXT"
-    assert job.payload_mime_type == "text/plain; charset=utf-8"
+    assert job.payload_format == PRINT_CONTENT_TYPE_PDF
+    assert job.payload_mime_type == "application/pdf"
+    assert base64.b64decode(job.rendered_bytes_base64.encode("ascii")).startswith(b"%PDF")

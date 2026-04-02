@@ -1,3 +1,4 @@
+import base64
 from datetime import datetime
 from decimal import Decimal
 
@@ -1053,6 +1054,7 @@ def test_ticket_direct_print_node_http_route_sends_expected_payload_and_persists
     assert called["json"] == {
         "job_id": str(job.id),
         "document_type": "TICKET",
+        "document_filename": "Ticket-T-NODE-PRINT-1.txt",
         "job_name": f"TICKET print job {job.id}",
         "printer_name": "Zebra Front Desk",
         "copies": 2,
@@ -1307,6 +1309,9 @@ def test_ticket_completion_auto_prints_using_pull_pipeline(client, db_session):
     assert job.delivery_type == "PRINT_AGENT_PULL"
     assert job.status == "PENDING"
     assert job.trigger_source == "AUTO_ON_COMPLETE"
+    assert job.payload_format == "PDF"
+    assert job.payload_mime_type == "application/pdf"
+    assert base64.b64decode(job.rendered_bytes_base64.encode("ascii")).startswith(b"%PDF")
     assert job.delivery_config_json["printer_name"] == "Yard Pull Printer"
     assert job.delivery_config_json["copies"] == 2
 

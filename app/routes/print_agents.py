@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -25,16 +25,19 @@ from ..services.print_agents import (
 )
 from ..services.printing import (
     DELIVERY_TYPE_PRINT_AGENT_PULL,
+    PRINT_CONTENT_TYPE_PDF,
     PRINT_JOB_STATUS_FAILED,
     PRINT_JOB_STATUS_IN_PROGRESS,
     PRINT_JOB_STATUS_PENDING,
     PRINT_JOB_STATUS_SENT,
+    resolve_job_document_filename,
     resolve_job_payload,
 )
 from ..tenancy import request_tenant_id, require_tenant
 
 
 router = APIRouter(prefix="/api/print", tags=["print-agents"])
+INLINE_PAYLOAD_MAX_BYTES = 32 * 1024
 
 
 class PrintAgentRegisterRequest(BaseModel):
@@ -131,9 +134,10 @@ def _job_delivery_config(job: PrintJob, destination: PrintDestination | None) ->
 def _job_printer_settings(
     job: PrintJob,
     destination: PrintDestination | None,
-) -> tuple[str, int]:
+) -> tuple[str, str, int]:
     config = _job_delivery_config(job, destination)
     printer_name = str(config.get("printer_name", "")).strip()
+    printer_role = str(config.get("printer_role", "")).strip()
     copies_raw = config.get("copies", 1)
     try:
         copies = int(copies_raw)
@@ -141,7 +145,7 @@ def _job_printer_settings(
         copies = 1
     if copies < 1:
         copies = 1
-    return printer_name, copies
+    return printer_name, printer_role, copies
 
 
 def _load_pull_job_for_agent(
@@ -177,6 +181,53 @@ def _provider_job_ref_from_payload(
         if candidate:
             return candidate
     return None
+
+
+def _job_payload_url(request: Request, job_id: int) -> str:
+    base_url = str(request.base_url).rstrip("/")
+    return f"{base_url}/api/print/jobs/{job_id}/payload"
+
+
+def _inline_payload_base64(payload_bytes: bytes, payload_format: str) -> str | None:
+    if str(payload_format or "").strip().upper() == PRINT_CONTENT_TYPE_PDF:
+        return None
+    if len(payload_bytes) > INLINE_PAYLOAD_MAX_BYTES:
+        return None
+    return base64.b64encode(payload_bytes).decode("ascii")
+
+
+def _optional_text(value: object) -> str | None:
+    normalized = str(value or "").strip()
+    return normalized or None
+
+
+def _job_contract(
+    request: Request,
+    db: Session,
+    *,
+    job: PrintJob,
+    destination: PrintDestination | None,
+) -> dict[str, object]:
+    payload_bytes, payload_format, payload_mime_type = resolve_job_payload(job)
+    printer_name, printer_role, copies = _job_printer_settings(job, destination)
+    contract: dict[str, object] = {
+        "job_id": job.id,
+        "document_type": str(job.document_type or "").strip().upper(),
+        "document_filename": resolve_job_document_filename(db, job),
+        "job_name": _job_name(job),
+        "copies": copies,
+        "payload_format": payload_format,
+        "payload_mime_type": payload_mime_type,
+        "payload_url": _job_payload_url(request, int(job.id)),
+    }
+    inline_payload = _inline_payload_base64(payload_bytes, payload_format)
+    if inline_payload:
+        contract["payload_base64"] = inline_payload
+    if printer_name:
+        contract["printer_name"] = printer_name
+    if printer_role:
+        contract["printer_role"] = printer_role
+    return contract
 
 
 @router.post("/agents/register")
@@ -337,19 +388,7 @@ def print_agent_next_job(
     if next_job is None:
         return {"job": None}
 
-    _payload_bytes, payload_format, payload_mime_type = resolve_job_payload(next_job)
-    printer_name, copies = _job_printer_settings(next_job, next_destination)
-    return {
-        "job": {
-            "job_id": next_job.id,
-            "document_type": str(next_job.document_type or "").strip().upper(),
-            "job_name": _job_name(next_job),
-            "payload_format": payload_format,
-            "payload_mime_type": payload_mime_type,
-            "printer_name": printer_name,
-            "copies": copies,
-        }
-    }
+    return {"job": _job_contract(request, db, job=next_job, destination=next_destination)}
 
 
 @router.post("/jobs/{job_id:int}/claim")
@@ -382,12 +421,16 @@ def print_agent_claim_job(
 
     db.commit()
     refreshed = db.get(PrintJob, job.id)
-    printer_name, copies = _job_printer_settings(job, destination)
+    refreshed_job = refreshed or job
+    printer_name, printer_role, copies = _job_printer_settings(refreshed_job, destination)
+    contract = _job_contract(request, db, job=refreshed_job, destination=destination)
     return {
         "ok": True,
-        "job_id": job.id,
-        "status": str(refreshed.status or ""),
+        "job_id": refreshed_job.id,
+        "status": str(refreshed_job.status or ""),
+        "job": contract,
         "printer_name": printer_name,
+        "printer_role": printer_role,
         "copies": copies,
     }
 
@@ -397,7 +440,7 @@ def print_agent_job_payload(
     job_id: int,
     request: Request,
     db: Session = Depends(get_db),
-) -> dict[str, object]:
+) -> Response:
     agent = _require_authenticated_agent(request, db)
     job, destination = _load_pull_job_for_agent(db, job_id=job_id, agent=agent)
     if str(job.status or "").strip().upper() != PRINT_JOB_STATUS_IN_PROGRESS:
@@ -406,16 +449,28 @@ def print_agent_job_payload(
         raise HTTPException(status_code=404, detail="Print job not found.")
 
     payload_bytes, payload_format, payload_mime_type = resolve_job_payload(job)
-    printer_name, copies = _job_printer_settings(job, destination)
+    printer_name, printer_role, copies = _job_printer_settings(job, destination)
+    document_filename = resolve_job_document_filename(db, job)
     db.commit()
-    return {
-        "job_id": job.id,
-        "payload_base64": base64.b64encode(payload_bytes).decode("ascii"),
-        "payload_format": payload_format,
-        "payload_mime_type": payload_mime_type,
-        "printer_name": printer_name,
-        "copies": copies,
+    headers = {
+        "Content-Disposition": f'attachment; filename="{document_filename}"',
+        "Cache-Control": "no-store",
+        "X-Print-Job-Id": str(job.id),
+        "X-Print-Document-Type": str(job.document_type or "").strip().upper(),
+        "X-Print-Document-Filename": document_filename,
+        "X-Print-Payload-Format": payload_format,
+        "X-Print-Payload-Mime-Type": payload_mime_type,
+        "X-Print-Copies": str(copies),
     }
+    if printer_name:
+        headers["X-Print-Printer-Name"] = printer_name
+    if printer_role:
+        headers["X-Print-Printer-Role"] = printer_role
+    return Response(
+        content=payload_bytes,
+        media_type=payload_mime_type or "application/octet-stream",
+        headers=headers,
+    )
 
 
 @router.post("/jobs/{job_id:int}/complete")

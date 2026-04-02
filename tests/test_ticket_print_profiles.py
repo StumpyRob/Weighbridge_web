@@ -1182,7 +1182,7 @@ def test_admin_agent_pull_destination_manual_fallback_persists_when_no_synced_pr
     assert destination.delivery_config["copies"] == 2
 
 
-def test_admin_agent_pull_destination_rejects_non_text_templates(client, db_session):
+def test_admin_agent_pull_destination_accepts_html_templates(client, db_session):
     template = _create_template(
         db_session,
         code="TICKET_AGENT_PULL_HTML_TEMPLATE",
@@ -1203,21 +1203,26 @@ def test_admin_agent_pull_destination_rejects_non_text_templates(client, db_sess
         "/admin/printing/destinations/new",
         data={
             "name": "Ticket Agent Pull HTML",
-            "description": "Invalid polling destination",
+            "description": "Rendered document polling destination",
             "document_type": "TICKET",
             "template_id": str(template.id),
             "delivery_type": "PRINT_AGENT_PULL",
             "pull_agent_id": agent.id,
-            "pull_printer_name": "Polling Printer",
+            "pull_printer_role": "ticket",
             "pull_copies": "1",
             "is_default": "1",
             "is_active": "1",
         },
-        follow_redirects=True,
+        follow_redirects=False,
     )
 
-    assert response.status_code == 400
-    assert "PRINT_AGENT_PULL destinations currently support TEXT templates only." in response.text
+    assert response.status_code == 303
+    destination = db_session.execute(
+        select(PrintDestination).where(PrintDestination.name == "Ticket Agent Pull HTML")
+    ).scalars().first()
+    assert destination is not None
+    assert destination.delivery_type == "PRINT_AGENT_PULL"
+    assert destination.delivery_config["printer_role"] == "ticket"
 
 
 def test_admin_node_http_destination_rejects_non_text_templates(client, db_session):
@@ -1322,6 +1327,8 @@ def test_admin_print_job_detail_shows_requester_payload_and_provider_metadata(
     assert response.status_code == 200
     assert "Requested by" in response.text
     assert current_user.email in response.text
+    assert "Document filename" in response.text
+    assert "Ticket-T-ADMIN-JOB-1.txt" in response.text
     assert "Payload format" in response.text
     assert "TEXT" in response.text
     assert "Payload MIME type" in response.text
@@ -1568,6 +1575,9 @@ def test_admin_retry_failed_print_agent_pull_job_uses_existing_retry_path(
     assert job.last_error is None
     assert job.provider_job_ref is None
     assert job.provider_response_json is None
+    assert job.payload_format == "PDF"
+    assert job.payload_mime_type == "application/pdf"
+    assert base64.b64decode(job.rendered_bytes_base64.encode("ascii")).startswith(b"%PDF")
 
 
 def test_admin_retry_failed_print_node_http_job_still_works(

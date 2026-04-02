@@ -2521,38 +2521,13 @@ async def tickets_print_dispatch(
         )
 
     try:
-        _resolved_destination, rendered = _ticket_render_document(
+        result = _ticket_execute_print(
             db,
-            ticket,
+            ticket=ticket,
             destination=destination,
-        )
-        delivery_type, delivery_config = _ticket_destination_delivery(destination)
-    except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
-        message = str(exc) or "Print failed."
-        if expects_json:
-            return JSONResponse({"ok": False, "error": message}, status_code=400)
-        return _render_ticket_edit(
-            request,
-            ticket,
-            db,
-            errors=[f"Print failed: {message}"],
-            status_code=400,
-        )
-
-    try:
-        result = execute_rendered_print(
-            db,
-            document_type=DOCUMENT_TYPE_TICKET,
-            rendered_content=rendered.rendered_content,
-            content_type=rendered.content_type,
-            delivery_type=delivery_type,
-            delivery_config=delivery_config,
-            destination_id=destination.id,
-            template_id=rendered.template_id,
-            ticket_id=ticket.id,
             created_by_user_id=created_by_user_id,
-            base_url=str(request.base_url),
             trigger_source=PRINT_JOB_TRIGGER_SOURCE_MANUAL,
+            base_url=str(request.base_url),
         )
     except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
         detail = str(exc) or "Print delivery failed."
@@ -2593,6 +2568,7 @@ async def tickets_print_dispatch(
         print_sent_at=print_sent_at,
     )
 
+    delivery_type, _delivery_config = _ticket_destination_delivery(destination)
     is_local_browser = delivery_type == DELIVERY_TYPE_PRINT_LOCAL_BROWSER
     if expects_json:
         payload_json: dict[str, object] = {

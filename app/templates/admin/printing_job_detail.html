@@ -54,6 +54,7 @@
         <div class="field"><label>Sent</label><div class="readonly">{{ job.sent_at.strftime("%d/%m/%Y %H:%M:%S") if job.sent_at else "-" }}</div></div>
         <div class="field"><label>Requested by</label><div class="readonly">{{ requested_by_label }}</div></div>
         <div class="field"><label>Document reference</label><div class="readonly">{{ document_reference }}</div></div>
+        <div class="field"><label>Document filename</label><div class="readonly">{{ document_filename }}</div></div>
         <div class="field"><label>Document type</label><div class="readonly">{{ job.document_type }}</div></div>
         <div class="field"><label>Delivery type</label><div class="readonly">{{ job.delivery_type }}</div></div>
         <div class="field"><label>Trigger source</label><div class="readonly">{{ trigger_source_label }}</div></div>

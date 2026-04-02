@@ -93,6 +93,7 @@ def _send_local_node_http(
     document_type: str,
     job_id: int,
     job_name: str,
+    document_filename: str,
     payload_format: str,
     payload_mime_type: str,
 ) -> PrintTransportResult:
@@ -113,8 +114,9 @@ def _send_local_node_http(
         headers["X-API-Key"] = api_key
 
     printer_name = str(config.get("printer_name", "")).strip()
-    if not printer_name:
-        raise ValueError("LOCAL_NODE_HTTP printer_name is required.")
+    printer_role = str(config.get("printer_role", "")).strip()
+    if not printer_name and not printer_role:
+        raise ValueError("LOCAL_NODE_HTTP printer_name or printer_role is required.")
 
     copies_raw = config.get("copies", 1)
     try:
@@ -125,23 +127,34 @@ def _send_local_node_http(
         raise ValueError("LOCAL_NODE_HTTP copies must be >= 1.")
 
     normalized_payload_format = str(payload_format or "").strip().upper()
-    if normalized_payload_format != "TEXT":
-        raise NotImplementedError("PRINT_NODE_HTTP currently supports TEXT payloads only.")
-
     resolved_job_name = (
         str(job_name or "").strip() or f"{str(document_type or '').strip().upper() or 'PRINT'} print job {job_id}"
     )
-    resolved_payload_mime_type = NODE_HTTP_TEXT_MIME_TYPE
+    resolved_payload_mime_type = (
+        str(payload_mime_type or "").strip()
+        or (NODE_HTTP_TEXT_MIME_TYPE if normalized_payload_format == "TEXT" else "")
+        or "application/octet-stream"
+    )
+    default_extension = "txt"
+    if normalized_payload_format == "PDF":
+        default_extension = "pdf"
+    elif normalized_payload_format == "RAW":
+        default_extension = "bin"
     payload = {
         "job_id": str(int(job_id or 0)),
         "document_type": document_type,
+        "document_filename": str(document_filename or "").strip()
+        or f"{str(document_type or '').strip().upper() or 'PRINT'}-{int(job_id or 0)}.{default_extension}",
         "job_name": resolved_job_name,
-        "printer_name": printer_name,
         "copies": copies,
         "payload_format": normalized_payload_format,
         "payload_mime_type": resolved_payload_mime_type,
         "payload_base64": base64.b64encode(job).decode("ascii"),
     }
+    if printer_name:
+        payload["printer_name"] = printer_name
+    if printer_role:
+        payload["printer_role"] = printer_role
     try:
         response = httpx.post(url, json=payload, headers=headers, timeout=timeout_seconds)
     except httpx.TimeoutException as exc:
@@ -211,6 +224,7 @@ def send(
     content_type: str = "TEXT",
     job_id: int = 0,
     job_name: str = "",
+    document_filename: str = "",
     payload_format: str = "",
     payload_mime_type: str = "",
 ) -> bytes | PrintTransportResult | None:
@@ -233,6 +247,7 @@ def send(
             document_type=document_type,
             job_id=job_id,
             job_name=job_name,
+            document_filename=document_filename,
             payload_format=resolved_payload_format,
             payload_mime_type=resolved_payload_mime_type,
         )
