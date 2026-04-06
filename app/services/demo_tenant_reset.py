@@ -82,9 +82,6 @@ DEMO_LOGO_SOURCE = (
 )
 
 _DELETE_CASCADE_MODELS = (
-    PrintJob,
-    PrintAgentPairing,
-    PrintAgent,
     CustomerProductPrice,
     CustomerAdjustment,
     VehicleTare,
@@ -105,10 +102,16 @@ _DELETE_CASCADE_MODELS = (
     Destination,
     Area,
     Yard,
+    CompanySetting,
+)
+
+_PRINTING_RESET_MODELS = (
+    PrintJob,
+    PrintAgentPairing,
+    PrintAgent,
     PrintDestination,
     PrintTemplateVersion,
     PrintTemplate,
-    CompanySetting,
 )
 
 
@@ -161,6 +164,16 @@ def _seed_number_sequences(db: Session, tenant_id: int) -> None:
         ),
         {"year": year, "updated_at": now},
     )
+
+
+def _delete_tenant_rows(db: Session, tenant_id: int, models) -> None:
+    for model in models:
+        db.execute(delete(model).where(model.tenant_id == tenant_id))
+
+
+def _clear_tenant_printing_state(db: Session, tenant_id: int) -> None:
+    # Clear agent-linked destinations and queued jobs before reseeding defaults.
+    _delete_tenant_rows(db, tenant_id, _PRINTING_RESET_MODELS)
 
 
 def _seed_tenant_baseline(
@@ -391,8 +404,8 @@ def reset_demo_tenant_data(
 
     db.execute(delete(AuditEvent).where(AuditEvent.tenant_id == str(tenant_id)))
     db.execute(delete(AIUsageLog).where(AIUsageLog.tenant_id == tenant_id))
-    for model in _DELETE_CASCADE_MODELS:
-        db.execute(delete(model).where(model.tenant_id == tenant_id))
+    _clear_tenant_printing_state(db, tenant_id)
+    _delete_tenant_rows(db, tenant_id, _DELETE_CASCADE_MODELS)
     db.execute(delete(User).where(User.tenant_id == tenant_id))
 
     tenant.is_active = True

@@ -4,6 +4,13 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+### CHANGE
+- Make demo-tenant reset clear tenant print-agent state explicitly before the baseline is reseeded, so stale paired agents, pending pairings, pull destinations, and queued pull jobs do not survive on the shared demo workspace.
+- Extend demo-reset smoke coverage to seed and then remove stale print-agent data for both manual and automatic reserved-demo resets, including verifying the demo printing UI comes back empty.
+
+### TEST
+- Re-run focused reserved-demo manual reset and automatic reset smoke coverage after extending the print-agent cleanup path.
+
 ## v0.22 - 2026-03-26
 
 ### RELEASE

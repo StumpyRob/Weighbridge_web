@@ -45,6 +45,7 @@ from app.models import (
     PrintAgent,
     PrintAgentPairing,
     PrintDestination,
+    PrintJob,
     PrintTemplate,
     Product,
     PlatformSetting,
@@ -3671,14 +3672,42 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
 
     with SessionLocal() as db:
         assert db.execute(select(func.count(EwcCode.id))).scalar_one() == 0
+        template = (
+            db.execute(
+                select(PrintTemplate)
+                .where(
+                    PrintTemplate.tenant_id == demo_tenant,
+                    PrintTemplate.document_type == "TICKET",
+                )
+                .order_by(PrintTemplate.id.asc())
+            ).scalars().first()
+        )
+        assert template is not None
         agent = PrintAgent(
             id="demo-reset-agent-manual",
             tenant_id=demo_tenant,
             name="Demo Reset Agent",
             api_key="demo-reset-agent-manual-key",
             status="ONLINE",
+            printers_json=[{"name": "Demo Reset Printer", "is_default": True, "is_online": True}],
         )
         db.add(agent)
+        db.add(
+            PrintAgentPairing(
+                id="demo-reset-pairing-pending-manual",
+                tenant_id=demo_tenant,
+                requested_name="Demo Reset Pending Pairing",
+                paired_name=None,
+                pairing_code_hash="p" * 64,
+                exchange_token_hash="q" * 64,
+                status="PENDING",
+                expires_at=utcnow() + timedelta(days=1),
+                paired_at=None,
+                paired_by_user_id=None,
+                exchanged_at=None,
+                print_agent_id=None,
+            )
+        )
         db.add(
             PrintAgentPairing(
                 id="demo-reset-pairing-manual",
@@ -3693,6 +3722,44 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
                 paired_by_user_id=demo_admin_id,
                 exchanged_at=utcnow(),
                 print_agent_id=agent.id,
+            )
+        )
+        pull_destination = PrintDestination(
+            tenant_id=demo_tenant,
+            name="Demo Reset Pull Destination",
+            description="Stale demo pull destination",
+            document_type="TICKET",
+            template_id=template.id,
+            delivery_type="PRINT_AGENT_PULL",
+            delivery_config={
+                "agent_id": agent.id,
+                "printer_name": "Demo Reset Printer",
+                "copies": 1,
+            },
+            is_default=False,
+            is_active=True,
+        )
+        db.add(pull_destination)
+        db.flush()
+        db.add(
+            PrintJob(
+                tenant_id=demo_tenant,
+                created_by_user_id=demo_admin_id,
+                document_type="TICKET",
+                destination_id=pull_destination.id,
+                template_id=template.id,
+                agent_id=agent.id,
+                delivery_type="PRINT_AGENT_PULL",
+                delivery_config_json={
+                    "agent_id": agent.id,
+                    "printer_name": "Demo Reset Printer",
+                    "copies": 1,
+                },
+                rendered_content="Demo reset stale pull job",
+                payload_format="TEXT",
+                payload_mime_type="text/plain",
+                trigger_source="MANUAL",
+                status="PENDING",
             )
         )
         db.commit()
@@ -3754,6 +3821,16 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
         assert bool(demo.is_demo) is True
         assert _tenant_row_count(db, PrintAgent, demo_tenant) == 0
         assert _tenant_row_count(db, PrintAgentPairing, demo_tenant) == 0
+        assert _tenant_row_count(db, PrintJob, demo_tenant) == 0
+        assert (
+            db.execute(
+                select(func.count(PrintDestination.id)).where(
+                    PrintDestination.tenant_id == demo_tenant,
+                    PrintDestination.delivery_type == "PRINT_AGENT_PULL",
+                )
+            ).scalar_one()
+            == 0
+        )
 
         demo_user = db.execute(
             select(User).where(
@@ -3857,6 +3934,12 @@ def test_platform_superadmin_can_reset_demo_tenant_and_reseed_baseline(tmp_path,
 
     with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.localhost") as demo_client:
         assert _login(demo_client, email="demo@demo.com", password="password") == 303
+        print_agents_page = demo_client.get("/admin/printing/agents")
+        assert print_agents_page.status_code == 200
+        assert "No paired agents yet." in print_agents_page.text
+        assert "No pending pairings." in print_agents_page.text
+        assert "Demo Reset Agent" not in print_agents_page.text
+        assert "Demo Reset Pending Pairing" not in print_agents_page.text
 
     with _client(app, base_url="https://admin.localhost") as admin_client:
         assert _login(admin_client, email="superadmin@example.com", password="TestPass123!") == 303
@@ -4049,14 +4132,42 @@ def test_reserved_demo_auto_reset_schedule_resets_on_next_request(tmp_path, monk
         assert demo.demo_reset_time_minutes == 255
         assert demo.demo_last_reset_at is not None
         demo.demo_last_reset_at = utcnow() - timedelta(days=3)
+        template = (
+            db.execute(
+                select(PrintTemplate)
+                .where(
+                    PrintTemplate.tenant_id == demo_tenant,
+                    PrintTemplate.document_type == "TICKET",
+                )
+                .order_by(PrintTemplate.id.asc())
+            ).scalars().first()
+        )
+        assert template is not None
         agent = PrintAgent(
             id="demo-reset-agent-auto",
             tenant_id=demo_tenant,
             name="Auto Reset Agent",
             api_key="demo-reset-agent-auto-key",
             status="ONLINE",
+            printers_json=[{"name": "Auto Reset Printer", "is_default": True, "is_online": True}],
         )
         db.add(agent)
+        db.add(
+            PrintAgentPairing(
+                id="demo-reset-pairing-pending-auto",
+                tenant_id=demo_tenant,
+                requested_name="Auto Reset Pending Pairing",
+                paired_name=None,
+                pairing_code_hash="e" * 64,
+                exchange_token_hash="f" * 64,
+                status="PENDING",
+                expires_at=utcnow() + timedelta(days=1),
+                paired_at=None,
+                paired_by_user_id=None,
+                exchanged_at=None,
+                print_agent_id=None,
+            )
+        )
         db.add(
             PrintAgentPairing(
                 id="demo-reset-pairing-auto",
@@ -4071,6 +4182,44 @@ def test_reserved_demo_auto_reset_schedule_resets_on_next_request(tmp_path, monk
                 paired_by_user_id=stale_user_id,
                 exchanged_at=utcnow(),
                 print_agent_id=agent.id,
+            )
+        )
+        pull_destination = PrintDestination(
+            tenant_id=demo_tenant,
+            name="Auto Reset Pull Destination",
+            description="Auto reset stale pull destination",
+            document_type="TICKET",
+            template_id=template.id,
+            delivery_type="PRINT_AGENT_PULL",
+            delivery_config={
+                "agent_id": agent.id,
+                "printer_name": "Auto Reset Printer",
+                "copies": 1,
+            },
+            is_default=False,
+            is_active=True,
+        )
+        db.add(pull_destination)
+        db.flush()
+        db.add(
+            PrintJob(
+                tenant_id=demo_tenant,
+                created_by_user_id=stale_user_id,
+                document_type="TICKET",
+                destination_id=pull_destination.id,
+                template_id=template.id,
+                agent_id=agent.id,
+                delivery_type="PRINT_AGENT_PULL",
+                delivery_config_json={
+                    "agent_id": agent.id,
+                    "printer_name": "Auto Reset Printer",
+                    "copies": 1,
+                },
+                rendered_content="Auto reset stale pull job",
+                payload_format="TEXT",
+                payload_mime_type="text/plain",
+                trigger_source="MANUAL",
+                status="PENDING",
             )
         )
         db.add(Customer(tenant_id=demo_tenant, account_code="STALE-001", name="Stale Customer"))
@@ -4088,6 +4237,16 @@ def test_reserved_demo_auto_reset_schedule_resets_on_next_request(tmp_path, monk
         assert demo.demo_last_reset_at > utcnow() - timedelta(minutes=2)
         assert _tenant_row_count(db, PrintAgent, demo_tenant) == 0
         assert _tenant_row_count(db, PrintAgentPairing, demo_tenant) == 0
+        assert _tenant_row_count(db, PrintJob, demo_tenant) == 0
+        assert (
+            db.execute(
+                select(func.count(PrintDestination.id)).where(
+                    PrintDestination.tenant_id == demo_tenant,
+                    PrintDestination.delivery_type == "PRINT_AGENT_PULL",
+                )
+            ).scalar_one()
+            == 0
+        )
         assert _tenant_row_count(db, User, demo_tenant) == 1
         assert db.get(User, stale_user_id) is None
         default_demo_user = (
@@ -4132,6 +4291,12 @@ def test_reserved_demo_auto_reset_schedule_resets_on_next_request(tmp_path, monk
     with _client(app, base_url=f"https://{settings.effective_demo_tenant_subdomain}.localhost") as demo_client:
         assert _login(demo_client, email="stale-demo@example.com", password="DemoPass123!") == 401
         assert _login(demo_client, email="demo@demo.com", password="password") == 303
+        print_agents_page = demo_client.get("/admin/printing/agents")
+        assert print_agents_page.status_code == 200
+        assert "No paired agents yet." in print_agents_page.text
+        assert "No pending pairings." in print_agents_page.text
+        assert "Auto Reset Agent" not in print_agents_page.text
+        assert "Auto Reset Pending Pairing" not in print_agents_page.text
 
 
 def test_reserved_demo_auto_reset_schedule_also_runs_during_platform_requests(tmp_path, monkeypatch):
