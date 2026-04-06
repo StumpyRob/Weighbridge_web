@@ -2,8 +2,12 @@ import base64
 import uuid
 from datetime import datetime
 
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app.config import settings
+from app.db import get_db
+from app.main import app
 from app.models import (
     DirectionEnum,
     PrintAgent,
@@ -11,6 +15,7 @@ from app.models import (
     PrintDestination,
     PrintJob,
     PrintTemplate,
+    Tenant,
     Ticket,
     TicketStatusEnum,
     TransactionTypeEnum,
@@ -27,6 +32,18 @@ from app.services.printing import (
     PRINT_CONTENT_TYPE_TEXT,
     execute_rendered_print,
 )
+
+
+def _client_for_base_url(SessionLocal, *, base_url: str) -> TestClient:
+    def override_get_db():
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    return TestClient(app, base_url=base_url)
 
 
 def _create_print_agent(
@@ -108,6 +125,24 @@ def _create_complete_ticket(db_session, *, ticket_no: str) -> Ticket:
     db_session.commit()
     db_session.refresh(ticket)
     return ticket
+
+
+def _create_tenant(
+    db_session,
+    *,
+    name: str,
+    subdomain: str,
+    is_active: bool = True,
+) -> Tenant:
+    tenant = Tenant(
+        name=name,
+        subdomain=subdomain,
+        is_active=is_active,
+    )
+    db_session.add(tenant)
+    db_session.commit()
+    db_session.refresh(tenant)
+    return tenant
 
 
 def _create_pull_job(
@@ -473,6 +508,104 @@ def test_print_agent_poll_returns_correct_job(client_anonymous, db_session):
     assert "payload_base64" not in payload["job"]
     assert payload["job"]["printer_name"] == "Front Desk Printer"
     assert payload["job"]["copies"] == 2
+
+
+def test_print_agent_poll_payload_url_uses_https_tenant_origin_when_request_scheme_is_http(
+    SessionLocal,
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "base_domain", "example.test")
+    assigned_agent = _create_print_agent(
+        db_session,
+        raw_api_key="assigned-http-origin-key",
+        name="Assigned Agent",
+    )
+    job = _create_pull_job(
+        db_session,
+        agent_id=assigned_agent.id,
+        rendered_content="Ticket T-POLL-HTTP\nCustomer: ACME",
+    )
+
+    try:
+        with _client_for_base_url(SessionLocal, base_url="http://demo.example.test") as client:
+            response = client.get(
+                "/api/print/agents/jobs/next",
+                headers={"X-Agent-Key": "assigned-http-origin-key"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["job"]["payload_url"] == (
+        f"https://demo.example.test/api/print/jobs/{job.id}/payload"
+    )
+
+
+def test_print_agent_poll_payload_url_preserves_path_based_tenant_routes(
+    SessionLocal,
+    db_session,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "base_domain", "localhost")
+    tenant = _create_tenant(
+        db_session,
+        name="Demo Tenant",
+        subdomain="demo",
+    )
+    assigned_agent = _create_print_agent(
+        db_session,
+        raw_api_key="assigned-path-based-key",
+        name="Assigned Agent",
+        tenant_id=tenant.id,
+    )
+    job = _create_pull_job(
+        db_session,
+        agent_id=assigned_agent.id,
+        rendered_content="Ticket T-POLL-PATH\nCustomer: ACME",
+    )
+
+    try:
+        with _client_for_base_url(SessionLocal, base_url="https://localhost:8443") as client:
+            response = client.get(
+                "/t/demo/api/print/agents/jobs/next",
+                headers={"X-Agent-Key": "assigned-path-based-key"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["job"]["payload_url"] == (
+        f"https://localhost:8443/t/demo/api/print/jobs/{job.id}/payload"
+    )
+
+
+def test_print_agent_poll_payload_url_preserves_localhost_http(SessionLocal, db_session, monkeypatch):
+    monkeypatch.setattr(settings, "base_domain", "")
+    assigned_agent = _create_print_agent(
+        db_session,
+        raw_api_key="assigned-local-http-key",
+        name="Assigned Agent",
+    )
+    job = _create_pull_job(
+        db_session,
+        agent_id=assigned_agent.id,
+        rendered_content="Ticket T-POLL-LOCAL\nCustomer: ACME",
+    )
+
+    try:
+        with _client_for_base_url(SessionLocal, base_url="http://localhost:8080") as client:
+            response = client.get(
+                "/api/print/agents/jobs/next",
+                headers={"X-Agent-Key": "assigned-local-http-key"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["job"]["payload_url"] == (
+        f"http://localhost:8080/api/print/jobs/{job.id}/payload"
+    )
 
 
 def test_print_agent_claim_updates_job_and_prevents_double_claim(client_anonymous, db_session):

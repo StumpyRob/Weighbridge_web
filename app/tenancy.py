@@ -9,6 +9,7 @@ from fastapi import HTTPException, Request
 
 from .config import settings
 from .models import Tenant
+from .security_hardening import is_https_request
 
 _SUBDOMAIN_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _NIP_IO_RE = re.compile(
@@ -153,6 +154,45 @@ def platform_route_url(request: Request | None = None, *, path: str = "/platform
         return f"{resolved_scheme}://{settings.effective_platform_subdomain}.{base_domain}{normalized_path}"
 
     return normalized_path
+
+
+def request_external_host(request: Request) -> str:
+    if settings.effective_trust_forwarded_host:
+        forwarded_host = str(request.headers.get("x-forwarded-host", "") or "").strip()
+        if forwarded_host:
+            return forwarded_host.split(",", 1)[0].strip()
+    return str(request.headers.get("host", "") or request.url.netloc or request.url.hostname or "")
+
+
+def request_external_scheme(request: Request) -> str:
+    forwarded_proto = str(request.headers.get("x-forwarded-proto", "") or "").strip()
+    if forwarded_proto:
+        candidate = forwarded_proto.split(",", 1)[0].strip().lower()
+        if candidate in {"http", "https"}:
+            return candidate
+
+    host_name = host_without_port(request_external_host(request))
+    base_domain = settings.effective_base_domain
+    if base_domain and (host_name == base_domain or host_name.endswith(f".{base_domain}")):
+        return "https"
+
+    if is_https_request(request):
+        return "https"
+    return str(request.url.scheme or "").strip().lower() or "http"
+
+
+def tenant_request_url(request: Request, *, path: str = "/") -> str:
+    normalized_path = str(path or "").strip() or "/"
+    if not normalized_path.startswith("/"):
+        normalized_path = f"/{normalized_path}"
+
+    route_prefix = str(
+        getattr(getattr(request, "state", None), "tenant_route_prefix", "") or ""
+    ).strip()
+    scoped_path = prefix_tenant_route_target(route_prefix, normalized_path)
+    host = request_external_host(request).strip()
+    origin = f"{request_external_scheme(request)}://{host}".rstrip("/") if host else ""
+    return f"{origin}{scoped_path}" if origin else scoped_path
 
 
 def split_tenant_route_path(path: str | None) -> tuple[str, str] | None:

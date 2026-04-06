@@ -33,7 +33,7 @@ from ..services.printing import (
     resolve_job_document_filename,
     resolve_job_payload,
 )
-from ..tenancy import request_tenant_id, require_tenant
+from ..tenancy import request_tenant_id, require_tenant, tenant_request_url
 
 
 router = APIRouter(prefix="/api/print", tags=["print-agents"])
@@ -184,8 +184,7 @@ def _provider_job_ref_from_payload(
 
 
 def _job_payload_url(request: Request, job_id: int) -> str:
-    base_url = str(request.base_url).rstrip("/")
-    return f"{base_url}/api/print/jobs/{job_id}/payload"
+    return tenant_request_url(request, path=f"/api/print/jobs/{job_id}/payload")
 
 
 def _inline_payload_base64(payload_bytes: bytes, payload_format: str) -> str | None:
