@@ -2231,24 +2231,6 @@ body.js-help-tooltips .help-tooltip {
   font-size: 0.8rem;
 }
 
-.printing-destination-advanced-json {
-  margin: 0;
-  border: 1px dashed #d1d5db;
-  border-radius: 8px;
-  padding: 0.45rem 0.6rem;
-  background: #f9fafb;
-}
-
-.printing-destination-advanced-json > summary {
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 0.88rem;
-}
-
-.printing-destination-advanced-json > .field {
-  margin-top: 0.55rem;
-}
-
 .printing-jobs-table {
   table-layout: fixed;
   width: 100%;

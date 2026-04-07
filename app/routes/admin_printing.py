@@ -36,8 +36,6 @@ from ..services.site_agent_download import (
 from ..services.printing import (
     DELIVERY_TYPE_EMAIL_PDF,
     DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
-    DELIVERY_TYPE_PRINT_NETWORK_RAW_9100,
-    DELIVERY_TYPE_PRINT_NODE_HTTP,
     DELIVERY_TYPE_PRINT_AGENT_PULL,
     DOCUMENT_TYPE_INVOICE,
     DOCUMENT_TYPE_TICKET,
@@ -78,21 +76,13 @@ DOCUMENT_TYPE_OPTIONS = (
     (DOCUMENT_TYPE_WTN, "WTN"),
 )
 DOCUMENT_TYPE_VALUES = {value for value, _ in DOCUMENT_TYPE_OPTIONS}
-SUPPORTED_DELIVERY_TYPE_OPTIONS = (
+DELIVERY_TYPE_OPTIONS = (
     (DELIVERY_TYPE_PRINT_LOCAL_BROWSER, "Print: Browser"),
     (DELIVERY_TYPE_PRINT_AGENT_PULL, "Print: Site Agent"),
     (DELIVERY_TYPE_EMAIL_PDF, "Email: PDF"),
 )
-LEGACY_DELIVERY_TYPE_OPTIONS = (
-    (DELIVERY_TYPE_PRINT_NETWORK_RAW_9100, "Print: Network RAW 9100 (Legacy)"),
-    (DELIVERY_TYPE_PRINT_NODE_HTTP, "Print: Site Agent HTTP (Legacy)"),
-)
-DELIVERY_TYPE_OPTIONS = SUPPORTED_DELIVERY_TYPE_OPTIONS + LEGACY_DELIVERY_TYPE_OPTIONS
 DELIVERY_TYPE_LABELS = {value: label for value, label in DELIVERY_TYPE_OPTIONS}
 DELIVERY_TYPE_VALUES = {value for value, _ in DELIVERY_TYPE_OPTIONS}
-SUPPORTED_DELIVERY_TYPE_VALUES = {
-    value for value, _ in SUPPORTED_DELIVERY_TYPE_OPTIONS
-}
 TEMPLATE_FORMAT_OPTIONS = (
     (PRINT_CONTENT_TYPE_TEXT, "Text"),
     (PRINT_CONTENT_TYPE_HTML, "HTML"),
@@ -107,27 +97,6 @@ DESTINATION_DELETE_DEFAULT_ACTIVE_ERROR = (
 DESTINATION_DELETE_IN_USE_ERROR = (
     "Destination is in use by one or more jobs and cannot be deleted."
 )
-_MANAGED_DELIVERY_CONFIG_KEYS = {
-    "agent_id",
-    "api_key",
-    "attach_pdf",
-    "auto_print_on_complete",
-    "bcc",
-    "body_template",
-    "cc",
-    "copies",
-    "email_body_template",
-    "email_subject_template",
-    "host",
-    "port",
-    "printer_name",
-    "printer_role",
-    "subject_template",
-    "timeout_ms",
-    "timeout_seconds",
-    "to",
-    "url",
-}
 JOB_STATUS_FILTER_OPTIONS = (
     (PRINT_JOB_STATUS_SENT, "Sent"),
     (PRINT_JOB_STATUS_FAILED, "Failed"),
@@ -200,10 +169,6 @@ def _print_job_printer_or_target(job: PrintJob) -> str:
     printer_role = str(config.get("printer_role", "")).strip()
     if printer_role:
         return f"Role: {printer_role}"
-    host = str(config.get("host", "")).strip()
-    if host:
-        port = _parse_optional_int(str(config.get("port", "")).strip())
-        return f"{host}:{port}" if port is not None else host
     if str(job.delivery_type or "").strip().upper() == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
         return "Browser dialog"
     return "-"
@@ -263,19 +228,6 @@ def _normalize_delivery_type(value: str | None) -> str:
     if normalized in DELIVERY_TYPE_VALUES:
         return normalized
     return DELIVERY_TYPE_PRINT_LOCAL_BROWSER
-
-
-def _delivery_type_options_for_form(
-    selected_value: str | None,
-) -> tuple[tuple[str, str], ...]:
-    options = list(SUPPORTED_DELIVERY_TYPE_OPTIONS)
-    normalized = _normalize_delivery_type(selected_value)
-    if (
-        normalized not in SUPPORTED_DELIVERY_TYPE_VALUES
-        and normalized in DELIVERY_TYPE_LABELS
-    ):
-        options.append((normalized, DELIVERY_TYPE_LABELS[normalized]))
-    return tuple(options)
 
 
 def _current_user_id(request: Request) -> int | None:
@@ -410,15 +362,6 @@ def _destination_to_form(
         "delivery_type": str(
             destination.delivery_type if destination else DELIVERY_TYPE_PRINT_LOCAL_BROWSER
         ),
-        "delivery_config": json.dumps(config, indent=2, sort_keys=True),
-        "raw_host": str(config.get("host", "")),
-        "raw_port": str(config.get("port", 9100)),
-        "raw_timeout_seconds": str(config.get("timeout_seconds", 5)),
-        "node_url": str(config.get("url", "")),
-        "node_api_key": str(config.get("api_key", "")),
-        "node_timeout_ms": str(config.get("timeout_ms", 5000)),
-        "node_printer_name": str(config.get("printer_name", "")),
-        "node_copies": str(config.get("copies", 1)),
         "pull_agent_id": str(config.get("agent_id", "")),
         "pull_printer_role": str(config.get("printer_role", "")),
         "pull_printer_name": str(config.get("printer_name", "")),
@@ -523,16 +466,6 @@ def _print_agent_printer_inventory(
     return inventory
 
 
-def _parsed_delivery_config_json(form: dict[str, str]) -> dict[str, object]:
-    raw_json = str(form.get("delivery_config", "")).strip()
-    if not raw_json:
-        return {}
-    parsed = json.loads(raw_json)
-    if isinstance(parsed, dict):
-        return dict(parsed)
-    return {}
-
-
 def _template_to_form(template: PrintTemplate | None = None) -> dict[str, str | bool]:
     return {
         "code": str(template.code if template and template.code else ""),
@@ -553,36 +486,8 @@ def _delivery_config_from_form(
     document_type: str,
 ) -> dict:
     normalized = _normalize_delivery_type(delivery_type)
-    config = _parsed_delivery_config_json(form)
-    for key in _MANAGED_DELIVERY_CONFIG_KEYS:
-        config.pop(key, None)
-    if normalized == DELIVERY_TYPE_PRINT_NETWORK_RAW_9100:
-        host = str(form.get("raw_host", "")).strip()
-        if host:
-            config["host"] = host
-        port = _parse_optional_int(form.get("raw_port"))
-        if port is not None:
-            config["port"] = port
-        timeout_raw = str(form.get("raw_timeout_seconds", "")).strip()
-        if timeout_raw:
-            config["timeout_seconds"] = float(timeout_raw)
-    elif normalized == DELIVERY_TYPE_PRINT_NODE_HTTP:
-        url = str(form.get("node_url", "")).strip()
-        if url:
-            config["url"] = url
-        api_key = str(form.get("node_api_key", "")).strip()
-        if api_key:
-            config["api_key"] = api_key
-        timeout_ms = _parse_optional_int(form.get("node_timeout_ms"))
-        if timeout_ms is not None:
-            config["timeout_ms"] = timeout_ms
-        printer_name = str(form.get("node_printer_name", "")).strip()
-        if printer_name:
-            config["printer_name"] = printer_name
-        copies = _parse_optional_int(form.get("node_copies"))
-        if copies is not None:
-            config["copies"] = copies
-    elif normalized == DELIVERY_TYPE_PRINT_AGENT_PULL:
+    config: dict[str, object] = {}
+    if normalized == DELIVERY_TYPE_PRINT_AGENT_PULL:
         agent_id = str(form.get("pull_agent_id", "")).strip()
         if agent_id:
             config["agent_id"] = agent_id
@@ -662,28 +567,6 @@ def _validate_print_destination(
         if copies is None or copies < 1:
             errors.append("PRINT_AGENT_PULL destination requires copies >= 1.")
         return
-
-    if delivery_type != DELIVERY_TYPE_PRINT_NODE_HTTP:
-        return
-
-    if _normalize_format(getattr(template, "format", None)) != PRINT_CONTENT_TYPE_TEXT:
-        errors.append("PRINT_NODE_HTTP destinations currently support TEXT templates only.")
-
-    url = str(delivery_config.get("url", "")).strip()
-    if not url:
-        errors.append("PRINT_NODE_HTTP destination requires a URL.")
-
-    printer_name = str(delivery_config.get("printer_name", "")).strip()
-    if not printer_name:
-        errors.append("PRINT_NODE_HTTP destination requires a printer name.")
-
-    copies_raw = delivery_config.get("copies")
-    try:
-        copies = int(copies_raw)
-    except (TypeError, ValueError):
-        copies = None
-    if copies is None or copies < 1:
-        errors.append("PRINT_NODE_HTTP destination requires copies >= 1.")
 
 
 def _set_unique_default_destination(
@@ -1070,9 +953,7 @@ def _destination_form_response(
             "form_data": form_data,
             "error": error,
             "document_type_options": DOCUMENT_TYPE_OPTIONS,
-            "delivery_type_options": _delivery_type_options_for_form(
-                str(form_data.get("delivery_type", "")).strip()
-            ),
+            "delivery_type_options": DELIVERY_TYPE_OPTIONS,
             "print_agents": print_agents,
             "template_options": template_options,
             "saved": request.query_params.get("saved") == "1",
@@ -1361,8 +1242,8 @@ async def admin_print_destinations_create(
                 delivery_type,
                 document_type=document_type,
             )
-        except (ValueError, json.JSONDecodeError):
-            errors.append("Delivery config JSON is invalid.")
+        except ValueError:
+            errors.append("Delivery settings are invalid.")
     if not errors:
         _validate_print_destination(
             db,
@@ -1496,8 +1377,8 @@ async def admin_print_destinations_update(
                 delivery_type,
                 document_type=document_type,
             )
-        except (ValueError, json.JSONDecodeError):
-            errors.append("Delivery config JSON is invalid.")
+        except ValueError:
+            errors.append("Delivery settings are invalid.")
     if not errors:
         _validate_print_destination(
             db,

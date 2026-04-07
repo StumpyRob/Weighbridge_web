@@ -82,40 +82,6 @@
             <p class="muted">Uses the browser print dialog on the user's workstation.</p>
           </div>
 
-          <div class="field" data-delivery-groups="PRINT_NETWORK_RAW_9100">
-            <label for="raw_host">Network host</label>
-            <input type="text" id="raw_host" name="raw_host" value="{{ form_data.raw_host }}" placeholder="192.168.1.40" />
-          </div>
-          <div class="field" data-delivery-groups="PRINT_NETWORK_RAW_9100">
-            <label for="raw_port">Network port</label>
-            <input type="number" id="raw_port" name="raw_port" min="1" max="65535" value="{{ form_data.raw_port }}" placeholder="9100" />
-          </div>
-          <div class="field" data-delivery-groups="PRINT_NETWORK_RAW_9100">
-            <label for="raw_timeout_seconds">Timeout (seconds)</label>
-            <input type="number" id="raw_timeout_seconds" name="raw_timeout_seconds" step="0.1" min="0.1" value="{{ form_data.raw_timeout_seconds }}" placeholder="5" />
-          </div>
-
-          <div class="field" data-delivery-groups="PRINT_NODE_HTTP">
-            <label for="node_url">Site agent URL</label>
-            <input type="url" id="node_url" name="node_url" value="{{ form_data.node_url }}" placeholder="http://127.0.0.1:9123/print" />
-          </div>
-          <div class="field" data-delivery-groups="PRINT_NODE_HTTP">
-            <label for="node_api_key">API key (optional)</label>
-            <input type="text" id="node_api_key" name="node_api_key" value="{{ form_data.node_api_key }}" />
-          </div>
-          <div class="field" data-delivery-groups="PRINT_NODE_HTTP">
-            <label for="node_timeout_ms">Timeout (ms)</label>
-            <input type="number" id="node_timeout_ms" name="node_timeout_ms" min="1" value="{{ form_data.node_timeout_ms }}" placeholder="5000" />
-          </div>
-          <div class="field" data-delivery-groups="PRINT_NODE_HTTP">
-            <label for="node_printer_name">Printer name</label>
-            <input type="text" id="node_printer_name" name="node_printer_name" value="{{ form_data.node_printer_name }}" placeholder="Reception Printer" />
-          </div>
-          <div class="field" data-delivery-groups="PRINT_NODE_HTTP">
-            <label for="node_copies">Copies</label>
-            <input type="number" id="node_copies" name="node_copies" min="1" value="{{ form_data.node_copies }}" placeholder="1" />
-          </div>
-
           <div class="field" data-delivery-groups="PRINT_AGENT_PULL">
             <label for="pull_agent_id">Assigned agent</label>
             <select id="pull_agent_id" name="pull_agent_id">
@@ -228,13 +194,6 @@
           </div>
         </div>
 
-        <details class="printing-destination-advanced-json">
-          <summary>Advanced JSON{{ help(help_text.printing_advanced_delivery_json, "printing-destination-advanced-json-help") }}</summary>
-          <div class="field">
-            <label for="delivery_config">Delivery config (JSON){{ help(help_text.printing_advanced_delivery_json, "printing-destination-delivery-config-help") }}</label>
-            <textarea id="delivery_config" name="delivery_config" rows="8">{{ form_data.delivery_config }}</textarea>
-          </div>
-        </details>
       </div>
     </section>
 

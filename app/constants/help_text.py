@@ -99,7 +99,6 @@ HELP_TEXT.update(
         "printing_jobs_delivery_snapshot": "Delivery snapshot stores the destination settings used for this job for audit and troubleshooting.",
         "printing_jobs_transport_snapshot": "Delivery snapshot stores the destination settings used for this job for audit and troubleshooting.",
         "printing_jobs_retry": "Retry submits the same job content again using the job's stored delivery settings.",
-        "printing_advanced_delivery_json": "Optional raw JSON override for edge cases. Prefer standard fields unless support advises otherwise.",
     }
 )
 

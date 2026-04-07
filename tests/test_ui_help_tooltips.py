@@ -136,7 +136,8 @@ def test_admin_printing_pages_show_tooltips_for_non_obvious_fields(client, db_se
     assert 'id="printing-destination-delivery-type-help"' in destination_form.text
     assert 'id="printing-destination-is-default-help"' in destination_form.text
     assert 'id="printing-destination-is-active-help"' in destination_form.text
-    assert 'id="printing-destination-advanced-json-help"' in destination_form.text
+    assert 'id="printing-destination-pull-printer-role-help"' in destination_form.text
+    assert 'id="printing-destination-pull-printer-name-help"' in destination_form.text
 
     templates_list = client.get("/admin/printing/templates")
     assert templates_list.status_code == 200

@@ -12,12 +12,6 @@ from ..models import Invoice, PrintDestination, PrintJob, PrintTemplate, Ticket
 from ..models.base import utcnow
 from .email_delivery import send_delivery_email
 from .print_render import render_from_content
-from .print_transport import (
-    NODE_HTTP_TEXT_MIME_TYPE,
-    PrintMode,
-    PrintTransportResult,
-    send as send_print_job,
-)
 
 PRINT_JOB_STATUS_QUEUED = "QUEUED"
 PRINT_JOB_STATUS_PENDING = "PENDING"
@@ -31,6 +25,7 @@ PRINT_CONTENT_TYPE_TEXT = "TEXT"
 PRINT_CONTENT_TYPE_RAW = "RAW"
 PRINT_CONTENT_TYPE_HTML = "HTML"
 PRINT_CONTENT_TYPE_PDF = "PDF"
+PRINT_CONTENT_MIME_TYPE_TEXT = "text/plain; charset=utf-8"
 PRINT_CONTENT_MIME_TYPE_HTML = "text/html; charset=utf-8"
 PRINT_CONTENT_MIME_TYPE_PDF = "application/pdf"
 PRINT_CONTENT_MIME_TYPE_RAW = "application/octet-stream"
@@ -40,10 +35,13 @@ DOCUMENT_TYPE_INVOICE = "INVOICE"
 DOCUMENT_TYPE_WTN = "WTN"
 
 DELIVERY_TYPE_PRINT_LOCAL_BROWSER = "PRINT_LOCAL_BROWSER"
-DELIVERY_TYPE_PRINT_NETWORK_RAW_9100 = "PRINT_NETWORK_RAW_9100"
-DELIVERY_TYPE_PRINT_NODE_HTTP = "PRINT_NODE_HTTP"
 DELIVERY_TYPE_PRINT_AGENT_PULL = "PRINT_AGENT_PULL"
 DELIVERY_TYPE_EMAIL_PDF = "EMAIL_PDF"
+SUPPORTED_DELIVERY_TYPES = {
+    DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
+    DELIVERY_TYPE_PRINT_AGENT_PULL,
+    DELIVERY_TYPE_EMAIL_PDF,
+}
 
 
 @dataclass(slots=True)
@@ -91,15 +89,13 @@ def _normalize_delivery_type(value: str | None) -> str:
     normalized = str(value or "").strip().upper()
     mapping = {
         "LOCAL_BROWSER": DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
-        "NETWORK_RAW_9100": DELIVERY_TYPE_PRINT_NETWORK_RAW_9100,
-        "LOCAL_NODE_HTTP": DELIVERY_TYPE_PRINT_NODE_HTTP,
         DELIVERY_TYPE_PRINT_AGENT_PULL: DELIVERY_TYPE_PRINT_AGENT_PULL,
         DELIVERY_TYPE_PRINT_LOCAL_BROWSER: DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
-        DELIVERY_TYPE_PRINT_NETWORK_RAW_9100: DELIVERY_TYPE_PRINT_NETWORK_RAW_9100,
-        DELIVERY_TYPE_PRINT_NODE_HTTP: DELIVERY_TYPE_PRINT_NODE_HTTP,
         DELIVERY_TYPE_EMAIL_PDF: DELIVERY_TYPE_EMAIL_PDF,
     }
-    return mapping.get(normalized, DELIVERY_TYPE_PRINT_LOCAL_BROWSER)
+    if not normalized:
+        return DELIVERY_TYPE_PRINT_LOCAL_BROWSER
+    return mapping.get(normalized, normalized)
 
 
 def _normalize_print_job_trigger_source(value: str | None) -> str:
@@ -196,7 +192,7 @@ def _payload_mime_type_for_content_type(content_type: str) -> str:
         return PRINT_CONTENT_MIME_TYPE_HTML
     if normalized == PRINT_CONTENT_TYPE_PDF:
         return PRINT_CONTENT_MIME_TYPE_PDF
-    return NODE_HTTP_TEXT_MIME_TYPE
+    return PRINT_CONTENT_MIME_TYPE_TEXT
 
 
 def _rendered_document_html(rendered_content: str, content_type: str) -> str:
@@ -251,11 +247,10 @@ def _prepare_delivery_payload(
     resolved_payload_format = normalized_content_type
     resolved_payload_mime_type = _payload_mime_type_for_content_type(normalized_content_type)
 
-    if normalized_content_type == PRINT_CONTENT_TYPE_HTML and normalized_delivery_type in {
-        DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
-        DELIVERY_TYPE_PRINT_NETWORK_RAW_9100,
-        DELIVERY_TYPE_PRINT_NODE_HTTP,
-    }:
+    if (
+        normalized_content_type == PRINT_CONTENT_TYPE_HTML
+        and normalized_delivery_type == DELIVERY_TYPE_PRINT_LOCAL_BROWSER
+    ):
         transport_content, resolved_payload_bytes = _prepare_html_send_payload(
             transport_content,
             base_url=base_url,
@@ -286,23 +281,6 @@ def _prepare_delivery_payload(
             )
             resolved_payload_format = PRINT_CONTENT_TYPE_PDF
             resolved_payload_mime_type = PRINT_CONTENT_MIME_TYPE_PDF
-    elif normalized_delivery_type == DELIVERY_TYPE_PRINT_NODE_HTTP:
-        if normalized_content_type == PRINT_CONTENT_TYPE_HTML:
-            resolved_payload_bytes = _render_pdf_payload_bytes(
-                transport_content,
-                content_type=normalized_content_type,
-                base_url=base_url,
-            )
-            resolved_payload_format = PRINT_CONTENT_TYPE_PDF
-            resolved_payload_mime_type = PRINT_CONTENT_MIME_TYPE_PDF
-        elif normalized_content_type == PRINT_CONTENT_TYPE_PDF:
-            resolved_payload_bytes = payload_bytes or resolved_payload_bytes
-            resolved_payload_format = PRINT_CONTENT_TYPE_PDF
-            resolved_payload_mime_type = PRINT_CONTENT_MIME_TYPE_PDF
-        elif normalized_content_type == PRINT_CONTENT_TYPE_RAW:
-            resolved_payload_bytes = payload_bytes or resolved_payload_bytes
-            resolved_payload_format = PRINT_CONTENT_TYPE_RAW
-            resolved_payload_mime_type = _payload_mime_type_for_content_type(PRINT_CONTENT_TYPE_RAW)
 
     return PreparedPayload(
         transport_content=transport_content,
@@ -423,76 +401,15 @@ def _snapshot_delivery_config_for_job(delivery_type: str, delivery_config: dict)
     normalized = _normalize_delivery_type(delivery_type)
     if normalized == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
         return {}
-    snapshot = dict(delivery_config or {})
-    if normalized == DELIVERY_TYPE_PRINT_NODE_HTTP and snapshot.get("api_key"):
-        snapshot["api_key"] = "REDACTED"
-    return snapshot
+    return dict(delivery_config or {})
 
 
-def _effective_delivery_config_for_job(db: Session, job: PrintJob) -> dict[str, Any]:
-    snapshot = (
+def _effective_delivery_config_for_job(job: PrintJob) -> dict[str, Any]:
+    return (
         dict(job.delivery_config_json)
         if isinstance(job.delivery_config_json, dict)
         else {}
     )
-    delivery_type = _normalize_delivery_type(job.delivery_type)
-    if delivery_type != DELIVERY_TYPE_PRINT_NODE_HTTP:
-        return snapshot
-
-    if str(snapshot.get("api_key", "")).strip().upper() == "REDACTED":
-        snapshot.pop("api_key", None)
-
-    destination_id = int(job.destination_id or 0)
-    if destination_id <= 0:
-        return snapshot
-
-    destination = db.get(PrintDestination, destination_id)
-    if destination is None or not isinstance(destination.delivery_config, dict):
-        return snapshot
-
-    live_config = dict(destination.delivery_config or {})
-    merged = dict(live_config)
-    for key, value in snapshot.items():
-        if key == "api_key":
-            continue
-        merged[key] = value
-
-    live_api_key = str(live_config.get("api_key", "")).strip()
-    if live_api_key:
-        merged["api_key"] = live_api_key
-    else:
-        merged.pop("api_key", None)
-
-    return merged
-
-
-def _apply_transport_result(job: PrintJob, result: PrintTransportResult | None) -> None:
-    if result is None:
-        return
-    if result.provider_job_ref is not None:
-        job.provider_job_ref = result.provider_job_ref
-    if result.provider_response_json is not None:
-        job.provider_response_json = result.provider_response_json
-
-
-def _apply_transport_exception_metadata(job: PrintJob, exc: Exception) -> None:
-    provider_job_ref = getattr(exc, "provider_job_ref", None)
-    if provider_job_ref is not None:
-        job.provider_job_ref = provider_job_ref
-    provider_response_json = getattr(exc, "provider_response_json", None)
-    if provider_response_json is not None:
-        job.provider_response_json = provider_response_json
-
-
-def _delivery_type_to_send_mode(delivery_type: str) -> PrintMode:
-    normalized = _normalize_delivery_type(delivery_type)
-    if normalized == DELIVERY_TYPE_PRINT_NETWORK_RAW_9100:
-        return "network"
-    if normalized == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
-        return "local_browser"
-    if normalized == DELIVERY_TYPE_PRINT_NODE_HTTP:
-        return "local_node_http"
-    raise ValueError(f"Unsupported destination delivery type: {delivery_type}")
 
 
 def _prepare_html_send_payload(
@@ -506,6 +423,49 @@ def _prepare_html_send_payload(
     ensure_single_page_html(safe_html, base_url=base_url)
     serialized = safe_html.encode("utf-8")
     return safe_html, serialized
+
+
+def _record_failed_preparation_job(
+    db: Session,
+    *,
+    document_type: str,
+    content_type: str,
+    delivery_type: str,
+    delivery_config: dict,
+    rendered_content: str,
+    created_by_user_id: int | None,
+    destination_id: int | None,
+    template_id: int | None,
+    ticket_id: int | None,
+    invoice_id: int | None,
+    trigger_source: str,
+    exc: Exception,
+) -> None:
+    serialized_payload = (rendered_content or "").encode("utf-8")
+    job = PrintJob(
+        created_by_user_id=created_by_user_id,
+        document_type=document_type,
+        destination_id=destination_id,
+        template_id=template_id,
+        ticket_id=ticket_id,
+        invoice_id=invoice_id,
+        delivery_type=delivery_type,
+        delivery_config_json=_snapshot_delivery_config_for_job(
+            delivery_type,
+            delivery_config,
+        ),
+        rendered_content=rendered_content,
+        rendered_bytes_base64=_serialized_bytes(serialized_payload),
+        payload_format=content_type,
+        payload_mime_type=_payload_mime_type_for_content_type(content_type),
+        trigger_source=trigger_source,
+        status=PRINT_JOB_STATUS_FAILED,
+        attempt_count=0 if delivery_type == DELIVERY_TYPE_PRINT_AGENT_PULL else 1,
+        last_error=str(exc) or "Delivery failed.",
+        sent_at=None,
+    )
+    db.add(job)
+    db.commit()
 
 
 def execute_rendered_print(
@@ -533,13 +493,33 @@ def execute_rendered_print(
     normalized_content_type = _normalize_content_type(content_type)
     normalized_trigger_source = _normalize_print_job_trigger_source(trigger_source)
     stored_rendered_content = str(rendered_content or "")
-    prepared_payload = _prepare_delivery_payload(
-        rendered_content=stored_rendered_content,
-        content_type=normalized_content_type,
-        delivery_type=normalized_delivery_type,
-        payload_bytes=payload_bytes,
-        base_url=base_url,
-    )
+    try:
+        if normalized_delivery_type not in SUPPORTED_DELIVERY_TYPES:
+            raise ValueError(f"Unsupported destination delivery type: {delivery_type}")
+        prepared_payload = _prepare_delivery_payload(
+            rendered_content=stored_rendered_content,
+            content_type=normalized_content_type,
+            delivery_type=normalized_delivery_type,
+            payload_bytes=payload_bytes,
+            base_url=base_url,
+        )
+    except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
+        _record_failed_preparation_job(
+            db,
+            document_type=normalized_document_type,
+            content_type=normalized_content_type,
+            delivery_type=normalized_delivery_type,
+            delivery_config=dict(delivery_config or {}),
+            rendered_content=stored_rendered_content,
+            created_by_user_id=created_by_user_id,
+            destination_id=destination_id,
+            template_id=template_id,
+            ticket_id=ticket_id,
+            invoice_id=invoice_id,
+            trigger_source=normalized_trigger_source,
+            exc=exc,
+        )
+        raise
     transport_content = prepared_payload.transport_content
     serialized_payload = prepared_payload.payload_bytes
     initial_status = (
@@ -607,36 +587,8 @@ def execute_rendered_print(
             _apply_job_delivery_success(job)
             db.commit()
             return PrintExecutionResult(job=job)
-
-        transport_result = send_print_job(
-            serialized_payload,
-            _delivery_type_to_send_mode(normalized_delivery_type),
-            dict(delivery_config or {}),
-            document_type=job.document_type,
-            rendered_content=transport_content,
-            content_type=job.payload_format or prepared_payload.payload_format,
-            job_id=job.id,
-            job_name=f"{job.document_type} print job {job.id}",
-            document_filename=resolve_document_filename(
-                db,
-                document_type=normalized_document_type,
-                ticket_id=ticket_id,
-                invoice_id=invoice_id,
-                payload_format=job.payload_format or prepared_payload.payload_format,
-                payload_mime_type=job.payload_mime_type or prepared_payload.payload_mime_type,
-            ),
-            payload_format=job.payload_format or prepared_payload.payload_format,
-            payload_mime_type=job.payload_mime_type or prepared_payload.payload_mime_type,
-        )
-        if normalized_delivery_type == DELIVERY_TYPE_PRINT_NODE_HTTP and isinstance(
-            transport_result, PrintTransportResult
-        ):
-            _apply_transport_result(job, transport_result)
-        _apply_job_delivery_success(job)
-        db.commit()
-        return PrintExecutionResult(job=job)
+        raise ValueError(f"Unsupported destination delivery type: {delivery_type}")
     except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
-        _apply_transport_exception_metadata(job, exc)
         _apply_job_delivery_failure(job, exc)
         db.commit()
         raise
@@ -644,7 +596,9 @@ def execute_rendered_print(
 
 def retry_print_job(db: Session, job: PrintJob) -> PrintExecutionResult:
     delivery_type = _normalize_delivery_type(job.delivery_type)
-    delivery_config = _effective_delivery_config_for_job(db, job)
+    if delivery_type not in SUPPORTED_DELIVERY_TYPES:
+        raise ValueError(f"Unsupported destination delivery type: {job.delivery_type}")
+    delivery_config = _effective_delivery_config_for_job(job)
     payload_bytes, _ = _job_bytes_for_retry(job)
     payload_format, payload_mime_type = _payload_metadata_for_resend(
         job,
@@ -714,29 +668,8 @@ def retry_print_job(db: Session, job: PrintJob) -> PrintExecutionResult:
             _apply_job_delivery_success(job)
             db.commit()
             return PrintExecutionResult(job=job)
-
-        transport_result = send_print_job(
-            payload_bytes,
-            _delivery_type_to_send_mode(delivery_type),
-            delivery_config,
-            document_type=str(job.document_type or ""),
-            rendered_content=transport_content,
-            content_type=payload_format,
-            job_id=job.id,
-            job_name=f"{str(job.document_type or '').strip().upper() or 'PRINT'} print job {job.id}",
-            document_filename=resolve_job_document_filename(db, job),
-            payload_format=job.payload_format or payload_format or "",
-            payload_mime_type=job.payload_mime_type or payload_mime_type or "",
-        )
-        if delivery_type == DELIVERY_TYPE_PRINT_NODE_HTTP and isinstance(
-            transport_result, PrintTransportResult
-        ):
-            _apply_transport_result(job, transport_result)
-        _apply_job_delivery_success(job)
-        db.commit()
-        return PrintExecutionResult(job=job)
+        raise ValueError(f"Unsupported destination delivery type: {job.delivery_type}")
     except (RuntimeError, ValueError, OSError, NotImplementedError) as exc:
-        _apply_transport_exception_metadata(job, exc)
         _apply_job_delivery_failure(job, exc)
         db.commit()
         raise
@@ -756,7 +689,7 @@ def replay_print_job(
     )
     payload_format, _payload_mime_type = _payload_metadata_for_resend(job, rendered_content)
     content_type = payload_format
-    delivery_config = _effective_delivery_config_for_job(db, job)
+    delivery_config = _effective_delivery_config_for_job(job)
     return execute_rendered_print(
         db,
         document_type=str(job.document_type or "").strip().upper(),

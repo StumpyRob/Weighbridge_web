@@ -94,7 +94,7 @@ def test_destination_create_and_list_shows_delivery_and_document_type(client, db
     assert page.status_code == 200
     assert "Invoice Email" in page.text
     assert "INVOICE" in page.text
-    assert "EMAIL_PDF" in page.text
+    assert "Email: PDF" in page.text
 
     destination = db_session.execute(
         select(PrintDestination).where(PrintDestination.name == "Invoice Email")

@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     indicator_connected: bool = False
     debug: bool = False
     dev_mode: bool = False
+    # Legacy no-op setting kept to avoid hard failures if older environments still define it.
     print_network_enabled: bool = False
     print_template_override_dir: str = "/config/print_templates"
     media_root: str = "app/media"
