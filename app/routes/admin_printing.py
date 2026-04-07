@@ -57,8 +57,12 @@ from ..services.print_agents import (
     complete_print_agent_pairing as complete_print_agent_pairing_session,
     is_print_agent_pairing_expired,
     normalize_print_agent_printers,
+    PRINT_AGENT_STATUS_LOST_CONNECTION,
+    PRINT_AGENT_STATUS_OFFLINE,
+    PRINT_AGENT_STATUS_ONLINE,
     revoke_print_agent,
     PRINT_AGENT_STATUS_REVOKED,
+    resolve_print_agent_display_status,
 )
 from ..templating import templates
 from ..tenancy import request_tenant_id
@@ -464,6 +468,25 @@ def _print_agent_printer_inventory(
             "synced_at_label": _format_admin_datetime(agent.printers_synced_at),
         }
     return inventory
+
+
+def _print_agent_status_badge(
+    agent: PrintAgent,
+) -> tuple[str, str, str]:
+    status = resolve_print_agent_display_status(agent)
+    if status == PRINT_AGENT_STATUS_ONLINE:
+        return ("Online", "status-active", "Agent is checking in normally.")
+    if status == PRINT_AGENT_STATUS_LOST_CONNECTION:
+        detail = _format_admin_datetime(agent.last_seen_at)
+        message = "Agent heartbeat is stale."
+        if detail:
+            message = f"Lost connection. Last seen: {detail}."
+        return ("Lost connection", "status-stop", message)
+    if status == PRINT_AGENT_STATUS_REVOKED:
+        return ("Revoked", "status-void", "Agent credentials have been revoked.")
+    if status == PRINT_AGENT_STATUS_OFFLINE:
+        return ("Offline", "status-void", "No agent heartbeat received yet.")
+    return (status or "-", "status-info", "")
 
 
 def _template_to_form(template: PrintTemplate | None = None) -> dict[str, str | bool]:
@@ -919,6 +942,9 @@ def _destination_form_response(
             )
         ).scalars()
     )
+    print_agent_status_labels = {
+        str(item.id): _print_agent_status_badge(item)[0] for item in print_agents
+    }
     if destination is not None:
         has_jobs = _destination_has_jobs(db, int(destination.id))
         destination_delete_error = (
@@ -955,6 +981,7 @@ def _destination_form_response(
             "document_type_options": DOCUMENT_TYPE_OPTIONS,
             "delivery_type_options": DELIVERY_TYPE_OPTIONS,
             "print_agents": print_agents,
+            "print_agent_status_labels": print_agent_status_labels,
             "template_options": template_options,
             "saved": request.query_params.get("saved") == "1",
             "can_delete_destination": can_delete_destination,
@@ -1073,6 +1100,7 @@ def _print_agents_page_response(
             and not blocking_names
         )
         revoke_block_reason = ""
+        display_status, status_css_class, status_title = _print_agent_status_badge(item)
         if not can_revoke and blocking_names:
             joined_names = ", ".join(blocking_names[:3])
             if len(blocking_names) > 3:
@@ -1081,6 +1109,9 @@ def _print_agents_page_response(
         agent_rows.append(
             {
                 "agent": item,
+                "display_status": display_status,
+                "status_css_class": status_css_class,
+                "status_title": status_title,
                 "can_revoke": can_revoke,
                 "revoke_block_reason": revoke_block_reason,
                 "printer_count": len(synced_printers),

@@ -1,11 +1,13 @@
 ﻿from datetime import datetime
 import base64
+from datetime import timedelta
 from urllib.parse import parse_qs, urlparse
 import uuid
 
 from sqlalchemy import select
 
 from app.config import settings
+from app.models.base import utcnow
 from app.models import (
     DirectionEnum,
     PrintAgent,
@@ -184,6 +186,43 @@ def test_admin_print_agents_page_shows_paired_agents(client, db_session):
     assert "Office Agent" in response.text
     assert agent.id in response.text
     assert "Offline" in response.text
+
+
+def test_admin_print_agents_page_shows_lost_connection_for_stale_agent(client, db_session):
+    agent = PrintAgent(
+        id=str(uuid.uuid4()),
+        name="Yard Agent",
+        api_key=hash_print_agent_key("yard-agent-key"),
+        status="ONLINE",
+        last_seen_at=utcnow() - timedelta(minutes=5),
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    response = client.get("/admin/printing/agents")
+
+    assert response.status_code == 200
+    assert "Yard Agent" in response.text
+    assert "Lost connection" in response.text
+
+
+def test_admin_print_agents_page_shows_online_for_recent_heartbeat(client, db_session):
+    agent = PrintAgent(
+        id=str(uuid.uuid4()),
+        name="Live Agent",
+        api_key=hash_print_agent_key("live-agent-key"),
+        status="ONLINE",
+        last_seen_at=utcnow() - timedelta(seconds=10),
+    )
+    db_session.add(agent)
+    db_session.commit()
+
+    response = client.get("/admin/printing/agents")
+
+    assert response.status_code == 200
+    assert "Live Agent" in response.text
+    assert "Online" in response.text
+    assert "Lost connection" not in response.text
 
 
 def test_admin_print_agents_page_shows_printer_sync_summary(client, db_session):
@@ -1564,4 +1603,3 @@ def test_admin_retry_failed_print_agent_pull_job_uses_existing_retry_path(
     assert job.payload_format == "PDF"
     assert job.payload_mime_type == "application/pdf"
     assert base64.b64decode(job.rendered_bytes_base64.encode("ascii")).startswith(b"%PDF")
-

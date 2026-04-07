@@ -13,10 +13,12 @@ from ..models.base import utcnow
 
 PRINT_AGENT_STATUS_ONLINE = "ONLINE"
 PRINT_AGENT_STATUS_OFFLINE = "OFFLINE"
+PRINT_AGENT_STATUS_LOST_CONNECTION = "LOST_CONNECTION"
 PRINT_AGENT_STATUS_REVOKED = "REVOKED"
 PRINT_AGENT_PAIRING_STATUS_PENDING = "PENDING"
 PRINT_AGENT_PAIRING_STATUS_PAIRED = "PAIRED"
 PRINT_AGENT_PAIRING_STATUS_EXCHANGED = "EXCHANGED"
+_PRINT_AGENT_STALE_AFTER = timedelta(seconds=60)
 
 _PAIRING_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 _PAIRING_CODE_LENGTH = 8
@@ -272,6 +274,25 @@ def authenticate_print_agent(db: Session, api_key: str | None) -> PrintAgent | N
 def mark_print_agent_online(agent: PrintAgent) -> None:
     agent.status = PRINT_AGENT_STATUS_ONLINE
     agent.last_seen_at = utcnow()
+
+
+def resolve_print_agent_display_status(
+    agent: PrintAgent,
+    *,
+    now: datetime | None = None,
+) -> str:
+    status = str(getattr(agent, "status", "") or "").strip().upper()
+    if status == PRINT_AGENT_STATUS_REVOKED:
+        return PRINT_AGENT_STATUS_REVOKED
+
+    last_seen_at = getattr(agent, "last_seen_at", None)
+    if last_seen_at is None:
+        return PRINT_AGENT_STATUS_OFFLINE
+
+    reference_time = now or utcnow()
+    if last_seen_at >= reference_time - _PRINT_AGENT_STALE_AFTER:
+        return PRINT_AGENT_STATUS_ONLINE
+    return PRINT_AGENT_STATUS_LOST_CONNECTION
 
 
 def revoke_print_agent(agent: PrintAgent) -> None:

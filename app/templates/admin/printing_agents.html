@@ -99,15 +99,10 @@
               <td>{{ item.name or "-" }}</td>
               <td><code>{{ item.id }}</code></td>
               <td>
-                {% if item.status == "ONLINE" %}
-                  <span class="status-pill status-active">Online</span>
-                {% elif item.status == "REVOKED" %}
-                  <span class="status-pill status-void">Revoked</span>
-                {% elif item.status == "OFFLINE" %}
-                  <span class="status-pill status-void">Offline</span>
-                {% else %}
-                  <span class="status-pill status-info">{{ item.status or "-" }}</span>
-                {% endif %}
+                <span
+                  class="status-pill {{ row.status_css_class }}"
+                  {% if row.status_title %}title="{{ row.status_title }}"{% endif %}
+                >{{ row.display_status }}</span>
               </td>
               <td>{{ item.last_seen_at.strftime("%d/%m/%Y %H:%M:%S") if item.last_seen_at else "-" }}</td>
               <td>

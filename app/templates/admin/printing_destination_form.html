@@ -89,7 +89,7 @@
               {% for item in print_agents %}
                 {% set label = item.name or "Unnamed agent" %}
                 <option value="{{ item.id }}" {% if form_data.pull_agent_id == item.id %}selected{% endif %}>
-                  {{ label }} · {{ item.id }}{% if item.status %} ({{ item.status }}){% endif %}
+                  {{ label }} · {{ item.id }}{% if print_agent_status_labels.get(item.id) %} ({{ print_agent_status_labels.get(item.id) }}){% endif %}
                 </option>
               {% endfor %}
             </select>
