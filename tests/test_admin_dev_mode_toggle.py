@@ -1,3 +1,4 @@
+from app.config import settings
 from app.templating import templates
 
 
@@ -22,6 +23,22 @@ def test_settings_page_hides_platform_only_tools(client):
     assert "Open Audit Log" not in response.text
     assert "Turn DEV Mode" not in response.text
     assert "System Status" not in response.text
+
+
+def test_settings_page_shows_site_agent_download_when_configured(client, monkeypatch):
+    monkeypatch.setattr(
+        settings,
+        "site_agent_download_url",
+        "https://downloads.example.test/WeighbridgeSiteAgent-0.22-Setup.exe",
+    )
+    monkeypatch.setattr(settings, "site_agent_download_version", "0.22")
+
+    response = client.get("/admin")
+
+    assert response.status_code == 200
+    assert 'href="/admin/printing/agents/download"' in response.text
+    assert "Download Site Agent v0.22" in response.text
+    assert "WeighbridgeSiteAgent-0.22-Setup.exe" in response.text
 
 
 def test_admin_dev_mode_toggle_updates_runtime_flag(client):

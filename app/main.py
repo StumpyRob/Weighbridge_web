@@ -74,6 +74,7 @@ from .services.ai_assistant import generate_dashboard_insights
 from .services.platform_ai_settings import get_platform_ai_settings
 from .services.tenant_ai_settings import resolve_tenant_ai_settings
 from .services.pdf import check_invoice_pdf_renderer
+from .services.site_agent_download import site_agent_download_state
 from .services.ui_branding import (
     darken_hex_color,
     get_branding,
@@ -1636,7 +1637,14 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         if bool(getattr(request.state, "platform_mode", False)):
             return RedirectResponse(url="/platform/tenants", status_code=303)
         require_any_permission(request, PERM_MANAGE_SETTINGS, PERM_MANAGE_USERS)
-        return templates.TemplateResponse(request, "admin.html", {"request": request})
+        return templates.TemplateResponse(
+            request,
+            "admin.html",
+            {
+                "request": request,
+                "site_agent_download": site_agent_download_state(),
+            },
+        )
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):

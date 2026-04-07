@@ -29,6 +29,10 @@ from ..services.print_payload import (
     build_print_payload,
 )
 from ..services.print_render import render_from_content
+from ..services.site_agent_download import (
+    resolve_site_agent_download_url,
+    site_agent_download_state,
+)
 from ..services.printing import (
     DELIVERY_TYPE_EMAIL_PDF,
     DELIVERY_TYPE_PRINT_LOCAL_BROWSER,
@@ -694,6 +698,20 @@ def admin_print_agents(
     return _print_agents_page_response(request, db=db)
 
 
+@router.get("/admin/printing/agents/download")
+def admin_print_agents_download() -> RedirectResponse:
+    url = resolve_site_agent_download_url()
+    if not url:
+        return RedirectResponse(
+            url=(
+                "/admin/printing/agents"
+                "?error_message=Site+agent+download+is+not+configured."
+            ),
+            status_code=303,
+        )
+    return RedirectResponse(url=url, status_code=302)
+
+
 @router.post("/admin/printing/agents/pair", response_class=HTMLResponse)
 async def admin_print_agents_pair(
     request: Request,
@@ -1215,6 +1233,7 @@ def _print_agents_page_response(
         "pairing_code": str((form_data or {}).get("pairing_code", "")),
         "agent_name": str((form_data or {}).get("agent_name", "")),
     }
+    download = site_agent_download_state()
     return templates.TemplateResponse(
         request,
         "admin/printing_agents.html",
@@ -1230,6 +1249,7 @@ def _print_agents_page_response(
             "show_expired_pairings": show_expired_pairings,
             "hidden_revoked_count": hidden_revoked_count,
             "expired_pending_count": expired_pending_count,
+            "site_agent_download": download,
         },
         status_code=status_code,
     )

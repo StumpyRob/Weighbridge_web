@@ -17,6 +17,15 @@ class Settings(BaseSettings):
     uploads_dir: str = "/data/uploads"
     company_logo_upload_dir: str = ""
     app_public_base_url: str = ""
+    site_agent_download_url: str = ""
+    site_agent_download_version: str = ""
+    site_agent_download_bucket: str = ""
+    site_agent_download_object_key: str = ""
+    site_agent_download_s3_endpoint: str = ""
+    site_agent_download_s3_region: str = ""
+    site_agent_download_access_key_id: str = ""
+    site_agent_download_secret_access_key: str = ""
+    site_agent_download_presign_ttl_seconds: int = 3600
     receipts_wip_enabled: bool = False
     # Future hook flags (default OFF): ticket completion / invoice generation will
     # reference these when enforcement rules are implemented.
@@ -91,6 +100,46 @@ class Settings(BaseSettings):
     @property
     def effective_base_domain(self) -> str:
         return str(self.base_domain or "").strip().lower()
+
+    @property
+    def effective_site_agent_download_url(self) -> str:
+        return str(self.site_agent_download_url or "").strip()
+
+    @property
+    def effective_site_agent_download_version(self) -> str:
+        return str(self.site_agent_download_version or "").strip()
+
+    @property
+    def effective_site_agent_download_bucket(self) -> str:
+        return str(self.site_agent_download_bucket or "").strip()
+
+    @property
+    def effective_site_agent_download_object_key(self) -> str:
+        return str(self.site_agent_download_object_key or "").strip().lstrip("/")
+
+    @property
+    def effective_site_agent_download_s3_endpoint(self) -> str:
+        return str(self.site_agent_download_s3_endpoint or "").strip()
+
+    @property
+    def effective_site_agent_download_s3_region(self) -> str:
+        return str(self.site_agent_download_s3_region or "").strip()
+
+    @property
+    def effective_site_agent_download_access_key_id(self) -> str:
+        return str(self.site_agent_download_access_key_id or "").strip()
+
+    @property
+    def effective_site_agent_download_secret_access_key(self) -> str:
+        return str(self.site_agent_download_secret_access_key or "").strip()
+
+    @property
+    def effective_site_agent_download_presign_ttl_seconds(self) -> int:
+        try:
+            ttl = int(self.site_agent_download_presign_ttl_seconds)
+        except (TypeError, ValueError):
+            ttl = 3600
+        return max(60, min(ttl, 7_776_000))
 
     @property
     def effective_platform_subdomain(self) -> str:

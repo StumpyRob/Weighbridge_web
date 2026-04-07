@@ -72,3 +72,32 @@ Ensure the host folder exists before first run:
 ```bash
 mkdir -p uploads
 ```
+
+## Site Agent Download Link
+
+To expose the Windows site-agent installer inside the SaaS settings and printing screens,
+you can either set a fixed public download URL or configure a private Railway bucket for
+on-demand presigned downloads.
+
+Fixed URL mode:
+
+```bash
+SITE_AGENT_DOWNLOAD_URL=https://your-download-host/path/WeighbridgeSiteAgent-0.22-Setup.exe
+SITE_AGENT_DOWNLOAD_VERSION=0.22
+```
+
+Private Railway bucket mode:
+
+```bash
+SITE_AGENT_DOWNLOAD_VERSION=0.22
+SITE_AGENT_DOWNLOAD_BUCKET=<bucket-name>
+SITE_AGENT_DOWNLOAD_OBJECT_KEY=downloads/WeighbridgeSiteAgent-0.22-Setup.exe
+SITE_AGENT_DOWNLOAD_S3_ENDPOINT=<bucket-endpoint>
+SITE_AGENT_DOWNLOAD_S3_REGION=<bucket-region>
+SITE_AGENT_DOWNLOAD_ACCESS_KEY_ID=<bucket-access-key-id>
+SITE_AGENT_DOWNLOAD_SECRET_ACCESS_KEY=<bucket-secret-access-key>
+SITE_AGENT_DOWNLOAD_PRESIGN_TTL_SECONDS=3600
+```
+
+The app uses the configured version label in the UI and redirects the `Download Site Agent`
+button to either the fixed URL or a freshly generated presigned S3 URL.

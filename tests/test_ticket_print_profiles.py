@@ -7,6 +7,7 @@ import uuid
 from sqlalchemy import select
 
 import app.services.printing as printing_service
+from app.config import settings
 from app.models import (
     DirectionEnum,
     PrintAgent,
@@ -107,6 +108,53 @@ def test_admin_print_agents_page_loads(client):
     assert "Print Agents" in response.text
     assert "Complete Pairing" in response.text
     assert "Pending Pairings" in response.text
+
+
+def test_admin_print_agents_page_shows_site_agent_download_when_configured(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        settings,
+        "site_agent_download_url",
+        "https://downloads.example.test/WeighbridgeSiteAgent-0.22-Setup.exe",
+    )
+    monkeypatch.setattr(settings, "site_agent_download_version", "0.22")
+
+    response = client.get("/admin/printing/agents")
+
+    assert response.status_code == 200
+    assert 'href="/admin/printing/agents/download"' in response.text
+    assert "Download Site Agent v0.22" in response.text
+    assert "WeighbridgeSiteAgent-0.22-Setup.exe" in response.text
+
+
+def test_admin_print_agents_download_redirects_to_configured_url(client, monkeypatch):
+    monkeypatch.setattr(
+        settings,
+        "site_agent_download_url",
+        "https://downloads.example.test/WeighbridgeSiteAgent-0.22-Setup.exe",
+    )
+
+    response = client.get("/admin/printing/agents/download", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert (
+        response.headers["location"]
+        == "https://downloads.example.test/WeighbridgeSiteAgent-0.22-Setup.exe"
+    )
+
+
+def test_admin_print_agents_download_redirects_back_when_missing(client, monkeypatch):
+    monkeypatch.setattr(settings, "site_agent_download_url", "")
+
+    response = client.get("/admin/printing/agents/download", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert (
+        response.headers["location"]
+        == "/admin/printing/agents?error_message=Site+agent+download+is+not+configured."
+    )
 
 
 def test_admin_print_agents_page_shows_pending_pairings(client):

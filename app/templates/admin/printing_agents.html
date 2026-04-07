@@ -42,6 +42,25 @@
 
   <section class="card" style="margin-bottom: 1.5rem;">
     <div class="card__body">
+      <h2 style="margin-top: 0;">Site Agent Installer</h2>
+      <p class="muted">Download the Windows installer, run it on the site machine, then open the local status page to copy the pairing code back into this screen.</p>
+      <div class="actions btn-group">
+        {% if site_agent_download.available %}
+          <a class="btn btn--secondary" href="/admin/printing/agents/download">
+            Download Site Agent{% if site_agent_download.version %} v{{ site_agent_download.version }}{% endif %}
+          </a>
+        {% else %}
+          <span class="muted">Site agent download link not configured.</span>
+        {% endif %}
+      </div>
+      {% if site_agent_download.available and site_agent_download.filename %}
+        <p class="muted" style="margin-top: 0.75rem;">Current package: {{ site_agent_download.filename }}</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card" style="margin-bottom: 1.5rem;">
+    <div class="card__body">
       <h2 style="margin-top: 0;">Pair A Local Agent</h2>
       <p class="muted">Install or run the local print agent on the site machine, copy the pairing code shown on the agent status page, paste it here, then pair it to this tenant. After pairing, the agent will exchange for permanent credentials automatically.</p>
       <form method="post" action="/admin/printing/agents/pair?show_revoked={{ 1 if show_revoked else 0 }}&show_expired_pairings={{ 1 if show_expired_pairings else 0 }}" class="filters filters-inline">
