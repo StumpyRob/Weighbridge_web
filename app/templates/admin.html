@@ -66,8 +66,6 @@
             </div>
             {% if not site_agent_download.available %}
               <p class="muted" style="margin-top: 0.75rem;">Site agent download link not configured.</p>
-            {% elif site_agent_download.filename %}
-              <p class="muted" style="margin-top: 0.75rem;">Current package: {{ site_agent_download.filename }}</p>
             {% endif %}
           </article>
         {% endif %}

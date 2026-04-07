@@ -126,7 +126,6 @@ def test_admin_print_agents_page_shows_site_agent_download_when_configured(
     assert response.status_code == 200
     assert 'href="/admin/printing/agents/download"' in response.text
     assert "Download Site Agent v0.22" in response.text
-    assert "WeighbridgeSiteAgent-0.22-Setup.exe" in response.text
 
 
 def test_admin_print_agents_download_redirects_to_configured_url(client, monkeypatch):
@@ -889,7 +888,18 @@ def test_admin_node_http_destination_persists_printer_name_and_copies(client, db
     assert 'value="Front Desk Printer"' in edit_page.text
     assert 'name="node_copies"' in edit_page.text
     assert 'value="2"' in edit_page.text
-    assert "Print: Site Agent HTTP" in edit_page.text
+    assert "Print: Site Agent HTTP (Legacy)" in edit_page.text
+
+
+def test_admin_new_destination_form_hides_legacy_delivery_options(client):
+    response = client.get("/admin/printing/destinations/new")
+
+    assert response.status_code == 200
+    assert "Print: Browser" in response.text
+    assert "Print: Site Agent" in response.text
+    assert "Email: PDF" in response.text
+    assert "Print: Network RAW 9100" not in response.text
+    assert "Print: Site Agent HTTP" not in response.text
 
 
 def test_admin_ticket_destination_persists_auto_print_on_complete_setting(
@@ -1011,7 +1021,8 @@ def test_admin_agent_pull_destination_persists_assigned_agent_and_printer_settin
     assert edit_page.status_code == 200
     assert "Polling Printer (default, online)" in edit_page.text
     assert "Backup Printer (online)" in edit_page.text
-    assert "2 printers synced at 31/03/2026 09:30:00." in edit_page.text
+    assert ">2 synced printers<" in edit_page.text
+    assert 'title="2 synced printers. Last sync: 31/03/2026 09:30:00."' in edit_page.text
 
 
 def test_admin_agent_pull_destination_form_handles_no_synced_printers_cleanly(
@@ -1051,7 +1062,8 @@ def test_admin_agent_pull_destination_form_handles_no_synced_printers_cleanly(
     response = client.get(f"/admin/printing/destinations/{destination.id}/edit")
 
     assert response.status_code == 200
-    assert "No printers synced from this agent yet" in response.text
+    assert ">Manual printer entry<" in response.text
+    assert "No printers are currently synced from this agent." in response.text
     assert 'name="pull_printer_name_manual"' in response.text
     assert 'value="Fallback Printer"' in response.text
 

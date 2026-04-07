@@ -78,14 +78,21 @@ DOCUMENT_TYPE_OPTIONS = (
     (DOCUMENT_TYPE_WTN, "WTN"),
 )
 DOCUMENT_TYPE_VALUES = {value for value, _ in DOCUMENT_TYPE_OPTIONS}
-DELIVERY_TYPE_OPTIONS = (
-    (DELIVERY_TYPE_PRINT_LOCAL_BROWSER, "Print: Local Browser"),
-    (DELIVERY_TYPE_PRINT_NETWORK_RAW_9100, "Print: Network RAW 9100"),
-    (DELIVERY_TYPE_PRINT_NODE_HTTP, "Print: Site Agent HTTP"),
-    (DELIVERY_TYPE_PRINT_AGENT_PULL, "Print: Agent Pull"),
+SUPPORTED_DELIVERY_TYPE_OPTIONS = (
+    (DELIVERY_TYPE_PRINT_LOCAL_BROWSER, "Print: Browser"),
+    (DELIVERY_TYPE_PRINT_AGENT_PULL, "Print: Site Agent"),
     (DELIVERY_TYPE_EMAIL_PDF, "Email: PDF"),
 )
+LEGACY_DELIVERY_TYPE_OPTIONS = (
+    (DELIVERY_TYPE_PRINT_NETWORK_RAW_9100, "Print: Network RAW 9100 (Legacy)"),
+    (DELIVERY_TYPE_PRINT_NODE_HTTP, "Print: Site Agent HTTP (Legacy)"),
+)
+DELIVERY_TYPE_OPTIONS = SUPPORTED_DELIVERY_TYPE_OPTIONS + LEGACY_DELIVERY_TYPE_OPTIONS
+DELIVERY_TYPE_LABELS = {value: label for value, label in DELIVERY_TYPE_OPTIONS}
 DELIVERY_TYPE_VALUES = {value for value, _ in DELIVERY_TYPE_OPTIONS}
+SUPPORTED_DELIVERY_TYPE_VALUES = {
+    value for value, _ in SUPPORTED_DELIVERY_TYPE_OPTIONS
+}
 TEMPLATE_FORMAT_OPTIONS = (
     (PRINT_CONTENT_TYPE_TEXT, "Text"),
     (PRINT_CONTENT_TYPE_HTML, "HTML"),
@@ -256,6 +263,19 @@ def _normalize_delivery_type(value: str | None) -> str:
     if normalized in DELIVERY_TYPE_VALUES:
         return normalized
     return DELIVERY_TYPE_PRINT_LOCAL_BROWSER
+
+
+def _delivery_type_options_for_form(
+    selected_value: str | None,
+) -> tuple[tuple[str, str], ...]:
+    options = list(SUPPORTED_DELIVERY_TYPE_OPTIONS)
+    normalized = _normalize_delivery_type(selected_value)
+    if (
+        normalized not in SUPPORTED_DELIVERY_TYPE_VALUES
+        and normalized in DELIVERY_TYPE_LABELS
+    ):
+        options.append((normalized, DELIVERY_TYPE_LABELS[normalized]))
+    return tuple(options)
 
 
 def _current_user_id(request: Request) -> int | None:
@@ -980,6 +1000,7 @@ def admin_print_destinations_list(
             "error": request.query_params.get("error", ""),
             "saved": request.query_params.get("saved") == "1",
             "destination_delete_errors": destination_delete_errors,
+            "delivery_type_labels": DELIVERY_TYPE_LABELS,
         },
     )
 
@@ -1049,7 +1070,9 @@ def _destination_form_response(
             "form_data": form_data,
             "error": error,
             "document_type_options": DOCUMENT_TYPE_OPTIONS,
-            "delivery_type_options": DELIVERY_TYPE_OPTIONS,
+            "delivery_type_options": _delivery_type_options_for_form(
+                str(form_data.get("delivery_type", "")).strip()
+            ),
             "print_agents": print_agents,
             "template_options": template_options,
             "saved": request.query_params.get("saved") == "1",

@@ -83,7 +83,8 @@
               <span class="table-cell-truncate" title="{{ template_row.code if template_row else '-' }}">{{ template_row.code if template_row else "-" }}</span>
             </td>
             <td class="destinations-col-delivery">
-              <span class="printing-destination-delivery-type table-cell-truncate" title="{{ item.delivery_type }}">{{ item.delivery_type }}</span>
+              {% set delivery_label = delivery_type_labels.get(item.delivery_type, item.delivery_type) %}
+              <span class="printing-destination-delivery-type table-cell-truncate" title="{{ delivery_label }}">{{ delivery_label }}</span>
             </td>
             <td class="destinations-col-default">{% if item.is_default %}<span class="status-pill status-info">Default</span>{% else %}-{% endif %}</td>
             <td class="status-col destinations-col-status">

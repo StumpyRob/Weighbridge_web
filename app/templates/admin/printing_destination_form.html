@@ -129,7 +129,7 @@
             </select>
           </div>
           <div class="field" data-delivery-groups="PRINT_AGENT_PULL">
-            <label for="pull_printer_role">Printer role</label>
+            <label for="pull_printer_role">Printer role{{ help(help_text.printing_agent_printer_role, "printing-destination-pull-printer-role-help") }}</label>
             <input
               type="text"
               id="pull_printer_role"
@@ -137,10 +137,9 @@
               value="{{ form_data.pull_printer_role }}"
               placeholder="ticket, wtn, invoice, yard-main"
             />
-            <p class="muted">Preferred main path. The local print agent can map this role to a workstation-specific printer.</p>
           </div>
           <div class="field" data-delivery-groups="PRINT_AGENT_PULL">
-            <label for="pull_printer_name">Printer name override</label>
+            <label for="pull_printer_name">Printer name override{{ help(help_text.printing_agent_printer_selection, "printing-destination-pull-printer-name-help") }}</label>
             <select
               id="pull_printer_name"
               name="pull_printer_name"
@@ -159,18 +158,28 @@
                 </option>
               {% endfor %}
             </select>
-            <p class="muted" id="pull_printer_sync_message">
-              {% if not form_data.pull_agent_id %}
-                Select an agent to load synced printers.
-              {% elif pull_selected_agent_has_synced_printers %}
-                {% if pull_selected_agent_selected_printer_missing %}
-                  Saved printer is no longer synced from this agent. Select a current printer and save.
-                {% endif %}
-                {{ pull_selected_agent_printer_count }} printer{% if pull_selected_agent_printer_count != 1 %}s{% endif %} synced{% if pull_selected_agent_synced_at_label %} at {{ pull_selected_agent_synced_at_label }}{% endif %}.
+            {% if not form_data.pull_agent_id %}
+              {% set pull_printer_sync_summary = "Select an agent" %}
+              {% set pull_printer_sync_tooltip = "Choose an assigned site agent to load its synced printer list." %}
+            {% elif pull_selected_agent_has_synced_printers %}
+              {% set pull_sync_count_label = pull_selected_agent_printer_count ~ " synced printer" ~ ("" if pull_selected_agent_printer_count == 1 else "s") %}
+              {% set pull_sync_time_label = " Last sync: " ~ pull_selected_agent_synced_at_label ~ "." if pull_selected_agent_synced_at_label else "" %}
+              {% if pull_selected_agent_selected_printer_missing %}
+                {% set pull_printer_sync_summary = "Saved printer unavailable" %}
+                {% set pull_printer_sync_tooltip = "Saved printer is no longer synced from this agent. Select a current printer and save. " ~ pull_sync_count_label ~ "." ~ pull_sync_time_label %}
               {% else %}
-                No printers synced from this agent yet.
+                {% set pull_printer_sync_summary = pull_sync_count_label %}
+                {% set pull_printer_sync_tooltip = pull_sync_count_label ~ "." ~ pull_sync_time_label %}
               {% endif %}
-            </p>
+            {% else %}
+              {% set pull_printer_sync_summary = "Manual printer entry" %}
+              {% set pull_printer_sync_tooltip = "No printers are currently synced from this agent. Enter a printer name manually or wait for the next sync." %}
+            {% endif %}
+            <p
+              class="muted"
+              id="pull_printer_sync_message"
+              title="{{ pull_printer_sync_tooltip }}"
+            >{{ pull_printer_sync_summary }}</p>
           </div>
           <div
             class="field"
@@ -447,25 +456,30 @@
           const printerCount = inventory.printer_count || inventory.printers.length;
           const syncSummary =
             printerCount +
-            " printer" +
+            " synced printer" +
             (printerCount === 1 ? "" : "s") +
-            " synced" +
-            (syncedAtLabel ? " at " + syncedAtLabel : "") +
-            ".";
+            "." +
+            (syncedAtLabel ? " Last sync: " + syncedAtLabel + "." : "");
           pullPrinterSyncMessage.textContent = selectedPrinterMissing
-            ? "Saved printer is no longer synced from this agent. Select a current printer and save. " +
-              syncSummary
-            : syncSummary;
-          return;
-        }
+            ? "Saved printer unavailable"
+            : printerCount + " synced printer" + (printerCount === 1 ? "" : "s");
+        pullPrinterSyncMessage.title = selectedPrinterMissing
+          ? "Saved printer is no longer synced from this agent. Select a current printer and save. " +
+            syncSummary
+          : syncSummary;
+        return;
+      }
 
         if (showManualInput && !pullPrinterManualInput.value) {
           pullPrinterManualInput.value = previousPrinterValue;
         }
 
         pullPrinterSyncMessage.textContent = hasSelectedAgent
-          ? "No printers synced from this agent yet."
-          : "Select an agent to load synced printers.";
+          ? "Manual printer entry"
+          : "Select an agent";
+        pullPrinterSyncMessage.title = hasSelectedAgent
+          ? "No printers are currently synced from this agent. Enter a printer name manually or wait for the next sync."
+          : "Choose an assigned site agent to load its synced printer list.";
       }
 
       deliverySelect.addEventListener("change", syncVisibility);

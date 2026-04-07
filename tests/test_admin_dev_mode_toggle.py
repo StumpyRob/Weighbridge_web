@@ -38,7 +38,6 @@ def test_settings_page_shows_site_agent_download_when_configured(client, monkeyp
     assert response.status_code == 200
     assert 'href="/admin/printing/agents/download"' in response.text
     assert "Download Site Agent v0.22" in response.text
-    assert "WeighbridgeSiteAgent-0.22-Setup.exe" in response.text
 
 
 def test_admin_dev_mode_toggle_updates_runtime_flag(client):
