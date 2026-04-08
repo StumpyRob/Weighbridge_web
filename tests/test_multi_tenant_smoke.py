@@ -5173,7 +5173,7 @@ def test_dashboard_uses_uk_day_boundaries_and_renders_uk_clock(tmp_path, monkeyp
 
     assert response.status_code == 200
     assert 'data-dashboard-uk-clock="1"' in response.text
-    assert "UK Time" in response.text
+    assert 'data-dashboard-uk-clock-time' in response.text
     assert _dashboard_metric_value(response.text, "completed_today") == "1"
     assert 'data-dashboard-traffic-ticket="UK-LOCAL-1"' in response.text
 

@@ -3507,25 +3507,15 @@ details > summary:focus-visible {
 
 .dashboard-clock {
   min-width: 240px;
-  padding: 0.95rem 1rem;
-  border: 1px solid #d8e1ee;
-  border-radius: 14px;
-  background:
-    radial-gradient(circle at top left, rgba(59, 130, 246, 0.1), transparent 52%),
-    linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
   display: grid;
   gap: 0.2rem;
   justify-items: end;
   text-align: right;
-}
-
-.dashboard-clock__label {
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #4b5563;
 }
 
 .dashboard-clock__time {
