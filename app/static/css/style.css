@@ -3505,6 +3505,48 @@ details > summary:focus-visible {
   margin-bottom: var(--section-gap);
 }
 
+.dashboard-clock {
+  min-width: 240px;
+  padding: 0.95rem 1rem;
+  border: 1px solid #d8e1ee;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.1), transparent 52%),
+    linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+  display: grid;
+  gap: 0.2rem;
+  justify-items: end;
+  text-align: right;
+}
+
+.dashboard-clock__label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #4b5563;
+}
+
+.dashboard-clock__time {
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #14213d;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-clock__date {
+  font-size: 0.92rem;
+  color: #1f2937;
+}
+
+.dashboard-clock__zone {
+  font-size: 0.78rem;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
 .dashboard-summary-grid > .card,
 .dashboard-summary-grid > .card + .card {
   margin-top: 0;
@@ -5357,6 +5399,11 @@ body.assistant-panel-open {
     align-items: stretch;
   }
 
+  .dashboard-clock {
+    justify-items: start;
+    text-align: left;
+  }
+
   .dashboard-overview-toolbar__controls {
     justify-content: space-between;
   }
@@ -5406,6 +5453,11 @@ body.assistant-panel-open {
 
   .dashboard-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-clock {
+    min-width: 0;
+    width: 100%;
   }
 
   .dashboard-period-filter__option {

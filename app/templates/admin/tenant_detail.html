@@ -158,7 +158,7 @@
           </div>
           <div class="summary-item">
             <span class="summary-label">Created date</span>
-            <span class="summary-value">{{ tenant.created_at.strftime("%d/%m/%Y") if tenant.created_at else "-" }}</span>
+            <span class="summary-value">{{ tenant.created_at|uk_date("%d/%m/%Y") if tenant.created_at else "-" }}</span>
           </div>
           <div class="summary-item">
             <span class="summary-label">Total users</span>
@@ -312,7 +312,7 @@
                       <span class="status-pill status-void">Inactive</span>
                     {% endif %}
                   </td>
-                  <td>{{ user.created_at.strftime("%d/%m/%Y") if user.created_at else "-" }}</td>
+                  <td>{{ user.created_at|uk_date("%d/%m/%Y") if user.created_at else "-" }}</td>
                   <td class="actions-col">
                     {% if is_primary_user %}
                       <span class="muted">Managed above</span>
@@ -339,7 +339,7 @@
                       </div>
                       <div class="summary-item">
                         <span class="summary-label">Created</span>
-                        <span class="summary-value">{{ user.created_at.strftime("%d/%m/%Y") if user.created_at else "-" }}</span>
+                        <span class="summary-value">{{ user.created_at|uk_date("%d/%m/%Y") if user.created_at else "-" }}</span>
                       </div>
                     </div>
                     <div class="form-grid form-grid--3">
@@ -639,7 +639,7 @@
                   <span class="summary-label">Last reset</span>
                   <span class="summary-value">
                     {% if demo_last_reset_at %}
-                      {{ demo_last_reset_at.strftime("%d/%m/%Y %H:%M") }}
+                      {{ demo_last_reset_at|uk_datetime("%d/%m/%Y %H:%M") }}
                     {% else %}
                       Not recorded yet
                     {% endif %}

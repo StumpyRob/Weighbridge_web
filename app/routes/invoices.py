@@ -69,6 +69,7 @@ from ..services.printing import (
 )
 from ..services.system_setup import get_company_setting
 from ..templating import templates
+from ..timezones import uk_date_from_utc
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -91,6 +92,10 @@ INVOICE_EMAIL_DEFAULT_BODY = (
     "Regards,\n"
     "{company_name}"
 )
+
+
+def _uk_today() -> date:
+    return uk_date_from_utc(utcnow())
 
 
 def _voided_by_actor(request: Request) -> str:
@@ -408,7 +413,7 @@ async def invoices_generate_confirm(
 
     try:
         customer = db.get(Customer, customer_id)
-        invoice_date = date.today()
+        invoice_date = _uk_today()
         due_date = None
         if customer and customer.payment_terms_days is not None:
             due_date = invoice_date + timedelta(days=max(customer.payment_terms_days, 0))
@@ -1085,13 +1090,14 @@ async def invoices_void(
 
 
 def _generate_invoice_no(db: Session) -> str:
-    year = utcnow().year
+    current_utc = utcnow()
+    year = uk_date_from_utc(current_utc).year
     db.execute(
         text(
             "INSERT OR IGNORE INTO invoice_sequences (year, last_number, updated_at) "
             "VALUES (:year, 0, :updated_at)"
         ),
-        {"year": year, "updated_at": utcnow()},
+        {"year": year, "updated_at": current_utc},
     )
     db.execute(
         text(
@@ -1099,7 +1105,7 @@ def _generate_invoice_no(db: Session) -> str:
             "SET last_number = last_number + 1, updated_at = :updated_at "
             "WHERE year = :year"
         ),
-        {"year": year, "updated_at": utcnow()},
+        {"year": year, "updated_at": current_utc},
     )
     next_number = db.execute(
         text("SELECT last_number FROM invoice_sequences WHERE year = :year"),
@@ -1937,7 +1943,7 @@ def _fetch_ticket_candidates(
         Ticket.walk_in_sale.is_(False),
         Ticket.paid.is_(False),
     ]
-    # Date filters are interpreted in server-local time (UTC by default).
+    # Ticket date filters use UK-local business time (Europe/London).
     if date_from:
         filters.append(Ticket.datetime >= datetime.combine(date_from, time.min))
     if date_to:
@@ -1987,7 +1993,7 @@ def _invoiceable_ticket_filters(
                 func.length(func.trim(Ticket.po_number)) > 0,
             ]
         )
-    # Date filters are interpreted in server-local time (UTC by default).
+    # Ticket date filters use UK-local business time (Europe/London).
     if date_from:
         filters.append(Ticket.datetime >= datetime.combine(date_from, time.min))
     if date_to:

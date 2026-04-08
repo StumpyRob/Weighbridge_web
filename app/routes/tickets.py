@@ -102,6 +102,7 @@ from ..services.system_setup import get_company_setting, missing_required_lookup
 from ..services.wip_snapshots import ticket_wip_snapshot
 from ..seed import seed_void_reasons
 from ..templating import templates
+from ..timezones import uk_local_naive_from_utc
 
 
 def _require_tickets_view(request: Request) -> None:
@@ -195,6 +196,10 @@ _TICKET_AUDIT_DIFF_KEYS = (
 )
 
 
+def _uk_now() -> datetime:
+    return uk_local_naive_from_utc(utcnow())
+
+
 def _voided_by_actor(request: Request) -> str:
     user = getattr(getattr(request, "state", None), "current_user", None)
     email = str(getattr(user, "email", "") or "").strip()
@@ -229,7 +234,7 @@ def tickets_list(
     search_query = _normalize_ticket_search_query(q)
 
     filters = []
-    # Date filters are interpreted in server-local time (UTC by default).
+    # Ticket date filters use UK-local business time (Europe/London).
     if date_from:
         filters.append(Ticket.datetime >= datetime.combine(date_from, time.min))
     if date_to:
@@ -418,8 +423,9 @@ def tickets_new(request: Request, db: Session = Depends(get_db)) -> HTMLResponse
 @router.post("/tickets/new/quick", response_class=HTMLResponse)
 def tickets_quick_create(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     _require_tickets_manage(request)
-    now = utcnow()
-    recent_cutoff = now - timedelta(seconds=NEW_TICKET_DEDUP_SECONDS)
+    now_utc = utcnow()
+    now_uk = uk_local_naive_from_utc(now_utc)
+    recent_cutoff = now_utc - timedelta(seconds=NEW_TICKET_DEDUP_SECONDS)
     recent_ticket = (
         db.execute(
             select(Ticket)
@@ -454,8 +460,8 @@ def tickets_quick_create(request: Request, db: Session = Depends(get_db)) -> HTM
     if recent_ticket:
         return RedirectResponse(url=f"/tickets/{recent_ticket.id}", status_code=303)
     ticket = Ticket(
-        ticket_no=_generate_ticket_no(db, now),
-        datetime=now.replace(second=0, microsecond=0),
+        ticket_no=_generate_ticket_no(db, now_uk),
+        datetime=now_uk.replace(second=0, microsecond=0),
         status=TicketStatusEnum.OPEN.value,
         direction=DirectionEnum.INWARD.value,
         transaction_type=TransactionTypeEnum.WASTEIN.value,
@@ -881,7 +887,8 @@ def tickets_vehicle_suggest(
 
 
 def _generate_ticket_no(db: Session, now: datetime | None = None) -> str:
-    current_time = now or utcnow()
+    current_time = now or _uk_now()
+    sequence_updated_at = utcnow()
     tenant_id = db.info.get("tenant_id")
     if tenant_id is None:
         raise RuntimeError("Ticket number generation requires tenant scope.")
@@ -919,7 +926,7 @@ def _generate_ticket_no(db: Session, now: datetime | None = None) -> str:
             "tenant_id": tenant_id,
             "year": year,
             "starting_number": starting_number,
-            "updated_at": current_time,
+            "updated_at": sequence_updated_at,
         },
     ).scalar_one()
 
@@ -2358,7 +2365,7 @@ def tickets_print_browser(
         str(print_destination or resolved_printed_to).strip() or destination_name
     )
     resolved_sent_at = (
-        str(print_sent_at or "").strip() or datetime.now().strftime("%H:%M")
+        str(print_sent_at or "").strip() or _uk_now().strftime("%H:%M")
     )
 
     back_params: dict[str, str] = {}
@@ -2561,7 +2568,7 @@ async def tickets_print_dispatch(
         )
 
     destination_name = _ticket_destination_display_name(destination)
-    print_sent_at = datetime.now().strftime("%H:%M")
+    print_sent_at = _uk_now().strftime("%H:%M")
     success_query_data = _ticket_print_success_query_data(
         destination_name=destination_name,
         job_id=result.job.id,
@@ -3625,7 +3632,7 @@ async def tickets_update(
         auto_delivery_type, _auto_delivery_config = _ticket_destination_delivery(
             auto_print_destination
         )
-        print_sent_at = datetime.now().strftime("%H:%M")
+        print_sent_at = _uk_now().strftime("%H:%M")
         if auto_delivery_type == DELIVERY_TYPE_PRINT_LOCAL_BROWSER:
             browser_query = urlencode(
                 _ticket_print_preview_query_data(
@@ -4917,7 +4924,7 @@ def _parse_ticket_form(
         "errors": errors,
         "warnings": [],
         "form": form_data,
-        "ticket_datetime": ticket_datetime or utcnow(),
+        "ticket_datetime": ticket_datetime or _uk_now(),
         "direction": direction,
         "transaction_type": transaction_type,
         "direction_raw": direction_raw,

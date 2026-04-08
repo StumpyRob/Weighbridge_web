@@ -136,7 +136,7 @@ It verifies `void_reasons` uniqueness transitions correctly between:
   - negative net weights
   - complete tickets missing weights
   - tickets referencing inactive lookups/units
-- Date filtering uses server-local time (UTC by default).
+- Ticket date filtering uses UK-local business time (`Europe/London`).
 
 ## Docker
 

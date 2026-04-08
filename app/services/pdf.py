@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import settings
+from ..models.base import utcnow
 from ..models import (
     CompanySetting,
     Customer,
@@ -26,6 +27,7 @@ from ..models import (
     PrintDestination,
     PrintTemplate,
 )
+from ..timezones import uk_date_from_utc
 from .print_context import build_print_base_context
 from .print_payload import build_print_payload
 from .print_render import render_template_content
@@ -579,7 +581,10 @@ def _sample_invoice_pdf_context(db: Session | None = None) -> dict[str, object]:
         **base_context,
         "invoice_id": 0,
         "invoice_no": str(payload.get("invoice_no") or "INV-SAMPLE"),
-        "invoice_date_text": str(payload.get("datetime") or date.today().strftime("%d/%m/%Y")),
+        "invoice_date_text": str(
+            payload.get("datetime")
+            or uk_date_from_utc(utcnow()).strftime("%d/%m/%Y")
+        ),
         "due_date_text": "",
         "status": str(payload.get("status") or "DRAFT"),
         "customer_name": str(payload.get("customer_name") or "Sample Customer"),
@@ -599,7 +604,10 @@ def _sample_invoice_pdf_context(db: Session | None = None) -> dict[str, object]:
         "invoice": {
             "id": 0,
             "invoice_no": str(payload.get("invoice_no") or "INV-SAMPLE"),
-            "invoice_date": str(payload.get("datetime") or date.today().strftime("%d/%m/%Y")),
+            "invoice_date": str(
+                payload.get("datetime")
+                or uk_date_from_utc(utcnow()).strftime("%d/%m/%Y")
+            ),
             "due_date": "",
             "status": str(payload.get("status") or "DRAFT"),
         },

@@ -153,12 +153,28 @@
   {%- endmacro %}
   {% if show_dashboard %}
     <div class="page-header">
-      <div>
+      <div class="page-header__content">
         <h1>Operations Dashboard</h1>
         <p class="muted">
           Live overview of ticket activity, completion workload, and invoice follow-up for this workspace.
         </p>
       </div>
+      <aside class="page-header__aside dashboard-clock" data-dashboard-uk-clock="1">
+        <span class="dashboard-clock__label">UK Time</span>
+        <time
+          class="dashboard-clock__time"
+          data-dashboard-uk-clock-time
+          datetime="{{ dashboard.uk_clock.datetime_iso }}"
+        >{{ dashboard.uk_clock.time_display }}</time>
+        <time
+          class="dashboard-clock__date"
+          data-dashboard-uk-clock-date
+          datetime="{{ dashboard.uk_clock.date_iso }}"
+        >{{ dashboard.uk_clock.date_display }}</time>
+        <span class="dashboard-clock__zone" data-dashboard-uk-clock-zone>
+          {{ dashboard.uk_clock.timezone_label }} | {{ dashboard.uk_clock.timezone_short }}
+        </span>
+      </aside>
     </div>
 
     {% if show_first_time_setup %}
@@ -485,6 +501,95 @@
         </div>
       </section>
     </div>
+    <script>
+      (function () {
+        const clockRoot = document.querySelector("[data-dashboard-uk-clock]");
+        if (!clockRoot || typeof Intl === "undefined" || typeof Intl.DateTimeFormat !== "function") {
+          return;
+        }
+
+        const timeNode = clockRoot.querySelector("[data-dashboard-uk-clock-time]");
+        const dateNode = clockRoot.querySelector("[data-dashboard-uk-clock-date]");
+        const zoneNode = clockRoot.querySelector("[data-dashboard-uk-clock-zone]");
+        if (!timeNode || !dateNode || !zoneNode) {
+          return;
+        }
+
+        const timeZone = "Europe/London";
+        const timeFormatter = new Intl.DateTimeFormat("en-GB", {
+          timeZone,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false
+        });
+        const dateFormatter = new Intl.DateTimeFormat("en-GB", {
+          timeZone,
+          weekday: "long",
+          day: "2-digit",
+          month: "long",
+          year: "numeric"
+        });
+        const isoFormatter = new Intl.DateTimeFormat("en-CA", {
+          timeZone,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false
+        });
+        const zoneFormatter = new Intl.DateTimeFormat("en-GB", {
+          timeZone,
+          timeZoneName: "short",
+          hour: "2-digit"
+        });
+
+        function zoneSuffix(now) {
+          const parts = zoneFormatter.formatToParts(now);
+          const zonePart = parts.find(function (part) {
+            return part.type === "timeZoneName";
+          });
+          return zonePart ? zonePart.value : "UK";
+        }
+
+        function localIso(now) {
+          const values = {};
+          isoFormatter.formatToParts(now).forEach(function (part) {
+            if (part.type !== "literal") {
+              values[part.type] = part.value;
+            }
+          });
+          return (
+            values.year +
+            "-" +
+            values.month +
+            "-" +
+            values.day +
+            "T" +
+            values.hour +
+            ":" +
+            values.minute +
+            ":" +
+            values.second
+          );
+        }
+
+        function updateClock() {
+          const now = new Date();
+          const localIsoValue = localIso(now);
+          timeNode.textContent = timeFormatter.format(now);
+          timeNode.setAttribute("datetime", localIsoValue);
+          dateNode.textContent = dateFormatter.format(now);
+          dateNode.setAttribute("datetime", localIsoValue.slice(0, 10));
+          zoneNode.textContent = timeZone + " | " + zoneSuffix(now);
+        }
+
+        updateClock();
+        window.setInterval(updateClock, 1000);
+      })();
+    </script>
   {% else %}
     <div class="page-header">
       <div>

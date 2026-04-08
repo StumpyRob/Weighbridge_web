@@ -32,6 +32,7 @@ from ..models import (
     Yard,
 )
 from ..models.base import utcnow
+from ..timezones import uk_date_from_utc
 from .wip_snapshots import product_wip_snapshot, ticket_wip_snapshot
 
 MONEY_PLACES = Decimal("0.01")
@@ -540,7 +541,7 @@ def _demo_ticket_no(number: int, *, year: int) -> str:
 
 def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
     tenant_id = int(tenant_id)
-    today = utcnow().replace(second=0, microsecond=0).date()
+    today = uk_date_from_utc(utcnow())
     yesterday = today - timedelta(days=1)
     start_of_week = today - timedelta(days=today.weekday())
     days = {

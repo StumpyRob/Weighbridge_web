@@ -83,6 +83,7 @@ from .services.ui_branding import (
     normalize_hex_color,
 )
 from .seed import refresh_system_print_templates_for_all_tenants
+from .timezones import UK_TIMEZONE_LABEL, uk_local_naive_from_utc, uk_now_from_utc
 from .tenancy import (
     host_without_port,
     platform_route_url,
@@ -755,7 +756,10 @@ def _build_tenant_dashboard(
     ai_request_user_id: int | None = None,
     allow_ai_insights: bool = True,
 ) -> dict[str, object]:
-    today = utcnow().date()
+    current_utc = utcnow()
+    current_uk = uk_local_naive_from_utc(current_utc)
+    current_uk_aware = uk_now_from_utc(current_utc)
+    today = current_uk.date()
     platform_ai_settings = get_platform_ai_settings(db)
     tenant_ai_settings = resolve_tenant_ai_settings(
         ai_assistant_enabled=ai_enabled,
@@ -970,6 +974,14 @@ def _build_tenant_dashboard(
         ],
         "period_key": overview_period,
         "period_label": period_labels[overview_period],
+        "uk_clock": {
+            "date_display": current_uk.strftime("%A %d %B %Y"),
+            "date_iso": current_uk.date().isoformat(),
+            "time_display": current_uk.strftime("%H:%M:%S"),
+            "datetime_iso": current_uk.isoformat(timespec="seconds"),
+            "timezone_label": UK_TIMEZONE_LABEL,
+            "timezone_short": current_uk_aware.tzname() or "UK",
+        },
         "period_options": (
             {"key": "today", "label": "Today", "active": overview_period == "today"},
             {"key": "7d", "label": "7 Days", "active": overview_period == "7d"},

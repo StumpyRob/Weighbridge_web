@@ -252,7 +252,7 @@ def test_admin_print_agents_page_shows_printer_sync_summary(client, db_session):
 
     assert response.status_code == 200
     assert "2 known" in response.text
-    assert "31/03/2026 10:15:00" in response.text
+    assert "31/03/2026 11:15:00" in response.text
     assert "Zebra ZSB-DP14" in response.text
     assert "Microsoft Print to PDF (default, online)" in response.text
 

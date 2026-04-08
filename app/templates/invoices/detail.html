@@ -128,7 +128,7 @@
         | <strong>Note:</strong> {{ invoice_void.note }}
       {% endif %}
       {% if invoice_void.voided_at %}
-        | <strong>Voided:</strong> {{ invoice_void.voided_at.strftime("%d/%m/%Y %H:%M") }}
+        | <strong>Voided:</strong> {{ invoice_void.voided_at|uk_datetime("%d/%m/%Y %H:%M") }}
       {% endif %}
     </div>
   {% endif %}
@@ -189,7 +189,7 @@
         </div>
         <div class="summary-item">
           <span class="summary-label">Paid Date</span>
-          <span class="summary-value">{{ invoice.paid_at.strftime("%d/%m/%y") if invoice.paid_at else "-" }}</span>
+          <span class="summary-value">{{ invoice.paid_at|uk_date("%d/%m/%y") if invoice.paid_at else "-" }}</span>
         </div>
         <div class="summary-item">
           <span class="summary-label">Payment Method{{ help(help_text.invoice_payment_method_summary, "invoice-payment-method-summary-help") }}</span>

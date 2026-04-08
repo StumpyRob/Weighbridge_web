@@ -6,7 +6,7 @@
   <div class="page-header">
     <div>
       <h1>Help</h1>
-      <p class="muted">How Weighbridge Web works and how to get started quickly.</p>
+      <p class="muted">Setup, daily workflow, printing, controls, and support for the features currently available in Weighbridge Web.</p>
     </div>
     <div class="actions btn-group">
       <a class="btn btn--secondary" href="/admin">Back to Settings</a>
@@ -21,12 +21,13 @@
       <h2>What This System Does</h2>
     </div>
     <div class="frame-body">
-      <p>Weighbridge Web runs day-to-day weighbridge operations from ticket creation through invoicing and print output.</p>
+      <p>Weighbridge Web runs day-to-day weighbridge operations from setup through ticketing, compliance, invoicing, document output, and admin oversight.</p>
       <ul>
-        <li>Create and complete tickets with weight and product details.</li>
-        <li>Generate invoices from completed tickets and track invoice status.</li>
-        <li>Configure print templates and destinations for Ticket, Invoice, and WTN documents.</li>
-        <li>Capture audit history through print jobs and document records.</li>
+        <li>Run the dashboard in UK time with live date/time visibility, operational totals, and activity panels.</li>
+        <li>Manage customers, vehicles, products, pricing, EWC compliance, and ticket defaults before operators start weighing.</li>
+        <li>Create, complete, preview, print, and email Ticket, Invoice, and WTN documents.</li>
+        <li>Configure print agents, destinations, templates, and job review for local or automated document delivery.</li>
+        <li>Track admin and data changes through the audit log and related document records.</li>
       </ul>
       <p class="muted">Status: this application is still in active development. Some workflows will continue to evolve.</p>
     </div>
@@ -40,11 +41,14 @@
       <ol>
         <li>Go to <a href="/admin/company">Settings -> Company</a> and set your company name/address/logo.</li>
         <li>Go to <a href="/admin/ewc-codes">Settings -> EWC Codes</a> and import the latest regulatory CSV.</li>
-        <li>Go to <a href="/products">Products</a> and confirm products, units, and pricing are correct.</li>
+        <li>Go to <a href="/products">Products</a> and confirm groups, units, pricing, and waste flags are correct.</li>
+        <li>Go to <a href="/customers">Customers</a> and review invoice frequency, payment terms, credit limits, PO rules, and invoice-stop flags.</li>
+        <li>Go to <a href="/vehicles">Vehicles</a> and set default tare, overweight threshold, ticket defaults, and any per-container tares you rely on.</li>
+        <li>If you print to local printers, go to <a href="/admin/printing/agents">Settings -> Printing -> Agents</a> and install/pair the required print agents.</li>
         <li>Go to <a href="/admin/printing/templates">Settings -> Printing -> Templates</a> and duplicate system templates if you need custom layouts.</li>
         <li>Go to <a href="/admin/printing/destinations">Settings -> Printing -> Destinations</a> and confirm one active default destination per document type.</li>
-        <li>Create a test ticket in <a href="/tickets">Tickets</a>, then preview/print.</li>
-        <li>Generate a test invoice in <a href="/invoices">Invoices</a> and verify preview/send/PDF.</li>
+        <li>Create a test ticket in <a href="/tickets">Tickets</a>, check Ticket and WTN preview/print, and confirm any required signatures or destination details render correctly.</li>
+        <li>Generate a test invoice in <a href="/invoices">Invoices</a> and verify preview, PDF, and email/send behaviour.</li>
       </ol>
     </div>
   </section>
@@ -55,28 +59,72 @@
     </div>
     <div class="frame-body">
       <ol>
-        <li>Create or open a ticket and record inbound/outbound weights.</li>
-        <li>Complete the ticket once all required fields are valid.</li>
-        <li>Use <strong>Print Ticket</strong> or <strong>Preview Ticket</strong> as needed.</li>
-        <li>Generate invoices from eligible completed tickets.</li>
-        <li>Use <strong>Send Invoice</strong>, <strong>Preview Invoice</strong>, or <strong>Download PDF</strong>.</li>
+        <li>Start from the dashboard; totals and the live clock use UK time, so daily activity should match your operating day.</li>
+        <li>Create or open a ticket, record inbound/outbound weights, and confirm customer, vehicle, product, and haulier details are correct.</li>
+        <li>Review account controls before completion, especially credit banners, PO requirements, on-stop flags, and do-not-invoice flags.</li>
+        <li>Complete the ticket once required waste, destination, and signature details are valid for the workflow you are running.</li>
+        <li>Use <strong>Preview Ticket</strong>, <strong>Print Ticket</strong>, <strong>Preview WTN</strong>, or related document actions as needed.</li>
+        <li>Generate invoices from eligible completed tickets, then use <strong>Send Invoice</strong>, <strong>Preview Invoice</strong>, or <strong>Download PDF</strong>.</li>
       </ol>
     </div>
   </section>
 
   <section class="frame">
     <div class="frame-header">
-      <h2>Settings Workflow</h2>
+      <h2>Customer, Vehicle, and Product Controls</h2>
     </div>
     <div class="frame-body">
       <ul>
-        <li><strong>Templates:</strong> System templates are locked. Duplicate a system template to customise safely.</li>
-        <li><strong>Destinations:</strong> Keep one active default per document type so operator actions are one-click.</li>
-        <li><strong>Jobs:</strong> Use jobs view to investigate failed sends and retry when appropriate.</li>
-        <li><strong>EWC codes:</strong> Re-import CSV whenever list updates are published.</li>
+        <li><strong>Customers:</strong> Customer records now cover invoice frequency, payment terms, price overrides, credit summaries, account adjustments, and flags such as ON STOP, NO INVOICE, and PO REQUIRED.</li>
+        <li><strong>Vehicles:</strong> Vehicle records can prefill new tickets with default customer, haulier, and driver values, while also storing default tare and per-container tares for repeat traffic.</li>
+        <li><strong>Products:</strong> Product setup includes groups, units, nominal codes, EWC defaults, hazardous/final-disposal/used-on-site flags, and default destination or bay selection.</li>
       </ul>
     </div>
   </section>
+
+  <section class="frame">
+    <div class="frame-header">
+      <h2>Print Agents, Destinations, Templates, and Jobs</h2>
+    </div>
+    <div class="frame-body">
+      <ul>
+        <li><strong>Print Agents:</strong> Use <a href="/admin/printing/agents">Settings -> Printing -> Agents</a> to download the site installer, pair local agents, review last seen times, and confirm printer sync status.</li>
+        <li><strong>Destinations:</strong> Keep one active default destination per document type so operator actions stay one-click and routed correctly.</li>
+        <li><strong>Templates:</strong> System templates are locked. Duplicate a system template before customising it, then use <a href="/admin/help/template-variables">Template Variables</a> as the reference for supported fields.</li>
+        <li><strong>Jobs:</strong> Use the jobs view to investigate failed sends, inspect rendered output and delivery snapshots, and retry when appropriate.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="frame">
+    <div class="frame-header">
+      <h2>Audit, Support, and UK Time</h2>
+    </div>
+    <div class="frame-body">
+      <ul>
+        <li><strong>Audit Log:</strong> Use <a href="/admin/audit">Settings -> Audit Log</a> to review authentication and data-change events across key entities.</li>
+        <li><strong>Company Settings:</strong> Company settings also control document email defaults, sign-in email, branding, logo, and theme values used across the workspace.</li>
+        <li><strong>Time zone behaviour:</strong> Dashboard time, print timestamps, and admin-facing date/time displays are intended to run in UK time (<code>Europe/London</code>), including seasonal DST changes.</li>
+        <li><strong>Template help:</strong> Use <a href="/admin/help/template-variables">Template Variables</a> whenever you customise Ticket, Invoice, or WTN layouts.</li>
+      </ul>
+    </div>
+  </section>
+
+  {% if platform_tools_allowed %}
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Platform Administration</h2>
+      </div>
+      <div class="frame-body">
+        <ul>
+          <li><strong>Tenant Management:</strong> In platform mode, use <a href="/admin/tenants">Tenant Management</a> to create workspaces, manage tenant users, and control tenant access.</li>
+          <li><strong>Platform AI Defaults:</strong> Use <a href="/admin/ai-settings">Platform AI Defaults</a> to manage the shared assistant model, response style, dashboard insight limits, and rate controls.</li>
+          <li><strong>Platform Email Settings:</strong> Use <a href="/admin/email-settings">Platform Email Settings</a> to configure the shared email provider, sender identity, reply-to, and test delivery.</li>
+          <li><strong>Tenant overrides and demo reset:</strong> Tenant detail pages include tenant-specific AI overrides, primary admin maintenance, and reserved demo reset controls where supported.</li>
+        </ul>
+      </div>
+    </section>
+  {% endif %}
 
   <section class="frame">
     <div class="frame-header">
@@ -85,8 +133,10 @@
     <div class="frame-body">
       <ul>
         <li><strong>No EWC codes loaded:</strong> import CSV via <a href="/admin/ewc-codes">Settings -> EWC Codes</a>.</li>
-        <li><strong>Print action disabled:</strong> check document status and default destination setup.</li>
+        <li><strong>Print action disabled or missing:</strong> check document status, default destination setup, paired print agents, and recent printer sync state.</li>
+        <li><strong>Ticket or invoice excluded unexpectedly:</strong> review customer flags, PO requirements, account balance controls, and document status before retrying.</li>
         <li><strong>Template rendering error:</strong> verify variable names in <a href="/admin/help/template-variables">Template Variables</a>.</li>
+        <li><strong>Times look an hour behind:</strong> check the server clock/NTP, but note that app-facing operational times are expected to display in UK time with BST/GMT handled automatically.</li>
       </ul>
     </div>
   </section>

@@ -52,6 +52,7 @@ from ..services.printing import (
     resolve_job_document_filename,
     retry_print_job,
 )
+from ..timezones import format_uk_datetime
 from ..services.print_agents import (
     PrintAgentPairingError,
     complete_print_agent_pairing as complete_print_agent_pairing_session,
@@ -149,7 +150,7 @@ def _resolve_show_flag(raw: object, *, default: int = 0) -> int:
 def _format_admin_datetime(value: datetime | None) -> str:
     if value is None:
         return ""
-    return value.strftime("%d/%m/%Y %H:%M:%S")
+    return format_uk_datetime(value, "%d/%m/%Y %H:%M:%S")
 
 
 def _print_job_trigger_source_label(value: str | None) -> str:

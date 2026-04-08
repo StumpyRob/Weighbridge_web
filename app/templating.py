@@ -7,6 +7,7 @@ from .constants import field_limits
 from .constants.help_text import HELP_TEXT
 from .db import get_db
 from .permissions import permission_context_for_request
+from .timezones import UK_TIMEZONE_LABEL, format_uk_date, format_uk_datetime
 from .services.ui_branding import get_branding
 from .tenancy import host_without_port, prefix_tenant_route_target
 
@@ -131,3 +132,6 @@ templates.env.globals["app_build_label"] = _build_info["label"]
 templates.env.globals["BUILD_STAMP"] = _asset_build_stamp
 templates.env.globals["user_display_name"] = user_display_name
 templates.env.globals["user_role_label"] = user_role_label
+templates.env.globals["UK_TIMEZONE_LABEL"] = UK_TIMEZONE_LABEL
+templates.env.filters["uk_datetime"] = format_uk_datetime
+templates.env.filters["uk_date"] = format_uk_date

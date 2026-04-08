@@ -92,7 +92,7 @@
                   <span class="status-pill status-void">Disabled</span>
                 {% endif %}
               </td>
-              <td>{{ tenant.created_at.strftime("%d/%m/%Y") if tenant.created_at else "-" }}</td>
+              <td>{{ tenant.created_at|uk_date("%d/%m/%Y") if tenant.created_at else "-" }}</td>
               <td>
                 {% if row.initial_admin_email %}
                   <div>

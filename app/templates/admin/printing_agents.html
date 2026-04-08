@@ -1,12 +1,12 @@
 {% extends "base.html" %}
+{% from "_help.html" import help %}
 
 {% block title %}Print Agents | Weighbridge Web{% endblock %}
 
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>Print Agents</h1>
-      <p class="muted">Pair local print agents to this tenant and review basic agent status before assigning pull-mode destinations.</p>
+      <h1>Print Agents{{ help(help_text.printing_agents_page, "printing-agents-page-help") }}</h1>
     </div>
   </div>
 
@@ -24,14 +24,14 @@
       <input type="hidden" name="show_revoked" value="0" />
       <input type="checkbox" id="show_revoked" name="show_revoked" value="1" {% if show_revoked %}checked{% endif %} />
       <label for="show_revoked">
-        Show revoked agents{% if hidden_revoked_count and not show_revoked %} ({{ hidden_revoked_count }} hidden){% endif %}
+        Show revoked agents{% if hidden_revoked_count and not show_revoked %} ({{ hidden_revoked_count }} hidden){% endif %}{{ help(help_text.printing_agents_show_revoked, "printing-agents-show-revoked-help") }}
       </label>
     </div>
     <div class="field checkbox">
       <input type="hidden" name="show_expired_pairings" value="0" />
       <input type="checkbox" id="show_expired_pairings" name="show_expired_pairings" value="1" {% if show_expired_pairings %}checked{% endif %} />
       <label for="show_expired_pairings">
-        Show expired pending pairings{% if expired_pending_count and not show_expired_pairings %} ({{ expired_pending_count }} hidden){% endif %}
+        Show expired pending pairings{% if expired_pending_count and not show_expired_pairings %} ({{ expired_pending_count }} hidden){% endif %}{{ help(help_text.printing_agents_show_expired_pairings, "printing-agents-show-expired-help") }}
       </label>
     </div>
     <div class="actions btn-group">
@@ -42,15 +42,14 @@
 
   <section class="card" style="margin-bottom: 1.5rem;">
     <div class="card__body">
-      <h2 style="margin-top: 0;">Site Agent Installer</h2>
-      <p class="muted">Download the Windows installer, run it on the site machine, then open the local status page to copy the pairing code back into this screen.</p>
+      <h2 style="margin-top: 0;">Site Agent Installer{{ help(help_text.printing_agents_installer, "printing-agents-installer-help") }}</h2>
       <div class="actions btn-group">
         {% if site_agent_download.available %}
           <a class="btn btn--secondary" href="/admin/printing/agents/download">
             Download Site Agent{% if site_agent_download.version %} v{{ site_agent_download.version }}{% endif %}
           </a>
         {% else %}
-          <span class="muted">Site agent download link not configured.</span>
+          <span class="muted">Download not configured.</span>
         {% endif %}
       </div>
     </div>
@@ -58,15 +57,14 @@
 
   <section class="card" style="margin-bottom: 1.5rem;">
     <div class="card__body">
-      <h2 style="margin-top: 0;">Pair A Local Agent</h2>
-      <p class="muted">Install or run the local print agent on the site machine, copy the pairing code shown on the agent status page, paste it here, then pair it to this tenant. After pairing, the agent will exchange for permanent credentials automatically.</p>
+      <h2 style="margin-top: 0;">Pair A Local Agent{{ help(help_text.printing_agents_pairing, "printing-agents-pairing-help") }}</h2>
       <form method="post" action="/admin/printing/agents/pair?show_revoked={{ 1 if show_revoked else 0 }}&show_expired_pairings={{ 1 if show_expired_pairings else 0 }}" class="filters filters-inline">
         <div class="field">
-          <label for="pairing_code">Pairing code</label>
+          <label for="pairing_code">Pairing code{{ help(help_text.printing_agents_pairing_code, "printing-agents-pairing-code-help") }}</label>
           <input type="text" id="pairing_code" name="pairing_code" value="{{ form_data.pairing_code }}" placeholder="ABCD-EFGH" autocomplete="off" />
         </div>
         <div class="field">
-          <label for="agent_name">Friendly agent name</label>
+          <label for="agent_name">Friendly agent name{{ help(help_text.printing_agents_agent_name, "printing-agents-agent-name-help") }}</label>
           <input type="text" id="agent_name" name="agent_name" value="{{ form_data.agent_name }}" placeholder="Reception Office Agent" />
         </div>
         <div class="actions btn-group" style="align-self: end;">
@@ -77,7 +75,7 @@
   </section>
 
   <section style="margin-bottom: 1.5rem;">
-    <h2>Paired Agents</h2>
+    <h2>Paired Agents{{ help(help_text.printing_agents_paired, "printing-agents-paired-help") }}</h2>
     <div class="table-wrap list-table-wrap">
       <table class="data-table list-table">
         <thead>
@@ -104,7 +102,7 @@
                   {% if row.status_title %}title="{{ row.status_title }}"{% endif %}
                 >{{ row.display_status }}</span>
               </td>
-              <td>{{ item.last_seen_at.strftime("%d/%m/%Y %H:%M:%S") if item.last_seen_at else "-" }}</td>
+              <td>{{ item.last_seen_at|uk_datetime("%d/%m/%Y %H:%M:%S") if item.last_seen_at else "-" }}</td>
               <td>
                 {% if row.printer_count %}
                   <div>{{ row.printer_count }} known</div>
@@ -121,7 +119,7 @@
                 {% endif %}
               </td>
               <td>{{ row.printers_synced_at_label or "-" }}</td>
-              <td>{{ item.created_at.strftime("%d/%m/%Y %H:%M:%S") if item.created_at else "-" }}</td>
+              <td>{{ item.created_at|uk_datetime("%d/%m/%Y %H:%M:%S") if item.created_at else "-" }}</td>
               <td>
                 {% if row.can_revoke %}
                   <form method="post" action="/admin/printing/agents/{{ item.id }}/revoke?show_revoked={{ 1 if show_revoked else 0 }}&show_expired_pairings={{ 1 if show_expired_pairings else 0 }}">
@@ -153,10 +151,7 @@
   <section>
     <div class="page-header" style="margin-bottom: 0.75rem;">
       <div>
-        <h2 style="margin-bottom: 0.25rem;">Pending Pairings</h2>
-        {% if expired_pending_count and not show_expired_pairings %}
-          <p class="muted">{{ expired_pending_count }} expired pending pairing{% if expired_pending_count != 1 %}s are{% else %} is{% endif %} hidden by the current filter.</p>
-        {% endif %}
+        <h2 style="margin-bottom: 0.25rem;">Pending Pairings{{ help(help_text.printing_agents_pending, "printing-agents-pending-help") }}</h2>
       </div>
       {% if expired_pending_count %}
         <div class="actions btn-group">
@@ -199,8 +194,8 @@
                   <span class="status-pill status-info">{{ row.display_status }}</span>
                 {% endif %}
               </td>
-              <td>{{ pairing.expires_at.strftime("%d/%m/%Y %H:%M:%S") if pairing.expires_at else "-" }}</td>
-              <td>{{ pairing.created_at.strftime("%d/%m/%Y %H:%M:%S") if pairing.created_at else "-" }}</td>
+              <td>{{ pairing.expires_at|uk_datetime("%d/%m/%Y %H:%M:%S") if pairing.expires_at else "-" }}</td>
+              <td>{{ pairing.created_at|uk_datetime("%d/%m/%Y %H:%M:%S") if pairing.created_at else "-" }}</td>
               <td>
                 {% if row.can_cancel %}
                   <form method="post" action="/admin/printing/agents/pairings/{{ pairing.id }}/cancel?show_revoked={{ 1 if show_revoked else 0 }}&show_expired_pairings={{ 1 if show_expired_pairings else 0 }}">

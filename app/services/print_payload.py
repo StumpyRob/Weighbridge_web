@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import settings
+from ..models.base import utcnow
 from ..models import (
     Area,
     CompanySetting,
@@ -29,6 +30,7 @@ from ..models import (
     WasteCode,
     Yard,
 )
+from ..timezones import format_uk_datetime, uk_date_from_utc
 from .printing import DOCUMENT_TYPE_INVOICE, DOCUMENT_TYPE_TICKET, DOCUMENT_TYPE_WTN
 from .uploads import logo_file_from_web_path, resolve_company_logo_web_path
 
@@ -137,10 +139,16 @@ def _enum_value(value: Any) -> str:
     return value.value if hasattr(value, "value") else str(value)
 
 
-def _format_dt(value: datetime | None) -> str:
+def _format_ticket_dt(value: datetime | None) -> str:
     if value is None:
         return ""
     return value.strftime("%d/%m/%Y %H:%M")
+
+
+def _format_utc_dt(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    return format_uk_datetime(value, "%d/%m/%Y %H:%M")
 
 
 def _format_date(value: date | None) -> str:
@@ -474,7 +482,7 @@ def _sample_invoice_payload() -> dict[str, Any]:
             "reference_no": "INV-SAMPLE",
             "invoice_id": 0,
             "invoice_no": "INV-SAMPLE",
-            "datetime": _format_date(date.today()),
+            "datetime": _format_date(uk_date_from_utc(utcnow())),
             "due_date": "",
             "status": "DRAFT",
             "customer_name": "Sample Customer",
@@ -595,9 +603,9 @@ def _build_ticket_payload_from_ticket(db: Session, ticket: Ticket) -> dict[str, 
             "reference_no": ticket.ticket_no or "",
             "ticket_id": int(ticket.id),
             "ticket_no": ticket.ticket_no or "",
-            "datetime": _format_dt(ticket.datetime),
+            "datetime": _format_ticket_dt(ticket.datetime),
             "datetime_iso": ticket.datetime.isoformat() if ticket.datetime else "",
-            "date_time": _format_dt(ticket.datetime),
+            "date_time": _format_ticket_dt(ticket.datetime),
             "status": status,
             "direction": _enum_value(ticket.direction),
             "transaction_type": transaction_type,
@@ -605,7 +613,7 @@ def _build_ticket_payload_from_ticket(db: Session, ticket: Ticket) -> dict[str, 
             "used_on_site": bool(ticket.used_on_site),
             "producer_signature_data_uri": _text(ticket.wtn_producer_signature_data_uri),
             "producer_signature_signed_at": (
-                _format_dt(producer_signed_at) if producer_signed_at else ""
+                _format_utc_dt(producer_signed_at) if producer_signed_at else ""
             ),
             "producer_signature_signed_at_iso": (
                 producer_signed_at.isoformat() if producer_signed_at else ""
@@ -615,7 +623,7 @@ def _build_ticket_payload_from_ticket(db: Session, ticket: Ticket) -> dict[str, 
             ),
             "carrier_signature_data_uri": _text(ticket.wtn_carrier_signature_data_uri),
             "carrier_signature_signed_at": (
-                _format_dt(carrier_signed_at) if carrier_signed_at else ""
+                _format_utc_dt(carrier_signed_at) if carrier_signed_at else ""
             ),
             "carrier_signature_signed_at_iso": (
                 carrier_signed_at.isoformat() if carrier_signed_at else ""
@@ -625,7 +633,7 @@ def _build_ticket_payload_from_ticket(db: Session, ticket: Ticket) -> dict[str, 
             ),
             "receiver_signature_data_uri": _text(ticket.wtn_receiver_signature_data_uri),
             "receiver_signature_signed_at": (
-                _format_dt(receiver_signed_at) if receiver_signed_at else ""
+                _format_utc_dt(receiver_signed_at) if receiver_signed_at else ""
             ),
             "receiver_signature_signed_at_iso": (
                 receiver_signed_at.isoformat() if receiver_signed_at else ""
@@ -636,7 +644,7 @@ def _build_ticket_payload_from_ticket(db: Session, ticket: Ticket) -> dict[str, 
             # Legacy aliases kept for compatibility with existing custom templates.
             "wtn_signature_data_uri": _text(ticket.wtn_receiver_signature_data_uri),
             "wtn_signature_signed_at": (
-                _format_dt(receiver_signed_at) if receiver_signed_at else ""
+                _format_utc_dt(receiver_signed_at) if receiver_signed_at else ""
             ),
             "wtn_signature_signed_at_iso": (
                 receiver_signed_at.isoformat() if receiver_signed_at else ""
@@ -871,15 +879,15 @@ def _build_wtn_payload_from_ticket(db: Session, ticket: Ticket) -> dict[str, Any
             "ticket_id": int(ticket.id),
             "ticket_no": _text_or_dash(ticket.ticket_no),
             "wtn_no": _wtn_reference(ticket),
-            "datetime": _format_dt(ticket.datetime) or "-",
+            "datetime": _format_ticket_dt(ticket.datetime) or "-",
             "datetime_iso": ticket.datetime.isoformat() if ticket.datetime else "",
-            "date_time": _format_dt(ticket.datetime) or "-",
+            "date_time": _format_ticket_dt(ticket.datetime) or "-",
             "status": _enum_value(ticket.status),
             "final_disposal": bool(ticket.final_disposal),
             "used_on_site": bool(ticket.used_on_site),
             "producer_signature_data_uri": _text(ticket.wtn_producer_signature_data_uri),
             "producer_signature_signed_at": (
-                _format_dt(producer_signed_at) if producer_signed_at else ""
+                _format_utc_dt(producer_signed_at) if producer_signed_at else ""
             ),
             "producer_signature_signed_at_iso": (
                 producer_signed_at.isoformat() if producer_signed_at else ""
@@ -889,7 +897,7 @@ def _build_wtn_payload_from_ticket(db: Session, ticket: Ticket) -> dict[str, Any
             ),
             "carrier_signature_data_uri": _text(ticket.wtn_carrier_signature_data_uri),
             "carrier_signature_signed_at": (
-                _format_dt(carrier_signed_at) if carrier_signed_at else ""
+                _format_utc_dt(carrier_signed_at) if carrier_signed_at else ""
             ),
             "carrier_signature_signed_at_iso": (
                 carrier_signed_at.isoformat() if carrier_signed_at else ""
@@ -899,7 +907,7 @@ def _build_wtn_payload_from_ticket(db: Session, ticket: Ticket) -> dict[str, Any
             ),
             "receiver_signature_data_uri": _text(ticket.wtn_receiver_signature_data_uri),
             "receiver_signature_signed_at": (
-                _format_dt(receiver_signed_at) if receiver_signed_at else ""
+                _format_utc_dt(receiver_signed_at) if receiver_signed_at else ""
             ),
             "receiver_signature_signed_at_iso": (
                 receiver_signed_at.isoformat() if receiver_signed_at else ""
@@ -910,7 +918,7 @@ def _build_wtn_payload_from_ticket(db: Session, ticket: Ticket) -> dict[str, Any
             # Legacy aliases kept for compatibility with existing custom templates.
             "wtn_signature_data_uri": _text(ticket.wtn_receiver_signature_data_uri),
             "wtn_signature_signed_at": (
-                _format_dt(receiver_signed_at) if receiver_signed_at else ""
+                _format_utc_dt(receiver_signed_at) if receiver_signed_at else ""
             ),
             "wtn_signature_signed_at_iso": (
                 receiver_signed_at.isoformat() if receiver_signed_at else ""

@@ -83,6 +83,7 @@ from ..services.email_service import (
     send_email,
     validate_platform_email_settings as validate_platform_email_transport_settings,
 )
+from ..timezones import uk_date_from_utc
 from ..services.system_setup import (
     DEFAULT_YARD_NAME,
     ensure_company_settings_row_exists,
@@ -207,7 +208,7 @@ def _require_platform_superadmin(request: Request, db: Session) -> User:
 
 def _seed_number_sequences(db: Session, tenant_id: int) -> None:
     now = utcnow()
-    year = int(now.year)
+    year = int(uk_date_from_utc(now).year)
     dialect = str(getattr(getattr(db.get_bind(), "dialect", None), "name", "") or "").lower()
     if dialect == "postgresql":
         db.execute(

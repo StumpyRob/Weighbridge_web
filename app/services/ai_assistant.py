@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..models import Tenant
 from ..models.base import utcnow
+from ..timezones import uk_date_from_utc
 from .ai_assistant_data import (
     AI_ASSISTANT_SAMPLE_LIMIT,
     build_dashboard_insight_metrics as _build_dashboard_insight_metrics,
@@ -257,12 +258,16 @@ def build_question_context(db: Session, tenant_id: int, question: str) -> dict[s
         tenant_id,
         question,
         generated_at=now,
-        today=now.date(),
+        today=uk_date_from_utc(now),
     )
 
 
 def build_dashboard_insight_metrics(db: Session, tenant_id: int) -> dict[str, object]:
-    return _build_dashboard_insight_metrics(db, tenant_id, today=utcnow().date())
+    return _build_dashboard_insight_metrics(
+        db,
+        tenant_id,
+        today=uk_date_from_utc(utcnow()),
+    )
 
 
 def resolve_assistant_model(

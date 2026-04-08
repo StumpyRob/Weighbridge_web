@@ -116,7 +116,7 @@
               {% endif %}
             </td>
             <td class="jobs-col-trigger">{{ row.trigger_source_label }}</td>
-            <td class="jobs-col-when">{{ item.created_at.strftime("%d/%m/%Y %H:%M:%S") if item.created_at else '-' }}</td>
+            <td class="jobs-col-when">{{ item.created_at|uk_datetime("%d/%m/%Y %H:%M:%S") if item.created_at else '-' }}</td>
             <td class="jobs-col-target">
               <span class="table-cell-truncate" title="{{ destination.name if destination else '-' }}">{{ destination.name if destination else "-" }}</span>
             </td>

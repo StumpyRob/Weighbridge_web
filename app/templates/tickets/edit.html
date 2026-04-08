@@ -116,8 +116,8 @@
       {% if ticket.walk_in_sale %}
         <span class="ticket-link-badge">Walk-in</span>
       {% endif %}
-      <span>Created: {{ ticket.created_at.strftime("%d/%m/%Y %H:%M") if ticket.created_at else "" }}</span>
-      <span>Updated: {{ ticket.updated_at.strftime("%d/%m/%Y %H:%M") if ticket.updated_at else "" }}</span>
+      <span>Created: {{ ticket.created_at|uk_datetime("%d/%m/%Y %H:%M") if ticket.created_at else "" }}</span>
+      <span>Updated: {{ ticket.updated_at|uk_datetime("%d/%m/%Y %H:%M") if ticket.updated_at else "" }}</span>
     </div>
     {% if invoice %}
       <div class="ticket-meta">
@@ -240,7 +240,7 @@
             </p>
             <p class="wtn-signature-tools__meta muted{% if not ticket.wtn_producer_signature_signed_at %} is-placeholder{% endif %}">
               {% if ticket.wtn_producer_signature_signed_at %}
-                Captured {{ ticket.wtn_producer_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}
+                Captured {{ ticket.wtn_producer_signature_signed_at|uk_datetime("%d/%m/%Y %H:%M") }}
               {% else %}
                 Captured: Unsigned
               {% endif %}
@@ -289,7 +289,7 @@
             </p>
             <p class="wtn-signature-tools__meta muted{% if not ticket.wtn_carrier_signature_signed_at %} is-placeholder{% endif %}">
               {% if ticket.wtn_carrier_signature_signed_at %}
-                Captured {{ ticket.wtn_carrier_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}
+                Captured {{ ticket.wtn_carrier_signature_signed_at|uk_datetime("%d/%m/%Y %H:%M") }}
               {% else %}
                 Captured: Unsigned
               {% endif %}
@@ -338,7 +338,7 @@
             </p>
             <p class="wtn-signature-tools__meta muted{% if not ticket.wtn_receiver_signature_signed_at %} is-placeholder{% endif %}">
               {% if ticket.wtn_receiver_signature_signed_at %}
-                Captured {{ ticket.wtn_receiver_signature_signed_at.strftime("%d/%m/%Y %H:%M") }}
+                Captured {{ ticket.wtn_receiver_signature_signed_at|uk_datetime("%d/%m/%Y %H:%M") }}
               {% else %}
                 Captured: Unsigned
               {% endif %}
@@ -442,7 +442,7 @@
       | <strong>Note:</strong> {{ ticket_void.note }}
     {% endif %}
     {% if ticket_void.voided_at %}
-      | <strong>Voided:</strong> {{ ticket_void.voided_at.strftime("%d/%m/%Y %H:%M") }}
+      | <strong>Voided:</strong> {{ ticket_void.voided_at|uk_datetime("%d/%m/%Y %H:%M") }}
     {% endif %}
   </div>
 {% endif %}

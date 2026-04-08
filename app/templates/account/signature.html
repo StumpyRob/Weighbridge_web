@@ -54,7 +54,7 @@
       {% endif %}
       {% if user.saved_signature_updated_at %}
         <p class="wtn-signature-tools__meta muted">
-          Saved {{ user.saved_signature_updated_at.strftime("%d/%m/%Y %H:%M") }}
+          Saved {{ user.saved_signature_updated_at|uk_datetime("%d/%m/%Y %H:%M") }}
         </p>
       {% endif %}
       <div class="actions btn-group">

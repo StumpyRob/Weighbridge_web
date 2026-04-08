@@ -136,6 +136,7 @@ def admin_help_getting_started(request: Request) -> HTMLResponse:
         {
             "request": request,
             "active_help_tab": "getting_started",
+            "platform_tools_allowed": _platform_tools_allowed(request),
         },
     )
 

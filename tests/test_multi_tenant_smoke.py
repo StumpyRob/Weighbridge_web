@@ -5121,6 +5121,63 @@ def test_dashboard_legacy_30d_period_maps_to_12m():
     assert main_module._normalize_dashboard_period("30d") == "12m"
 
 
+def test_dashboard_uses_uk_day_boundaries_and_renders_uk_clock(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-dashboard-uk-time.db", monkeypatch=monkeypatch
+    )
+    fixed_now = datetime(2026, 4, 8, 23, 30, 0)
+    monkeypatch.setattr(main_module, "utcnow", lambda: fixed_now)
+
+    tenant_id = _seed_tenant(SessionLocal, name="UK Clock Co", subdomain="uk-clock")
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_id,
+        company_name="UK Clock Co",
+        primary_color="#224466",
+    )
+    _seed_user(
+        SessionLocal,
+        email="uk-clock-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_id,
+    )
+
+    with SessionLocal() as db:
+        db.add(
+            Ticket(
+                tenant_id=tenant_id,
+                ticket_no="UK-LOCAL-1",
+                datetime=datetime(2026, 4, 9, 0, 10, 0),
+                status=TicketStatusEnum.COMPLETE.value,
+                direction=DirectionEnum.INWARD.value,
+                transaction_type=TransactionTypeEnum.SALE.value,
+                net_kg=1000,
+                dont_invoice=False,
+                paid=False,
+            )
+        )
+        db.commit()
+
+    with _client(app, base_url="https://uk-clock.localhost") as tenant_client:
+        assert (
+            _login(
+                tenant_client,
+                email="uk-clock-admin@example.com",
+                password="TestPass123!",
+                next_path="/?period=today",
+            )
+            == 303
+        )
+        response = tenant_client.get("/?period=today")
+
+    assert response.status_code == 200
+    assert 'data-dashboard-uk-clock="1"' in response.text
+    assert "UK Time" in response.text
+    assert _dashboard_metric_value(response.text, "completed_today") == "1"
+    assert 'data-dashboard-traffic-ticket="UK-LOCAL-1"' in response.text
+
+
 def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path, monkeypatch):
     app, SessionLocal = _build_app_and_session(
         tmp_path, db_name="tenant-dashboard-data.db", monkeypatch=monkeypatch
@@ -5415,6 +5472,56 @@ def test_logged_in_tenant_home_dashboard_is_tenant_scoped_and_populated(tmp_path
     assert 'data-dashboard-throughput-kg="1500"' not in response_12m.text
     assert 'data-dashboard-ticket="A-20D-1"' in response_12m.text
     assert 'data-dashboard-invoice="INV-A-OLD"' in response_12m.text
+
+
+def test_ticket_quick_create_uses_uk_local_datetime(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-ticket-uk-time.db", monkeypatch=monkeypatch
+    )
+    fixed_now = datetime(2026, 4, 8, 23, 30, 0)
+    monkeypatch.setattr("app.routes.tickets.utcnow", lambda: fixed_now)
+
+    tenant_id = _seed_tenant(SessionLocal, name="Ticket Time Co", subdomain="ticket-time")
+    _seed_tenant_baseline(
+        SessionLocal,
+        tenant_id=tenant_id,
+        company_name="Ticket Time Co",
+        primary_color="#225577",
+    )
+    _seed_user(
+        SessionLocal,
+        email="ticket-time-admin@example.com",
+        password="TestPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_id,
+    )
+
+    with _client(app, base_url="https://ticket-time.localhost") as tenant_client:
+        assert (
+            _login(
+                tenant_client,
+                email="ticket-time-admin@example.com",
+                password="TestPass123!",
+                next_path="/tickets",
+            )
+            == 303
+        )
+        csrf = _prime_csrf(tenant_client)
+        response = tenant_client.post(
+            "/tickets/new/quick",
+            data={CSRF_FORM_FIELD: csrf},
+            follow_redirects=False,
+        )
+
+    assert response.status_code in {302, 303}
+    ticket_location = str(response.headers.get("location", ""))
+    assert ticket_location.startswith("/tickets/")
+    ticket_id = int(ticket_location.split("?", 1)[0].rstrip("/").split("/")[-1])
+
+    with SessionLocal() as db:
+        ticket = db.get(Ticket, ticket_id)
+        assert ticket is not None
+        assert ticket.datetime == datetime(2026, 4, 9, 0, 30, 0)
 
 
 def test_dashboard_ai_insights_show_fallback_for_ai_enabled_tenant_without_activity(tmp_path, monkeypatch):

@@ -54,19 +54,11 @@
             <h3>Printing</h3>
             <p>Configure agents, destinations, templates, and job history.</p>
             <div class="admin-hub-links">
-              {% if site_agent_download.available %}
-                <a class="btn btn--secondary btn--sm" href="/admin/printing/agents/download">
-                  Download Site Agent{% if site_agent_download.version %} v{{ site_agent_download.version }}{% endif %}
-                </a>
-              {% endif %}
               <a class="btn btn--secondary btn--sm" href="/admin/printing/agents">Agents</a>
               <a class="btn btn--secondary btn--sm" href="/admin/printing/destinations">Destinations</a>
               <a class="btn btn--secondary btn--sm" href="/admin/printing/templates">Templates</a>
               <a class="btn btn--secondary btn--sm" href="/admin/printing/jobs">Jobs</a>
             </div>
-            {% if not site_agent_download.available %}
-              <p class="muted" style="margin-top: 0.75rem;">Site agent download link not configured.</p>
-            {% endif %}
           </article>
         {% endif %}
       </div>

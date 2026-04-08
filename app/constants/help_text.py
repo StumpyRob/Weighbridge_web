@@ -99,6 +99,15 @@ HELP_TEXT.update(
         "printing_jobs_delivery_snapshot": "Delivery snapshot stores the destination settings used for this job for audit and troubleshooting.",
         "printing_jobs_transport_snapshot": "Delivery snapshot stores the destination settings used for this job for audit and troubleshooting.",
         "printing_jobs_retry": "Retry submits the same job content again using the job's stored delivery settings.",
+        "printing_agents_page": "Use this page to pair Windows site agents, check whether they are online, and review pending pairing sessions before assigning PRINT_AGENT_PULL destinations.",
+        "printing_agents_show_revoked": "Includes revoked agents in the list so you can audit old pairings without mixing them into the default operational view.",
+        "printing_agents_show_expired_pairings": "Includes expired pending pairing sessions. Leave this off for the cleaner day-to-day list.",
+        "printing_agents_installer": "Download the Windows site agent installer, run it on the site PC, then open the local agent status page on that machine to get the pairing code.",
+        "printing_agents_pairing": "Paste the pairing code from the site agent status page and assign a friendly name. The agent exchanges for permanent credentials after pairing completes.",
+        "printing_agents_pairing_code": "Short code shown by the site agent status page. Pairing fails if the code is mistyped, expired, or belongs to another tenant.",
+        "printing_agents_agent_name": "Operator-friendly label used throughout admin screens and destination assignment. Use a location-based name such as Yard Office or Reception.",
+        "printing_agents_paired": "Paired agents can be assigned to PRINT_AGENT_PULL destinations. Status, heartbeat time, and synced printers help confirm whether the agent is ready to print.",
+        "printing_agents_pending": "Pending pairings are temporary sessions created before the site PC finishes pairing. Expired entries can be safely canceled.",
     }
 )
 

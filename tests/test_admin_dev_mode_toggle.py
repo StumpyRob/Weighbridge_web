@@ -25,7 +25,7 @@ def test_settings_page_hides_platform_only_tools(client):
     assert "System Status" not in response.text
 
 
-def test_settings_page_shows_site_agent_download_when_configured(client, monkeypatch):
+def test_settings_page_hides_site_agent_download_even_when_configured(client, monkeypatch):
     monkeypatch.setattr(
         settings,
         "site_agent_download_url",
@@ -36,8 +36,8 @@ def test_settings_page_shows_site_agent_download_when_configured(client, monkeyp
     response = client.get("/admin")
 
     assert response.status_code == 200
-    assert 'href="/admin/printing/agents/download"' in response.text
-    assert "Download Site Agent v0.22" in response.text
+    assert 'href="/admin/printing/agents/download"' not in response.text
+    assert "Download Site Agent v0.22" not in response.text
 
 
 def test_admin_dev_mode_toggle_updates_runtime_flag(client):

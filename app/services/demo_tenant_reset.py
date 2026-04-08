@@ -46,6 +46,7 @@ from ..models import (
     Yard,
 )
 from ..models.base import utcnow
+from ..timezones import uk_date_from_utc, uk_local_naive_from_utc
 from ..seed import force_refresh_system_print_templates, seed_print_destinations, seed_units
 from ..user_roles import ROLE_TENANT_ADMIN
 from .demo_dataset import DEMO_SIGNATURE_DATA_URI, seed_demo_dataset
@@ -130,7 +131,7 @@ def _tenant_scope(db: Session, tenant_id: int):
 
 def _seed_number_sequences(db: Session, tenant_id: int) -> None:
     now = utcnow()
-    year = int(now.year)
+    year = int(uk_date_from_utc(now).year)
     dialect = str(getattr(getattr(db.get_bind(), "dialect", None), "name", "") or "").lower()
     if dialect == "postgresql":
         db.execute(
@@ -306,12 +307,13 @@ def next_demo_reset_at(tenant: Tenant | None) -> datetime | None:
     baseline = getattr(tenant, "demo_last_reset_at", None) or getattr(tenant, "created_at", None)
     if baseline is None:
         return None
+    baseline_local = uk_local_naive_from_utc(baseline)
     hour, minute = divmod(reset_time_minutes, 60)
     scheduled = datetime.combine(
-        baseline.date() + timedelta(days=interval_days),
+        baseline_local.date() + timedelta(days=interval_days),
         time(hour=hour, minute=minute),
     )
-    while scheduled <= baseline:
+    while scheduled <= baseline_local:
         scheduled += timedelta(days=interval_days)
     return scheduled
 
@@ -320,7 +322,8 @@ def demo_reset_due_now(tenant: Tenant | None, *, now: datetime | None = None) ->
     scheduled = next_demo_reset_at(tenant)
     if scheduled is None:
         return False
-    return scheduled <= (now or utcnow())
+    current_local = uk_local_naive_from_utc(now or utcnow())
+    return scheduled <= current_local
 
 
 def format_demo_reset_datetime(value: datetime | None) -> str:

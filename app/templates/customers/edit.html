@@ -214,7 +214,7 @@
         <tbody>
           {% for adjustment in customer_adjustments %}
             <tr>
-              <td>{{ adjustment.created_at.strftime("%d/%m/%Y %H:%M") if adjustment.created_at else "-" }}</td>
+              <td>{{ adjustment.created_at|uk_datetime("%d/%m/%Y %H:%M") if adjustment.created_at else "-" }}</td>
               <td class="num">
                 {% if adjustment.amount_decimal is not none %}
                   &pound;{{ "{:,.2f}".format(adjustment.amount_decimal) }}

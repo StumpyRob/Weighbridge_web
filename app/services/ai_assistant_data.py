@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Customer, Invoice, Ticket, TicketStatusEnum, TransactionTypeEnum, Vehicle
 from ..models.base import utcnow
+from ..timezones import uk_date_from_utc
 from .credit import (
     INVOICE_OUTSTANDING_EXCLUDED_STATUSES,
     INVOICE_OUTSTANDING_ISSUED_STATUSES,
@@ -250,7 +251,11 @@ def get_day_weight_total(db: Session, tenant_id: int, *, target_date: date) -> d
 
 
 def get_today_weight_total(db: Session, tenant_id: int, *, today: date | None = None) -> dict[str, object]:
-    return get_day_weight_total(db, tenant_id, target_date=today or utcnow().date())
+    return get_day_weight_total(
+        db,
+        tenant_id,
+        target_date=today or uk_date_from_utc(utcnow()),
+    )
 
 
 def get_open_tickets(db: Session, tenant_id: int, *, limit: int = AI_ASSISTANT_SAMPLE_LIMIT) -> dict[str, object]:
@@ -355,7 +360,7 @@ def get_overdue_invoices(
     limit: int = AI_ASSISTANT_SAMPLE_LIMIT,
     today: date | None = None,
 ) -> dict[str, object]:
-    resolved_today = today or utcnow().date()
+    resolved_today = today or uk_date_from_utc(utcnow())
     _status_upper, base_filters = _outstanding_invoice_filters(tenant_id)
     filters = (
         *base_filters,
@@ -404,7 +409,7 @@ def get_top_customer_today(
     *,
     today: date | None = None,
 ) -> dict[str, object] | None:
-    resolved_today = today or utcnow().date()
+    resolved_today = today or uk_date_from_utc(utcnow())
     day_start, day_end = _day_bounds(resolved_today)
     total_weight_kg = func.coalesce(func.sum(Ticket.net_kg), 0).label("weight_kg")
     ticket_count = func.count(Ticket.id).label("ticket_count")
@@ -459,7 +464,7 @@ def build_question_context(
     today: date | None = None,
 ) -> dict[str, object]:
     resolved_generated_at = generated_at or utcnow()
-    resolved_today = today or resolved_generated_at.date()
+    resolved_today = today or uk_date_from_utc(resolved_generated_at)
     context: dict[str, object] = {
         "generated_at": resolved_generated_at.isoformat(),
         "tenant_id": int(tenant_id),
@@ -486,7 +491,7 @@ def build_dashboard_insight_metrics(
     *,
     today: date | None = None,
 ) -> dict[str, object]:
-    resolved_today = today or utcnow().date()
+    resolved_today = today or uk_date_from_utc(utcnow())
     yesterday = resolved_today - timedelta(days=1)
     open_tickets = get_open_tickets(db, tenant_id, limit=3)
     open_waste_tickets = get_open_waste_tickets(db, tenant_id, limit=3)
