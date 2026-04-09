@@ -111,9 +111,6 @@
                   {% if account_workspace_label %}
                     <span>Workspace: {{ account_workspace_label }}</span>
                   {% endif %}
-                  {% if current_host_label %}
-                    <span>Domain: {{ current_host_label }}</span>
-                  {% endif %}
                 </li>
                 <li>
                   <a
@@ -275,6 +272,14 @@
         <main class="container">
           {% block content %}{% endblock %}
         </main>
+        <footer class="site-footer">
+          <div class="site-footer__meta">
+            {% if current_host_label %}
+              <small class="site-footer__domain">Domain: {{ current_host_label }}</small>
+            {% endif %}
+            <small class="site-footer__build">{{ app_build_label }}</small>
+          </div>
+        </footer>
       </div>
     </div>
     {% if show_assistant %}
@@ -404,9 +409,6 @@
         <span>Assistant</span>
       </button>
     {% endif %}
-    <footer class="site-footer">
-      <small class="site-footer__build">{{ app_build_label }}</small>
-    </footer>
     <script>
       (function () {
         let flashToastHeaderObserver = null;

@@ -137,6 +137,16 @@ def _extract_utility_bar_markup(html: str) -> str:
     return match.group(1)
 
 
+def _extract_footer_markup(html: str) -> str:
+    match = re.search(
+        r'<footer class="site-footer">(.*?)</footer>',
+        html,
+        flags=re.DOTALL,
+    )
+    assert match is not None
+    return match.group(1)
+
+
 def _prime_csrf(client: TestClient, *, login_path: str = "/login") -> str:
     response = client.get(login_path)
     assert response.status_code in {200, 302, 303}
@@ -1901,6 +1911,7 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert tenant_admin_page.status_code == 200
         tenant_nav = _extract_nav_markup(tenant_admin_page.text)
         tenant_utility = _extract_utility_bar_markup(tenant_admin_page.text)
+        tenant_footer = _extract_footer_markup(tenant_admin_page.text)
         assert 'id="site-sidebar"' in tenant_admin_page.text
         assert 'data-shell-toggle' in tenant_admin_page.text
         assert 'data-shell-backdrop' in tenant_admin_page.text
@@ -1913,7 +1924,8 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert "data-account-menu" in tenant_utility
         assert "Signed in as tenant-admin@example.com" in tenant_utility
         assert "Workspace: Tenant A" in tenant_utility
-        assert "Domain: localhost" in tenant_utility
+        assert "Domain:" not in tenant_utility
+        assert "Domain: localhost" in tenant_footer
         assert "My Account" in tenant_utility
         assert "My Signature" in tenant_utility
         assert "Logout" in tenant_utility
@@ -2007,11 +2019,13 @@ def test_header_hides_duplicate_workspace_badge_when_brand_title_matches_tenant(
         assert _login(tenant_client, email="tenant-admin@example.com", password="TenantPass123!") == 303
         page = tenant_client.get("/admin/company")
         utility = _extract_utility_bar_markup(page.text)
+        footer = _extract_footer_markup(page.text)
 
         assert page.status_code == 200
         assert 'class="site-utility-bar__item site-utility-bar__item--tenant"' not in page.text
         assert "Workspace: Demo" in utility
-        assert "Domain: localhost" in utility
+        assert "Domain:" not in utility
+        assert "Domain: localhost" in footer
 
 
 def test_platform_superadmin_can_update_tenant_ai_settings(tmp_path, monkeypatch):
@@ -4602,6 +4616,7 @@ def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypa
         assert tenants_page.status_code == 200
         platform_nav = _extract_nav_markup(tenants_page.text)
         platform_utility = _extract_utility_bar_markup(tenants_page.text)
+        platform_footer = _extract_footer_markup(tenants_page.text)
         assert 'id="site-sidebar"' in tenants_page.text
         assert 'data-shell-toggle' in tenants_page.text
         assert 'data-shell-backdrop' in tenants_page.text
@@ -4623,7 +4638,8 @@ def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypa
         assert "data-account-menu" in platform_utility
         assert "Signed in as superadmin@example.com" in platform_utility
         assert "Workspace: Platform Admin" in platform_utility
-        assert "Domain: localhost" in platform_utility
+        assert "Domain:" not in platform_utility
+        assert "Domain: localhost" in platform_footer
         assert "My Account" in platform_utility
         assert "My Signature" in platform_utility
         assert "Logout" in platform_utility
