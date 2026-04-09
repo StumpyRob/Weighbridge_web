@@ -7,7 +7,7 @@ from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import delete, func, or_, select, text, update
+from sqlalchemy import case, delete, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -80,6 +80,7 @@ from ..services.feedback import (
     FEEDBACK_STATUS_READ,
     feedback_display_title,
     feedback_kind_label,
+    feedback_status_label,
     feedback_unread_count,
 )
 from ..services.email_service import (
@@ -670,8 +671,11 @@ def platform_feedback(
 
     feedback_items = db.execute(
         select(UserFeedback)
-        .where(UserFeedback.status == FEEDBACK_STATUS_NEW)
-        .order_by(UserFeedback.created_at.desc(), UserFeedback.id.desc())
+        .order_by(
+            case((UserFeedback.status == FEEDBACK_STATUS_NEW, 0), else_=1),
+            UserFeedback.created_at.desc(),
+            UserFeedback.id.desc(),
+        )
         .limit(200)
     ).scalars().all()
 
@@ -703,6 +707,9 @@ def platform_feedback(
                 "display_title": feedback_display_title(item),
                 "kind": str(item.kind or ""),
                 "kind_label": feedback_kind_label(item.kind),
+                "status": str(item.status or ""),
+                "status_label": feedback_status_label(item.status),
+                "is_read": str(item.status or "").strip().lower() == FEEDBACK_STATUS_READ,
                 "message": str(item.message or ""),
                 "page_url": str(item.source_path or "").strip() or "",
                 "submitted_by_label": str(item.submitted_by_display_name or "").strip()
@@ -724,6 +731,8 @@ def platform_feedback(
             "feedback_unread_count": unread_count,
             "time_zone_label": UK_TIMEZONE_LABEL,
             "feedback_marked_read": request.query_params.get("feedback_marked_read") == "1",
+            "feedback_marked_unread": request.query_params.get("feedback_marked_unread")
+            == "1",
         },
     )
 
@@ -777,6 +786,58 @@ async def platform_feedback_mark_read(
     separator = "&" if "?" in return_to else "?"
     return RedirectResponse(
         url=f"{return_to}{separator}feedback_marked_read=1",
+        status_code=303,
+    )
+
+
+@router.post("/platform/feedback/{feedback_id:int}/unread")
+async def platform_feedback_mark_unread(
+    feedback_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+
+    feedback = db.get(UserFeedback, int(feedback_id))
+    if feedback is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    form = await request.form()
+    return_to = _sanitize_local_platform_return_path(
+        form.get("return_to"),
+        default="/platform/feedback",
+    )
+    feedback.status = FEEDBACK_STATUS_NEW
+    feedback.reviewed_at = None
+    feedback.reviewed_by_user_id = None
+
+    tenant = db.get(Tenant, int(feedback.tenant_id))
+    workspace_label = (
+        str(getattr(tenant, "name", "") or "").strip()
+        or str(getattr(tenant, "subdomain", "") or "").strip()
+        or f"Tenant {int(feedback.tenant_id)}"
+    )
+    audit_log(
+        db,
+        request,
+        action="USER_FEEDBACK_MARK_UNREAD",
+        entity_type="user_feedback",
+        entity_id=feedback.id,
+        summary=f"Marked {workspace_label} feedback #{int(feedback.id)} as unread",
+        details={
+            "feedback_id": int(feedback.id),
+            "tenant_id": int(feedback.tenant_id),
+            "workspace": workspace_label,
+            "marked_unread_by_user_id": int(current_user.id),
+            "return_to": return_to,
+        },
+        user=current_user,
+        tenant_id=None,
+    )
+    db.commit()
+    separator = "&" if "?" in return_to else "?"
+    return RedirectResponse(
+        url=f"{return_to}{separator}feedback_marked_unread=1",
         status_code=303,
     )
 

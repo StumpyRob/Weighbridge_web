@@ -459,6 +459,7 @@ def test_superadmin_feedback_inbox_is_cross_tenant_and_marks_messages_read(
         assert "Other Workspace" in inbox.text
         assert "Feature request" in inbox.text
         assert "Email:" not in inbox.text
+        assert "Unread" in inbox.text
         assert "Mark as Read" in inbox.text
 
         update = platform_client.post(
@@ -500,8 +501,53 @@ def test_superadmin_feedback_inbox_is_cross_tenant_and_marks_messages_read(
             assert details.get("marked_read_by_user_id") == superadmin_id
 
         refreshed_inbox = platform_client.get("/platform/feedback")
-        assert "Add a quicker invoice shortcut" not in refreshed_inbox.text
+        assert "Add a quicker invoice shortcut" in refreshed_inbox.text
         assert "Other tenant issue" in refreshed_inbox.text
+        assert "Read" in refreshed_inbox.text
+        assert "Mark as Unread" in refreshed_inbox.text
+
+        unread_update = platform_client.post(
+            f"/platform/feedback/{feedback_id}/unread",
+            data={
+                "return_to": "/platform/feedback",
+                CSRF_FORM_FIELD: platform_csrf,
+            },
+            follow_redirects=False,
+        )
+        assert unread_update.status_code == 303
+        assert unread_update.headers["location"] == "/platform/feedback?feedback_marked_unread=1"
+
+        with SessionLocal() as db:
+            refreshed = db.get(UserFeedback, feedback_id)
+            assert refreshed is not None
+            assert refreshed.status == "new"
+            assert refreshed.reviewed_by_user_id is None
+            assert refreshed.reviewed_at is None
+
+            event = (
+                db.execute(
+                    select(AuditEvent)
+                    .where(
+                        AuditEvent.tenant_id.is_(None),
+                        AuditEvent.action == "USER_FEEDBACK_MARK_UNREAD",
+                        AuditEvent.entity_type == "user_feedback",
+                        AuditEvent.entity_id == str(feedback_id),
+                    )
+                    .order_by(AuditEvent.id.desc())
+                    .limit(1)
+                )
+                .scalars()
+                .one()
+            )
+            details = event.details_json or {}
+            assert details.get("workspace") == "Acme"
+            assert details.get("tenant_id") == workspace_env["tenant_id"]
+            assert details.get("marked_unread_by_user_id") == superadmin_id
+
+        unread_inbox = platform_client.get("/platform/feedback")
+        assert "Add a quicker invoice shortcut" in unread_inbox.text
+        assert "Unread" in unread_inbox.text
+        assert "Mark as Read" in unread_inbox.text
     finally:
         operator_client.close()
         tenant_admin_client.close()

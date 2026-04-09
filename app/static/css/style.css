@@ -5253,6 +5253,32 @@ details > summary:focus-visible {
   color: #6d28d9;
 }
 
+.feedback-state-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0.14rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.feedback-state-pill--new {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.feedback-state-pill--read {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #4b5563;
+}
+
 .feedback-card__message {
   padding: 0.85rem 0.9rem;
   border: 1px solid #e5e7eb;

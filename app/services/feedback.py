@@ -15,6 +15,10 @@ FEEDBACK_KIND_LABELS = {
 
 FEEDBACK_STATUS_NEW = "new"
 FEEDBACK_STATUS_READ = "read"
+FEEDBACK_STATUS_LABELS = {
+    FEEDBACK_STATUS_NEW: "Unread",
+    FEEDBACK_STATUS_READ: "Read",
+}
 
 
 def normalize_feedback_kind(value: object, *, default: str | None = None) -> str | None:
@@ -29,6 +33,11 @@ def feedback_kind_label(value: object) -> str:
     if normalized is None:
         return "Feedback"
     return FEEDBACK_KIND_LABELS.get(normalized, "Feedback")
+
+
+def feedback_status_label(value: object) -> str:
+    normalized = str(value or "").strip().lower()
+    return FEEDBACK_STATUS_LABELS.get(normalized, "Unread")
 
 
 def feedback_display_title(feedback: UserFeedback) -> str:

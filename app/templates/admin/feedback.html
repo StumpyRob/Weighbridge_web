@@ -9,6 +9,12 @@
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}
+  {% if feedback_marked_unread %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Feedback marked as unread.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
@@ -17,9 +23,9 @@
       <h1>Feedback</h1>
       <p class="muted">
         {% if feedback_unread_count %}
-          {{ feedback_unread_count }} unread message{{ '' if feedback_unread_count == 1 else 's' }} from tenant workspaces. Times shown in {{ time_zone_label }}.
+          {{ feedback_unread_count }} unread message{{ '' if feedback_unread_count == 1 else 's' }} from tenant workspaces. All feedback stays visible below. Times shown in {{ time_zone_label }}.
         {% else %}
-          No unread feedback right now. Times shown in {{ time_zone_label }}.
+          No unread feedback right now. All feedback stays visible below. Times shown in {{ time_zone_label }}.
         {% endif %}
       </p>
     </div>
@@ -54,6 +60,7 @@
                 <a class="btn btn--ghost btn--sm" href="{{ row.tenant_open_url }}" target="_blank" rel="noreferrer">Open Tenant</a>
               {% endif %}
               <span class="feedback-kind-pill feedback-kind-pill--{{ row.kind }}">{{ row.kind_label }}</span>
+              <span class="feedback-state-pill feedback-state-pill--{{ row.status }}">{{ row.status_label }}</span>
             </div>
           </div>
 
@@ -63,9 +70,9 @@
             {% if row.page_url %}
               <a class="feedback-card__page-link" href="{{ row.page_url }}" target="_blank" rel="noreferrer">{{ row.page_url }}</a>
             {% endif %}
-            <form method="post" action="/platform/feedback/{{ row.id }}/read" class="feedback-card__actions">
+            <form method="post" action="/platform/feedback/{{ row.id }}/{{ 'unread' if row.is_read else 'read' }}" class="feedback-card__actions">
               <input type="hidden" name="return_to" value="{{ row.return_to }}" />
-              <button type="submit" class="btn btn--secondary btn--sm">Mark as Read</button>
+              <button type="submit" class="btn btn--secondary btn--sm">{{ 'Mark as Unread' if row.is_read else 'Mark as Read' }}</button>
             </form>
           </div>
         </article>
@@ -73,7 +80,7 @@
     {% else %}
       <section class="frame">
         <div class="frame-body">
-          <p class="muted">No unread feedback.</p>
+          <p class="muted">No feedback yet.</p>
         </div>
       </section>
     {% endif %}
