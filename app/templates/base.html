@@ -562,7 +562,12 @@
           if (!header) {
             return;
           }
-          const headerHeight = Math.ceil(header.getBoundingClientRect().height);
+          const headerHeight =
+            Math.max(
+              0,
+              Number(header.offsetHeight || 0),
+              Math.round(header.getBoundingClientRect().height)
+            ) || 0;
           const offset = headerHeight + 12;
           document.documentElement.style.setProperty(
             "--site-header-height",

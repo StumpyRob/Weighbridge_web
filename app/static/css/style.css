@@ -21,6 +21,7 @@
   --shell-gap: 1rem;
   --shell-sidebar-width: 250px;
   --shell-nav-radius: 10px;
+  --shell-header-underlap: 2px;
 }
 
 body {
@@ -646,29 +647,24 @@ body.is-shell-nav-open .app-sidebar {
   }
 
   .app-shell--with-sidebar {
-    display: grid;
-    grid-template-columns: var(--shell-sidebar-width) minmax(0, 1fr);
-    gap: var(--shell-gap);
-    align-items: start;
-    padding-left: 0;
+    display: block;
+    padding-left: calc(var(--shell-sidebar-width) + var(--shell-gap));
   }
 
   .app-shell--with-sidebar.app-shell--sidebar-hidden,
   .shell-sidebar-hidden .app-shell--with-sidebar {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0;
+    padding-left: var(--shell-gap);
   }
 
   .app-sidebar {
-    position: sticky;
-    top: var(--site-header-height);
-    left: auto;
-    bottom: auto;
-    align-self: start;
-    width: auto;
-    height: calc(100svh - var(--site-header-height));
-    min-height: calc(100svh - var(--site-header-height));
-    max-height: calc(100svh - var(--site-header-height));
+    position: fixed;
+    top: calc(var(--site-header-height) - var(--shell-header-underlap));
+    left: 0;
+    bottom: 0;
+    width: var(--shell-sidebar-width);
+    height: auto;
+    min-height: 0;
+    max-height: none;
     padding: 0;
     border-radius: 0;
     overflow: hidden;
@@ -677,9 +673,9 @@ body.is-shell-nav-open .app-sidebar {
 
   .app-sidebar__inner {
     position: static;
-    height: 100%;
-    min-height: 100%;
-    max-height: 100%;
+    height: calc(100svh - var(--site-header-height) + var(--shell-header-underlap));
+    min-height: calc(100svh - var(--site-header-height) + var(--shell-header-underlap));
+    max-height: calc(100svh - var(--site-header-height) + var(--shell-header-underlap));
     padding: 1rem 0.8rem 1.25rem;
     overflow: hidden;
   }
