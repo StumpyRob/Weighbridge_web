@@ -36,6 +36,10 @@
     {% set workspace_matches_brand = brand_label and workspace_label and (workspace_label | lower == brand_label | lower) %}
     {% set show_workspace_badge = platform_mode or ((current_tenant_name or current_tenant_subdomain) and not (show_title_nav and workspace_matches_brand)) %}
     {% set account_workspace_label = ('Platform Admin' if platform_mode else workspace_label) %}
+    {% set feedback_source_path = request.url.path %}
+    {% if request.url.query %}
+      {% set feedback_source_path = feedback_source_path ~ '?' ~ request.url.query %}
+    {% endif %}
     {% set account_initials_source = ((((current_user.first_name or '') ~ ' ' ~ (current_user.last_name or '')).strip()) if current_user else '') or signed_in_as_identity %}
     {% set account_initials = 'AC' %}
     {% if current_user %}
@@ -166,10 +170,27 @@
       {% set reprint_ticket_no = request.query_params.get("reprint_ticket_no", "") %}
       {% set reprint_error = request.query_params.get("reprint_error", "") %}
       {% set reprint_error_detail = request.query_params.get("reprint_error_detail", "") %}
+      {% set feedback_sent = request.query_params.get("feedback_sent") == "1" %}
+      {% set feedback_kind = request.query_params.get("feedback_kind", "") %}
+      {% set feedback_error = request.query_params.get("feedback_error", "") %}
       {% set has_print_toasts = print_sent or print_failed or invoice_print_sent or reprint_sent or reprint_error %}
-      {% if toast_messages_markup | trim or has_print_toasts %}
+      {% if toast_messages_markup | trim or has_print_toasts or feedback_sent or feedback_error %}
         <div id="flash-toasts" class="flash-toasts" aria-live="polite">
           {{ toast_messages_markup | safe }}
+          {% if feedback_sent %}
+            <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1" data-timeout-ms="7000">
+              <div class="flash-toast__content">
+                {% if feedback_kind == "wish" %}Feature request sent.{% else %}Bug report sent.{% endif %}
+              </div>
+              <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+            </div>
+          {% endif %}
+          {% if feedback_error %}
+            <div class="flash-toast flash-toast--error" data-flash-toast>
+              <div class="flash-toast__content">Feedback could not be sent. {{ feedback_error }}</div>
+              <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+            </div>
+          {% endif %}
           {% if invoice_print_sent %}
             <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1" data-timeout-ms="7000">
               <div class="flash-toast__content">
@@ -265,37 +286,26 @@
                 {% endif %}
               {% endif %}
             </nav>
-            <div class="site-sidebar-help" aria-label="Help and build information">
-              <div class="site-sidebar-help__section">
-                <div class="site-sidebar-help__title">Help</div>
-                <div class="site-sidebar-help__links">
-                  <a
-                    href="{{ tenant_path('/help/getting-started') }}"
-                    class="{% if request.url.path in ['/help', '/help/getting-started', '/admin/help', '/admin/help/getting-started'] %}is-active{% endif %}"
+            <div class="site-sidebar-meta" aria-label="Help and build information">
+              <a
+                href="{{ tenant_path('/help') }}"
+                class="site-sidebar-help{% if request.url.path in ['/help', '/help/getting-started', '/help/template-variables', '/admin/help', '/admin/help/getting-started', '/admin/help/template-variables'] %} is-active{% endif %}"
+              >
+                Help
+              </a>
+              {% if current_user %}
+                <div class="site-sidebar-meta__utility">
+                  <button
+                    type="button"
+                    class="site-sidebar-feedback"
+                    data-feedback-open
+                    title="Report a bug or request an improvement"
                   >
-                    Getting Started
-                  </a>
-                  {% if permissions.manage_settings or permissions.manage_users %}
-                    <a
-                      href="{{ tenant_path('/help/template-variables') }}"
-                      class="{% if request.url.path in ['/help/template-variables', '/admin/help/template-variables'] %}is-active{% endif %}"
-                    >
-                      Template Variables
-                    </a>
-                  {% endif %}
+                    Feedback
+                  </button>
                 </div>
-              </div>
-              <div class="site-sidebar-build" aria-label="Build information">
-                <div class="site-sidebar-build__title">Build</div>
-                <div class="site-sidebar-build__row">
-                  <span class="site-sidebar-build__label">Version</span>
-                  <strong class="site-sidebar-build__value">v{{ app_version }}</strong>
-                </div>
-                <div class="site-sidebar-build__row">
-                  <span class="site-sidebar-build__label">Commit</span>
-                  <code class="site-sidebar-build__value">{{ app_commit_short }}</code>
-                </div>
-              </div>
+              {% endif %}
+              <small class="site-sidebar-build" aria-label="Build information">Build: v{{ app_version }} ({{ app_commit_short }})</small>
             </div>
           </div>
         </aside>
@@ -311,6 +321,59 @@
         {% endif %}
       </div>
     </div>
+    {% if current_user and show_sidebar_nav %}
+      <dialog class="site-feedback-dialog" data-feedback-dialog>
+        <form method="post" action="{{ tenant_path('/feedback') }}" class="site-feedback-dialog__form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+          <input type="hidden" name="source_path" value="{{ feedback_source_path }}" />
+          <input type="hidden" name="source_title" value="" data-feedback-source-title />
+          <div class="site-feedback-dialog__header">
+            <div>
+              <h3>Send Feedback</h3>
+              <p class="muted">Report a bug or request an improvement. Your current page and account context are included automatically.</p>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" data-feedback-close>Close</button>
+          </div>
+          <fieldset class="site-feedback-dialog__kind">
+            <legend>Type</legend>
+            <label>
+              <input type="radio" name="kind" value="bug" checked />
+              <span>Bug report</span>
+            </label>
+            <label>
+              <input type="radio" name="kind" value="wish" />
+              <span>Feature request</span>
+            </label>
+          </fieldset>
+          <div class="field">
+            <label for="site_feedback_title">Short title</label>
+            <input
+              type="text"
+              id="site_feedback_title"
+              name="title"
+              maxlength="120"
+              placeholder="Optional summary"
+            />
+          </div>
+          <div class="field">
+            <label for="site_feedback_message">Message</label>
+            <textarea
+              id="site_feedback_message"
+              name="message"
+              rows="7"
+              maxlength="4000"
+              placeholder="What happened, what did you expect, and what would improve it?"
+              required
+              data-feedback-message
+            ></textarea>
+          </div>
+          <div class="actions btn-group">
+            <button type="submit" class="btn btn--primary">Send</button>
+            <button type="button" class="btn btn--ghost" data-feedback-close>Cancel</button>
+          </div>
+        </form>
+      </dialog>
+    {% endif %}
     {% if show_assistant %}
       <div class="assistant-panel" data-assistant-panel hidden>
         <div class="assistant-panel__backdrop" data-assistant-close></div>
@@ -523,6 +586,7 @@
     </script>
     <script src="/static/js/help_tooltips.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/account_menu.js?v={{ BUILD_STAMP }}" defer></script>
+    <script src="/static/js/feedback_dialog.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/app_shell.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/toasts.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/table_rows.js?v={{ BUILD_STAMP }}" defer></script>

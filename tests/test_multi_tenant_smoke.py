@@ -1928,7 +1928,9 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert "localhost" in tenant_footer
         assert "Domain:" not in tenant_footer
         assert 'class="site-sidebar-help"' in tenant_admin_page.text
+        assert 'class="site-sidebar-feedback"' in tenant_admin_page.text
         assert 'class="site-sidebar-build"' in tenant_admin_page.text
+        assert 'data-feedback-dialog' in tenant_admin_page.text
         assert "My Account" in tenant_utility
         assert "My Signature" in tenant_utility
         assert "Logout" in tenant_utility

@@ -27,6 +27,7 @@ from app.models.base import utcnow
 from app.models.ticket import DirectionEnum, TicketStatusEnum, TransactionTypeEnum
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER_NAME
 from app.seed import seed_print_destinations, seed_print_templates
+from app.services.email_service import EmailSendResult
 from app.services.system_setup import (
     DEFAULT_YARD_NAME,
     ensure_company_settings_row_exists,
@@ -310,8 +311,13 @@ def test_shared_sidebar_shell_renders_major_tenant_pages(workspace_env):
             assert '<nav class="site-nav">' in response.text
             assert '<script src="/static/js/app_shell.js?v=' in response.text
             assert f'aria-current="page">{active_label}<' in response.text
-            assert 'href="/help/getting-started"' in response.text
+            assert 'href="/help"' in response.text
+            assert 'class="site-sidebar-help' in response.text
+            assert 'class="site-sidebar-feedback"' in response.text
             assert 'class="site-sidebar-build"' in response.text
+            assert "Build: v" in response.text
+            assert 'data-feedback-dialog' in response.text
+            assert '<script src="/static/js/feedback_dialog.js?v=' in response.text
     finally:
         client.close()
 
@@ -326,6 +332,72 @@ def test_shared_help_page_is_available_to_non_admin_users(workspace_env):
 
         template_variables = client.get("/help/template-variables")
         assert template_variables.status_code == 403
+    finally:
+        client.close()
+
+
+def test_workspace_user_can_submit_sidebar_feedback_and_write_audit(
+    workspace_env,
+    monkeypatch,
+):
+    client, csrf = _client_for_role(workspace_env, "operator")
+    SessionLocal = workspace_env["SessionLocal"]
+    sent: dict[str, object] = {}
+
+    def _fake_send_email(**kwargs):
+        sent.update(kwargs)
+        return EmailSendResult(ok=True)
+
+    monkeypatch.setattr(settings, "developer_feedback_email", "dev@example.com")
+    monkeypatch.setattr("app.routes.account.send_email", _fake_send_email)
+
+    try:
+        response = client.post(
+            "/feedback",
+            data={
+                "kind": "bug",
+                "title": "Sidebar overlap on tickets",
+                "message": "The sidebar overlaps the content on the tickets list.",
+                "source_path": "/tickets",
+                "source_title": "Tickets | Weighbridge Web",
+                CSRF_FORM_FIELD: csrf,
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"] == "/tickets?feedback_sent=1&feedback_kind=bug"
+
+        assert sent["to"] == ["dev@example.com"]
+        assert sent["db"] is not None
+        assert sent["subject"] == "[Bug report] Acme: Sidebar overlap on tickets"
+        assert "Workspace: Acme" in str(sent["text_body"])
+        assert "User: Olivia Operator" in str(sent["text_body"])
+        assert "Role: Operator" in str(sent["text_body"])
+        assert "Page: /tickets" in str(sent["text_body"])
+        assert "The sidebar overlaps the content on the tickets list." in str(sent["text_body"])
+
+        with SessionLocal() as db:
+            event = (
+                db.execute(
+                    select(AuditEvent)
+                    .where(
+                        AuditEvent.tenant_id == workspace_env["tenant_id"],
+                        AuditEvent.action == "USER_FEEDBACK_SUBMIT",
+                        AuditEvent.entity_type == "user_feedback",
+                    )
+                    .order_by(AuditEvent.id.desc())
+                    .limit(1)
+                )
+                .scalars()
+                .one()
+            )
+            details = event.details_json or {}
+            assert details.get("kind") == "bug"
+            assert details.get("title") == "Sidebar overlap on tickets"
+            assert details.get("source_path") == "/tickets"
+            assert details.get("workspace") == "Acme"
+            assert details.get("recipient") == "dev@example.com"
+            assert details.get("status") == "sent"
     finally:
         client.close()
 

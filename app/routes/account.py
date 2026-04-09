@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import func, select
@@ -16,18 +18,30 @@ from ..auth import (
     require_user,
     set_user_identity_email,
     user_display_name,
+    user_role_label,
     validate_email,
     verify_password,
 )
+from ..config import settings
 from ..constants import NAME_MAX
 from ..db import get_db
 from ..models import User
 from ..models.base import utcnow
 from ..security import validate_no_html
+from ..services.email_service import get_platform_email_settings, send_email
 from ..services.signatures import normalize_png_data_url, png_has_visible_ink
+from ..tenancy import host_without_port
 from ..templating import templates
+from ..timezones import UK_TIMEZONE_LABEL, uk_now_from_utc
 
 router = APIRouter()
+
+_FEEDBACK_KIND_LABELS = {
+    "bug": "Bug report",
+    "wish": "Feature request",
+}
+_FEEDBACK_TITLE_MAX = 120
+_FEEDBACK_MESSAGE_MAX = 4000
 
 
 def _current_user_record(request: Request, db: Session) -> User | None:
@@ -51,6 +65,97 @@ def _saved_signature_default_signer_name(user: User | None) -> str:
     if saved_signer_name:
         return saved_signer_name[:NAME_MAX].strip()
     return user_display_name(user)[:NAME_MAX].strip()
+
+
+def _default_feedback_redirect_path(request: Request) -> str:
+    if bool(getattr(request.state, "platform_mode", False)):
+        return "/platform/tenants"
+    return "/"
+
+
+def _sanitize_local_redirect_path(request: Request, raw_target: object) -> str:
+    target = str(raw_target or "").strip()
+    if not target:
+        return _default_feedback_redirect_path(request)
+    parsed = urlsplit(target)
+    if parsed.scheme or parsed.netloc:
+        return _default_feedback_redirect_path(request)
+    path = str(parsed.path or "").strip() or "/"
+    if not path.startswith("/") or path.startswith("//"):
+        return _default_feedback_redirect_path(request)
+    return urlunsplit(("", "", path, parsed.query, ""))
+
+
+def _redirect_with_feedback_status(
+    request: Request,
+    *,
+    source_path: object,
+    feedback_sent: bool = False,
+    feedback_kind: str = "",
+    feedback_error: str = "",
+) -> RedirectResponse:
+    base_target = _sanitize_local_redirect_path(request, source_path)
+    parsed = urlsplit(base_target)
+    query_items = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key not in {"feedback_sent", "feedback_kind", "feedback_error"}
+    ]
+    if feedback_sent:
+        query_items.append(("feedback_sent", "1"))
+        if feedback_kind in _FEEDBACK_KIND_LABELS:
+            query_items.append(("feedback_kind", feedback_kind))
+    elif feedback_error:
+        query_items.append(("feedback_error", str(feedback_error).strip()))
+    target = urlunsplit(
+        (
+            "",
+            "",
+            str(parsed.path or "").strip() or "/",
+            urlencode(query_items),
+            "",
+        )
+    )
+    return RedirectResponse(url=target, status_code=303)
+
+
+def _feedback_recipient(db: Session) -> str:
+    configured = normalize_email(settings.effective_developer_feedback_email)
+    if validate_email(configured):
+        return configured
+
+    transport = get_platform_email_settings(db)
+    reply_to = normalize_email(transport.reply_to)
+    if validate_email(reply_to):
+        return reply_to
+
+    from_email = normalize_email(transport.from_email)
+    if validate_email(from_email):
+        return from_email
+    return ""
+
+
+def _feedback_subject_title(title: str, source_title: str, source_path: str) -> str:
+    clean_title = str(title or "").strip()
+    if clean_title:
+        return clean_title[:_FEEDBACK_TITLE_MAX].strip()
+    clean_source_title = str(source_title or "").split("|", 1)[0].strip()
+    if clean_source_title:
+        return clean_source_title[:_FEEDBACK_TITLE_MAX].strip()
+    return (str(source_path or "").strip() or "General feedback")[:_FEEDBACK_TITLE_MAX].strip()
+
+
+def _feedback_workspace_label(request: Request) -> str:
+    if bool(getattr(request.state, "platform_mode", False)):
+        return "Platform Admin"
+    tenant = getattr(request.state, "tenant", None)
+    tenant_name = str(getattr(tenant, "name", "") or "").strip()
+    if tenant_name:
+        return tenant_name
+    tenant_subdomain = str(getattr(tenant, "subdomain", "") or "").strip()
+    if tenant_subdomain:
+        return tenant_subdomain
+    return "Workspace"
 
 
 def _profile_form_data(
@@ -387,3 +492,125 @@ async def account_signature_save(
     db.add(user)
     db.commit()
     return RedirectResponse(url="/account/signature?saved=1", status_code=303)
+
+
+@router.post("/feedback")
+async def feedback_submit(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> Response:
+    user = _current_user_record(request, db)
+    if user is None or not bool(getattr(user, "is_active", False)):
+        return login_redirect_response(request)
+
+    form = await request.form()
+    feedback_kind = str(form.get("kind") or "bug").strip().lower()
+    title = str(form.get("title") or "").strip()
+    message = str(form.get("message") or "").strip()
+    source_path = str(form.get("source_path") or "").strip()
+    source_title = str(form.get("source_title") or "").strip()
+
+    if feedback_kind not in _FEEDBACK_KIND_LABELS:
+        return _redirect_with_feedback_status(
+            request,
+            source_path=source_path,
+            feedback_error="Choose bug report or feature request.",
+        )
+
+    errors: list[str] = []
+    validate_no_html(title, "Title", errors)
+    validate_no_html(message, "Message", errors)
+    if len(title) > _FEEDBACK_TITLE_MAX:
+        errors.append(f"Title must be {_FEEDBACK_TITLE_MAX} characters or fewer.")
+    if not message:
+        errors.append("Message is required.")
+    elif len(message) > _FEEDBACK_MESSAGE_MAX:
+        errors.append(f"Message must be {_FEEDBACK_MESSAGE_MAX} characters or fewer.")
+
+    if errors:
+        return _redirect_with_feedback_status(
+            request,
+            source_path=source_path,
+            feedback_error=errors[0],
+        )
+
+    feedback_to = _feedback_recipient(db)
+    if not feedback_to:
+        return _redirect_with_feedback_status(
+            request,
+            source_path=source_path,
+            feedback_error="Feedback email is not configured yet.",
+        )
+
+    sanitized_source_path = _sanitize_local_redirect_path(request, source_path)
+    workspace_label = _feedback_workspace_label(request)
+    host_label = host_without_port(str(request.url.hostname or "")).strip()
+    feedback_label = _FEEDBACK_KIND_LABELS[feedback_kind]
+    subject_title = _feedback_subject_title(title, source_title, sanitized_source_path)
+    subject = f"[{feedback_label}] {workspace_label}: {subject_title}"
+    submitted_at = uk_now_from_utc(utcnow()).strftime("%d/%m/%Y %H:%M:%S")
+    user_email = str(getattr(user, "email", "") or getattr(user, "username", "") or "").strip()
+    body_lines = [
+        f"{feedback_label} from Weighbridge Web",
+        "",
+        f"Workspace: {workspace_label}",
+        f"User: {user_display_name(user)}",
+        f"Email: {user_email or '-'}",
+        f"Role: {user_role_label(user)}",
+        f"Page: {sanitized_source_path}",
+        f"Host: {host_label or '-'}",
+        f"Submitted: {submitted_at} ({UK_TIMEZONE_LABEL})",
+    ]
+    if source_title:
+        body_lines.append(f"Page title: {source_title}")
+    if title:
+        body_lines.append(f"Title: {title}")
+    body_lines.extend(
+        [
+            "",
+            "Message:",
+            message,
+        ]
+    )
+    result = send_email(
+        subject=subject,
+        text_body="\n".join(body_lines).strip(),
+        to=[feedback_to],
+        db=db,
+    )
+    audit_log(
+        db,
+        request,
+        action="USER_FEEDBACK_SUBMIT",
+        entity_type="user_feedback",
+        entity_id=user.id,
+        summary=(
+            f"{feedback_label} submitted from {sanitized_source_path}"
+            if result.ok
+            else f"{feedback_label} email failed from {sanitized_source_path}"
+        ),
+        details={
+            "kind": feedback_kind,
+            "title": title or None,
+            "source_title": source_title or None,
+            "source_path": sanitized_source_path,
+            "workspace": workspace_label,
+            "recipient": feedback_to,
+            "status": "sent" if result.ok else "failed",
+            "error": None if result.ok else (result.error or "Feedback send failed."),
+        },
+        user=user,
+    )
+    db.commit()
+    if result.ok:
+        return _redirect_with_feedback_status(
+            request,
+            source_path=sanitized_source_path,
+            feedback_sent=True,
+            feedback_kind=feedback_kind,
+        )
+    return _redirect_with_feedback_status(
+        request,
+        source_path=sanitized_source_path,
+        feedback_error=result.error or "Feedback send failed.",
+    )
