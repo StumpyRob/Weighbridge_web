@@ -28,7 +28,6 @@ from app.models.base import utcnow
 from app.models.ticket import DirectionEnum, TicketStatusEnum, TransactionTypeEnum
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER_NAME
 from app.seed import seed_print_destinations, seed_print_templates
-from app.services.email_service import EmailSendResult
 from app.services.system_setup import (
     DEFAULT_YARD_NAME,
     ensure_company_settings_row_exists,
@@ -185,9 +184,6 @@ def _seed_feedback(
             source_path="https://acme.localhost/tickets",
             submitted_by_display_name=reporter_name,
             submitted_by_email=reporter_email,
-            host_name="acme.localhost",
-            email_delivery_status="sent",
-            recipient_email="dev@example.com",
         )
         db.add(feedback)
         db.commit()
@@ -373,20 +369,11 @@ def test_shared_help_page_is_available_to_non_admin_users(workspace_env):
 
 def test_superadmin_feedback_inbox_is_cross_tenant_and_marks_messages_read(
     workspace_env,
-    monkeypatch,
 ):
     operator_client, operator_csrf = _client_for_role(workspace_env, "operator")
     tenant_admin_client, _tenant_admin_csrf = _client_for_role(workspace_env, "tenant_admin")
     platform_client = TestClient(workspace_env["app"], base_url="https://admin.localhost")
     SessionLocal = workspace_env["SessionLocal"]
-    sent: dict[str, object] = {}
-
-    def _fake_send_email(**kwargs):
-        sent.update(kwargs)
-        return EmailSendResult(ok=True)
-
-    monkeypatch.setattr(settings, "developer_feedback_email", "dev@example.com")
-    monkeypatch.setattr("app.routes.account.send_email", _fake_send_email)
 
     superadmin_id = _seed_user(
         SessionLocal,
@@ -471,7 +458,7 @@ def test_superadmin_feedback_inbox_is_cross_tenant_and_marks_messages_read(
         assert "Acme" in inbox.text
         assert "Other Workspace" in inbox.text
         assert "Feature request" in inbox.text
-        assert "Sent" in inbox.text
+        assert "Email:" not in inbox.text
         assert "Mark as Read" in inbox.text
 
         update = platform_client.post(
@@ -523,18 +510,9 @@ def test_superadmin_feedback_inbox_is_cross_tenant_and_marks_messages_read(
 
 def test_workspace_user_can_submit_sidebar_feedback_and_write_audit(
     workspace_env,
-    monkeypatch,
 ):
     client, csrf = _client_for_role(workspace_env, "operator")
     SessionLocal = workspace_env["SessionLocal"]
-    sent: dict[str, object] = {}
-
-    def _fake_send_email(**kwargs):
-        sent.update(kwargs)
-        return EmailSendResult(ok=True)
-
-    monkeypatch.setattr(settings, "developer_feedback_email", "dev@example.com")
-    monkeypatch.setattr("app.routes.account.send_email", _fake_send_email)
 
     try:
         response = client.post(
@@ -568,20 +546,8 @@ def test_workspace_user_can_submit_sidebar_feedback_and_write_audit(
             assert feedback.status == "new"
             assert feedback.title == "Sidebar overlap on tickets"
             assert feedback.message == "The sidebar overlaps the content on the tickets list."
-            assert feedback.email_delivery_status == "sent"
-            assert feedback.recipient_email == "dev@example.com"
             assert feedback.submitted_by_display_name == "Olivia Operator"
             assert feedback.source_path == "https://acme.localhost/tickets"
-
-        assert sent["to"] == ["dev@example.com"]
-        assert sent["db"] is not None
-        assert sent["subject"] == f"[Bug report] Acme: #{feedback_id} Sidebar overlap on tickets"
-        assert "Workspace: Acme" in str(sent["text_body"])
-        assert f"Feedback ID: {feedback_id}" in str(sent["text_body"])
-        assert "User: Olivia Operator" in str(sent["text_body"])
-        assert "Role: Operator" in str(sent["text_body"])
-        assert "Page URL: https://acme.localhost/tickets" in str(sent["text_body"])
-        assert "The sidebar overlaps the content on the tickets list." in str(sent["text_body"])
 
         with SessionLocal() as db:
             event = (
@@ -604,8 +570,8 @@ def test_workspace_user_can_submit_sidebar_feedback_and_write_audit(
             assert details.get("title") == "Sidebar overlap on tickets"
             assert details.get("page_url") == "https://acme.localhost/tickets"
             assert details.get("workspace") == "Acme"
-            assert details.get("recipient") == "dev@example.com"
-            assert details.get("status") == "sent"
+            assert "recipient" not in details
+            assert "status" not in details
     finally:
         client.close()
 

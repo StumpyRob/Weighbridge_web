@@ -18,7 +18,6 @@ class Settings(BaseSettings):
     uploads_dir: str = "/data/uploads"
     company_logo_upload_dir: str = ""
     app_public_base_url: str = ""
-    developer_feedback_email: str = ""
     site_agent_download_url: str = ""
     site_agent_download_version: str = ""
     site_agent_download_bucket: str = ""
@@ -106,10 +105,6 @@ class Settings(BaseSettings):
     @property
     def effective_site_agent_download_url(self) -> str:
         return str(self.site_agent_download_url or "").strip()
-
-    @property
-    def effective_developer_feedback_email(self) -> str:
-        return str(self.developer_feedback_email or "").strip().lower()
 
     @property
     def effective_site_agent_download_version(self) -> str:

@@ -60,9 +60,9 @@
           <div class="feedback-card__message">{{ row.message }}</div>
 
           <div class="feedback-card__footer">
-            <div class="feedback-card__email-status">
-              Email: {{ row.email_delivery_status_label }}{% if row.email_delivery_error %} &middot; {{ row.email_delivery_error }}{% endif %}
-            </div>
+            {% if row.page_url %}
+              <a class="feedback-card__page-link" href="{{ row.page_url }}" target="_blank" rel="noreferrer">{{ row.page_url }}</a>
+            {% endif %}
             <form method="post" action="/platform/feedback/{{ row.id }}/read" class="feedback-card__actions">
               <input type="hidden" name="return_to" value="{{ row.return_to }}" />
               <button type="submit" class="btn btn--secondary btn--sm">Mark as Read</button>

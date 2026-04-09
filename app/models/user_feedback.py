@@ -16,11 +16,6 @@ class UserFeedback(Base):
         sa.Index("ix_user_feedback_tenant_created", "tenant_id", "created_at"),
         sa.Index("ix_user_feedback_tenant_status", "tenant_id", "status"),
         sa.Index("ix_user_feedback_tenant_kind", "tenant_id", "kind"),
-        sa.Index(
-            "ix_user_feedback_tenant_email_status",
-            "tenant_id",
-            "email_delivery_status",
-        ),
         sa.Index("ix_user_feedback_submitted_by", "submitted_by_user_id", "created_at"),
     )
 
@@ -44,17 +39,6 @@ class UserFeedback(Base):
         nullable=True,
     )
     submitted_by_email: Mapped[str | None] = mapped_column(String(DESC_MAX), nullable=True)
-    host_name: Mapped[str | None] = mapped_column(String(DESC_MAX), nullable=True)
-    recipient_email: Mapped[str | None] = mapped_column(String(DESC_MAX), nullable=True)
-    email_delivery_status: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default="pending",
-    )
-    email_delivery_error: Mapped[str | None] = mapped_column(
-        String(DESC_MAX),
-        nullable=True,
-    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,

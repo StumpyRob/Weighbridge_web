@@ -186,14 +186,14 @@
           {% if feedback_sent %}
             <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1" data-timeout-ms="7000">
               <div class="flash-toast__content">
-                {% if feedback_kind == "wish" %}Feature request sent.{% else %}Bug report sent.{% endif %}
+                {% if feedback_kind == "wish" %}Feature request submitted.{% else %}Bug report submitted.{% endif %}
               </div>
               <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
             </div>
           {% endif %}
           {% if feedback_error %}
             <div class="flash-toast flash-toast--error" data-flash-toast>
-              <div class="flash-toast__content">Feedback could not be sent. {{ feedback_error }}</div>
+              <div class="flash-toast__content">Feedback could not be submitted. {{ feedback_error }}</div>
               <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
             </div>
           {% endif %}

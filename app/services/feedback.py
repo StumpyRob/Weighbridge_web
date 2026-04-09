@@ -16,35 +16,10 @@ FEEDBACK_KIND_LABELS = {
 FEEDBACK_STATUS_NEW = "new"
 FEEDBACK_STATUS_READ = "read"
 
-FEEDBACK_EMAIL_STATUS_PENDING = "pending"
-FEEDBACK_EMAIL_STATUS_SENT = "sent"
-FEEDBACK_EMAIL_STATUS_FAILED = "failed"
-FEEDBACK_EMAIL_STATUSES = (
-    FEEDBACK_EMAIL_STATUS_PENDING,
-    FEEDBACK_EMAIL_STATUS_SENT,
-    FEEDBACK_EMAIL_STATUS_FAILED,
-)
-FEEDBACK_EMAIL_STATUS_LABELS = {
-    FEEDBACK_EMAIL_STATUS_PENDING: "Pending",
-    FEEDBACK_EMAIL_STATUS_SENT: "Sent",
-    FEEDBACK_EMAIL_STATUS_FAILED: "Failed",
-}
-
 
 def normalize_feedback_kind(value: object, *, default: str | None = None) -> str | None:
     normalized = str(value or "").strip().lower()
     if normalized in FEEDBACK_KINDS:
-        return normalized
-    return default
-
-
-def normalize_feedback_email_status(
-    value: object,
-    *,
-    default: str | None = None,
-) -> str | None:
-    normalized = str(value or "").strip().lower()
-    if normalized in FEEDBACK_EMAIL_STATUSES:
         return normalized
     return default
 
@@ -54,13 +29,6 @@ def feedback_kind_label(value: object) -> str:
     if normalized is None:
         return "Feedback"
     return FEEDBACK_KIND_LABELS.get(normalized, "Feedback")
-
-
-def feedback_email_status_label(value: object) -> str:
-    normalized = normalize_feedback_email_status(value)
-    if normalized is None:
-        return "Unknown"
-    return FEEDBACK_EMAIL_STATUS_LABELS.get(normalized, "Unknown")
 
 
 def feedback_display_title(feedback: UserFeedback) -> str:

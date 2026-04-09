@@ -18,30 +18,21 @@ from ..auth import (
     require_user,
     set_user_identity_email,
     user_display_name,
-    user_role_label,
     validate_email,
     verify_password,
 )
-from ..config import settings
 from ..constants import NAME_MAX
 from ..db import get_db
 from ..models import User, UserFeedback
-from ..models.base import utcnow
 from ..security import validate_no_html
-from ..services.email_service import get_platform_email_settings, send_email
 from ..services.feedback import (
-    FEEDBACK_EMAIL_STATUS_FAILED,
-    FEEDBACK_EMAIL_STATUS_PENDING,
-    FEEDBACK_EMAIL_STATUS_SENT,
     FEEDBACK_KIND_LABELS,
     FEEDBACK_STATUS_NEW,
     feedback_display_title,
     normalize_feedback_kind,
 )
 from ..services.signatures import normalize_png_data_url, png_has_visible_ink
-from ..tenancy import host_without_port
 from ..templating import templates
-from ..timezones import UK_TIMEZONE_LABEL, uk_now_from_utc
 
 router = APIRouter()
 _FEEDBACK_TITLE_MAX = 120
@@ -121,34 +112,6 @@ def _redirect_with_feedback_status(
         )
     )
     return RedirectResponse(url=target, status_code=303)
-
-
-def _feedback_recipient(db: Session) -> str:
-    configured = normalize_email(settings.effective_developer_feedback_email)
-    if validate_email(configured):
-        return configured
-
-    transport = get_platform_email_settings(db)
-    reply_to = normalize_email(transport.reply_to)
-    if validate_email(reply_to):
-        return reply_to
-
-    from_email = normalize_email(transport.from_email)
-    if validate_email(from_email):
-        return from_email
-    return ""
-
-
-def _feedback_subject_title(title: str, page_url: str) -> str:
-    clean_title = str(title or "").strip()
-    if clean_title:
-        return clean_title[:_FEEDBACK_TITLE_MAX].strip()
-    clean_page_url = str(page_url or "").strip()
-    if clean_page_url:
-        parsed = urlsplit(clean_page_url)
-        page_label = str(parsed.path or "").strip() or clean_page_url
-        return page_label[:_FEEDBACK_TITLE_MAX].strip()
-    return "General feedback"
 
 
 def _feedback_workspace_label(request: Request) -> str:
@@ -552,9 +515,7 @@ async def feedback_submit(
         )
 
     workspace_label = _feedback_workspace_label(request)
-    host_label = host_without_port(str(request.url.hostname or "")).strip()
     user_email = str(getattr(user, "email", "") or getattr(user, "username", "") or "").strip()
-    feedback_to = _feedback_recipient(db)
     feedback = UserFeedback(
         submitted_by_user_id=int(user.id),
         kind=feedback_kind,
@@ -564,76 +525,18 @@ async def feedback_submit(
         source_path=normalized_page_url,
         submitted_by_display_name=user_display_name(user)[:NAME_MAX].strip() or None,
         submitted_by_email=user_email[:255].strip() or None,
-        host_name=host_label[:255].strip() or None,
-        recipient_email=feedback_to[:255].strip() or None if feedback_to else None,
-        email_delivery_status=(
-            FEEDBACK_EMAIL_STATUS_PENDING
-            if feedback_to
-            else FEEDBACK_EMAIL_STATUS_FAILED
-        ),
-        email_delivery_error=(
-            None if feedback_to else "Support email is not configured."
-        ),
     )
     db.add(feedback)
     db.flush()
 
     feedback_label = FEEDBACK_KIND_LABELS[feedback_kind]
-    subject_title = _feedback_subject_title(title, normalized_page_url or "")
-    subject = f"[{feedback_label}] {workspace_label}: #{int(feedback.id)} {subject_title}"
-    submitted_at = uk_now_from_utc(utcnow()).strftime("%d/%m/%Y %H:%M:%S")
-    body_lines = [
-        f"{feedback_label} from Weighbridge Web",
-        "",
-        f"Feedback ID: {int(feedback.id)}",
-        f"Workspace: {workspace_label}",
-        f"User: {user_display_name(user)}",
-        f"Email: {user_email or '-'}",
-        f"Role: {user_role_label(user)}",
-        f"Host: {host_label or '-'}",
-        f"Submitted: {submitted_at} ({UK_TIMEZONE_LABEL})",
-    ]
-    if normalized_page_url:
-        body_lines.append(f"Page URL: {normalized_page_url}")
-    if title:
-        body_lines.append(f"Title: {title}")
-    body_lines.extend(
-        [
-            "",
-            "Message:",
-            message,
-        ]
-    )
-    if feedback_to:
-        result = send_email(
-            subject=subject,
-            text_body="\n".join(body_lines).strip(),
-            to=[feedback_to],
-            db=db,
-        )
-        feedback.email_delivery_status = (
-            FEEDBACK_EMAIL_STATUS_SENT if result.ok else FEEDBACK_EMAIL_STATUS_FAILED
-        )
-        feedback.email_delivery_error = (
-            None if result.ok else (result.error or "Feedback send failed.")
-        )
-    else:
-        class _LocalResult:
-            ok = False
-            error = "Saved for platform review, but support email is not configured."
-
-        result = _LocalResult()
     audit_log(
         db,
         request,
         action="USER_FEEDBACK_SUBMIT",
         entity_type="user_feedback",
         entity_id=feedback.id,
-        summary=(
-            f"{feedback_label} submitted"
-            if result.ok
-            else f"{feedback_label} email failed"
-        ),
+        summary=f"{feedback_label} submitted",
         details={
             "feedback_id": int(feedback.id),
             "submitted_by_user_id": int(user.id),
@@ -642,22 +545,13 @@ async def feedback_submit(
             "display_title": feedback_display_title(feedback),
             "page_url": normalized_page_url,
             "workspace": workspace_label,
-            "recipient": feedback_to,
-            "status": "sent" if result.ok else "failed",
-            "error": feedback.email_delivery_error,
         },
         user=user,
     )
     db.commit()
-    if result.ok:
-        return _redirect_with_feedback_status(
-            request,
-            source_path=sanitized_return_path,
-            feedback_sent=True,
-            feedback_kind=feedback_kind,
-        )
     return _redirect_with_feedback_status(
         request,
         source_path=sanitized_return_path,
-        feedback_error=result.error or "Saved for platform review, but feedback email failed.",
+        feedback_sent=True,
+        feedback_kind=feedback_kind,
     )

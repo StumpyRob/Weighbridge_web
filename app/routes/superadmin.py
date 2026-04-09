@@ -79,7 +79,6 @@ from ..services.feedback import (
     FEEDBACK_STATUS_NEW,
     FEEDBACK_STATUS_READ,
     feedback_display_title,
-    feedback_email_status_label,
     feedback_kind_label,
     feedback_unread_count,
 )
@@ -705,16 +704,11 @@ def platform_feedback(
                 "kind": str(item.kind or ""),
                 "kind_label": feedback_kind_label(item.kind),
                 "message": str(item.message or ""),
+                "page_url": str(item.source_path or "").strip() or "",
                 "submitted_by_label": str(item.submitted_by_display_name or "").strip()
                 or str(item.submitted_by_email or "").strip()
                 or "Unknown user",
                 "submitted_by_email": str(item.submitted_by_email or "").strip() or "",
-                "email_delivery_status": str(item.email_delivery_status or ""),
-                "email_delivery_status_label": feedback_email_status_label(
-                    item.email_delivery_status
-                ),
-                "email_delivery_error": str(item.email_delivery_error or "").strip()
-                or "",
                 "created_at": item.created_at,
                 "return_to": current_path,
             }
