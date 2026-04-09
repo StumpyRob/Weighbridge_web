@@ -30,8 +30,9 @@ body {
 }
 
 .site-header {
-  position: relative;
-  z-index: 220;
+  position: sticky;
+  top: 0;
+  z-index: 320;
   padding: 0.45rem var(--shell-gap);
   background-color: var(--nav-bg);
   color: var(--primary);
@@ -647,7 +648,7 @@ body.is-shell-nav-open .app-sidebar {
     display: grid;
     grid-template-columns: var(--shell-sidebar-width) minmax(0, 1fr);
     gap: var(--shell-gap);
-    align-items: stretch;
+    align-items: start;
     padding-left: 0;
   }
 
@@ -658,13 +659,15 @@ body.is-shell-nav-open .app-sidebar {
   }
 
   .app-sidebar {
-    position: relative;
-    top: 0;
+    position: sticky;
+    top: calc(var(--flash-toast-top) - 12px);
     left: auto;
     bottom: auto;
+    align-self: start;
     width: auto;
-    min-height: 100%;
-    max-height: none;
+    height: calc(100svh - (var(--flash-toast-top) - 12px));
+    min-height: calc(100svh - (var(--flash-toast-top) - 12px));
+    max-height: calc(100svh - (var(--flash-toast-top) - 12px));
     padding: 0;
     border-radius: 0;
     overflow: hidden;
@@ -672,17 +675,16 @@ body.is-shell-nav-open .app-sidebar {
   }
 
   .app-sidebar__inner {
-    position: sticky;
-    top: 0;
-    height: calc(100svh - var(--flash-toast-top) + 12px);
-    min-height: calc(100svh - var(--flash-toast-top) + 12px);
-    max-height: calc(100svh - var(--flash-toast-top) + 12px);
+    position: static;
+    height: 100%;
+    min-height: 100%;
+    max-height: 100%;
     padding: 1rem 0.8rem 1.25rem;
     overflow: hidden;
   }
 
   .app-shell__content {
-    min-height: calc(100svh - var(--flash-toast-top) + 12px);
+    min-height: calc(100svh - (var(--flash-toast-top) - 12px));
   }
 
   .app-shell--sidebar-hidden .app-sidebar,
