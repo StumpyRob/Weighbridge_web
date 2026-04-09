@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block title %}My Account | Weighbridge Web{% endblock %}
+
+{% block toast_messages %}
+  {% if profile_saved %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Account details updated.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+  {% if password_saved %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Password updated.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>My Account</h1>
+      <p class="muted">Manage your sign-in details, password, and personal signature tools.</p>
+    </div>
+  </div>
+
+  {% include "account/_nav.html" %}
+
+  <div class="stacked-frames">
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Current Access</h2>
+      </div>
+      <div class="frame-body">
+        <div class="invoice-summary-grid">
+          <div>
+            <span class="summary-label">Display name</span>
+            <span class="summary-value">{{ current_user_display_name }}</span>
+          </div>
+          <div>
+            <span class="summary-label">Sign-in email</span>
+            <span class="summary-value">{{ user.email or user.username }}</span>
+          </div>
+          <div>
+            <span class="summary-label">Role</span>
+            <span class="summary-value">{{ current_user_role_label }}</span>
+          </div>
+          <div>
+            <span class="summary-label">Workspace</span>
+            <span class="summary-value">{{ current_tenant_name or "Platform" }}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Profile Details</h2>
+      </div>
+      <div class="frame-body">
+        {% if profile_errors %}
+          <div class="alert" style="margin-bottom: 1rem;">
+            <ul>
+              {% for error in profile_errors %}
+                <li>{{ error }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+        <form method="post" action="{{ tenant_path('/account/profile') }}" class="ticket-form">
+          <div class="form-grid">
+            <div class="field">
+              <label for="account_first_name">First name</label>
+              <input
+                type="text"
+                id="account_first_name"
+                name="first_name"
+                maxlength="100"
+                value="{{ profile_form.first_name }}"
+                autocomplete="given-name"
+              />
+            </div>
+            <div class="field">
+              <label for="account_last_name">Last name</label>
+              <input
+                type="text"
+                id="account_last_name"
+                name="last_name"
+                maxlength="100"
+                value="{{ profile_form.last_name }}"
+                autocomplete="family-name"
+              />
+            </div>
+            <div class="field">
+              <label for="account_email">Sign-in email</label>
+              <input
+                type="email"
+                id="account_email"
+                name="email"
+                value="{{ profile_form.email }}"
+                maxlength="{{ limits.DESC_MAX }}"
+                autocomplete="email"
+                required
+              />
+            </div>
+            <div class="field">
+              <label for="account_current_password">Current password</label>
+              <input
+                type="password"
+                id="account_current_password"
+                name="current_password"
+                autocomplete="current-password"
+              />
+              <div class="hint">Required only if you change your sign-in email.</div>
+            </div>
+          </div>
+          <div class="actions btn-group">
+            <button type="submit" class="btn btn--primary">Save Details</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Password &amp; Security</h2>
+      </div>
+      <div class="frame-body">
+        {% if password_errors %}
+          <div class="alert" style="margin-bottom: 1rem;">
+            <ul>
+              {% for error in password_errors %}
+                <li>{{ error }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+        <form method="post" action="{{ tenant_path('/account/password') }}" class="ticket-form">
+          <div class="form-grid">
+            <div class="field">
+              <label for="account_password_current">Current password</label>
+              <input
+                type="password"
+                id="account_password_current"
+                name="current_password"
+                autocomplete="current-password"
+                required
+              />
+            </div>
+            <div class="field">
+              <label for="account_password_new">New password</label>
+              <input
+                type="password"
+                id="account_password_new"
+                name="password"
+                autocomplete="new-password"
+                required
+              />
+              <div class="hint">Minimum 8 characters.</div>
+            </div>
+            <div class="field">
+              <label for="account_password_confirm">Confirm new password</label>
+              <input
+                type="password"
+                id="account_password_confirm"
+                name="confirm_password"
+                autocomplete="new-password"
+                required
+              />
+            </div>
+          </div>
+          <div class="actions btn-group">
+            <button type="submit" class="btn btn--primary">Update Password</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Signature</h2>
+      </div>
+      <div class="frame-body">
+        <p class="muted">Your saved signature can be applied to the receiver role on completed waste tickets and copied into the ticket snapshot.</p>
+        <div class="actions btn-group">
+          <a class="btn btn--secondary" href="{{ tenant_path('/account/signature') }}">Open My Signature</a>
+        </div>
+      </div>
+    </section>
+  </div>
+{% endblock %}

@@ -29,6 +29,15 @@
     {% set show_sidebar_nav = (platform_mode and current_user_is_superadmin) or ((not platform_mode) and current_user and (permissions.view_dashboard or permissions.view_tickets or permissions.view_customers or permissions.view_vehicles or permissions.view_products or permissions.view_invoices or permissions.view_lookups or permissions.view_reports or permissions.manage_settings or permissions.manage_users)) %}
     {% set signed_in_as = current_user_display_name if current_user else '' %}
     {% set signed_in_as_identity = (current_user.email or current_user.username or current_user_display_name or 'User') if current_user else '' %}
+    {% set account_initials_source = ((((current_user.first_name or '') ~ ' ' ~ (current_user.last_name or '')).strip()) if current_user else '') or signed_in_as_identity %}
+    {% set account_initials = 'AC' %}
+    {% if current_user %}
+      {% if account_initials_source.strip().split() | length > 1 %}
+        {% set account_initials = (account_initials_source.strip().split()[0][:1] ~ account_initials_source.strip().split()[-1][:1]) | upper %}
+      {% elif account_initials_source %}
+        {% set account_initials = account_initials_source[:2] | upper %}
+      {% endif %}
+    {% endif %}
     {% macro nav_link(href, label, active, short_label) -%}
       <a href="{{ tenant_path(href) }}" class="{% if active %}is-active{% endif %}" data-short-label="{{ short_label }}" data-nav-label="{{ label }}" {% if active %}aria-current="page"{% endif %}>{{ label }}</a>
     {%- endmacro %}
@@ -83,24 +92,46 @@
             </span>
           {% endif %}
           {% if current_user %}
-            <span
-              class="site-utility-bar__item site-utility-bar__item--user"
-              title="{{ signed_in_as_identity }}"
-              aria-label="Signed in as {{ signed_in_as }}"
-            >
-              Signed in as {{ signed_in_as }}
-            </span>
-            <span class="site-utility-bar__item">{{ current_user_role_label }}</span>
-            <a
-              href="{{ tenant_path('/account/signature') }}"
-              class="site-auth__link site-utility-bar__action"
-            >
-              My Signature
-            </a>
-            <form method="post" action="{{ tenant_path('/logout') }}" class="site-auth__logout site-utility-bar__action">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-              <button type="submit" class="site-auth__link">Logout</button>
-            </form>
+            <details class="site-account-menu site-utility-bar__action" data-account-menu>
+              <summary class="site-account-menu__summary" aria-label="Open account menu">
+                <span class="site-account-menu__avatar" aria-hidden="true">{{ account_initials }}</span>
+                <span class="site-account-menu__summary-text">
+                  <span class="site-account-menu__summary-label">Account</span>
+                  <span class="site-account-menu__summary-name" title="{{ signed_in_as_identity }}">{{ signed_in_as }}</span>
+                </span>
+                <span class="site-account-menu__chevron" aria-hidden="true"></span>
+              </summary>
+              <ul class="site-account-menu__panel" role="list">
+                <li class="site-account-menu__meta">
+                  <strong>Signed in as {{ signed_in_as }}</strong>
+                  <span>{{ signed_in_as_identity }}</span>
+                  <span>{{ current_user_role_label }}</span>
+                </li>
+                <li>
+                  <a
+                    href="{{ tenant_path('/account') }}"
+                    class="site-account-menu__link{% if request.url.path == '/account' %} is-active{% endif %}"
+                  >
+                    My Account
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="{{ tenant_path('/account/signature') }}"
+                    class="site-account-menu__link{% if request.url.path.startswith('/account/signature') %} is-active{% endif %}"
+                  >
+                    My Signature
+                  </a>
+                </li>
+                <li class="site-account-menu__divider" aria-hidden="true"></li>
+                <li>
+                  <form method="post" action="{{ tenant_path('/logout') }}" class="site-account-menu__form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                    <button type="submit" class="site-account-menu__link site-account-menu__link--button">Logout</button>
+                  </form>
+                </li>
+              </ul>
+            </details>
           {% else %}
             <a href="{{ tenant_path('/login') }}" class="site-auth__link site-utility-bar__action">Sign in</a>
           {% endif %}
@@ -452,6 +483,7 @@
       })();
     </script>
     <script src="/static/js/help_tooltips.js?v={{ BUILD_STAMP }}" defer></script>
+    <script src="/static/js/account_menu.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/app_shell.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/toasts.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/table_rows.js?v={{ BUILD_STAMP }}" defer></script>

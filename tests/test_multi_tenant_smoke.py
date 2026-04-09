@@ -1910,7 +1910,10 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert "Logout" not in tenant_nav
         assert "LOCALHOST" in tenant_admin_page.text
         assert "Tenant A" in tenant_utility
+        assert "data-account-menu" in tenant_utility
         assert "Signed in as tenant-admin@example.com" in tenant_utility
+        assert "My Account" in tenant_utility
+        assert "My Signature" in tenant_utility
         assert "Logout" in tenant_utility
         csrf = _prime_csrf(tenant_client)
         tenant_session_cookie = str(tenant_client.cookies.get("session") or "")
@@ -4588,7 +4591,10 @@ def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypa
         assert "Logout" not in platform_nav
         assert "LOCALHOST" in tenants_page.text
         assert "Platform Admin" in platform_utility
+        assert "data-account-menu" in platform_utility
         assert "Signed in as superadmin@example.com" in platform_utility
+        assert "My Account" in platform_utility
+        assert "My Signature" in platform_utility
         assert "Logout" in platform_utility
 
         blocked_tickets = admin_client.get("/tickets")

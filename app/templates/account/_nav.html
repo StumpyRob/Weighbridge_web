@@ -1,0 +1,4 @@
+<div class="tabs">
+  <a class="btn btn--ghost{% if active_account_tab == 'account' %} is-active{% endif %}" href="{{ tenant_path('/account') }}">My Account</a>
+  <a class="btn btn--ghost{% if active_account_tab == 'signature' %} is-active{% endif %}" href="{{ tenant_path('/account/signature') }}">My Signature</a>
+</div>

@@ -4,12 +4,28 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.23 - 2026-04-09
+
+### RELEASE
+- `v0.23` formalises the post-`v0.22` operations/admin release line by finishing the move onto print-agent workflows, standardising UK-local business time, and moving personal signature management into a proper account area.
+
 ### CHANGE
-- Make demo-tenant reset clear tenant print-agent state explicitly before the baseline is reseeded, so stale paired agents, pending pairings, pull destinations, and queued pull jobs do not survive on the shared demo workspace.
-- Extend demo-reset smoke coverage to seed and then remove stale print-agent data for both manual and automatic reserved-demo resets, including verifying the demo printing UI comes back empty.
+- Finalise the print-agent rollout by:
+  - supporting site-agent download and local agent pairing in the admin UI
+  - simplifying destination configuration around the supported transport paths
+  - removing legacy print transports
+  - keeping demo resets from carrying stale paired agents, pending pairings, pull destinations, or queued pull-print state forward
+- Standardise UK-local time handling (`Europe/London`) across the dashboard, ticket quick-create defaults, invoice date filters, print/admin views, and related document payload timestamps.
+- Add a live dashboard clock with seconds, then simplify its presentation so it sits cleanly in the header without an extra title badge or framed background.
+- Refresh admin guidance by:
+  - trimming Print Agents page blurb into tooltip help
+  - removing the duplicate site-agent download entry from the main Settings page
+  - expanding Help so it reflects current printing, audit, customer, vehicle, product, UK-time, and platform-admin workflows
+- Replace the old header-level `My Signature` link with a proper top-right account menu, and add a self-service `My Account` area for signed-in users to update their own profile details, password, and signature tools.
+- Tighten the shared sidebar navigation spacing so workspace navigation reads more compactly without changing the main information architecture.
 
 ### TEST
-- Re-run focused reserved-demo manual reset and automatic reset smoke coverage after extending the print-agent cleanup path.
+- Re-run focused print-agent, print payload, WTN signature, UK-time dashboard, admin help, account profile, saved-signature, setup-wizard header, and tenant/platform shell regressions for the release cut.
 
 ## v0.22 - 2026-03-26
 
