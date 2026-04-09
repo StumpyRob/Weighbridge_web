@@ -733,6 +733,7 @@ def platform_feedback(
             "feedback_marked_read": request.query_params.get("feedback_marked_read") == "1",
             "feedback_marked_unread": request.query_params.get("feedback_marked_unread")
             == "1",
+            "feedback_deleted": request.query_params.get("feedback_deleted") == "1",
         },
     )
 
@@ -838,6 +839,60 @@ async def platform_feedback_mark_unread(
     separator = "&" if "?" in return_to else "?"
     return RedirectResponse(
         url=f"{return_to}{separator}feedback_marked_unread=1",
+        status_code=303,
+    )
+
+
+@router.post("/platform/feedback/{feedback_id:int}/delete")
+async def platform_feedback_delete(
+    feedback_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    current_user = _require_platform_superadmin(request, db)
+
+    feedback = db.get(UserFeedback, int(feedback_id))
+    if feedback is None:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    form = await request.form()
+    return_to = _sanitize_local_platform_return_path(
+        form.get("return_to"),
+        default="/platform/feedback",
+    )
+
+    tenant = db.get(Tenant, int(feedback.tenant_id))
+    workspace_label = (
+        str(getattr(tenant, "name", "") or "").strip()
+        or str(getattr(tenant, "subdomain", "") or "").strip()
+        or f"Tenant {int(feedback.tenant_id)}"
+    )
+    feedback_id_value = int(feedback.id)
+    audit_log(
+        db,
+        request,
+        action="USER_FEEDBACK_DELETE",
+        entity_type="user_feedback",
+        entity_id=feedback_id_value,
+        summary=f"Deleted {workspace_label} feedback #{feedback_id_value}",
+        details={
+            "feedback_id": feedback_id_value,
+            "tenant_id": int(feedback.tenant_id),
+            "workspace": workspace_label,
+            "deleted_by_user_id": int(current_user.id),
+            "status": str(feedback.status or "").strip().lower() or None,
+            "kind": str(feedback.kind or "").strip().lower() or None,
+            "title": str(feedback.title or "").strip() or None,
+            "return_to": return_to,
+        },
+        user=current_user,
+        tenant_id=None,
+    )
+    db.delete(feedback)
+    db.commit()
+    separator = "&" if "?" in return_to else "?"
+    return RedirectResponse(
+        url=f"{return_to}{separator}feedback_deleted=1",
         status_code=303,
     )
 

@@ -337,6 +337,7 @@ def test_shared_sidebar_shell_renders_major_tenant_pages(workspace_env):
             assert 'id="site-sidebar"' in response.text
             assert 'data-shell-toggle' in response.text
             assert 'data-shell-backdrop' in response.text
+            assert 'class="app-sidebar__nav-wrap"' in response.text
             assert '<nav class="site-nav">' in response.text
             assert '<script src="/static/js/app_shell.js?v=' in response.text
             assert f'aria-current="page"' in response.text
@@ -548,6 +549,45 @@ def test_superadmin_feedback_inbox_is_cross_tenant_and_marks_messages_read(
         assert "Add a quicker invoice shortcut" in unread_inbox.text
         assert "Unread" in unread_inbox.text
         assert "Mark as Read" in unread_inbox.text
+        assert "Delete" in unread_inbox.text
+
+        delete_response = platform_client.post(
+            f"/platform/feedback/{feedback_id}/delete",
+            data={
+                "return_to": "/platform/feedback",
+                CSRF_FORM_FIELD: platform_csrf,
+            },
+            follow_redirects=False,
+        )
+        assert delete_response.status_code == 303
+        assert delete_response.headers["location"] == "/platform/feedback?feedback_deleted=1"
+
+        with SessionLocal() as db:
+            assert db.get(UserFeedback, feedback_id) is None
+
+            event = (
+                db.execute(
+                    select(AuditEvent)
+                    .where(
+                        AuditEvent.tenant_id.is_(None),
+                        AuditEvent.action == "USER_FEEDBACK_DELETE",
+                        AuditEvent.entity_type == "user_feedback",
+                        AuditEvent.entity_id == str(feedback_id),
+                    )
+                    .order_by(AuditEvent.id.desc())
+                    .limit(1)
+                )
+                .scalars()
+                .one()
+            )
+            details = event.details_json or {}
+            assert details.get("workspace") == "Acme"
+            assert details.get("tenant_id") == workspace_env["tenant_id"]
+            assert details.get("deleted_by_user_id") == superadmin_id
+
+        deleted_inbox = platform_client.get("/platform/feedback")
+        assert "Add a quicker invoice shortcut" not in deleted_inbox.text
+        assert "Other tenant issue" in deleted_inbox.text
     finally:
         operator_client.close()
         tenant_admin_client.close()

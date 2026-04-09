@@ -15,6 +15,12 @@
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}
+  {% if feedback_deleted %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">Feedback deleted.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
@@ -70,10 +76,16 @@
             {% if row.page_url %}
               <a class="feedback-card__page-link" href="{{ row.page_url }}" target="_blank" rel="noreferrer">{{ row.page_url }}</a>
             {% endif %}
-            <form method="post" action="/platform/feedback/{{ row.id }}/{{ 'unread' if row.is_read else 'read' }}" class="feedback-card__actions">
-              <input type="hidden" name="return_to" value="{{ row.return_to }}" />
-              <button type="submit" class="btn btn--secondary btn--sm">{{ 'Mark as Unread' if row.is_read else 'Mark as Read' }}</button>
-            </form>
+            <div class="feedback-card__actions">
+              <form method="post" action="/platform/feedback/{{ row.id }}/{{ 'unread' if row.is_read else 'read' }}">
+                <input type="hidden" name="return_to" value="{{ row.return_to }}" />
+                <button type="submit" class="btn btn--secondary btn--sm">{{ 'Mark as Unread' if row.is_read else 'Mark as Read' }}</button>
+              </form>
+              <form method="post" action="/platform/feedback/{{ row.id }}/delete" onsubmit="return window.confirm('Delete this feedback message?');">
+                <input type="hidden" name="return_to" value="{{ row.return_to }}" />
+                <button type="submit" class="btn btn--danger btn--sm">Delete</button>
+              </form>
+            </div>
           </div>
         </article>
       {% endfor %}
