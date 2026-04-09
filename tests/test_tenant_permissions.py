@@ -182,8 +182,7 @@ def _seed_feedback(
             status=status,
             title=title,
             message=message,
-            source_path="/tickets",
-            source_title="Tickets",
+            source_path="https://acme.localhost/tickets",
             submitted_by_display_name=reporter_name,
             submitted_by_email=reporter_email,
             host_name="acme.localhost",
@@ -344,12 +343,14 @@ def test_shared_sidebar_shell_renders_major_tenant_pages(workspace_env):
             assert 'data-shell-backdrop' in response.text
             assert '<nav class="site-nav">' in response.text
             assert '<script src="/static/js/app_shell.js?v=' in response.text
-            assert f'aria-current="page">{active_label}<' in response.text
+            assert f'aria-current="page"' in response.text
+            assert f'<span>{active_label}</span>' in response.text
             assert 'href="/help"' in response.text
             assert 'class="site-sidebar-help' in response.text
             assert 'class="site-sidebar-feedback"' in response.text
             assert 'class="site-sidebar-build"' in response.text
             assert "Build: v" in response.text
+            assert 'name="page_url"' in response.text
             assert 'data-feedback-dialog' in response.text
             assert '<script src="/static/js/feedback_dialog.js?v=' in response.text
     finally:
@@ -370,7 +371,7 @@ def test_shared_help_page_is_available_to_non_admin_users(workspace_env):
         client.close()
 
 
-def test_superadmin_feedback_inbox_is_cross_tenant_and_supports_status_updates(
+def test_superadmin_feedback_inbox_is_cross_tenant_and_marks_messages_read(
     workspace_env,
     monkeypatch,
 ):
@@ -418,8 +419,8 @@ def test_superadmin_feedback_inbox_is_cross_tenant_and_supports_status_updates(
                 "kind": "wish",
                 "title": "Add a quicker invoice shortcut",
                 "message": "A quicker invoice shortcut would help in the office.",
-                "source_path": "/invoices",
-                "source_title": "Invoices | Weighbridge Web",
+                "return_path": "/invoices",
+                "page_url": "https://acme.localhost/invoices",
                 CSRF_FORM_FIELD: operator_csrf,
             },
             follow_redirects=False,
@@ -459,43 +460,35 @@ def test_superadmin_feedback_inbox_is_cross_tenant_and_supports_status_updates(
         assert tenants_page.status_code == 200
         assert "Feedback" in tenants_page.text
         assert "Open Feedback" in tenants_page.text
-        assert "2 new" in tenants_page.text
+        assert "2 unread messages." in tenants_page.text
+        assert 'class="site-nav__badge"' in tenants_page.text
 
         inbox = platform_client.get("/platform/feedback")
         assert inbox.status_code == 200
-        assert "Feedback Inbox" in inbox.text
+        assert "<h1>Feedback</h1>" in inbox.text
         assert "Add a quicker invoice shortcut" in inbox.text
         assert "Other tenant issue" in inbox.text
         assert "Acme" in inbox.text
         assert "Other Workspace" in inbox.text
         assert "Feature request" in inbox.text
         assert "Sent" in inbox.text
-        assert ">Feedback<" in inbox.text
-
-        filtered_inbox = platform_client.get(f"/platform/feedback?tenant_id={workspace_env['tenant_id']}")
-        assert filtered_inbox.status_code == 200
-        assert "Add a quicker invoice shortcut" in filtered_inbox.text
-        assert "Other tenant issue" not in filtered_inbox.text
+        assert "Mark as Read" in inbox.text
 
         update = platform_client.post(
-            f"/platform/feedback/{feedback_id}/status",
+            f"/platform/feedback/{feedback_id}/read",
             data={
-                "status": "reviewed",
                 "return_to": "/platform/feedback",
                 CSRF_FORM_FIELD: platform_csrf,
             },
             follow_redirects=False,
         )
         assert update.status_code == 303
-        assert (
-            update.headers["location"]
-            == "/platform/feedback?feedback_updated=1&feedback_update_status=reviewed"
-        )
+        assert update.headers["location"] == "/platform/feedback?feedback_marked_read=1"
 
         with SessionLocal() as db:
             refreshed = db.get(UserFeedback, feedback_id)
             assert refreshed is not None
-            assert refreshed.status == "reviewed"
+            assert refreshed.status == "read"
             assert refreshed.reviewed_by_user_id == superadmin_id
             assert refreshed.reviewed_at is not None
 
@@ -504,7 +497,7 @@ def test_superadmin_feedback_inbox_is_cross_tenant_and_supports_status_updates(
                     select(AuditEvent)
                     .where(
                         AuditEvent.tenant_id.is_(None),
-                        AuditEvent.action == "USER_FEEDBACK_STATUS_UPDATE",
+                        AuditEvent.action == "USER_FEEDBACK_MARK_READ",
                         AuditEvent.entity_type == "user_feedback",
                         AuditEvent.entity_id == str(feedback_id),
                     )
@@ -517,8 +510,11 @@ def test_superadmin_feedback_inbox_is_cross_tenant_and_supports_status_updates(
             details = event.details_json or {}
             assert details.get("workspace") == "Acme"
             assert details.get("tenant_id") == workspace_env["tenant_id"]
-            assert details.get("status", {}).get("from") == "new"
-            assert details.get("status", {}).get("to") == "reviewed"
+            assert details.get("marked_read_by_user_id") == superadmin_id
+
+        refreshed_inbox = platform_client.get("/platform/feedback")
+        assert "Add a quicker invoice shortcut" not in refreshed_inbox.text
+        assert "Other tenant issue" in refreshed_inbox.text
     finally:
         operator_client.close()
         tenant_admin_client.close()
@@ -547,8 +543,8 @@ def test_workspace_user_can_submit_sidebar_feedback_and_write_audit(
                 "kind": "bug",
                 "title": "Sidebar overlap on tickets",
                 "message": "The sidebar overlaps the content on the tickets list.",
-                "source_path": "/tickets",
-                "source_title": "Tickets | Weighbridge Web",
+                "return_path": "/tickets",
+                "page_url": "https://acme.localhost/tickets",
                 CSRF_FORM_FIELD: csrf,
             },
             follow_redirects=False,
@@ -575,7 +571,7 @@ def test_workspace_user_can_submit_sidebar_feedback_and_write_audit(
             assert feedback.email_delivery_status == "sent"
             assert feedback.recipient_email == "dev@example.com"
             assert feedback.submitted_by_display_name == "Olivia Operator"
-            assert feedback.source_path == "/tickets"
+            assert feedback.source_path == "https://acme.localhost/tickets"
 
         assert sent["to"] == ["dev@example.com"]
         assert sent["db"] is not None
@@ -584,7 +580,7 @@ def test_workspace_user_can_submit_sidebar_feedback_and_write_audit(
         assert f"Feedback ID: {feedback_id}" in str(sent["text_body"])
         assert "User: Olivia Operator" in str(sent["text_body"])
         assert "Role: Operator" in str(sent["text_body"])
-        assert "Page: /tickets" in str(sent["text_body"])
+        assert "Page URL: https://acme.localhost/tickets" in str(sent["text_body"])
         assert "The sidebar overlaps the content on the tickets list." in str(sent["text_body"])
 
         with SessionLocal() as db:
@@ -606,7 +602,7 @@ def test_workspace_user_can_submit_sidebar_feedback_and_write_audit(
             assert details.get("feedback_id") == feedback_id
             assert details.get("kind") == "bug"
             assert details.get("title") == "Sidebar overlap on tickets"
-            assert details.get("source_path") == "/tickets"
+            assert details.get("page_url") == "https://acme.localhost/tickets"
             assert details.get("workspace") == "Acme"
             assert details.get("recipient") == "dev@example.com"
             assert details.get("status") == "sent"

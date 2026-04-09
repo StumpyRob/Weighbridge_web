@@ -26,17 +26,17 @@
     }
 
     const closeButtons = dialog.querySelectorAll("[data-feedback-close]");
-    const sourceTitle = dialog.querySelector("[data-feedback-source-title]");
+    const pageUrlField = dialog.querySelector("[data-feedback-page-url]");
     const messageField = dialog.querySelector("[data-feedback-message]");
 
-    function syncSourceTitle() {
-      if (sourceTitle) {
-        sourceTitle.value = document.title || "";
+    function syncPageUrl() {
+      if (pageUrlField) {
+        pageUrlField.value = window.location.href || pageUrlField.value || "";
       }
     }
 
     openButton.addEventListener("click", function () {
-      syncSourceTitle();
+      syncPageUrl();
       setOpen(dialog, true);
       window.setTimeout(function () {
         if (messageField) {
@@ -63,6 +63,6 @@
       setOpen(dialog, false);
     });
 
-    syncSourceTitle();
+    syncPageUrl();
   });
 })();

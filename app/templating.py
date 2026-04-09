@@ -7,6 +7,7 @@ from .constants import field_limits
 from .constants.help_text import HELP_TEXT
 from .db import get_db
 from .permissions import permission_context_for_request
+from .services.feedback import feedback_unread_count
 from .timezones import UK_TIMEZONE_LABEL, format_uk_date, format_uk_datetime
 from .services.ui_branding import get_branding
 from .tenancy import host_without_port, prefix_tenant_route_target
@@ -121,9 +122,47 @@ def _tenant_context(request) -> dict[str, object]:
     }
 
 
+def _platform_feedback_context(request) -> dict[str, object]:
+    platform_mode = bool(getattr(request.state, "platform_mode", False))
+    current_user = getattr(request.state, "current_user", None)
+    if (
+        not platform_mode
+        or current_user is None
+        or str(getattr(current_user, "role", "") or "").strip().lower() != "superadmin"
+        or getattr(current_user, "tenant_id", None) is not None
+    ):
+        return {"platform_feedback_unread_count": 0}
+
+    cached = getattr(request.state, "_platform_feedback_unread_count", _MISSING)
+    if cached is not _MISSING:
+        return {"platform_feedback_unread_count": int(cached or 0)}
+
+    dep = request.app.dependency_overrides.get(get_db, get_db)
+    db_gen = dep()
+    db = next(db_gen)
+    try:
+        count = feedback_unread_count(db)
+        request.state._platform_feedback_unread_count = count
+        return {"platform_feedback_unread_count": count}
+    except Exception:
+        request.state._platform_feedback_unread_count = 0
+        return {"platform_feedback_unread_count": 0}
+    finally:
+        try:
+            next(db_gen)
+        except StopIteration:
+            pass
+
+
 templates = Jinja2Templates(
     directory="app/templates",
-    context_processors=[_ui_branding_context, _csrf_context, _auth_context, _tenant_context],
+    context_processors=[
+        _ui_branding_context,
+        _csrf_context,
+        _auth_context,
+        _tenant_context,
+        _platform_feedback_context,
+    ],
 )
 _build_info = get_build_info()
 _asset_build_stamp = f"{_build_info['version']}-{_build_info['commit_short']}"

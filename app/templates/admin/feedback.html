@@ -3,17 +3,9 @@
 {% block title %}Platform Feedback | Weighbridge Web{% endblock %}
 
 {% block toast_messages %}
-  {% if feedback_updated %}
+  {% if feedback_marked_read %}
     <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
-      <div class="flash-toast__content">
-        Feedback marked {{ (feedback_update_status or "updated")|title }}.
-      </div>
-      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
-    </div>
-  {% endif %}
-  {% if feedback_update_error %}
-    <div class="flash-toast flash-toast--error" data-flash-toast>
-      <div class="flash-toast__content">{{ feedback_update_error }}</div>
+      <div class="flash-toast__content">Feedback marked as read.</div>
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}
@@ -22,90 +14,25 @@
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>Feedback Inbox</h1>
-      <p class="muted">Bug reports and feature requests submitted from tenant workspaces. Times shown in {{ time_zone_label }}.</p>
+      <h1>Feedback</h1>
+      <p class="muted">
+        {% if feedback_unread_count %}
+          {{ feedback_unread_count }} unread message{{ '' if feedback_unread_count == 1 else 's' }} from tenant workspaces. Times shown in {{ time_zone_label }}.
+        {% else %}
+          No unread feedback right now. Times shown in {{ time_zone_label }}.
+        {% endif %}
+      </p>
     </div>
   </div>
 
   <div class="tabs">
     <a class="btn btn--ghost" href="/platform/tenants">Tenant Management</a>
-    <a class="btn btn--ghost is-active" href="/platform/feedback">Feedback</a>
+    <a class="btn btn--ghost is-active" href="/platform/feedback">Feedback{% if feedback_unread_count %} ({{ feedback_unread_count }}){% endif %}</a>
     <a class="btn btn--ghost" href="/platform/ai-settings">AI Settings</a>
     <a class="btn btn--ghost" href="/platform/email-settings">Email Settings</a>
     <a class="btn btn--ghost" href="/admin/audit">Audit Log</a>
     <a class="btn btn--ghost" href="/admin/system-status">System Status</a>
   </div>
-
-  <section class="feedback-overview" aria-label="Feedback summary">
-    <article class="feedback-overview__item">
-      <span class="feedback-overview__label">New</span>
-      <strong class="feedback-overview__value">{{ feedback_summary.new_count }}</strong>
-    </article>
-    <article class="feedback-overview__item">
-      <span class="feedback-overview__label">Reviewed</span>
-      <strong class="feedback-overview__value">{{ feedback_summary.reviewed_count }}</strong>
-    </article>
-    <article class="feedback-overview__item">
-      <span class="feedback-overview__label">Closed</span>
-      <strong class="feedback-overview__value">{{ feedback_summary.closed_count }}</strong>
-    </article>
-    <article class="feedback-overview__item">
-      <span class="feedback-overview__label">Total</span>
-      <strong class="feedback-overview__value">{{ feedback_summary.total_count }}</strong>
-    </article>
-  </section>
-
-  <form class="filters filters-inline" method="get" action="/platform/feedback">
-    <div class="field">
-      <label for="feedback_tenant">Workspace</label>
-      <select id="feedback_tenant" name="tenant_id">
-        <option value="">All</option>
-        {% for item in tenant_options %}
-          <option value="{{ item.value }}" {% if selected_tenant_id == item.value %}selected{% endif %}>{{ item.label }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field">
-      <label for="feedback_status">Status</label>
-      <select id="feedback_status" name="status">
-        <option value="">All</option>
-        {% for item in status_options %}
-          <option value="{{ item.value }}" {% if selected_status == item.value %}selected{% endif %}>{{ item.label }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field">
-      <label for="feedback_kind">Type</label>
-      <select id="feedback_kind" name="kind">
-        <option value="">All</option>
-        {% for item in kind_options %}
-          <option value="{{ item.value }}" {% if selected_kind == item.value %}selected{% endif %}>{{ item.label }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field">
-      <label for="feedback_email_status">Email</label>
-      <select id="feedback_email_status" name="email_status">
-        <option value="">All</option>
-        {% for item in email_status_options %}
-          <option value="{{ item.value }}" {% if selected_email_status == item.value %}selected{% endif %}>{{ item.label }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field">
-      <label for="feedback_range">Date range</label>
-      <select id="feedback_range" name="range">
-        <option value="today" {% if selected_range == "today" %}selected{% endif %}>Today</option>
-        <option value="7d" {% if selected_range == "7d" %}selected{% endif %}>Last 7 days</option>
-        <option value="30d" {% if selected_range == "30d" %}selected{% endif %}>Last 30 days</option>
-        <option value="all" {% if selected_range == "all" %}selected{% endif %}>All</option>
-      </select>
-    </div>
-    <div class="actions btn-group">
-      <button type="submit" class="btn btn--secondary">Filter</button>
-      <a href="/platform/feedback" class="btn btn--outline">Reset</a>
-    </div>
-  </form>
 
   <div class="feedback-list">
     {% if rows %}
@@ -127,59 +54,26 @@
                 <a class="btn btn--ghost btn--sm" href="{{ row.tenant_open_url }}" target="_blank" rel="noreferrer">Open Tenant</a>
               {% endif %}
               <span class="feedback-kind-pill feedback-kind-pill--{{ row.kind }}">{{ row.kind_label }}</span>
-              <span class="feedback-status-pill feedback-status-pill--{{ row.status }}">{{ row.status_label }}</span>
             </div>
-          </div>
-
-          <div class="feedback-card__meta">
-            <div><span class="summary-label">Workspace</span><span class="summary-value">{{ row.tenant_name }}</span></div>
-            <div><span class="summary-label">Page</span><span class="summary-value">{{ row.source_path }}</span></div>
-            {% if row.source_title %}
-              <div><span class="summary-label">Page Title</span><span class="summary-value">{{ row.source_title }}</span></div>
-            {% endif %}
-            {% if row.host_name %}
-              <div><span class="summary-label">Host</span><span class="summary-value">{{ row.host_name }}</span></div>
-            {% endif %}
-            <div>
-              <span class="summary-label">Email</span>
-              <span class="summary-value">
-                {{ row.email_delivery_status_label }}
-                {% if row.email_delivery_error %}&middot; {{ row.email_delivery_error }}{% endif %}
-              </span>
-            </div>
-            {% if row.reviewed_at %}
-              <div>
-                <span class="summary-label">Last Review</span>
-                <span class="summary-value">
-                  {{ row.reviewed_at|uk_datetime("%d/%m/%Y %H:%M:%S") }}
-                  {% if row.reviewed_by_label %}&middot; {{ row.reviewed_by_label }}{% endif %}
-                </span>
-              </div>
-            {% endif %}
           </div>
 
           <div class="feedback-card__message">{{ row.message }}</div>
 
-          <form method="post" action="/platform/feedback/{{ row.id }}/status" class="feedback-card__status-form">
-            <input type="hidden" name="return_to" value="{{ row.return_to }}" />
-            <div class="field">
-              <label for="feedback_status_{{ row.id }}">Status</label>
-              <select id="feedback_status_{{ row.id }}" name="status">
-                {% for option in row.status_options %}
-                  <option value="{{ option.value }}" {% if row.status == option.value %}selected{% endif %}>{{ option.label }}</option>
-                {% endfor %}
-              </select>
+          <div class="feedback-card__footer">
+            <div class="feedback-card__email-status">
+              Email: {{ row.email_delivery_status_label }}{% if row.email_delivery_error %} &middot; {{ row.email_delivery_error }}{% endif %}
             </div>
-            <div class="actions btn-group">
-              <button type="submit" class="btn btn--secondary btn--sm">Update Status</button>
-            </div>
-          </form>
+            <form method="post" action="/platform/feedback/{{ row.id }}/read" class="feedback-card__actions">
+              <input type="hidden" name="return_to" value="{{ row.return_to }}" />
+              <button type="submit" class="btn btn--secondary btn--sm">Mark as Read</button>
+            </form>
+          </div>
         </article>
       {% endfor %}
     {% else %}
       <section class="frame">
         <div class="frame-body">
-          <p class="muted">No feedback found for the current filters.</p>
+          <p class="muted">No unread feedback.</p>
         </div>
       </section>
     {% endif %}

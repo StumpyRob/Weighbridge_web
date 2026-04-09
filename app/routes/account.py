@@ -139,14 +139,16 @@ def _feedback_recipient(db: Session) -> str:
     return ""
 
 
-def _feedback_subject_title(title: str, source_title: str, source_path: str) -> str:
+def _feedback_subject_title(title: str, page_url: str) -> str:
     clean_title = str(title or "").strip()
     if clean_title:
         return clean_title[:_FEEDBACK_TITLE_MAX].strip()
-    clean_source_title = str(source_title or "").split("|", 1)[0].strip()
-    if clean_source_title:
-        return clean_source_title[:_FEEDBACK_TITLE_MAX].strip()
-    return (str(source_path or "").strip() or "General feedback")[:_FEEDBACK_TITLE_MAX].strip()
+    clean_page_url = str(page_url or "").strip()
+    if clean_page_url:
+        parsed = urlsplit(clean_page_url)
+        page_label = str(parsed.path or "").strip() or clean_page_url
+        return page_label[:_FEEDBACK_TITLE_MAX].strip()
+    return "General feedback"
 
 
 def _feedback_workspace_label(request: Request) -> str:
@@ -517,33 +519,35 @@ async def feedback_submit(
     feedback_kind = normalize_feedback_kind(form.get("kind"), default="bug") or "bug"
     title = str(form.get("title") or "").strip()
     message = str(form.get("message") or "").strip()
-    source_path = str(form.get("source_path") or "").strip()
-    source_title = str(form.get("source_title") or "").strip()
+    return_path = str(form.get("return_path") or "").strip()
+    page_url = str(form.get("page_url") or "").strip()
 
     if feedback_kind not in FEEDBACK_KIND_LABELS:
         return _redirect_with_feedback_status(
             request,
-            source_path=source_path,
+            source_path=return_path,
             feedback_error="Choose bug report or feature request.",
         )
 
     errors: list[str] = []
     validate_no_html(title, "Title", errors)
     validate_no_html(message, "Message", errors)
-    validate_no_html(source_title, "Page title", errors)
+    validate_no_html(page_url, "Page URL", errors)
     if len(title) > _FEEDBACK_TITLE_MAX:
         errors.append(f"Title must be {_FEEDBACK_TITLE_MAX} characters or fewer.")
     if not message:
         errors.append("Message is required.")
     elif len(message) > _FEEDBACK_MESSAGE_MAX:
         errors.append(f"Message must be {_FEEDBACK_MESSAGE_MAX} characters or fewer.")
+    if len(page_url) > 255:
+        errors.append("Page URL must be 255 characters or fewer.")
 
-    sanitized_source_path = _sanitize_local_redirect_path(request, source_path)
-    normalized_source_title = source_title[:255].strip() or None
+    sanitized_return_path = _sanitize_local_redirect_path(request, return_path)
+    normalized_page_url = page_url[:255].strip() or None
     if errors:
         return _redirect_with_feedback_status(
             request,
-            source_path=sanitized_source_path,
+            source_path=sanitized_return_path,
             feedback_error=errors[0],
         )
 
@@ -557,8 +561,7 @@ async def feedback_submit(
         status=FEEDBACK_STATUS_NEW,
         title=title[:_FEEDBACK_TITLE_MAX].strip() or None,
         message=message,
-        source_path=sanitized_source_path[:255].strip() or None,
-        source_title=normalized_source_title,
+        source_path=normalized_page_url,
         submitted_by_display_name=user_display_name(user)[:NAME_MAX].strip() or None,
         submitted_by_email=user_email[:255].strip() or None,
         host_name=host_label[:255].strip() or None,
@@ -576,7 +579,7 @@ async def feedback_submit(
     db.flush()
 
     feedback_label = FEEDBACK_KIND_LABELS[feedback_kind]
-    subject_title = _feedback_subject_title(title, normalized_source_title or "", sanitized_source_path)
+    subject_title = _feedback_subject_title(title, normalized_page_url or "")
     subject = f"[{feedback_label}] {workspace_label}: #{int(feedback.id)} {subject_title}"
     submitted_at = uk_now_from_utc(utcnow()).strftime("%d/%m/%Y %H:%M:%S")
     body_lines = [
@@ -587,12 +590,11 @@ async def feedback_submit(
         f"User: {user_display_name(user)}",
         f"Email: {user_email or '-'}",
         f"Role: {user_role_label(user)}",
-        f"Page: {sanitized_source_path}",
         f"Host: {host_label or '-'}",
         f"Submitted: {submitted_at} ({UK_TIMEZONE_LABEL})",
     ]
-    if normalized_source_title:
-        body_lines.append(f"Page title: {normalized_source_title}")
+    if normalized_page_url:
+        body_lines.append(f"Page URL: {normalized_page_url}")
     if title:
         body_lines.append(f"Title: {title}")
     body_lines.extend(
@@ -628,9 +630,9 @@ async def feedback_submit(
         entity_type="user_feedback",
         entity_id=feedback.id,
         summary=(
-            f"{feedback_label} submitted from {sanitized_source_path}"
+            f"{feedback_label} submitted"
             if result.ok
-            else f"{feedback_label} email failed from {sanitized_source_path}"
+            else f"{feedback_label} email failed"
         ),
         details={
             "feedback_id": int(feedback.id),
@@ -638,8 +640,7 @@ async def feedback_submit(
             "kind": feedback_kind,
             "title": feedback.title,
             "display_title": feedback_display_title(feedback),
-            "source_title": normalized_source_title,
-            "source_path": sanitized_source_path,
+            "page_url": normalized_page_url,
             "workspace": workspace_label,
             "recipient": feedback_to,
             "status": "sent" if result.ok else "failed",
@@ -651,12 +652,12 @@ async def feedback_submit(
     if result.ok:
         return _redirect_with_feedback_status(
             request,
-            source_path=sanitized_source_path,
+            source_path=sanitized_return_path,
             feedback_sent=True,
             feedback_kind=feedback_kind,
         )
     return _redirect_with_feedback_status(
         request,
-        source_path=sanitized_source_path,
+        source_path=sanitized_return_path,
         feedback_error=result.error or "Saved for platform review, but feedback email failed.",
     )

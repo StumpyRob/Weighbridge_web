@@ -56,17 +56,19 @@
       <div class="platform-tenants-feedback-card__header">
         <div>
           <h2>Feedback</h2>
-          <p class="muted">Review bug reports and feature requests submitted from tenant workspaces.</p>
+          <p class="muted">Review unread feedback submitted from tenant workspaces.</p>
         </div>
         <div class="actions btn-group">
           <a class="btn btn--secondary" href="/platform/feedback">Open Feedback</a>
         </div>
       </div>
-      <div class="admin-hub-metrics" aria-label="Platform feedback summary">
-        <span class="admin-hub-metric-pill">{{ feedback_summary.new_count }} new</span>
-        <span class="admin-hub-metric-pill">{{ feedback_summary.reviewed_count }} reviewed</span>
-        <span class="admin-hub-metric-pill">{{ feedback_summary.closed_count }} closed</span>
-      </div>
+      <p class="platform-tenants-feedback-card__count">
+        {% if feedback_unread_count %}
+          {{ feedback_unread_count }} unread message{{ '' if feedback_unread_count == 1 else 's' }}.
+        {% else %}
+          No unread messages.
+        {% endif %}
+      </p>
     </section>
 
     <form class="filters" method="get" action="/platform/tenants">

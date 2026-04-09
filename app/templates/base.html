@@ -36,10 +36,11 @@
     {% set workspace_matches_brand = brand_label and workspace_label and (workspace_label | lower == brand_label | lower) %}
     {% set show_workspace_badge = platform_mode or ((current_tenant_name or current_tenant_subdomain) and not (show_title_nav and workspace_matches_brand)) %}
     {% set account_workspace_label = ('Platform Admin' if platform_mode else workspace_label) %}
-    {% set feedback_source_path = request.url.path %}
+    {% set feedback_return_path = request.url.path %}
     {% if request.url.query %}
-      {% set feedback_source_path = feedback_source_path ~ '?' ~ request.url.query %}
+      {% set feedback_return_path = feedback_return_path ~ '?' ~ request.url.query %}
     {% endif %}
+    {% set feedback_page_url = request.url | string %}
     {% set account_initials_source = ((((current_user.first_name or '') ~ ' ' ~ (current_user.last_name or '')).strip()) if current_user else '') or signed_in_as_identity %}
     {% set account_initials = 'AC' %}
     {% if current_user %}
@@ -49,8 +50,13 @@
         {% set account_initials = account_initials_source[:2] | upper %}
       {% endif %}
     {% endif %}
-    {% macro nav_link(href, label, active, short_label) -%}
-      <a href="{{ tenant_path(href) }}" class="{% if active %}is-active{% endif %}" data-short-label="{{ short_label }}" data-nav-label="{{ label }}" {% if active %}aria-current="page"{% endif %}>{{ label }}</a>
+    {% macro nav_link(href, label, active, short_label, badge_count=0) -%}
+      <a href="{{ tenant_path(href) }}" class="{% if active %}is-active{% endif %}" data-short-label="{{ short_label }}" data-nav-label="{{ label }}" {% if active %}aria-current="page"{% endif %}>
+        <span>{{ label }}</span>
+        {% if badge_count and badge_count > 0 %}
+          <span class="site-nav__badge" aria-label="{{ badge_count }} new messages">{{ '99+' if badge_count > 99 else badge_count }}</span>
+        {% endif %}
+      </a>
     {%- endmacro %}
     <header class="site-header">
       <div class="site-header__main">
@@ -253,7 +259,7 @@
             <nav class="site-nav">
               {% if platform_mode %}
                 {{ nav_link('/platform/tenants', 'Tenant Management', request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants'), 'TM') }}
-                {{ nav_link('/platform/feedback', 'Feedback', request.url.path.startswith('/platform/feedback') or request.url.path.startswith('/admin/feedback'), 'FB') }}
+                {{ nav_link('/platform/feedback', 'Feedback', request.url.path.startswith('/platform/feedback'), 'FB', platform_feedback_unread_count) }}
                 {{ nav_link('/platform/ai-settings', 'AI Settings', request.url.path.startswith('/platform/ai-settings') or request.url.path.startswith('/admin/ai-settings'), 'AI') }}
                 {{ nav_link('/platform/email-settings', 'Email Settings', request.url.path.startswith('/platform/email-settings') or request.url.path.startswith('/admin/email-settings'), 'EM') }}
                 {{ nav_link('/admin/system-status', 'System Status', request.url.path.startswith('/admin/system-status'), 'SS') }}
@@ -326,12 +332,11 @@
       <dialog class="site-feedback-dialog" data-feedback-dialog>
         <form method="post" action="{{ tenant_path('/feedback') }}" class="site-feedback-dialog__form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
-          <input type="hidden" name="source_path" value="{{ feedback_source_path }}" />
-          <input type="hidden" name="source_title" value="" data-feedback-source-title />
+          <input type="hidden" name="return_path" value="{{ feedback_return_path }}" />
           <div class="site-feedback-dialog__header">
             <div>
               <h3>Send Feedback</h3>
-              <p class="muted">Report a bug or request an improvement. Your current page and account context are included automatically.</p>
+              <p class="muted">Report a bug or request an improvement. Workspace and account context are included automatically.</p>
             </div>
             <button type="button" class="btn btn--ghost btn--sm" data-feedback-close>Close</button>
           </div>
@@ -354,6 +359,17 @@
               name="title"
               maxlength="120"
               placeholder="Optional summary"
+            />
+          </div>
+          <div class="field">
+            <label for="site_feedback_page_url">Page URL</label>
+            <input
+              type="url"
+              id="site_feedback_page_url"
+              name="page_url"
+              value="{{ feedback_page_url }}"
+              maxlength="255"
+              data-feedback-page-url
             />
           </div>
           <div class="field">

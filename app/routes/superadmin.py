@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import timedelta
 import logging
 import shutil
 from urllib.parse import urlencode, urlsplit, urlunsplit
@@ -77,21 +76,12 @@ from ..services.demo_tenant_reset import (
     reset_demo_tenant_data,
 )
 from ..services.feedback import (
-    FEEDBACK_EMAIL_STATUS_LABELS,
-    FEEDBACK_EMAIL_STATUSES,
-    FEEDBACK_KIND_LABELS,
-    FEEDBACK_KINDS,
-    FEEDBACK_STATUS_LABELS,
-    FEEDBACK_STATUSES,
     FEEDBACK_STATUS_NEW,
+    FEEDBACK_STATUS_READ,
     feedback_display_title,
     feedback_email_status_label,
     feedback_kind_label,
-    feedback_status_label,
-    feedback_summary,
-    normalize_feedback_email_status,
-    normalize_feedback_kind,
-    normalize_feedback_status,
+    feedback_unread_count,
 )
 from ..services.email_service import (
     EMAIL_PROVIDER_RESEND,
@@ -667,58 +657,23 @@ def tenants_list(
             "tenant_count": len(tenants),
             "active_count": active_count,
             "disabled_count": disabled_count,
-            "feedback_summary": feedback_summary(db),
+            "feedback_unread_count": feedback_unread_count(db),
         },
     )
 
 
 @router.get("/platform/feedback", response_class=HTMLResponse)
-@router.get("/admin/feedback", response_class=HTMLResponse)
 def platform_feedback(
     request: Request,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     _require_platform_superadmin(request, db)
 
-    selected_status = normalize_feedback_status(
-        request.query_params.get("status"),
-        default="",
-    ) or ""
-    selected_kind = normalize_feedback_kind(
-        request.query_params.get("kind"),
-        default="",
-    ) or ""
-    selected_email_status = normalize_feedback_email_status(
-        request.query_params.get("email_status"),
-        default="",
-    ) or ""
-    selected_tenant_id = _query_param_int(request, "tenant_id")
-    selected_range = str(request.query_params.get("range", "30d")).strip().lower()
-
-    query = select(UserFeedback)
-    now = utcnow()
-    if selected_range == "today":
-        cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        query = query.where(UserFeedback.created_at >= cutoff)
-    elif selected_range == "7d":
-        query = query.where(UserFeedback.created_at >= now - timedelta(days=7))
-    elif selected_range == "30d":
-        query = query.where(UserFeedback.created_at >= now - timedelta(days=30))
-    elif selected_range != "all":
-        selected_range = "30d"
-        query = query.where(UserFeedback.created_at >= now - timedelta(days=30))
-
-    if selected_status:
-        query = query.where(UserFeedback.status == selected_status)
-    if selected_kind:
-        query = query.where(UserFeedback.kind == selected_kind)
-    if selected_email_status:
-        query = query.where(UserFeedback.email_delivery_status == selected_email_status)
-    if selected_tenant_id is not None:
-        query = query.where(UserFeedback.tenant_id == int(selected_tenant_id))
-
     feedback_items = db.execute(
-        query.order_by(UserFeedback.created_at.desc(), UserFeedback.id.desc()).limit(200)
+        select(UserFeedback)
+        .where(UserFeedback.status == FEEDBACK_STATUS_NEW)
+        .order_by(UserFeedback.created_at.desc(), UserFeedback.id.desc())
+        .limit(200)
     ).scalars().all()
 
     tenant_options = list(
@@ -726,23 +681,7 @@ def platform_feedback(
     )
     tenant_lookup = {int(item.id): item for item in tenant_options}
 
-    reviewer_ids = sorted(
-        {
-            int(item.reviewed_by_user_id)
-            for item in feedback_items
-            if item.reviewed_by_user_id is not None
-        }
-    )
-    reviewer_lookup: dict[int, User] = {}
-    if reviewer_ids:
-        reviewer_lookup = {
-            int(user.id): user
-            for user in db.execute(select(User).where(User.id.in_(reviewer_ids))).scalars().all()
-        }
-
     current_path = str(request.url.path or "").strip() or "/platform/feedback"
-    if request.url.query:
-        current_path = f"{current_path}?{request.url.query}"
 
     rows: list[dict[str, object]] = []
     for item in feedback_items:
@@ -753,11 +692,6 @@ def platform_feedback(
             or f"Tenant {int(item.tenant_id)}"
         )
         tenant_subdomain = str(getattr(tenant, "subdomain", "") or "").strip()
-        reviewer = (
-            reviewer_lookup.get(int(item.reviewed_by_user_id))
-            if item.reviewed_by_user_id is not None
-            else None
-        )
         rows.append(
             {
                 "id": int(item.id),
@@ -770,16 +704,11 @@ def platform_feedback(
                 "display_title": feedback_display_title(item),
                 "kind": str(item.kind or ""),
                 "kind_label": feedback_kind_label(item.kind),
-                "status": str(item.status or ""),
-                "status_label": feedback_status_label(item.status),
                 "message": str(item.message or ""),
-                "source_path": str(item.source_path or "").strip() or "-",
-                "source_title": str(item.source_title or "").strip() or "",
                 "submitted_by_label": str(item.submitted_by_display_name or "").strip()
                 or str(item.submitted_by_email or "").strip()
                 or "Unknown user",
                 "submitted_by_email": str(item.submitted_by_email or "").strip() or "",
-                "host_name": str(item.host_name or "").strip() or "",
                 "email_delivery_status": str(item.email_delivery_status or ""),
                 "email_delivery_status_label": feedback_email_status_label(
                     item.email_delivery_status
@@ -787,71 +716,26 @@ def platform_feedback(
                 "email_delivery_error": str(item.email_delivery_error or "").strip()
                 or "",
                 "created_at": item.created_at,
-                "reviewed_at": item.reviewed_at,
-                "reviewed_by_label": user_display_name(reviewer)
-                if reviewer is not None
-                else "",
-                "status_options": [
-                    {
-                        "value": status_value,
-                        "label": feedback_status_label(status_value),
-                    }
-                    for status_value in FEEDBACK_STATUSES
-                ],
                 "return_to": current_path,
             }
         )
 
+    unread_count = feedback_unread_count(db)
     return templates.TemplateResponse(
         request,
         "admin/feedback.html",
         {
             "request": request,
             "rows": rows,
-            "selected_status": selected_status,
-            "selected_kind": selected_kind,
-            "selected_email_status": selected_email_status,
-            "selected_tenant_id": selected_tenant_id,
-            "selected_range": selected_range,
-            "status_options": [
-                {"value": item, "label": FEEDBACK_STATUS_LABELS[item]}
-                for item in FEEDBACK_STATUSES
-            ],
-            "kind_options": [
-                {"value": item, "label": FEEDBACK_KIND_LABELS[item]}
-                for item in FEEDBACK_KINDS
-            ],
-            "email_status_options": [
-                {"value": item, "label": FEEDBACK_EMAIL_STATUS_LABELS[item]}
-                for item in FEEDBACK_EMAIL_STATUSES
-            ],
-            "tenant_options": [
-                {
-                    "value": int(item.id),
-                    "label": str(item.name or "").strip()
-                    or str(item.subdomain or "").strip()
-                    or f"Tenant {int(item.id)}",
-                }
-                for item in tenant_options
-            ],
-            "feedback_summary": feedback_summary(db),
+            "feedback_unread_count": unread_count,
             "time_zone_label": UK_TIMEZONE_LABEL,
-            "feedback_updated": request.query_params.get("feedback_updated") == "1",
-            "feedback_update_status": normalize_feedback_status(
-                request.query_params.get("feedback_update_status"),
-                default="",
-            )
-            or "",
-            "feedback_update_error": str(
-                request.query_params.get("feedback_update_error", "")
-            ).strip(),
+            "feedback_marked_read": request.query_params.get("feedback_marked_read") == "1",
         },
     )
 
 
-@router.post("/platform/feedback/{feedback_id:int}/status")
-@router.post("/admin/feedback/{feedback_id:int}/status")
-async def platform_feedback_update_status(
+@router.post("/platform/feedback/{feedback_id:int}/read")
+async def platform_feedback_mark_read(
     feedback_id: int,
     request: Request,
     db: Session = Depends(get_db),
@@ -867,19 +751,8 @@ async def platform_feedback_update_status(
         form.get("return_to"),
         default="/platform/feedback",
     )
-    next_status = normalize_feedback_status(form.get("status"))
-    if next_status is None:
-        return RedirectResponse(
-            url=f"{return_to}{'&' if '?' in return_to else '?'}feedback_update_error=Choose+a+valid+status.",
-            status_code=303,
-        )
-
-    previous_status = str(feedback.status or "").strip().lower()
-    feedback.status = next_status
-    if next_status == FEEDBACK_STATUS_NEW:
-        feedback.reviewed_at = None
-        feedback.reviewed_by_user_id = None
-    else:
+    if str(feedback.status or "").strip().lower() == FEEDBACK_STATUS_NEW:
+        feedback.status = FEEDBACK_STATUS_READ
         feedback.reviewed_at = utcnow()
         feedback.reviewed_by_user_id = int(current_user.id)
 
@@ -892,21 +765,15 @@ async def platform_feedback_update_status(
     audit_log(
         db,
         request,
-        action="USER_FEEDBACK_STATUS_UPDATE",
+        action="USER_FEEDBACK_MARK_READ",
         entity_type="user_feedback",
         entity_id=feedback.id,
-        summary=(
-            f"Updated {workspace_label} feedback #{int(feedback.id)} status to {feedback_status_label(next_status)}"
-        ),
+        summary=f"Marked {workspace_label} feedback #{int(feedback.id)} as read",
         details={
             "feedback_id": int(feedback.id),
             "tenant_id": int(feedback.tenant_id),
             "workspace": workspace_label,
-            "status": {
-                "from": previous_status or None,
-                "to": next_status,
-            },
-            "reviewed_by_user_id": int(current_user.id),
+            "marked_read_by_user_id": int(current_user.id),
             "return_to": return_to,
         },
         user=current_user,
@@ -915,7 +782,7 @@ async def platform_feedback_update_status(
     db.commit()
     separator = "&" if "?" in return_to else "?"
     return RedirectResponse(
-        url=f"{return_to}{separator}feedback_updated=1&feedback_update_status={next_status}",
+        url=f"{return_to}{separator}feedback_marked_read=1",
         status_code=303,
     )
 

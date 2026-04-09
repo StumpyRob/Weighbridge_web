@@ -39,7 +39,6 @@ class UserFeedback(Base):
     title: Mapped[str | None] = mapped_column(String(NAME_MAX), nullable=True)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     source_path: Mapped[str | None] = mapped_column(String(DESC_MAX), nullable=True)
-    source_title: Mapped[str | None] = mapped_column(String(DESC_MAX), nullable=True)
     submitted_by_display_name: Mapped[str | None] = mapped_column(
         String(NAME_MAX),
         nullable=True,

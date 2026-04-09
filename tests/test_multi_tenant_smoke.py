@@ -4627,7 +4627,7 @@ def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypa
         assert 'data-shell-toggle' in tenants_page.text
         assert 'data-shell-backdrop' in tenants_page.text
         assert ">Tenant Management<" in tenants_page.text
-        assert ">Feedback<" in tenants_page.text
+        assert 'data-nav-label="Feedback"' in tenants_page.text
         assert ">AI Settings<" in tenants_page.text
         assert ">System Status<" in tenants_page.text
         assert ">Tickets<" not in tenants_page.text
