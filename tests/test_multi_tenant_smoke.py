@@ -4627,6 +4627,7 @@ def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypa
         assert 'data-shell-toggle' in tenants_page.text
         assert 'data-shell-backdrop' in tenants_page.text
         assert ">Tenant Management<" in tenants_page.text
+        assert ">Feedback<" in tenants_page.text
         assert ">AI Settings<" in tenants_page.text
         assert ">System Status<" in tenants_page.text
         assert ">Tickets<" not in tenants_page.text
@@ -4650,6 +4651,8 @@ def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypa
         assert "My Account" in platform_utility
         assert "My Signature" in platform_utility
         assert "Logout" in platform_utility
+        assert 'class="site-sidebar-feedback"' not in tenants_page.text
+        assert 'data-feedback-dialog' not in tenants_page.text
 
         blocked_tickets = admin_client.get("/tickets")
         assert blocked_tickets.status_code == 404
@@ -4694,15 +4697,15 @@ def test_tenant_settings_hides_platform_tools_and_keeps_platform_routes_separate
         assert "Company" in settings_page.text
         assert "EWC Codes" in settings_page.text
         assert "Printing" in settings_page.text
-        assert "Feedback Inbox" in settings_page.text
         assert "Audit Log" in settings_page.text
         assert "Help" in settings_page.text
         assert "Manage Company" in settings_page.text
         assert "Manage EWC Codes" in settings_page.text
         assert 'href="/admin/printing/agents"' in settings_page.text
         assert "View Audit Log" in settings_page.text
-        assert "Open Feedback Inbox" in settings_page.text
         assert "Open Help" in settings_page.text
+        assert "Feedback Inbox" not in settings_page.text
+        assert "Open Feedback" not in settings_page.text
         assert "Open Company" not in settings_page.text
         assert "Open EWC Codes" not in settings_page.text
         assert "Open Audit Log" not in settings_page.text
@@ -4710,6 +4713,7 @@ def test_tenant_settings_hides_platform_tools_and_keeps_platform_routes_separate
         assert "DEV mode" not in settings_page.text
         assert "Turn DEV Mode" not in settings_page.text
         assert "Tenant Management" not in settings_page.text
+        assert tenant_client.get("/admin/feedback").status_code == 404
         assert tenant_client.get("/admin/system-status").status_code == 404
         tenant_csrf = str(tenant_client.cookies.get(CSRF_COOKIE_NAME) or "")
         assert tenant_csrf

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Feedback Inbox | Weighbridge Web{% endblock %}
+{% block title %}Platform Feedback | Weighbridge Web{% endblock %}
 
 {% block toast_messages %}
   {% if feedback_updated %}
@@ -23,17 +23,17 @@
   <div class="page-header">
     <div>
       <h1>Feedback Inbox</h1>
-      <p class="muted">Bug reports and feature requests submitted by users in this workspace. Times shown in {{ time_zone_label }}.</p>
+      <p class="muted">Bug reports and feature requests submitted from tenant workspaces. Times shown in {{ time_zone_label }}.</p>
     </div>
   </div>
 
   <div class="tabs">
-    <a class="btn btn--ghost" href="{{ tenant_path('/admin/printing/destinations') }}">Printing</a>
-    <a class="btn btn--ghost" href="{{ tenant_path('/admin/ewc-codes') }}">EWC Codes</a>
-    <a class="btn btn--ghost" href="{{ tenant_path('/admin/company') }}">Company</a>
-    <a class="btn btn--ghost is-active" href="{{ tenant_path('/admin/feedback') }}">Feedback</a>
-    <a class="btn btn--ghost" href="{{ tenant_path('/admin/audit') }}">Audit Log</a>
-    <a class="btn btn--ghost" href="{{ tenant_path('/admin/help/getting-started') }}">Help</a>
+    <a class="btn btn--ghost" href="/platform/tenants">Tenant Management</a>
+    <a class="btn btn--ghost is-active" href="/platform/feedback">Feedback</a>
+    <a class="btn btn--ghost" href="/platform/ai-settings">AI Settings</a>
+    <a class="btn btn--ghost" href="/platform/email-settings">Email Settings</a>
+    <a class="btn btn--ghost" href="/admin/audit">Audit Log</a>
+    <a class="btn btn--ghost" href="/admin/system-status">System Status</a>
   </div>
 
   <section class="feedback-overview" aria-label="Feedback summary">
@@ -55,7 +55,16 @@
     </article>
   </section>
 
-  <form class="filters filters-inline" method="get" action="{{ tenant_path('/admin/feedback') }}">
+  <form class="filters filters-inline" method="get" action="/platform/feedback">
+    <div class="field">
+      <label for="feedback_tenant">Workspace</label>
+      <select id="feedback_tenant" name="tenant_id">
+        <option value="">All</option>
+        {% for item in tenant_options %}
+          <option value="{{ item.value }}" {% if selected_tenant_id == item.value %}selected{% endif %}>{{ item.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <div class="field">
       <label for="feedback_status">Status</label>
       <select id="feedback_status" name="status">
@@ -94,7 +103,7 @@
     </div>
     <div class="actions btn-group">
       <button type="submit" class="btn btn--secondary">Filter</button>
-      <a href="{{ tenant_path('/admin/feedback') }}" class="btn btn--outline">Reset</a>
+      <a href="/platform/feedback" class="btn btn--outline">Reset</a>
     </div>
   </form>
 
@@ -106,18 +115,24 @@
             <div class="feedback-card__heading">
               <h2>{{ row.display_title }}</h2>
               <p class="muted">
-                {{ row.submitted_by_label }}
+                {{ row.tenant_name }}
+                {% if row.tenant_subdomain %}&middot; {{ row.tenant_subdomain }}{% endif %}
+                &middot; {{ row.submitted_by_label }}
                 {% if row.submitted_by_email %}&middot; {{ row.submitted_by_email }}{% endif %}
-                {% if row.created_at_local %}&middot; {{ row.created_at_local.strftime("%d/%m/%Y %H:%M:%S") }}{% endif %}
+                {% if row.created_at %}&middot; {{ row.created_at|uk_datetime("%d/%m/%Y %H:%M:%S") }}{% endif %}
               </p>
             </div>
             <div class="feedback-card__badges">
+              {% if row.tenant_open_url %}
+                <a class="btn btn--ghost btn--sm" href="{{ row.tenant_open_url }}" target="_blank" rel="noreferrer">Open Tenant</a>
+              {% endif %}
               <span class="feedback-kind-pill feedback-kind-pill--{{ row.kind }}">{{ row.kind_label }}</span>
               <span class="feedback-status-pill feedback-status-pill--{{ row.status }}">{{ row.status_label }}</span>
             </div>
           </div>
 
           <div class="feedback-card__meta">
+            <div><span class="summary-label">Workspace</span><span class="summary-value">{{ row.tenant_name }}</span></div>
             <div><span class="summary-label">Page</span><span class="summary-value">{{ row.source_path }}</span></div>
             {% if row.source_title %}
               <div><span class="summary-label">Page Title</span><span class="summary-value">{{ row.source_title }}</span></div>
@@ -132,11 +147,11 @@
                 {% if row.email_delivery_error %}&middot; {{ row.email_delivery_error }}{% endif %}
               </span>
             </div>
-            {% if row.reviewed_at_local %}
+            {% if row.reviewed_at %}
               <div>
                 <span class="summary-label">Last Review</span>
                 <span class="summary-value">
-                  {{ row.reviewed_at_local.strftime("%d/%m/%Y %H:%M:%S") }}
+                  {{ row.reviewed_at|uk_datetime("%d/%m/%Y %H:%M:%S") }}
                   {% if row.reviewed_by_label %}&middot; {{ row.reviewed_by_label }}{% endif %}
                 </span>
               </div>
@@ -145,7 +160,7 @@
 
           <div class="feedback-card__message">{{ row.message }}</div>
 
-          <form method="post" action="{{ tenant_path('/admin/feedback/' ~ row.id ~ '/status') }}" class="feedback-card__status-form">
+          <form method="post" action="/platform/feedback/{{ row.id }}/status" class="feedback-card__status-form">
             <input type="hidden" name="return_to" value="{{ row.return_to }}" />
             <div class="field">
               <label for="feedback_status_{{ row.id }}">Status</label>

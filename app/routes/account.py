@@ -503,6 +503,12 @@ async def feedback_submit(
     request: Request,
     db: Session = Depends(get_db),
 ) -> Response:
+    if bool(getattr(request.state, "platform_mode", False)):
+        return RedirectResponse(
+            url="/platform/tenants?feedback_error=Feedback+submission+is+only+available+from+tenant+workspaces.",
+            status_code=303,
+        )
+
     user = _current_user_record(request, db)
     if user is None or not bool(getattr(user, "is_active", False)):
         return login_redirect_response(request)
@@ -612,7 +618,7 @@ async def feedback_submit(
     else:
         class _LocalResult:
             ok = False
-            error = "Saved to the workspace inbox, but support email is not configured."
+            error = "Saved for platform review, but support email is not configured."
 
         result = _LocalResult()
     audit_log(
@@ -652,5 +658,5 @@ async def feedback_submit(
     return _redirect_with_feedback_status(
         request,
         source_path=sanitized_source_path,
-        feedback_error=result.error or "Saved to the workspace inbox, but feedback email failed.",
+        feedback_error=result.error or "Saved for platform review, but feedback email failed.",
     )

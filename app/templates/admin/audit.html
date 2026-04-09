@@ -11,14 +11,19 @@
   </div>
 
   <div class="tabs">
-    <a class="btn btn--ghost" href="/admin/printing/destinations">Printing</a>
-    <a class="btn btn--ghost" href="/admin/ewc-codes">EWC Codes</a>
-    <a class="btn btn--ghost" href="/admin/help/getting-started">Help</a>
-    <a class="btn btn--ghost" href="/admin/company">Company</a>
-    <a class="btn btn--ghost" href="/admin/feedback">Feedback</a>
-    <a class="btn btn--ghost is-active" href="/admin/audit">Audit Log</a>
     {% if platform_mode %}
+      <a class="btn btn--ghost" href="/platform/tenants">Tenant Management</a>
+      <a class="btn btn--ghost" href="/platform/feedback">Feedback</a>
+      <a class="btn btn--ghost" href="/platform/ai-settings">AI Settings</a>
+      <a class="btn btn--ghost" href="/platform/email-settings">Email Settings</a>
+      <a class="btn btn--ghost is-active" href="/admin/audit">Audit Log</a>
       <a class="btn btn--ghost" href="/admin/system-status">System Status</a>
+    {% else %}
+      <a class="btn btn--ghost" href="/admin/printing/destinations">Printing</a>
+      <a class="btn btn--ghost" href="/admin/ewc-codes">EWC Codes</a>
+      <a class="btn btn--ghost" href="/admin/help/getting-started">Help</a>
+      <a class="btn btn--ghost" href="/admin/company">Company</a>
+      <a class="btn btn--ghost is-active" href="/admin/audit">Audit Log</a>
     {% endif %}
     {% if DEV_MODE and platform_mode %}
       <a class="btn btn--ghost" href="/admin/health">Health Check</a>

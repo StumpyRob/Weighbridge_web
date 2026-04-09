@@ -253,6 +253,7 @@
             <nav class="site-nav">
               {% if platform_mode %}
                 {{ nav_link('/platform/tenants', 'Tenant Management', request.url.path.startswith('/platform/tenants') or request.url.path.startswith('/admin/tenants'), 'TM') }}
+                {{ nav_link('/platform/feedback', 'Feedback', request.url.path.startswith('/platform/feedback') or request.url.path.startswith('/admin/feedback'), 'FB') }}
                 {{ nav_link('/platform/ai-settings', 'AI Settings', request.url.path.startswith('/platform/ai-settings') or request.url.path.startswith('/admin/ai-settings'), 'AI') }}
                 {{ nav_link('/platform/email-settings', 'Email Settings', request.url.path.startswith('/platform/email-settings') or request.url.path.startswith('/admin/email-settings'), 'EM') }}
                 {{ nav_link('/admin/system-status', 'System Status', request.url.path.startswith('/admin/system-status'), 'SS') }}
@@ -293,7 +294,7 @@
               >
                 Help
               </a>
-              {% if current_user %}
+              {% if current_user and not platform_mode %}
                 <div class="site-sidebar-meta__utility">
                   <button
                     type="button"
@@ -301,7 +302,7 @@
                     data-feedback-open
                     title="Report a bug or request an improvement"
                   >
-                    Feedback
+                    Send Feedback
                   </button>
                 </div>
               {% endif %}
@@ -321,7 +322,7 @@
         {% endif %}
       </div>
     </div>
-    {% if current_user and show_sidebar_nav %}
+    {% if current_user and show_sidebar_nav and not platform_mode %}
       <dialog class="site-feedback-dialog" data-feedback-dialog>
         <form method="post" action="{{ tenant_path('/feedback') }}" class="site-feedback-dialog__form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
@@ -586,7 +587,9 @@
     </script>
     <script src="/static/js/help_tooltips.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/account_menu.js?v={{ BUILD_STAMP }}" defer></script>
-    <script src="/static/js/feedback_dialog.js?v={{ BUILD_STAMP }}" defer></script>
+    {% if current_user and show_sidebar_nav and not platform_mode %}
+      <script src="/static/js/feedback_dialog.js?v={{ BUILD_STAMP }}" defer></script>
+    {% endif %}
     <script src="/static/js/app_shell.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/toasts.js?v={{ BUILD_STAMP }}" defer></script>
     <script src="/static/js/table_rows.js?v={{ BUILD_STAMP }}" defer></script>

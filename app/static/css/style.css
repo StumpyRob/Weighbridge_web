@@ -4276,6 +4276,19 @@ details > summary:focus-visible {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
+.platform-tenants-feedback-card {
+  margin-bottom: 1.5rem;
+}
+
+.platform-tenants-feedback-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
 .platform-tenants-table .actions-col {
   min-width: 360px;
 }

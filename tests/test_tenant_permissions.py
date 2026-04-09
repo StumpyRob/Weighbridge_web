@@ -15,6 +15,7 @@ from app.auth import (
     ROLE_ACCOUNTS,
     ROLE_OPERATOR,
     ROLE_READ_ONLY,
+    ROLE_SUPERADMIN,
     ROLE_TENANT_ADMIN,
     hash_password,
     user_identity_kwargs,
@@ -369,12 +370,13 @@ def test_shared_help_page_is_available_to_non_admin_users(workspace_env):
         client.close()
 
 
-def test_tenant_admin_feedback_inbox_is_scoped_and_supports_status_updates(
+def test_superadmin_feedback_inbox_is_cross_tenant_and_supports_status_updates(
     workspace_env,
     monkeypatch,
 ):
     operator_client, operator_csrf = _client_for_role(workspace_env, "operator")
-    admin_client, admin_csrf = _client_for_role(workspace_env, "tenant_admin")
+    tenant_admin_client, _tenant_admin_csrf = _client_for_role(workspace_env, "tenant_admin")
+    platform_client = TestClient(workspace_env["app"], base_url="https://admin.localhost")
     SessionLocal = workspace_env["SessionLocal"]
     sent: dict[str, object] = {}
 
@@ -385,6 +387,15 @@ def test_tenant_admin_feedback_inbox_is_scoped_and_supports_status_updates(
     monkeypatch.setattr(settings, "developer_feedback_email", "dev@example.com")
     monkeypatch.setattr("app.routes.account.send_email", _fake_send_email)
 
+    superadmin_id = _seed_user(
+        SessionLocal,
+        tenant_id=None,
+        email="superadmin@example.com",
+        password=workspace_env["password"],
+        role=ROLE_SUPERADMIN,
+        first_name="Pat",
+        last_name="Platform",
+    )
     other_tenant_id = _seed_tenant(
         SessionLocal,
         name="Other Workspace",
@@ -395,7 +406,7 @@ def test_tenant_admin_feedback_inbox_is_scoped_and_supports_status_updates(
         SessionLocal,
         tenant_id=other_tenant_id,
         title="Other tenant issue",
-        message="This should not appear in Acme.",
+        message="This should only appear in the platform inbox.",
         reporter_name="Other Reporter",
         reporter_email="other@example.com",
     )
@@ -431,50 +442,68 @@ def test_tenant_admin_feedback_inbox_is_scoped_and_supports_status_updates(
             )
             feedback_id = int(feedback.id)
 
-        settings_page = admin_client.get("/admin")
-        assert settings_page.status_code == 200
-        assert "Feedback Inbox" in settings_page.text
-        assert "1 new" in settings_page.text
-        assert "Add a quicker invoice shortcut" in settings_page.text
-        assert "Other tenant issue" not in settings_page.text
-        assert 'href="/admin/feedback"' in settings_page.text
+        tenant_settings = tenant_admin_client.get("/admin")
+        assert tenant_settings.status_code == 200
+        assert "Feedback Inbox" not in tenant_settings.text
+        assert "Open Feedback" not in tenant_settings.text
+        assert tenant_admin_client.get("/admin/feedback").status_code == 404
 
-        inbox = admin_client.get("/admin/feedback")
+        platform_csrf = _login(
+            platform_client,
+            email="superadmin@example.com",
+            password=workspace_env["password"],
+            next_path="/platform/tenants",
+        )
+
+        tenants_page = platform_client.get("/platform/tenants")
+        assert tenants_page.status_code == 200
+        assert "Feedback" in tenants_page.text
+        assert "Open Feedback" in tenants_page.text
+        assert "2 new" in tenants_page.text
+
+        inbox = platform_client.get("/platform/feedback")
         assert inbox.status_code == 200
         assert "Feedback Inbox" in inbox.text
         assert "Add a quicker invoice shortcut" in inbox.text
-        assert "A quicker invoice shortcut would help in the office." in inbox.text
+        assert "Other tenant issue" in inbox.text
+        assert "Acme" in inbox.text
+        assert "Other Workspace" in inbox.text
         assert "Feature request" in inbox.text
         assert "Sent" in inbox.text
-        assert "Other tenant issue" not in inbox.text
+        assert ">Feedback<" in inbox.text
 
-        update = admin_client.post(
-            f"/admin/feedback/{feedback_id}/status",
+        filtered_inbox = platform_client.get(f"/platform/feedback?tenant_id={workspace_env['tenant_id']}")
+        assert filtered_inbox.status_code == 200
+        assert "Add a quicker invoice shortcut" in filtered_inbox.text
+        assert "Other tenant issue" not in filtered_inbox.text
+
+        update = platform_client.post(
+            f"/platform/feedback/{feedback_id}/status",
             data={
                 "status": "reviewed",
-                "return_to": "/admin/feedback",
-                CSRF_FORM_FIELD: admin_csrf,
+                "return_to": "/platform/feedback",
+                CSRF_FORM_FIELD: platform_csrf,
             },
             follow_redirects=False,
         )
         assert update.status_code == 303
         assert (
             update.headers["location"]
-            == "/admin/feedback?feedback_updated=1&feedback_update_status=reviewed"
+            == "/platform/feedback?feedback_updated=1&feedback_update_status=reviewed"
         )
 
         with SessionLocal() as db:
             refreshed = db.get(UserFeedback, feedback_id)
             assert refreshed is not None
             assert refreshed.status == "reviewed"
-            assert refreshed.reviewed_by_user_id == workspace_env["users"]["tenant_admin"]["id"]
+            assert refreshed.reviewed_by_user_id == superadmin_id
             assert refreshed.reviewed_at is not None
 
             event = (
                 db.execute(
                     select(AuditEvent)
                     .where(
-                        AuditEvent.tenant_id == workspace_env["tenant_id"],
+                        AuditEvent.tenant_id.is_(None),
                         AuditEvent.action == "USER_FEEDBACK_STATUS_UPDATE",
                         AuditEvent.entity_type == "user_feedback",
                         AuditEvent.entity_id == str(feedback_id),
@@ -486,11 +515,14 @@ def test_tenant_admin_feedback_inbox_is_scoped_and_supports_status_updates(
                 .one()
             )
             details = event.details_json or {}
+            assert details.get("workspace") == "Acme"
+            assert details.get("tenant_id") == workspace_env["tenant_id"]
             assert details.get("status", {}).get("from") == "new"
             assert details.get("status", {}).get("to") == "reviewed"
     finally:
         operator_client.close()
-        admin_client.close()
+        tenant_admin_client.close()
+        platform_client.close()
 
 
 def test_workspace_user_can_submit_sidebar_feedback_and_write_audit(
