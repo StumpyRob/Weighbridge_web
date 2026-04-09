@@ -1,3 +1,4 @@
+{% from "_help.html" import help %}
 {% extends "base.html" %}
 
 {% block title %}My Signature | Weighbridge Web{% endblock %}
@@ -14,8 +15,7 @@
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>My Signature</h1>
-      <p class="muted">Used by the receiver-side Apply My Signature action on completed waste tickets. Tickets keep a copied snapshot.</p>
+      <h1>My Signature{{ help(help_text.account_signature_page, "account-signature-page-help") }}</h1>
     </div>
   </div>
 
@@ -33,7 +33,7 @@
 
   <section class="wtn-signature-tools" data-account-signature-root>
     <div class="wtn-signature-tools__header">
-      <h3>Saved Receiver Signature</h3>
+      <h3>Saved Receiver Signature{{ help(help_text.account_saved_receiver_signature, "account-saved-receiver-signature-help") }}</h3>
       <span class="wtn-signature-tools__status {% if user.has_saved_signature %}is-signed{% else %}is-pending{% endif %}">
         {% if user.has_saved_signature %}Saved{% else %}Not saved{% endif %}
       </span>
@@ -86,7 +86,7 @@
         ></canvas>
         <input type="hidden" name="signature_data_url" value="" data-account-signature-data />
         <div class="field">
-          <label for="saved_signature_signer_name">Signer name (optional)</label>
+          <label for="saved_signature_signer_name">Signer name (optional){{ help(help_text.account_signature_signer_name, "account-signature-signer-name-help") }}</label>
           <input
             type="text"
             id="saved_signature_signer_name"

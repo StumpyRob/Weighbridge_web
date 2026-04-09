@@ -113,6 +113,17 @@ HELP_TEXT.update(
 
 HELP_TEXT.update(
     {
+        "account_overview": "Manage your sign-in details, password, and personal signature tools from one place.",
+        "account_current_access": "Read-only summary of the user, role, and workspace you are currently signed into.",
+        "account_profile_details": "Update your display name and sign-in email. Changing the sign-in email also updates your username.",
+        "account_sign_in_email": "Used to sign in to this workspace. Changing it also updates your username for future sign-in.",
+        "account_email_change_password": "Required only when you change your sign-in email.",
+        "account_password_security": "Use this section to change your password for the current account.",
+        "account_new_password": "Minimum 8 characters.",
+        "account_signature_section": "Your saved signature can be applied to the receiver role on completed waste tickets and copied into the ticket snapshot.",
+        "account_signature_page": "Used by the receiver-side Apply My Signature action on completed waste tickets. Tickets keep a copied snapshot.",
+        "account_saved_receiver_signature": "This is the signature stored against your user profile for the receiver-side Apply My Signature action.",
+        "account_signature_signer_name": "Optional signer name stored with your saved signature for reference.",
         "company_logo_upload": "Upload the logo used in document headers and (optionally) the top navigation bar. Max size: 2MB. Uploading a file replaces the current logo.",
         "company_nav_logo_size": "Controls logo height in the top navigation bar (20-80px).",
         "company_show_nav_logo": "Toggle whether the logo is shown in the top navigation bar.",

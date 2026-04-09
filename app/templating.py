@@ -97,11 +97,15 @@ def _tenant_context(request) -> dict[str, object]:
     tenant_name = str(getattr(tenant, "name", "") or "").strip()
     tenant_subdomain = str(getattr(tenant, "subdomain", "") or "").strip()
     route_prefix = str(getattr(request.state, "tenant_route_prefix", "") or "").strip()
-    host_label_source = (
-        settings.effective_base_domain
-        or host_without_port(str(getattr(getattr(request, "url", None), "hostname", "") or ""))
-    )
-    host_label = host_without_port(str(host_label_source or "")).upper()
+    host_name = host_without_port(str(getattr(getattr(request, "url", None), "hostname", "") or ""))
+    request_subdomain = str(getattr(request.state, "request_subdomain", "") or "").strip().lower()
+    host_label = host_without_port(str(settings.effective_base_domain or host_name or ""))
+    if (
+        not settings.effective_base_domain
+        and request_subdomain
+        and host_name.startswith(f"{request_subdomain}.")
+    ):
+        host_label = host_name[len(request_subdomain) + 1 :]
 
     def _tenant_path(path: str) -> str:
         return prefix_tenant_route_target(route_prefix, path)

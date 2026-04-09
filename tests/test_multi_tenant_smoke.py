@@ -1908,10 +1908,12 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert "Tenant A" not in tenant_nav
         assert "Signed in as tenant-admin@example.com" not in tenant_nav
         assert "Logout" not in tenant_nav
-        assert "LOCALHOST" in tenant_admin_page.text
+        assert 'class="site-utility-host' not in tenant_admin_page.text
         assert "Tenant A" in tenant_utility
         assert "data-account-menu" in tenant_utility
         assert "Signed in as tenant-admin@example.com" in tenant_utility
+        assert "Workspace: Tenant A" in tenant_utility
+        assert "Domain: localhost" in tenant_utility
         assert "My Account" in tenant_utility
         assert "My Signature" in tenant_utility
         assert "Logout" in tenant_utility
@@ -1983,6 +1985,33 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         tenant = db.get(Tenant, tenant_a)
         assert tenant is not None
         assert bool(tenant.is_active) is True
+
+
+def test_header_hides_duplicate_workspace_badge_when_brand_title_matches_tenant(
+    tmp_path, monkeypatch
+):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path, db_name="tenant-header-context.db", monkeypatch=monkeypatch
+    )
+    tenant_id = _seed_tenant(SessionLocal, name="Demo", subdomain="demo", is_active=True)
+    _seed_company(SessionLocal, tenant_id=tenant_id, name="Demo", primary_color="#2a4768")
+    _seed_user(
+        SessionLocal,
+        email="tenant-admin@example.com",
+        password="TenantPass123!",
+        role=ROLE_TENANT_ADMIN,
+        tenant_id=tenant_id,
+    )
+
+    with _client(app, base_url="https://demo.localhost") as tenant_client:
+        assert _login(tenant_client, email="tenant-admin@example.com", password="TenantPass123!") == 303
+        page = tenant_client.get("/admin/company")
+        utility = _extract_utility_bar_markup(page.text)
+
+        assert page.status_code == 200
+        assert 'class="site-utility-bar__item site-utility-bar__item--tenant"' not in page.text
+        assert "Workspace: Demo" in utility
+        assert "Domain: localhost" in utility
 
 
 def test_platform_superadmin_can_update_tenant_ai_settings(tmp_path, monkeypatch):
@@ -4589,10 +4618,12 @@ def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypa
         assert "Platform Admin" not in platform_nav
         assert "Signed in as superadmin@example.com" not in platform_nav
         assert "Logout" not in platform_nav
-        assert "LOCALHOST" in tenants_page.text
+        assert 'class="site-utility-host' not in tenants_page.text
         assert "Platform Admin" in platform_utility
         assert "data-account-menu" in platform_utility
         assert "Signed in as superadmin@example.com" in platform_utility
+        assert "Workspace: Platform Admin" in platform_utility
+        assert "Domain: localhost" in platform_utility
         assert "My Account" in platform_utility
         assert "My Signature" in platform_utility
         assert "Logout" in platform_utility

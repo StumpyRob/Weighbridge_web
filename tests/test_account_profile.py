@@ -17,6 +17,10 @@ def test_account_page_renders_menu_and_forms(client):
 
     assert response.status_code == 200
     assert "My Account" in response.text
+    assert 'id="account-overview-help"' in response.text
+    assert 'id="account-profile-details-help"' in response.text
+    assert 'id="account-password-security-help"' in response.text
+    assert 'id="account-signature-section-help"' in response.text
     assert "Profile Details" in response.text
     assert "Password &amp; Security" in response.text
     assert "Open My Signature" in response.text

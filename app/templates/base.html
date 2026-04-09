@@ -29,6 +29,13 @@
     {% set show_sidebar_nav = (platform_mode and current_user_is_superadmin) or ((not platform_mode) and current_user and (permissions.view_dashboard or permissions.view_tickets or permissions.view_customers or permissions.view_vehicles or permissions.view_products or permissions.view_invoices or permissions.view_lookups or permissions.view_reports or permissions.manage_settings or permissions.manage_users)) %}
     {% set signed_in_as = current_user_display_name if current_user else '' %}
     {% set signed_in_as_identity = (current_user.email or current_user.username or current_user_display_name or 'User') if current_user else '' %}
+    {% set brand_label = (ui_branding.brand_name or '') | trim %}
+    {% set show_logo_nav = ui_branding.show_nav_logo %}
+    {% set show_title_nav = ui_branding.show_nav_title %}
+    {% set workspace_label = (current_tenant_name or current_tenant_subdomain or brand_label or 'Workspace') | trim %}
+    {% set workspace_matches_brand = brand_label and workspace_label and (workspace_label | lower == brand_label | lower) %}
+    {% set show_workspace_badge = platform_mode or ((current_tenant_name or current_tenant_subdomain) and not (show_title_nav and workspace_matches_brand)) %}
+    {% set account_workspace_label = ('Platform Admin' if platform_mode else workspace_label) %}
     {% set account_initials_source = ((((current_user.first_name or '') ~ ' ' ~ (current_user.last_name or '')).strip()) if current_user else '') or signed_in_as_identity %}
     {% set account_initials = 'AC' %}
     {% if current_user %}
@@ -59,8 +66,6 @@
             </button>
           {% endif %}
           <a class="brand" href="{{ tenant_path('/platform/tenants' if platform_mode else '/') }}">
-            {% set show_logo_nav = ui_branding.show_nav_logo %}
-            {% set show_title_nav = ui_branding.show_nav_title %}
             {% if show_logo_nav %}
               <span class="brand__logo-badge">
                 <img
@@ -78,17 +83,14 @@
         </div>
         <div class="site-header__utility">
           <div class="site-utility-bar">
-            {% if current_host_label %}
-              <span class="site-utility-host site-utility-bar__item" aria-label="Host domain">{{ current_host_label }}</span>
-            {% endif %}
           {% if platform_mode %}
             <span class="site-utility-bar__item site-utility-bar__item--platform">Platform Admin</span>
-          {% elif current_tenant_name or current_tenant_subdomain %}
+          {% elif show_workspace_badge %}
             <span
               class="site-utility-bar__item site-utility-bar__item--tenant"
               {% if current_tenant_subdomain %}title="{{ current_tenant_subdomain }}"{% endif %}
             >
-              {{ current_tenant_name or ui_branding.brand_name or "Workspace" }}
+              {{ workspace_label }}
             </span>
           {% endif %}
           {% if current_user %}
@@ -106,6 +108,12 @@
                   <strong>Signed in as {{ signed_in_as }}</strong>
                   <span>{{ signed_in_as_identity }}</span>
                   <span>{{ current_user_role_label }}</span>
+                  {% if account_workspace_label %}
+                    <span>Workspace: {{ account_workspace_label }}</span>
+                  {% endif %}
+                  {% if current_host_label %}
+                    <span>Domain: {{ current_host_label }}</span>
+                  {% endif %}
                 </li>
                 <li>
                   <a

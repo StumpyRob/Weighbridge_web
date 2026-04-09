@@ -76,6 +76,16 @@ def test_user_can_save_their_own_signature(client, db_session):
     assert user.saved_signature_updated_at is not None
 
 
+def test_account_signature_page_renders_tooltips(client):
+    response = client.get("/account/signature")
+
+    assert response.status_code == 200
+    assert "My Signature" in response.text
+    assert 'id="account-signature-page-help"' in response.text
+    assert 'id="account-saved-receiver-signature-help"' in response.text
+    assert 'id="account-signature-signer-name-help"' in response.text
+
+
 def test_user_saved_signature_rejects_blank_signature(client, db_session):
     user = _current_user(db_session)
 

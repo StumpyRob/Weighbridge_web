@@ -474,6 +474,34 @@ def test_navbar_and_primary_styles_use_root_branding_variables(
     assert re.search(r"color:\s*#[0-9a-f]{3,8}", nav_link_body, flags=re.IGNORECASE) is None
 
     compact_css = stylesheet.text.replace(" ", "").replace("\n", "")
+    account_summary_rule = re.search(
+        r"\.site-account-menu__summary\s*\{([^}]*)\}",
+        stylesheet.text,
+        flags=re.IGNORECASE,
+    )
+    assert account_summary_rule
+    assert "border: 1px solid var(--theme-primary-soft);" in account_summary_rule.group(1)
+
+    account_summary_highlight_rule = re.search(
+        r"\.site-account-menu__summary:hover,\s*"
+        r"\.site-account-menu__summary:focus-visible,\s*"
+        r"\.site-account-menu\[open\] \.site-account-menu__summary\s*\{([^}]*)\}",
+        stylesheet.text,
+        flags=re.IGNORECASE,
+    )
+    assert account_summary_highlight_rule
+    assert "background: var(--theme-primary-soft);" in account_summary_highlight_rule.group(1)
+    assert "border-color: var(--theme-primary);" in account_summary_highlight_rule.group(1)
+
+    account_link_active_rule = re.search(
+        r"\.site-account-menu__link\.is-active\s*\{([^}]*)\}",
+        stylesheet.text,
+        flags=re.IGNORECASE,
+    )
+    assert account_link_active_rule
+    assert "background: var(--theme-primary-soft);" in account_link_active_rule.group(1)
+    assert "box-shadow: inset 3px 0 0 var(--theme-primary);" in account_link_active_rule.group(1)
+
     assert ".site-header{" in compact_css
     assert "background-color:var(--nav-bg)!important;" in compact_css
     assert "color:var(--primary);" in compact_css

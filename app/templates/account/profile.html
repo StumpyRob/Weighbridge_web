@@ -1,3 +1,4 @@
+{% from "_help.html" import help %}
 {% extends "base.html" %}
 
 {% block title %}My Account | Weighbridge Web{% endblock %}
@@ -20,8 +21,7 @@
 {% block content %}
   <div class="page-header">
     <div>
-      <h1>My Account</h1>
-      <p class="muted">Manage your sign-in details, password, and personal signature tools.</p>
+      <h1>My Account{{ help(help_text.account_overview, "account-overview-help") }}</h1>
     </div>
   </div>
 
@@ -30,7 +30,7 @@
   <div class="stacked-frames">
     <section class="frame">
       <div class="frame-header">
-        <h2>Current Access</h2>
+        <h2>Current Access{{ help(help_text.account_current_access, "account-current-access-help") }}</h2>
       </div>
       <div class="frame-body">
         <div class="invoice-summary-grid">
@@ -56,7 +56,7 @@
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Profile Details</h2>
+        <h2>Profile Details{{ help(help_text.account_profile_details, "account-profile-details-help") }}</h2>
       </div>
       <div class="frame-body">
         {% if profile_errors %}
@@ -93,7 +93,7 @@
               />
             </div>
             <div class="field">
-              <label for="account_email">Sign-in email</label>
+              <label for="account_email">Sign-in email{{ help(help_text.account_sign_in_email, "account-sign-in-email-help") }}</label>
               <input
                 type="email"
                 id="account_email"
@@ -105,14 +105,13 @@
               />
             </div>
             <div class="field">
-              <label for="account_current_password">Current password</label>
+              <label for="account_current_password">Current password{{ help(help_text.account_email_change_password, "account-email-change-password-help") }}</label>
               <input
                 type="password"
                 id="account_current_password"
                 name="current_password"
                 autocomplete="current-password"
               />
-              <div class="hint">Required only if you change your sign-in email.</div>
             </div>
           </div>
           <div class="actions btn-group">
@@ -124,7 +123,7 @@
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Password &amp; Security</h2>
+        <h2>Password &amp; Security{{ help(help_text.account_password_security, "account-password-security-help") }}</h2>
       </div>
       <div class="frame-body">
         {% if password_errors %}
@@ -149,7 +148,7 @@
               />
             </div>
             <div class="field">
-              <label for="account_password_new">New password</label>
+              <label for="account_password_new">New password{{ help(help_text.account_new_password, "account-new-password-help") }}</label>
               <input
                 type="password"
                 id="account_password_new"
@@ -157,7 +156,6 @@
                 autocomplete="new-password"
                 required
               />
-              <div class="hint">Minimum 8 characters.</div>
             </div>
             <div class="field">
               <label for="account_password_confirm">Confirm new password</label>
@@ -179,10 +177,9 @@
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Signature</h2>
+        <h2>Signature{{ help(help_text.account_signature_section, "account-signature-section-help") }}</h2>
       </div>
       <div class="frame-body">
-        <p class="muted">Your saved signature can be applied to the receiver role on completed waste tickets and copied into the ticket snapshot.</p>
         <div class="actions btn-group">
           <a class="btn btn--secondary" href="{{ tenant_path('/account/signature') }}">Open My Signature</a>
         </div>
