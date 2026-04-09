@@ -589,6 +589,7 @@ body {
 }
 
 .app-sidebar__inner {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
@@ -647,7 +648,6 @@ body.is-shell-nav-open .app-sidebar {
     grid-template-columns: var(--shell-sidebar-width) minmax(0, 1fr);
     gap: var(--shell-gap);
     align-items: stretch;
-    min-height: calc(100svh - var(--flash-toast-top) + 12px);
     padding-left: 0;
   }
 
@@ -658,15 +658,13 @@ body.is-shell-nav-open .app-sidebar {
   }
 
   .app-sidebar {
-    position: sticky;
-    top: calc(var(--flash-toast-top) - 12px);
+    position: relative;
+    top: 0;
     left: auto;
     bottom: auto;
-    align-self: start;
     width: auto;
-    height: calc(100svh - var(--flash-toast-top) + 12px);
-    min-height: calc(100svh - var(--flash-toast-top) + 12px);
-    max-height: calc(100svh - var(--flash-toast-top) + 12px);
+    min-height: 100%;
+    max-height: none;
     padding: 0;
     border-radius: 0;
     overflow: hidden;
@@ -674,10 +672,11 @@ body.is-shell-nav-open .app-sidebar {
   }
 
   .app-sidebar__inner {
-    position: static;
-    height: 100%;
-    min-height: 100%;
-    max-height: 100%;
+    position: sticky;
+    top: 0;
+    height: calc(100svh - var(--flash-toast-top) + 12px);
+    min-height: calc(100svh - var(--flash-toast-top) + 12px);
+    max-height: calc(100svh - var(--flash-toast-top) + 12px);
     padding: 1rem 0.8rem 1.25rem;
     overflow: hidden;
   }
