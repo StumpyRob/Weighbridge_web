@@ -4,6 +4,32 @@ All notable changes are tracked here by release chapter.
 
 ## Unreleased
 
+## v0.24 - 2026-04-09
+
+### RELEASE
+- `v0.24` formalises the tenant-to-platform feedback workflow and the shared shell follow-up, so user feedback lands in a lightweight superadmin inbox while the desktop shell/header/sidebar stays visually locked in place.
+
+### CHANGE
+- Add shared shell metadata and support navigation by:
+  - moving the deployment domain into the centered footer
+  - moving build/version metadata into the bottom of the sidebar
+  - adding a shared Help entry for signed-in users
+- Add a tenant-side `Send Feedback` action in the shared sidebar so users can report bugs or make requests without leaving the page they are working on.
+- Build a platform-admin feedback inbox that:
+  - stores tenant-scoped feedback submissions
+  - shows unread counts in the platform navigation
+  - keeps all messages visible after review
+  - supports `Mark as Read`, `Mark as Unread`, and `Delete`
+  - removes the earlier email-delivery path and related delivery-state UI
+- Simplify feedback ownership so tenant users submit feedback, while only superadmin reviews and manages it.
+- Refine the shared desktop shell so:
+  - the sidebar utility/footer block stays accessible
+  - the header and desktop sidebar stay locked instead of drifting with page scroll
+  - the sidebar feedback action matches the rest of the shell styling
+
+### TEST
+- Re-run focused tenant-permissions feedback coverage, shared shell/sidebar coverage, platform-vs-tenant smoke coverage, setup-wizard header coverage, branding variable coverage, build-info checks, and migration graph checks for the release cut.
+
 ## v0.23 - 2026-04-09
 
 ### RELEASE

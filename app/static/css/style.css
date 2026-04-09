@@ -16,6 +16,7 @@
   --dashboard-throughput-bar-end: var(--theme-primary-dark);
   --theme-nav-logo-height: 34px;
   --section-gap: 1rem;
+  --site-header-height: 76px;
   --flash-toast-top: 88px;
   --shell-gap: 1rem;
   --shell-sidebar-width: 250px;
@@ -660,14 +661,14 @@ body.is-shell-nav-open .app-sidebar {
 
   .app-sidebar {
     position: sticky;
-    top: calc(var(--flash-toast-top) - 12px);
+    top: var(--site-header-height);
     left: auto;
     bottom: auto;
     align-self: start;
     width: auto;
-    height: calc(100svh - (var(--flash-toast-top) - 12px));
-    min-height: calc(100svh - (var(--flash-toast-top) - 12px));
-    max-height: calc(100svh - (var(--flash-toast-top) - 12px));
+    height: calc(100svh - var(--site-header-height));
+    min-height: calc(100svh - var(--site-header-height));
+    max-height: calc(100svh - var(--site-header-height));
     padding: 0;
     border-radius: 0;
     overflow: hidden;
@@ -684,7 +685,7 @@ body.is-shell-nav-open .app-sidebar {
   }
 
   .app-shell__content {
-    min-height: calc(100svh - (var(--flash-toast-top) - 12px));
+    min-height: calc(100svh - var(--site-header-height));
   }
 
   .app-shell--sidebar-hidden .app-sidebar,

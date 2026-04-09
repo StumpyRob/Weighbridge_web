@@ -562,7 +562,12 @@
           if (!header) {
             return;
           }
-          const offset = Math.ceil(header.getBoundingClientRect().height) + 12;
+          const headerHeight = Math.ceil(header.getBoundingClientRect().height);
+          const offset = headerHeight + 12;
+          document.documentElement.style.setProperty(
+            "--site-header-height",
+            headerHeight + "px"
+          );
           document.documentElement.style.setProperty(
             "--flash-toast-top",
             offset + "px"
