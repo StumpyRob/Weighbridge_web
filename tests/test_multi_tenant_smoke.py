@@ -4694,12 +4694,14 @@ def test_tenant_settings_hides_platform_tools_and_keeps_platform_routes_separate
         assert "Company" in settings_page.text
         assert "EWC Codes" in settings_page.text
         assert "Printing" in settings_page.text
+        assert "Feedback Inbox" in settings_page.text
         assert "Audit Log" in settings_page.text
         assert "Help" in settings_page.text
         assert "Manage Company" in settings_page.text
         assert "Manage EWC Codes" in settings_page.text
         assert 'href="/admin/printing/agents"' in settings_page.text
         assert "View Audit Log" in settings_page.text
+        assert "Open Feedback Inbox" in settings_page.text
         assert "Open Help" in settings_page.text
         assert "Open Company" not in settings_page.text
         assert "Open EWC Codes" not in settings_page.text

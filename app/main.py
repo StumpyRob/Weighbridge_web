@@ -71,6 +71,7 @@ from .services.credit import (
     INVOICE_OUTSTANDING_ISSUED_STATUSES,
 )
 from .services.ai_assistant import generate_dashboard_insights
+from .services.feedback import feedback_summary
 from .services.platform_ai_settings import get_platform_ai_settings
 from .services.tenant_ai_settings import resolve_tenant_ai_settings
 from .services.pdf import check_invoice_pdf_renderer
@@ -1645,7 +1646,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         return templates.TemplateResponse(request, "reports.html", {"request": request})
 
     @app.get("/admin", response_class=HTMLResponse)
-    def admin(request: Request) -> HTMLResponse:
+    def admin(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
         if bool(getattr(request.state, "platform_mode", False)):
             return RedirectResponse(url="/platform/tenants", status_code=303)
         require_any_permission(request, PERM_MANAGE_SETTINGS, PERM_MANAGE_USERS)
@@ -1654,6 +1655,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
             "admin.html",
             {
                 "request": request,
+                "feedback_summary": feedback_summary(db),
                 "site_agent_download": site_agent_download_state(),
             },
         )

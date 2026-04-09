@@ -52,6 +52,7 @@ from .ticket_sequence import TicketSequence
 from .ticket_void import TicketVoid
 from .tenant import Tenant
 from .user import User
+from .user_feedback import UserFeedback
 from .vehicle import Vehicle
 from .vehicle_tare import VehicleTare
 
@@ -109,6 +110,7 @@ __all__ = [
     "TicketVoid",
     "Tenant",
     "User",
+    "UserFeedback",
     "Vehicle",
     "VehicleTare",
 ]

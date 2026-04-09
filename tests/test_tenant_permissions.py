@@ -22,7 +22,7 @@ from app.auth import (
 from app.config import settings
 from app.db import TenantSession, get_db
 from app.main import create_app
-from app.models import AuditEvent, Base, Customer, Invoice, Tenant, Ticket, User
+from app.models import AuditEvent, Base, Customer, Invoice, Tenant, Ticket, User, UserFeedback
 from app.models.base import utcnow
 from app.models.ticket import DirectionEnum, TicketStatusEnum, TransactionTypeEnum
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER_NAME
@@ -160,6 +160,39 @@ def _seed_customer_ticket_invoice(SessionLocal: sessionmaker, *, tenant_id: int)
         db.refresh(ticket)
         db.refresh(invoice)
         return int(customer.id), int(ticket.id), int(invoice.id)
+
+
+def _seed_feedback(
+    SessionLocal: sessionmaker,
+    *,
+    tenant_id: int,
+    title: str,
+    message: str,
+    kind: str = "bug",
+    status: str = "new",
+    reporter_name: str = "Reporter",
+    reporter_email: str = "reporter@example.com",
+) -> int:
+    with SessionLocal() as db:
+        db.info["platform_mode"] = True
+        feedback = UserFeedback(
+            tenant_id=tenant_id,
+            kind=kind,
+            status=status,
+            title=title,
+            message=message,
+            source_path="/tickets",
+            source_title="Tickets",
+            submitted_by_display_name=reporter_name,
+            submitted_by_email=reporter_email,
+            host_name="acme.localhost",
+            email_delivery_status="sent",
+            recipient_email="dev@example.com",
+        )
+        db.add(feedback)
+        db.commit()
+        db.refresh(feedback)
+        return int(feedback.id)
 
 
 def _prime_csrf(client: TestClient, *, path: str = "/login") -> str:
@@ -336,6 +369,130 @@ def test_shared_help_page_is_available_to_non_admin_users(workspace_env):
         client.close()
 
 
+def test_tenant_admin_feedback_inbox_is_scoped_and_supports_status_updates(
+    workspace_env,
+    monkeypatch,
+):
+    operator_client, operator_csrf = _client_for_role(workspace_env, "operator")
+    admin_client, admin_csrf = _client_for_role(workspace_env, "tenant_admin")
+    SessionLocal = workspace_env["SessionLocal"]
+    sent: dict[str, object] = {}
+
+    def _fake_send_email(**kwargs):
+        sent.update(kwargs)
+        return EmailSendResult(ok=True)
+
+    monkeypatch.setattr(settings, "developer_feedback_email", "dev@example.com")
+    monkeypatch.setattr("app.routes.account.send_email", _fake_send_email)
+
+    other_tenant_id = _seed_tenant(
+        SessionLocal,
+        name="Other Workspace",
+        subdomain="other",
+        ai_enabled=False,
+    )
+    _seed_feedback(
+        SessionLocal,
+        tenant_id=other_tenant_id,
+        title="Other tenant issue",
+        message="This should not appear in Acme.",
+        reporter_name="Other Reporter",
+        reporter_email="other@example.com",
+    )
+
+    try:
+        submit = operator_client.post(
+            "/feedback",
+            data={
+                "kind": "wish",
+                "title": "Add a quicker invoice shortcut",
+                "message": "A quicker invoice shortcut would help in the office.",
+                "source_path": "/invoices",
+                "source_title": "Invoices | Weighbridge Web",
+                CSRF_FORM_FIELD: operator_csrf,
+            },
+            follow_redirects=False,
+        )
+        assert submit.status_code == 303
+
+        with SessionLocal() as db:
+            feedback = (
+                db.execute(
+                    select(UserFeedback)
+                    .where(
+                        UserFeedback.tenant_id == workspace_env["tenant_id"],
+                        UserFeedback.title == "Add a quicker invoice shortcut",
+                    )
+                    .order_by(UserFeedback.id.desc())
+                    .limit(1)
+                )
+                .scalars()
+                .one()
+            )
+            feedback_id = int(feedback.id)
+
+        settings_page = admin_client.get("/admin")
+        assert settings_page.status_code == 200
+        assert "Feedback Inbox" in settings_page.text
+        assert "1 new" in settings_page.text
+        assert "Add a quicker invoice shortcut" in settings_page.text
+        assert "Other tenant issue" not in settings_page.text
+        assert 'href="/admin/feedback"' in settings_page.text
+
+        inbox = admin_client.get("/admin/feedback")
+        assert inbox.status_code == 200
+        assert "Feedback Inbox" in inbox.text
+        assert "Add a quicker invoice shortcut" in inbox.text
+        assert "A quicker invoice shortcut would help in the office." in inbox.text
+        assert "Feature request" in inbox.text
+        assert "Sent" in inbox.text
+        assert "Other tenant issue" not in inbox.text
+
+        update = admin_client.post(
+            f"/admin/feedback/{feedback_id}/status",
+            data={
+                "status": "reviewed",
+                "return_to": "/admin/feedback",
+                CSRF_FORM_FIELD: admin_csrf,
+            },
+            follow_redirects=False,
+        )
+        assert update.status_code == 303
+        assert (
+            update.headers["location"]
+            == "/admin/feedback?feedback_updated=1&feedback_update_status=reviewed"
+        )
+
+        with SessionLocal() as db:
+            refreshed = db.get(UserFeedback, feedback_id)
+            assert refreshed is not None
+            assert refreshed.status == "reviewed"
+            assert refreshed.reviewed_by_user_id == workspace_env["users"]["tenant_admin"]["id"]
+            assert refreshed.reviewed_at is not None
+
+            event = (
+                db.execute(
+                    select(AuditEvent)
+                    .where(
+                        AuditEvent.tenant_id == workspace_env["tenant_id"],
+                        AuditEvent.action == "USER_FEEDBACK_STATUS_UPDATE",
+                        AuditEvent.entity_type == "user_feedback",
+                        AuditEvent.entity_id == str(feedback_id),
+                    )
+                    .order_by(AuditEvent.id.desc())
+                    .limit(1)
+                )
+                .scalars()
+                .one()
+            )
+            details = event.details_json or {}
+            assert details.get("status", {}).get("from") == "new"
+            assert details.get("status", {}).get("to") == "reviewed"
+    finally:
+        operator_client.close()
+        admin_client.close()
+
+
 def test_workspace_user_can_submit_sidebar_feedback_and_write_audit(
     workspace_env,
     monkeypatch,
@@ -367,10 +524,32 @@ def test_workspace_user_can_submit_sidebar_feedback_and_write_audit(
         assert response.status_code == 303
         assert response.headers["location"] == "/tickets?feedback_sent=1&feedback_kind=bug"
 
+        with SessionLocal() as db:
+            feedback = (
+                db.execute(
+                    select(UserFeedback)
+                    .where(UserFeedback.tenant_id == workspace_env["tenant_id"])
+                    .order_by(UserFeedback.id.desc())
+                    .limit(1)
+                )
+                .scalars()
+                .one()
+            )
+            feedback_id = int(feedback.id)
+            assert feedback.kind == "bug"
+            assert feedback.status == "new"
+            assert feedback.title == "Sidebar overlap on tickets"
+            assert feedback.message == "The sidebar overlaps the content on the tickets list."
+            assert feedback.email_delivery_status == "sent"
+            assert feedback.recipient_email == "dev@example.com"
+            assert feedback.submitted_by_display_name == "Olivia Operator"
+            assert feedback.source_path == "/tickets"
+
         assert sent["to"] == ["dev@example.com"]
         assert sent["db"] is not None
-        assert sent["subject"] == "[Bug report] Acme: Sidebar overlap on tickets"
+        assert sent["subject"] == f"[Bug report] Acme: #{feedback_id} Sidebar overlap on tickets"
         assert "Workspace: Acme" in str(sent["text_body"])
+        assert f"Feedback ID: {feedback_id}" in str(sent["text_body"])
         assert "User: Olivia Operator" in str(sent["text_body"])
         assert "Role: Operator" in str(sent["text_body"])
         assert "Page: /tickets" in str(sent["text_body"])
@@ -392,6 +571,7 @@ def test_workspace_user_can_submit_sidebar_feedback_and_write_audit(
                 .one()
             )
             details = event.details_json or {}
+            assert details.get("feedback_id") == feedback_id
             assert details.get("kind") == "bug"
             assert details.get("title") == "Sidebar overlap on tickets"
             assert details.get("source_path") == "/tickets"

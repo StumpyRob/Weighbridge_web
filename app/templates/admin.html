@@ -74,6 +74,33 @@
       <div class="frame-body admin-hub-grid">
         {% if permissions.manage_settings %}
           <article class="admin-hub-card">
+            <h3>Feedback Inbox</h3>
+            <p>Review bug reports and feature requests submitted by users from the sidebar feedback tool.</p>
+            <div class="admin-hub-metrics" aria-label="Feedback summary">
+              <span class="admin-hub-metric-pill">{{ feedback_summary.new_count }} new</span>
+              <span class="admin-hub-metric-pill">{{ feedback_summary.reviewed_count }} reviewed</span>
+              <span class="admin-hub-metric-pill">{{ feedback_summary.closed_count }} closed</span>
+            </div>
+            {% if feedback_summary.recent_items %}
+              <ul class="admin-hub-feedback-list">
+                {% for item in feedback_summary.recent_items %}
+                  <li>
+                    <span class="admin-hub-feedback-title">{{ item.title }}</span>
+                    <span class="admin-hub-feedback-meta">{{ item.kind_label }} · {{ item.status_label }} · {{ item.created_at|uk_datetime("%d/%m/%Y %H:%M") }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <p class="muted">No feedback submitted yet.</p>
+            {% endif %}
+            <div class="actions btn-group">
+              <a class="btn btn--secondary btn--sm" href="{{ tenant_path('/admin/feedback') }}">Open Feedback Inbox</a>
+            </div>
+          </article>
+        {% endif %}
+
+        {% if permissions.manage_settings %}
+          <article class="admin-hub-card">
             <h3>Audit Log</h3>
             <p>Review authentication and data-change events across key entities.</p>
             <div class="actions btn-group">

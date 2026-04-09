@@ -12,7 +12,9 @@ def test_settings_page_hides_platform_only_tools(client):
     assert "Support" in response.text
     assert "Manage Company" in response.text
     assert "Manage EWC Codes" in response.text
+    assert "Feedback Inbox" in response.text
     assert "View Audit Log" in response.text
+    assert "Open Feedback Inbox" in response.text
     assert "Open Help" in response.text
     assert 'class="btn btn--secondary btn--sm" href="/admin/printing/agents">Agents' in response.text
     assert 'class="btn btn--secondary btn--sm" href="/admin/printing/destinations">Destinations' in response.text
