@@ -4,6 +4,12 @@ def test_admin_help_root_redirects_to_getting_started(client):
     assert response.headers["location"] == "/admin/help/getting-started"
 
 
+def test_shared_help_root_redirects_to_getting_started(client):
+    response = client.get("/help", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/help/getting-started"
+
+
 def test_admin_help_pages_render(client):
     getting_started = client.get("/admin/help/getting-started")
     assert getting_started.status_code == 200
@@ -25,6 +31,14 @@ def test_admin_help_pages_render(client):
     assert "payload.wtn_signature_data_uri" in template_vars.text
     assert "Variable Name Quick Reference" in template_vars.text
     assert "Legacy receiver alias" in template_vars.text
+
+    shared_getting_started = client.get("/help/getting-started")
+    assert shared_getting_started.status_code == 200
+    assert "Back to Home" in shared_getting_started.text
+
+    shared_template_vars = client.get("/help/template-variables")
+    assert shared_template_vars.status_code == 200
+    assert "Back to Home" in shared_template_vars.text
 
 
 def test_legacy_printing_template_variables_route_redirects(client):

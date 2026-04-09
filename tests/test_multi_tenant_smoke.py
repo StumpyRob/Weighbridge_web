@@ -1925,7 +1925,10 @@ def test_superadmin_tenant_actions_enforce_scope_and_write_audit(tmp_path, monke
         assert "Signed in as tenant-admin@example.com" in tenant_utility
         assert "Workspace: Tenant A" in tenant_utility
         assert "Domain:" not in tenant_utility
-        assert "Domain: localhost" in tenant_footer
+        assert "localhost" in tenant_footer
+        assert "Domain:" not in tenant_footer
+        assert 'class="site-sidebar-help"' in tenant_admin_page.text
+        assert 'class="site-sidebar-build"' in tenant_admin_page.text
         assert "My Account" in tenant_utility
         assert "My Signature" in tenant_utility
         assert "Logout" in tenant_utility
@@ -2025,7 +2028,8 @@ def test_header_hides_duplicate_workspace_badge_when_brand_title_matches_tenant(
         assert 'class="site-utility-bar__item site-utility-bar__item--tenant"' not in page.text
         assert "Workspace: Demo" in utility
         assert "Domain:" not in utility
-        assert "Domain: localhost" in footer
+        assert "localhost" in footer
+        assert "Domain:" not in footer
 
 
 def test_platform_superadmin_can_update_tenant_ai_settings(tmp_path, monkeypatch):
@@ -4639,7 +4643,8 @@ def test_platform_mode_limits_navigation_and_blocks_ticket_ui(tmp_path, monkeypa
         assert "Signed in as superadmin@example.com" in platform_utility
         assert "Workspace: Platform Admin" in platform_utility
         assert "Domain:" not in platform_utility
-        assert "Domain: localhost" in platform_footer
+        assert "localhost" in platform_footer
+        assert "Domain:" not in platform_footer
         assert "My Account" in platform_utility
         assert "My Signature" in platform_utility
         assert "Logout" in platform_utility

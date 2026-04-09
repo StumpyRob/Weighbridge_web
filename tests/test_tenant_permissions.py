@@ -310,6 +310,22 @@ def test_shared_sidebar_shell_renders_major_tenant_pages(workspace_env):
             assert '<nav class="site-nav">' in response.text
             assert '<script src="/static/js/app_shell.js?v=' in response.text
             assert f'aria-current="page">{active_label}<' in response.text
+            assert 'href="/help/getting-started"' in response.text
+            assert 'class="site-sidebar-build"' in response.text
+    finally:
+        client.close()
+
+
+def test_shared_help_page_is_available_to_non_admin_users(workspace_env):
+    client, _csrf = _client_for_role(workspace_env, "operator")
+    try:
+        getting_started = client.get("/help/getting-started")
+        assert getting_started.status_code == 200
+        assert "Daily Workflow (Operators)" in getting_started.text
+        assert "Back to Home" in getting_started.text
+
+        template_variables = client.get("/help/template-variables")
+        assert template_variables.status_code == 403
     finally:
         client.close()
 

@@ -9,7 +9,7 @@
       <p class="muted">Setup, daily workflow, printing, controls, and support for the features currently available in Weighbridge Web.</p>
     </div>
     <div class="actions btn-group">
-      <a class="btn btn--secondary" href="/admin">Back to Settings</a>
+      <a class="btn btn--secondary" href="{{ tenant_path(help_back_href) }}">{{ help_back_label }}</a>
     </div>
   </div>
 
@@ -39,16 +39,16 @@
     </div>
     <div class="frame-body">
       <ol>
-        <li>Go to <a href="/admin/company">Settings -> Company</a> and set your company name/address/logo.</li>
-        <li>Go to <a href="/admin/ewc-codes">Settings -> EWC Codes</a> and import the latest regulatory CSV.</li>
-        <li>Go to <a href="/products">Products</a> and confirm groups, units, pricing, and waste flags are correct.</li>
-        <li>Go to <a href="/customers">Customers</a> and review invoice frequency, payment terms, credit limits, PO rules, and invoice-stop flags.</li>
-        <li>Go to <a href="/vehicles">Vehicles</a> and set default tare, overweight threshold, ticket defaults, and any per-container tares you rely on.</li>
-        <li>If you print to local printers, go to <a href="/admin/printing/agents">Settings -> Printing -> Agents</a> and install/pair the required print agents.</li>
-        <li>Go to <a href="/admin/printing/templates">Settings -> Printing -> Templates</a> and duplicate system templates if you need custom layouts.</li>
-        <li>Go to <a href="/admin/printing/destinations">Settings -> Printing -> Destinations</a> and confirm one active default destination per document type.</li>
-        <li>Create a test ticket in <a href="/tickets">Tickets</a>, check Ticket and WTN preview/print, and confirm any required signatures or destination details render correctly.</li>
-        <li>Generate a test invoice in <a href="/invoices">Invoices</a> and verify preview, PDF, and email/send behaviour.</li>
+        <li>Go to <a href="{{ tenant_path('/admin/company') }}">Settings -> Company</a> and set your company name/address/logo.</li>
+        <li>Go to <a href="{{ tenant_path('/admin/ewc-codes') }}">Settings -> EWC Codes</a> and import the latest regulatory CSV.</li>
+        <li>Go to <a href="{{ tenant_path('/products') }}">Products</a> and confirm groups, units, pricing, and waste flags are correct.</li>
+        <li>Go to <a href="{{ tenant_path('/customers') }}">Customers</a> and review invoice frequency, payment terms, credit limits, PO rules, and invoice-stop flags.</li>
+        <li>Go to <a href="{{ tenant_path('/vehicles') }}">Vehicles</a> and set default tare, overweight threshold, ticket defaults, and any per-container tares you rely on.</li>
+        <li>If you print to local printers, go to <a href="{{ tenant_path('/admin/printing/agents') }}">Settings -> Printing -> Agents</a> and install/pair the required print agents.</li>
+        <li>Go to <a href="{{ tenant_path('/admin/printing/templates') }}">Settings -> Printing -> Templates</a> and duplicate system templates if you need custom layouts.</li>
+        <li>Go to <a href="{{ tenant_path('/admin/printing/destinations') }}">Settings -> Printing -> Destinations</a> and confirm one active default destination per document type.</li>
+        <li>Create a test ticket in <a href="{{ tenant_path('/tickets') }}">Tickets</a>, check Ticket and WTN preview/print, and confirm any required signatures or destination details render correctly.</li>
+        <li>Generate a test invoice in <a href="{{ tenant_path('/invoices') }}">Invoices</a> and verify preview, PDF, and email/send behaviour.</li>
       </ol>
     </div>
   </section>
@@ -88,9 +88,9 @@
     </div>
     <div class="frame-body">
       <ul>
-        <li><strong>Print Agents:</strong> Use <a href="/admin/printing/agents">Settings -> Printing -> Agents</a> to download the site installer, pair local agents, review last seen times, and confirm printer sync status.</li>
+        <li><strong>Print Agents:</strong> Use <a href="{{ tenant_path('/admin/printing/agents') }}">Settings -> Printing -> Agents</a> to download the site installer, pair local agents, review last seen times, and confirm printer sync status.</li>
         <li><strong>Destinations:</strong> Keep one active default destination per document type so operator actions stay one-click and routed correctly.</li>
-        <li><strong>Templates:</strong> System templates are locked. Duplicate a system template before customising it, then use <a href="/admin/help/template-variables">Template Variables</a> as the reference for supported fields.</li>
+        <li><strong>Templates:</strong> System templates are locked. Duplicate a system template before customising it, then use {% if help_show_template_variables %}<a href="{{ tenant_path(help_template_variables_href) }}">Template Variables</a>{% else %}<strong>Template Variables</strong>{% endif %} as the reference for supported fields.</li>
         <li><strong>Jobs:</strong> Use the jobs view to investigate failed sends, inspect rendered output and delivery snapshots, and retry when appropriate.</li>
       </ul>
     </div>
@@ -102,10 +102,10 @@
     </div>
     <div class="frame-body">
       <ul>
-        <li><strong>Audit Log:</strong> Use <a href="/admin/audit">Settings -> Audit Log</a> to review authentication and data-change events across key entities.</li>
+        <li><strong>Audit Log:</strong> Use <a href="{{ tenant_path('/admin/audit') }}">Settings -> Audit Log</a> to review authentication and data-change events across key entities.</li>
         <li><strong>Company Settings:</strong> Company settings also control document email defaults, sign-in email, branding, logo, and theme values used across the workspace.</li>
         <li><strong>Time zone behaviour:</strong> Dashboard time, print timestamps, and admin-facing date/time displays are intended to run in UK time (<code>Europe/London</code>), including seasonal DST changes.</li>
-        <li><strong>Template help:</strong> Use <a href="/admin/help/template-variables">Template Variables</a> whenever you customise Ticket, Invoice, or WTN layouts.</li>
+        <li><strong>Template help:</strong> Use {% if help_show_template_variables %}<a href="{{ tenant_path(help_template_variables_href) }}">Template Variables</a>{% else %}<strong>Template Variables</strong>{% endif %} whenever you customise Ticket, Invoice, or WTN layouts.</li>
       </ul>
     </div>
   </section>
@@ -117,9 +117,9 @@
       </div>
       <div class="frame-body">
         <ul>
-          <li><strong>Tenant Management:</strong> In platform mode, use <a href="/admin/tenants">Tenant Management</a> to create workspaces, manage tenant users, and control tenant access.</li>
-          <li><strong>Platform AI Defaults:</strong> Use <a href="/admin/ai-settings">Platform AI Defaults</a> to manage the shared assistant model, response style, dashboard insight limits, and rate controls.</li>
-          <li><strong>Platform Email Settings:</strong> Use <a href="/admin/email-settings">Platform Email Settings</a> to configure the shared email provider, sender identity, reply-to, and test delivery.</li>
+          <li><strong>Tenant Management:</strong> In platform mode, use <a href="{{ tenant_path('/platform/tenants') }}">Tenant Management</a> to create workspaces, manage tenant users, and control tenant access.</li>
+          <li><strong>Platform AI Defaults:</strong> Use <a href="{{ tenant_path('/platform/ai-settings') }}">Platform AI Defaults</a> to manage the shared assistant model, response style, dashboard insight limits, and rate controls.</li>
+          <li><strong>Platform Email Settings:</strong> Use <a href="{{ tenant_path('/platform/email-settings') }}">Platform Email Settings</a> to configure the shared email provider, sender identity, reply-to, and test delivery.</li>
           <li><strong>Tenant overrides and demo reset:</strong> Tenant detail pages include tenant-specific AI overrides, primary admin maintenance, and reserved demo reset controls where supported.</li>
         </ul>
       </div>
@@ -132,10 +132,10 @@
     </div>
     <div class="frame-body">
       <ul>
-        <li><strong>No EWC codes loaded:</strong> import CSV via <a href="/admin/ewc-codes">Settings -> EWC Codes</a>.</li>
+        <li><strong>No EWC codes loaded:</strong> import CSV via <a href="{{ tenant_path('/admin/ewc-codes') }}">Settings -> EWC Codes</a>.</li>
         <li><strong>Print action disabled or missing:</strong> check document status, default destination setup, paired print agents, and recent printer sync state.</li>
         <li><strong>Ticket or invoice excluded unexpectedly:</strong> review customer flags, PO requirements, account balance controls, and document status before retrying.</li>
-        <li><strong>Template rendering error:</strong> verify variable names in <a href="/admin/help/template-variables">Template Variables</a>.</li>
+        <li><strong>Template rendering error:</strong> verify variable names in {% if help_show_template_variables %}<a href="{{ tenant_path(help_template_variables_href) }}">Template Variables</a>{% else %}<strong>Template Variables</strong>{% endif %}.</li>
         <li><strong>Times look an hour behind:</strong> check the server clock/NTP, but note that app-facing operational times are expected to display in UK time with BST/GMT handled automatically.</li>
       </ul>
     </div>

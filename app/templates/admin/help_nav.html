@@ -1,4 +1,6 @@
 <div class="tabs">
-  <a class="btn btn--ghost{% if active_help_tab == 'getting_started' %} is-active{% endif %}" href="/admin/help/getting-started">Getting Started</a>
-  <a class="btn btn--ghost{% if active_help_tab == 'template_variables' %} is-active{% endif %}" href="/admin/help/template-variables">Template Variables</a>
+  <a class="btn btn--ghost{% if active_help_tab == 'getting_started' %} is-active{% endif %}" href="{{ tenant_path(help_getting_started_href) }}">Getting Started</a>
+  {% if help_show_template_variables %}
+    <a class="btn btn--ghost{% if active_help_tab == 'template_variables' %} is-active{% endif %}" href="{{ tenant_path(help_template_variables_href) }}">Template Variables</a>
+  {% endif %}
 </div>

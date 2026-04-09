@@ -15,8 +15,10 @@ from ..db import get_db
 from ..models import AuditEvent, CompanySetting, User, Yard
 from ..models.base import utcnow
 from ..permissions import (
+    PERM_ACCESS_WORKSPACE,
     PERM_MANAGE_SETTINGS,
     PERM_MANAGE_USERS,
+    permission_context_for_request,
     require_any_permission,
     require_permission,
 )
@@ -101,6 +103,38 @@ def _admin_health_enabled() -> bool:
     return bool(templates.env.globals.get("DEV_MODE"))
 
 
+def _shared_help_back_target(request: Request) -> tuple[str, str]:
+    if request_platform_mode(request):
+        return "/platform/tenants", "Back to Tenant Management"
+    return "/", "Back to Home"
+
+
+def _help_template_context(
+    request: Request,
+    *,
+    active_help_tab: str,
+    help_base_path: str,
+    help_back_href: str,
+    help_back_label: str,
+    platform_tools_allowed: bool,
+    help_show_template_variables: bool,
+    rows: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    context: dict[str, object] = {
+        "request": request,
+        "active_help_tab": active_help_tab,
+        "platform_tools_allowed": platform_tools_allowed,
+        "help_back_href": help_back_href,
+        "help_back_label": help_back_label,
+        "help_getting_started_href": f"{help_base_path}/getting-started",
+        "help_template_variables_href": f"{help_base_path}/template-variables",
+        "help_show_template_variables": help_show_template_variables,
+    }
+    if rows is not None:
+        context["rows"] = rows
+    return context
+
+
 @router.post("/admin/dev-mode")
 async def admin_dev_mode_toggle(
     request: Request,
@@ -133,11 +167,15 @@ def admin_help_getting_started(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "admin/help_getting_started.html",
-        {
-            "request": request,
-            "active_help_tab": "getting_started",
-            "platform_tools_allowed": _platform_tools_allowed(request),
-        },
+        _help_template_context(
+            request,
+            active_help_tab="getting_started",
+            help_base_path="/admin/help",
+            help_back_href="/admin",
+            help_back_label="Back to Settings",
+            platform_tools_allowed=_platform_tools_allowed(request),
+            help_show_template_variables=True,
+        ),
     )
 
 
@@ -147,11 +185,64 @@ def admin_help_template_variables(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "admin/help_template_variables.html",
-        {
-            "request": request,
-            "active_help_tab": "template_variables",
-            "rows": print_payload_variable_docs(),
-        },
+        _help_template_context(
+            request,
+            active_help_tab="template_variables",
+            help_base_path="/admin/help",
+            help_back_href="/admin",
+            help_back_label="Back to Settings",
+            platform_tools_allowed=_platform_tools_allowed(request),
+            help_show_template_variables=True,
+            rows=print_payload_variable_docs(),
+        ),
+    )
+
+
+@router.get("/help")
+def help_root(request: Request) -> RedirectResponse:
+    require_permission(request, PERM_ACCESS_WORKSPACE)
+    return RedirectResponse(url="/help/getting-started", status_code=303)
+
+
+@router.get("/help/getting-started", response_class=HTMLResponse)
+def help_getting_started(request: Request) -> HTMLResponse:
+    require_permission(request, PERM_ACCESS_WORKSPACE)
+    permissions = permission_context_for_request(request)
+    back_href, back_label = _shared_help_back_target(request)
+    return templates.TemplateResponse(
+        request,
+        "admin/help_getting_started.html",
+        _help_template_context(
+            request,
+            active_help_tab="getting_started",
+            help_base_path="/help",
+            help_back_href=back_href,
+            help_back_label=back_label,
+            platform_tools_allowed=_platform_tools_allowed(request),
+            help_show_template_variables=bool(
+                permissions.manage_settings or permissions.manage_users
+            ),
+        ),
+    )
+
+
+@router.get("/help/template-variables", response_class=HTMLResponse)
+def help_template_variables(request: Request) -> HTMLResponse:
+    require_any_permission(request, PERM_MANAGE_SETTINGS, PERM_MANAGE_USERS)
+    back_href, back_label = _shared_help_back_target(request)
+    return templates.TemplateResponse(
+        request,
+        "admin/help_template_variables.html",
+        _help_template_context(
+            request,
+            active_help_tab="template_variables",
+            help_base_path="/help",
+            help_back_href=back_href,
+            help_back_label=back_label,
+            platform_tools_allowed=_platform_tools_allowed(request),
+            help_show_template_variables=True,
+            rows=print_payload_variable_docs(),
+        ),
     )
 
 

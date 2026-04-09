@@ -265,6 +265,38 @@
                 {% endif %}
               {% endif %}
             </nav>
+            <div class="site-sidebar-help" aria-label="Help and build information">
+              <div class="site-sidebar-help__section">
+                <div class="site-sidebar-help__title">Help</div>
+                <div class="site-sidebar-help__links">
+                  <a
+                    href="{{ tenant_path('/help/getting-started') }}"
+                    class="{% if request.url.path in ['/help', '/help/getting-started', '/admin/help', '/admin/help/getting-started'] %}is-active{% endif %}"
+                  >
+                    Getting Started
+                  </a>
+                  {% if permissions.manage_settings or permissions.manage_users %}
+                    <a
+                      href="{{ tenant_path('/help/template-variables') }}"
+                      class="{% if request.url.path in ['/help/template-variables', '/admin/help/template-variables'] %}is-active{% endif %}"
+                    >
+                      Template Variables
+                    </a>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="site-sidebar-build" aria-label="Build information">
+                <div class="site-sidebar-build__title">Build</div>
+                <div class="site-sidebar-build__row">
+                  <span class="site-sidebar-build__label">Version</span>
+                  <strong class="site-sidebar-build__value">v{{ app_version }}</strong>
+                </div>
+                <div class="site-sidebar-build__row">
+                  <span class="site-sidebar-build__label">Commit</span>
+                  <code class="site-sidebar-build__value">{{ app_commit_short }}</code>
+                </div>
+              </div>
+            </div>
           </div>
         </aside>
       {% endif %}
@@ -272,14 +304,11 @@
         <main class="container">
           {% block content %}{% endblock %}
         </main>
-        <footer class="site-footer">
-          <div class="site-footer__meta">
-            {% if current_host_label %}
-              <small class="site-footer__domain">Domain: {{ current_host_label }}</small>
-            {% endif %}
-            <small class="site-footer__build">{{ app_build_label }}</small>
-          </div>
-        </footer>
+        {% if current_host_label %}
+          <footer class="site-footer">
+            <small class="site-footer__domain">{{ current_host_label }}</small>
+          </footer>
+        {% endif %}
       </div>
     </div>
     {% if show_assistant %}
