@@ -1279,8 +1279,6 @@ def _invoice_print_actions_context(
     destinations = _load_active_invoice_destinations(db)
     default_destination = _default_invoice_destination(destinations)
     send_enabled = default_destination is not None
-    invoice = db.get(Invoice, invoice_id)
-    invoice_label = str(invoice.invoice_no or f"#{invoice_id}") if invoice is not None else f"#{invoice_id}"
 
     return {
         "print_missing_default": not send_enabled,

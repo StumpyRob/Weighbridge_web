@@ -2,16 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy import func
 from sqlalchemy import inspect
-from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..models import (
     CompanySetting,
+    Container,
+    Destination,
+    Driver,
+    Haulier,
     PaymentMethod,
     PrintDestination,
     PrintTemplate,
@@ -37,16 +41,16 @@ DEFAULT_YARD_CODE_PREFIX = "Y"
 VOID_REASON_TYPE_TICKET = "TICKET"
 VOID_REASON_TYPE_INVOICE = "INVOICE"
 PRINT_DOCUMENT_TYPES = ("TICKET", "INVOICE", "WTN")
-REQUIRED_LOOKUP_TABLES: tuple[tuple[str, str], ...] = (
-    ("Hauliers", "hauliers"),
-    ("Drivers", "drivers"),
-    ("Containers", "containers"),
-    ("Destinations", "destinations"),
-    ("Units", "units"),
-    ("Tax Rates", "tax_rates"),
-    ("Vehicle Types", "vehicle_types"),
-    ("Payment Methods", "payment_methods"),
-    ("Void Reasons", "void_reasons"),
+REQUIRED_LOOKUP_TABLES: tuple[tuple[str, str, Any], ...] = (
+    ("Hauliers", "hauliers", Haulier),
+    ("Drivers", "drivers", Driver),
+    ("Containers", "containers", Container),
+    ("Destinations", "destinations", Destination),
+    ("Units", "units", Unit),
+    ("Tax Rates", "tax_rates", TaxRate),
+    ("Vehicle Types", "vehicle_types", VehicleType),
+    ("Payment Methods", "payment_methods", PaymentMethod),
+    ("Void Reasons", "void_reasons", VoidReason),
 )
 
 
@@ -152,15 +156,13 @@ def required_lookup_table_status(db: Session) -> dict[str, object]:
     rows: list[dict[str, object]] = []
     migrations_complete = True
 
-    for label, table_name in REQUIRED_LOOKUP_TABLES:
+    for label, table_name, model in REQUIRED_LOOKUP_TABLES:
         exists = table_name in available_tables
         row_count: int | None = None
         if exists:
             try:
                 row_count = int(
-                    db.execute(text(f"SELECT COUNT(*) FROM {table_name}"))
-                    .scalar_one_or_none()
-                    or 0
+                    db.execute(select(func.count()).select_from(model)).scalar_one_or_none() or 0
                 )
             except Exception:
                 migrations_complete = False

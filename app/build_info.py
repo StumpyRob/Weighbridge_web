@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import subprocess
+import shutil
+import subprocess  # nosec B404
 from typing import TypedDict
 
 
@@ -43,15 +44,19 @@ def _load_commit_short() -> str:
         if value:
             return value[:7]
 
+    git_executable = shutil.which("git")
+    if not git_executable:
+        return "unknown"
+
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
+            [git_executable, "rev-parse", "--short", "HEAD"],
             cwd=_REPO_ROOT,
             capture_output=True,
             check=False,
             text=True,
             timeout=2,
-        )
+        )  # nosec B603
     except (OSError, subprocess.SubprocessError):
         return "unknown"
     if result.returncode != 0:

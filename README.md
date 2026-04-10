@@ -16,9 +16,10 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Set environment variables:
+Create a local env file from the example, or set these environment variables directly:
 
 ```bash
+copy .env.example .env
 set DATABASE_URL=postgresql+psycopg://weighbridge:weighbridge@localhost:5432/weighbridge
 set SECRET_KEY=change-me
 set BASE_DOMAIN=127.0.0.1.nip.io

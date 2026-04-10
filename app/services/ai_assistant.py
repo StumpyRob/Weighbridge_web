@@ -793,7 +793,7 @@ def _dashboard_insights_cache_key(
         separators=(",", ":"),
         sort_keys=True,
     )
-    return hashlib.sha1(serialized.encode("utf-8")).hexdigest()
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 def _get_cached_dashboard_insights(cache_key: str, *, ttl_seconds: int) -> list[str] | None:

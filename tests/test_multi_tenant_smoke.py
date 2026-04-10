@@ -2526,7 +2526,7 @@ def test_superadmin_can_delete_empty_tenant_and_delete_blocks_linked_data(tmp_pa
         company_name="Demo Co",
         primary_color="#773333",
     )
-    demo_admin_id = _seed_user(
+    _seed_user(
         SessionLocal,
         email="demo-admin@example.com",
         password="DemoPass123!",
@@ -3248,7 +3248,7 @@ def test_demo_tenant_reset_action_is_only_available_for_demo_tenants(tmp_path, m
         company_name="Tenant A",
         primary_color="#245577",
     )
-    demo_admin_id = _seed_user(
+    _seed_user(
         SessionLocal,
         email="demo-admin@example.com",
         password="DemoPass123!",

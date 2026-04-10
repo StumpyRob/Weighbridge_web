@@ -1757,7 +1757,6 @@ def _ticket_print_actions_context(
         else ""
     )
     ticket_id = int(ticket.id)
-    ticket_label = str(ticket.ticket_no or f"#{ticket_id}")
     download_url = f"/tickets/{ticket_id}/pdf" if send_enabled else ""
     return {
         "has_print_destinations": bool(destinations),

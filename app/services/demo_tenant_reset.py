@@ -62,7 +62,7 @@ from .uploads import company_logo_upload_dir
 logger = logging.getLogger(__name__)
 
 DEMO_DEFAULT_EMAIL = "demo@demo.com"
-DEMO_DEFAULT_PASSWORD = "password"
+DEMO_DEFAULT_PASSWORD = "password"  # nosec B105
 DEMO_DEFAULT_FIRST_NAME = "Demo"
 DEMO_DEFAULT_LAST_NAME = "Admin"
 DEMO_DEFAULT_SIGNATURE_NAME = f"{DEMO_DEFAULT_FIRST_NAME} {DEMO_DEFAULT_LAST_NAME}".strip()

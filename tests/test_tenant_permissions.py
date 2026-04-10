@@ -340,7 +340,7 @@ def test_shared_sidebar_shell_renders_major_tenant_pages(workspace_env):
             assert 'class="app-sidebar__nav-wrap"' in response.text
             assert '<nav class="site-nav">' in response.text
             assert '<script src="/static/js/app_shell.js?v=' in response.text
-            assert f'aria-current="page"' in response.text
+            assert 'aria-current="page"' in response.text
             assert f'<span>{active_label}</span>' in response.text
             assert 'href="/help"' in response.text
             assert 'class="site-sidebar-help' in response.text

@@ -1798,7 +1798,7 @@ async def tenant_update_admin_password(
     primary_admin = _tenant_primary_admin(users)
     if primary_admin is None:
         return RedirectResponse(
-            url=f"/platform/tenants/{tenant.id}?{urlencode({'password_error': 'This tenant has no user account to update yet.'})}",
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'password_error': 'This tenant has no user account to update yet.'})}",  # nosec B105
             status_code=303,
         )
 
@@ -1808,12 +1808,12 @@ async def tenant_update_admin_password(
 
     if len(admin_password) < 8:
         return RedirectResponse(
-            url=f"/platform/tenants/{tenant.id}?{urlencode({'password_error': 'Tenant admin password must be at least 8 characters.'})}",
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'password_error': 'Tenant admin password must be at least 8 characters.'})}",  # nosec B105
             status_code=303,
         )
     if admin_password != confirm_password:
         return RedirectResponse(
-            url=f"/platform/tenants/{tenant.id}?{urlencode({'password_error': 'Passwords do not match.'})}",
+            url=f"/platform/tenants/{tenant.id}?{urlencode({'password_error': 'Passwords do not match.'})}",  # nosec B105
             status_code=303,
         )
 

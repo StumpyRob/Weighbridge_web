@@ -24,6 +24,7 @@ from ..auth import (
 from ..constants import NAME_MAX
 from ..db import get_db
 from ..models import User, UserFeedback
+from ..models.base import utcnow
 from ..security import validate_no_html
 from ..services.feedback import (
     FEEDBACK_KIND_LABELS,
@@ -434,7 +435,14 @@ async def account_signature_save(
             status_code=400,
         )
 
-    assert normalized_signature is not None
+    if normalized_signature is None:
+        return _render_account_signature_page(
+            request,
+            user,
+            errors=["Signature image is invalid. Please capture and save again."],
+            signer_name=signer_name_input,
+            status_code=400,
+        )
     normalized_data_url, _normalized_png_bytes = normalized_signature
     replacing_existing = user.has_saved_signature
     updated_at = utcnow()

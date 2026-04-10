@@ -308,22 +308,24 @@ async def admin_company_settings_save(
     uploaded_web_path: str | None = None
     uploaded_disk_path: Path | None = None
     if has_upload and not remove_logo:
-        assert isinstance(logo_file, UploadFile)
-        extension = _resolve_logo_extension(logo_file)
-        if extension is None:
-            errors.append("Company logo must be a PNG or JPG file.")
+        if not isinstance(logo_file, UploadFile):
+            errors.append("Choose a PNG or JPG logo file to upload.")
         else:
-            payload = await logo_file.read()
-            if not payload:
-                errors.append("Uploaded logo file is empty.")
-            elif len(payload) > MAX_LOGO_SIZE_BYTES:
-                errors.append("Company logo must be 2MB or smaller.")
+            extension = _resolve_logo_extension(logo_file)
+            if extension is None:
+                errors.append("Company logo must be a PNG or JPG file.")
             else:
-                upload_dir = _logo_upload_dir()
-                filename = f"logo-{uuid4().hex}{extension}"
-                uploaded_disk_path = (upload_dir / filename).resolve()
-                uploaded_disk_path.write_bytes(payload)
-                uploaded_web_path = f"{LOGO_WEB_PATH_PREFIX}{filename}"
+                payload = await logo_file.read()
+                if not payload:
+                    errors.append("Uploaded logo file is empty.")
+                elif len(payload) > MAX_LOGO_SIZE_BYTES:
+                    errors.append("Company logo must be 2MB or smaller.")
+                else:
+                    upload_dir = _logo_upload_dir()
+                    filename = f"logo-{uuid4().hex}{extension}"
+                    uploaded_disk_path = (upload_dir / filename).resolve()
+                    uploaded_disk_path.write_bytes(payload)
+                    uploaded_web_path = f"{LOGO_WEB_PATH_PREFIX}{filename}"
 
     form_logo_value = uploaded_web_path or (
         None if remove_logo else (setting.company_logo_path or None)
