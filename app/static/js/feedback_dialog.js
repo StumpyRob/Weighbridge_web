@@ -20,8 +20,8 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     const dialog = document.querySelector("[data-feedback-dialog]");
-    const openButton = document.querySelector("[data-feedback-open]");
-    if (!dialog || !openButton) {
+    const openButtons = Array.from(document.querySelectorAll("[data-feedback-open]"));
+    if (!dialog || openButtons.length === 0) {
       return;
     }
 
@@ -35,14 +35,16 @@
       }
     }
 
-    openButton.addEventListener("click", function () {
-      syncPageUrl();
-      setOpen(dialog, true);
-      window.setTimeout(function () {
-        if (messageField) {
-          messageField.focus();
-        }
-      }, 0);
+    openButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        syncPageUrl();
+        setOpen(dialog, true);
+        window.setTimeout(function () {
+          if (messageField) {
+            messageField.focus();
+          }
+        }, 0);
+      });
     });
 
     closeButtons.forEach(function (button) {

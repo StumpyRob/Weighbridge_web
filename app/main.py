@@ -1115,6 +1115,25 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
             return False
         return True
 
+    def _main_landing_url(request: Request) -> str:
+        scheme = request_external_scheme(request) or str(request.url.scheme or "").strip() or "https"
+        base_domain = settings.effective_base_domain
+        if base_domain:
+            return f"{scheme}://{base_domain}/"
+
+        host_name = host_without_port(_request_host_value(request)) or host_without_port(
+            str(request.url.hostname or "")
+        )
+        if host_name in {"", "localhost", "127.0.0.1", "testserver"} or host_name.endswith(
+            ".localhost"
+        ):
+            return f"{scheme}://localhost/"
+
+        host_parts = [part for part in host_name.split(".") if part]
+        if len(host_parts) >= 2:
+            return f"{scheme}://{'.'.join(host_parts[1:])}/"
+        return "/"
+
     def _marketing_page_context(
         request: Request,
         *,
@@ -1212,29 +1231,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
 
         if public_host_mode or unknown_tenant_marketing_fallback:
             if normalized_key == "unknown tenant":
-                workspace_label = requested_subdomain or "Unknown workspace"
-                if requested_subdomain:
-                    message = (
-                        f"We couldn't find a workspace called "
-                        f"\"{requested_subdomain}\"."
-                    )
-                else:
-                    message = "We couldn't find a workspace for this address."
-                hint = (
-                    "Check the workspace address, start again from the site, or use the demo "
-                    "while you verify the correct subdomain."
-                )
-                return _render_marketing_not_found_template(
-                    request,
-                    status_code=status_code,
-                    title="Workspace Not Found",
-                    heading="Workspace Not Found",
-                    message=message,
-                    hint=hint,
-                    workspace_label=workspace_label,
-                    host_name=host_name,
-                    request_path=request_path,
-                )
+                return RedirectResponse(url=_main_landing_url(request), status_code=307)
 
             marketing_hint = (
                 "That page is not available on the public site. Start from the homepage, "
@@ -1261,6 +1258,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         error_secondary_href = ""
         error_secondary_label = ""
         error_workspace_label = ""
+        error_feedback_enabled = False
 
         if normalized_key == "unknown tenant":
             error_title = "Workspace Not Found"
@@ -1293,16 +1291,9 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 )
                 error_message = f"No page exists at {request_path} in this workspace."
                 error_hint = "The link may be out of date, or the record may no longer exist."
-                if current_user is None:
-                    error_primary_href = _tenant_href("/login")
-                    error_primary_label = "Sign In"
-                    error_secondary_href = _tenant_href("/")
-                    error_secondary_label = "Workspace Home"
-                else:
-                    error_primary_href = _tenant_href("/")
-                    error_primary_label = "Workspace Home"
-                    error_secondary_href = _tenant_href("/tickets")
-                    error_secondary_label = "Open Tickets"
+                error_primary_href = _tenant_href("/")
+                error_primary_label = "Home"
+                error_feedback_enabled = current_user is not None
             elif current_user is None:
                 error_primary_href = "/login"
                 error_primary_label = "Sign In"
@@ -1320,6 +1311,7 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 "error_primary_label": error_primary_label,
                 "error_secondary_href": error_secondary_href,
                 "error_secondary_label": error_secondary_label,
+                "error_feedback_enabled": error_feedback_enabled,
                 "error_workspace_label": error_workspace_label,
                 "error_host": host_name,
                 "error_requested_path": request_path,

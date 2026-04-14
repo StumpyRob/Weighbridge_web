@@ -187,3 +187,32 @@ def test_product_validation_error_retains_selected_inactive_unit(client, db_sess
     assert response.status_code == 400
     assert "Code is required." in response.text
     assert f'<option value="{unit_selected.id}" selected>Selected Each (inactive)</option>' in response.text
+
+
+def test_product_create_validation_error_retains_selected_active_unit(client, db_session):
+    unit = Unit(name="Each", unit_type="COUNT", is_active=True)
+    tax_rate = TaxRate(
+        code="STD VAT",
+        description="Standard VAT",
+        rate_percent=Decimal("0.20"),
+        is_active=True,
+    )
+    db_session.add_all([unit, tax_rate])
+    db_session.commit()
+
+    response = client.post(
+        "/products/new",
+        data={
+            "code": "P-KEEP-UNIT",
+            "description": "Keep Unit",
+            "sale_type": "COUNT",
+            "product_type": "sale",
+            "unit_id": str(unit.id),
+            "tax_rate_id": str(tax_rate.id),
+            "unit_price": "-1.00",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Unit price must be 0 or greater." in response.text
+    assert f'<option value="{unit.id}" selected>Each</option>' in response.text

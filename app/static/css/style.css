@@ -797,6 +797,51 @@ body.is-shell-nav-open .app-sidebar {
   opacity: 0.7;
 }
 
+.error-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+
+.error-detail-card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.95rem 1rem;
+}
+
+.error-detail-card--message {
+  grid-column: 1 / -1;
+}
+
+.error-detail-card__label {
+  color: #6b7280;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.error-detail-card__value {
+  color: #111827;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.error-detail-card__value code {
+  font-size: 0.92rem;
+}
+
+.error-detail-card--message .error-detail-card__value {
+  font-weight: 500;
+  color: #374151;
+}
+
+.error-page-actions {
+  margin-top: 1rem;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -1408,8 +1453,11 @@ body.js-help-tooltips .help-tooltip {
 }
 
 .field input[type="checkbox"] {
-  width: auto;
+  width: 18px;
+  height: 18px;
   padding: 0;
+  margin: 0;
+  flex: 0 0 18px;
 }
 
 .field input.account-code {
@@ -3460,17 +3508,27 @@ details.frame:not([open]) .frame-header {
 .checkbox {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem 0.6rem;
   justify-content: flex-start;
+  flex-wrap: wrap;
+  min-height: 44px;
+  padding: 0.25rem 0;
 }
 
 .checkbox label {
   margin: 0;
-  display: inline;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  flex: 1 1 calc(100% - 24px);
+  cursor: pointer;
 }
 
 .checkbox .help-inline {
-  margin-left: 0.2rem;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-left: 0;
 }
 
 .help {
@@ -5990,6 +6048,10 @@ body.assistant-panel-open {
 }
 
 @media (max-width: 720px) {
+  .error-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
   .assistant-trigger {
     right: 12px;
     left: 12px;

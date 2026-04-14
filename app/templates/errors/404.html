@@ -11,40 +11,45 @@
         <p class="muted">{{ error_message or 'The page you requested could not be found.' }}</p>
       </div>
     </div>
-    <section class="card">
-      <div class="form-grid">
-        {% if error_workspace_label %}
-          <div class="field">
-            <label>Workspace</label>
-            <div>{{ error_workspace_label }}</div>
-          </div>
-        {% endif %}
-        {% if error_host %}
-          <div class="field">
-            <label>Host</label>
-            <div>{{ error_host }}</div>
-          </div>
-        {% endif %}
-        {% if error_requested_path %}
-          <div class="field">
-            <label>Requested path</label>
-            <div><code>{{ error_requested_path }}</code></div>
-          </div>
-        {% endif %}
-      </div>
-      {% if error_hint %}
-        <p class="muted">{{ error_hint }}</p>
+    <div class="error-detail-grid">
+      {% if error_workspace_label %}
+        <section class="card error-detail-card">
+          <div class="error-detail-card__label">Workspace</div>
+          <div class="error-detail-card__value">{{ error_workspace_label }}</div>
+        </section>
       {% endif %}
-    </section>
-    <div class="actions btn-group">
-      <a class="btn btn--secondary" href="{{ error_primary_href or '/' }}">
-        {{ error_primary_label or 'Go Home' }}
-      </a>
-      {% if error_secondary_href %}
+      {% if error_host %}
+        <section class="card error-detail-card">
+          <div class="error-detail-card__label">Host</div>
+          <div class="error-detail-card__value">{{ error_host }}</div>
+        </section>
+      {% endif %}
+      {% if error_requested_path %}
+        <section class="card error-detail-card">
+          <div class="error-detail-card__label">Requested path</div>
+          <div class="error-detail-card__value"><code>{{ error_requested_path }}</code></div>
+        </section>
+      {% endif %}
+      {% if error_hint %}
+        <section class="card error-detail-card error-detail-card--message">
+          <div class="error-detail-card__label">What to do next</div>
+          <div class="error-detail-card__value">{{ error_hint }}</div>
+        </section>
+      {% endif %}
+    </div>
+    <div class="actions btn-group error-page-actions">
+      {% if error_feedback_enabled %}
+        <button type="button" class="btn btn--ghost error-page-report-button" data-feedback-open>
+          Report a Bug
+        </button>
+      {% elif error_secondary_href %}
         <a class="btn btn--ghost" href="{{ error_secondary_href }}">
-          {{ error_secondary_label or 'Open Tickets' }}
+          {{ error_secondary_label or 'Help' }}
         </a>
       {% endif %}
+      <a class="btn btn--secondary error-page-home-button" href="{{ error_primary_href or '/' }}">
+        {{ error_primary_label or 'Go Home' }}
+      </a>
     </div>
   </section>
 {% endblock %}

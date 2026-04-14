@@ -25,7 +25,7 @@ from ..seed import (
     seed_vehicle_types,
     seed_void_reasons,
 )
-from ..services.uploads import company_logo_upload_dir
+from ..services.uploads import company_logo_upload_dir, detect_logo_upload_extension
 from ..services.system_setup import (
     DEFAULT_YARD_NAME,
     ensure_company_settings_row_exists,
@@ -41,10 +41,6 @@ logger = logging.getLogger(__name__)
 
 MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024
 LOGO_WEB_PATH_PREFIX = "/static/uploads/company/"
-ALLOWED_LOGO_TYPES = {
-    "image/png": ".png",
-    "image/jpeg": ".jpg",
-}
 
 
 def _truthy(value: object) -> bool:
@@ -157,16 +153,19 @@ async def setup_submit(request: Request, db: Session = Depends(get_db)) -> HTMLR
 
     uploaded_web_path: str | None = None
     if isinstance(logo_file, UploadFile) and str(logo_file.filename or "").strip():
-        content_type = str(logo_file.content_type or "").strip().lower()
-        extension = ALLOWED_LOGO_TYPES.get(content_type)
-        if extension is None:
-            errors.append("Company logo must be a PNG or JPG file.")
+        payload = await logo_file.read()
+        if not payload:
+            errors.append("Uploaded logo file is empty.")
+        elif len(payload) > MAX_LOGO_SIZE_BYTES:
+            errors.append("Company logo must be 2MB or smaller.")
         else:
-            payload = await logo_file.read()
-            if not payload:
-                errors.append("Uploaded logo file is empty.")
-            elif len(payload) > MAX_LOGO_SIZE_BYTES:
-                errors.append("Company logo must be 2MB or smaller.")
+            extension = detect_logo_upload_extension(
+                payload,
+                filename=str(logo_file.filename or ""),
+                content_type=str(logo_file.content_type or ""),
+            )
+            if extension is None:
+                errors.append("Company logo must be a valid PNG or JPG image.")
             else:
                 filename = f"logo-{uuid4().hex}{extension}"
                 output = (_logo_upload_dir() / filename).resolve()

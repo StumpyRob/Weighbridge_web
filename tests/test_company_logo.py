@@ -213,6 +213,38 @@ def test_company_logo_upload_accepts_png_with_generic_content_type(
     assert setting.company_logo_path.endswith(".png")
 
 
+def test_company_logo_upload_rejects_non_image_payload_with_png_extension(
+    client,
+    db_session,
+    monkeypatch,
+    tmp_path,
+):
+    uploads_root = tmp_path / "uploads"
+    monkeypatch.setattr(settings, "uploads_dir", str(uploads_root))
+
+    response = client.post(
+        "/admin/company",
+        data={
+            "name": "Acme Rejects Fake Images",
+            "logo_action": "upload",
+        },
+        files={
+            "company_logo_file": (
+                "not-a-logo.png",
+                BytesIO(b"%PDF-1.4\nnot really an image\n"),
+                "image/png",
+            )
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Company logo must be a valid PNG or JPG image." in response.text
+    setting = db_session.execute(
+        select(CompanySetting).order_by(CompanySetting.id.asc()).limit(1)
+    ).scalar_one_or_none()
+    assert setting is None or not setting.company_logo_path
+
+
 def test_company_settings_get_does_not_create_row(client, db_session):
     before_count = db_session.execute(select(CompanySetting)).scalars().all()
     assert len(before_count) == 0

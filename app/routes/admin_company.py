@@ -18,7 +18,11 @@ from ..constants import ADDRESS_LINE_MAX, NAME_MAX, POSTCODE_MAX
 from ..db import get_db
 from ..models import CompanySetting, User
 from ..permissions import PERM_MANAGE_SETTINGS, require_permission
-from ..services.uploads import company_logo_upload_dir, logo_file_from_web_path
+from ..services.uploads import (
+    company_logo_upload_dir,
+    detect_logo_upload_extension,
+    logo_file_from_web_path,
+)
 from ..services.ui_branding import (
     DEFAULT_NAVBAR_COLOR_HEX,
     DEFAULT_NAV_LOGO_HEIGHT_PX,
@@ -35,10 +39,6 @@ router = APIRouter()
 
 MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024
 LOGO_WEB_PATH_PREFIX = "/static/uploads/company/"
-ALLOWED_LOGO_TYPES = {
-    "image/png": ".png",
-    "image/jpeg": ".jpg",
-}
 
 
 def _logo_upload_dir() -> Path:
@@ -174,21 +174,6 @@ def _form_checkbox(form, key: str) -> bool:
     return any(_truthy(value) for value in values)
 
 
-def _resolve_logo_extension(upload: UploadFile) -> str | None:
-    content_type = str(upload.content_type or "").strip().lower()
-    if content_type in ALLOWED_LOGO_TYPES:
-        if content_type == "image/jpeg":
-            source_extension = Path(str(upload.filename or "")).suffix.lower()
-            if source_extension == ".jpeg":
-                return ".jpeg"
-        return ALLOWED_LOGO_TYPES[content_type]
-
-    source_extension = Path(str(upload.filename or "")).suffix.lower()
-    if source_extension in {".png", ".jpg", ".jpeg"}:
-        return source_extension
-    return None
-
-
 @router.get("/admin/company", response_class=HTMLResponse)
 def admin_company_settings(
     request: Request,
@@ -311,15 +296,19 @@ async def admin_company_settings_save(
         if not isinstance(logo_file, UploadFile):
             errors.append("Choose a PNG or JPG logo file to upload.")
         else:
-            extension = _resolve_logo_extension(logo_file)
-            if extension is None:
-                errors.append("Company logo must be a PNG or JPG file.")
+            payload = await logo_file.read()
+            if not payload:
+                errors.append("Uploaded logo file is empty.")
+            elif len(payload) > MAX_LOGO_SIZE_BYTES:
+                errors.append("Company logo must be 2MB or smaller.")
             else:
-                payload = await logo_file.read()
-                if not payload:
-                    errors.append("Uploaded logo file is empty.")
-                elif len(payload) > MAX_LOGO_SIZE_BYTES:
-                    errors.append("Company logo must be 2MB or smaller.")
+                extension = detect_logo_upload_extension(
+                    payload,
+                    filename=str(logo_file.filename or ""),
+                    content_type=str(logo_file.content_type or ""),
+                )
+                if extension is None:
+                    errors.append("Company logo must be a valid PNG or JPG image.")
                 else:
                     upload_dir = _logo_upload_dir()
                     filename = f"logo-{uuid4().hex}{extension}"

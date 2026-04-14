@@ -8,10 +8,38 @@ from ..tenancy import current_tenant_id
 LOGO_WEB_PATH_PREFIX = "/static/uploads/company/"
 _TENANT_UPLOADS_SEGMENT = "tenants"
 _COMPANY_SEGMENT = "company"
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+_JPEG_SIGNATURE_PREFIX = b"\xff\xd8\xff"
 
 
 def uploads_root() -> Path:
     return Path(str(settings.effective_uploads_dir or "").strip()).resolve()
+
+
+def detect_logo_upload_extension(
+    payload: bytes | bytearray,
+    *,
+    filename: str | None = None,
+    content_type: str | None = None,
+) -> str | None:
+    raw_bytes = bytes(payload or b"")
+    if not raw_bytes:
+        return None
+
+    source_extension = Path(str(filename or "")).suffix.lower()
+    normalized_content_type = str(content_type or "").strip().lower()
+
+    if raw_bytes.startswith(_PNG_SIGNATURE):
+        return ".png"
+    if raw_bytes.startswith(_JPEG_SIGNATURE_PREFIX):
+        if source_extension == ".jpeg":
+            return ".jpeg"
+        if source_extension == ".jpg":
+            return ".jpg"
+        if normalized_content_type == "image/jpeg":
+            return ".jpg"
+        return ".jpg"
+    return None
 
 
 def company_logo_storage_layout(root: Path | None = None) -> str:
