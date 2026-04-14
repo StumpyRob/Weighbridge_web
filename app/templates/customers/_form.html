@@ -98,7 +98,11 @@
       {
         id: "postcode",
         sanitize(value) {
-          return value.toUpperCase().replace(/[^A-Z0-9]+/g, "");
+          return value
+            .toUpperCase()
+            .replace(/[^A-Z0-9\s]+/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
         },
       },
     ];

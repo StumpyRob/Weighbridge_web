@@ -40,6 +40,12 @@ from ..services.credit import (
     money_decimal,
     outstanding_display_values,
 )
+from ..services.edit_conflicts import (
+    ROW_VERSION_FIELD,
+    STALE_EDIT_MESSAGE,
+    row_version_conflict,
+    row_version_token,
+)
 from ..templating import templates
 
 router = APIRouter()
@@ -47,7 +53,7 @@ ACCOUNT_CODE_MAX_LEN = CODE_MAX
 ACCOUNT_CODE_RE = re.compile(r"^[A-Z0-9-]+$")
 ACCOUNT_CODE_SANITIZE_RE = re.compile(r"[^A-Z0-9-]+")
 PHONE_SANITIZE_RE = re.compile(r"[^0-9]+")
-POSTCODE_SANITIZE_RE = re.compile(r"[^A-Z0-9]+")
+POSTCODE_SANITIZE_RE = re.compile(r"[^A-Z0-9\s]+")
 INVOICE_FREQUENCIES = ("WEEKLY", "MONTHLY", "ADHOC")
 INVOICE_FREQUENCY_LABELS = {
     "WEEKLY": "Weekly",
@@ -79,7 +85,8 @@ def _normalize_phone(value: str) -> str:
 
 
 def _normalize_postcode(value: str) -> str:
-    return POSTCODE_SANITIZE_RE.sub("", str(value or "").upper())
+    sanitized = POSTCODE_SANITIZE_RE.sub("", str(value or "").upper())
+    return " ".join(sanitized.split())
 
 
 def _resolved_tenant_id(
@@ -359,6 +366,15 @@ async def customers_update(
             errors=payload["errors"],
             form=payload["form"],
             status_code=400,
+        )
+    if row_version_conflict(customer, form.get(ROW_VERSION_FIELD)):
+        return _render_customer_edit_with_overrides(
+            request,
+            db,
+            customer,
+            errors=[STALE_EDIT_MESSAGE],
+            form=payload["form"],
+            status_code=409,
         )
 
     customer.account_code = payload["account_code"]
@@ -1052,6 +1068,7 @@ def _render_customer_edit_with_overrides(
             "saved": saved,
             "adjustment_saved": adjustment_saved,
             "customer": customer,
+            "row_version": row_version_token(customer),
             "form": form or _customer_to_form(customer),
             "options": _load_options(db),
             "price_overrides": _customer_price_overrides(db, customer.id),

@@ -90,6 +90,7 @@
 
 <div class="ticket-form">
   <form id="customer-edit-form" class="ticket-form" method="post" action="/customers/{{ customer.id }}">
+    <input type="hidden" name="row_version" value="{{ row_version or '' }}" />
     <fieldset {% if readonly_mode %}disabled aria-disabled="true"{% endif %}>
       {% include "customers/_form.html" %}
     </fieldset>

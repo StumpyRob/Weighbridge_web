@@ -1,20 +1,50 @@
 {% extends "base.html" %}
 
-{% block title %}Not Found | Weighbridge Web{% endblock %}
+{% block title %}{{ error_title or 'Not Found' }} | Weighbridge Web{% endblock %}
 
 {% block content %}
   <section class="auth-page">
     <div class="page-header">
       <div>
-        <h1>Not Found</h1>
-        <p class="muted">The page you requested could not be found.</p>
+        <p class="muted">Error {{ error_status_code or 404 }}</p>
+        <h1>{{ error_heading or 'Page Not Found' }}</h1>
+        <p class="muted">{{ error_message or 'The page you requested could not be found.' }}</p>
       </div>
     </div>
+    <section class="card">
+      <div class="form-grid">
+        {% if error_workspace_label %}
+          <div class="field">
+            <label>Workspace</label>
+            <div>{{ error_workspace_label }}</div>
+          </div>
+        {% endif %}
+        {% if error_host %}
+          <div class="field">
+            <label>Host</label>
+            <div>{{ error_host }}</div>
+          </div>
+        {% endif %}
+        {% if error_requested_path %}
+          <div class="field">
+            <label>Requested path</label>
+            <div><code>{{ error_requested_path }}</code></div>
+          </div>
+        {% endif %}
+      </div>
+      {% if error_hint %}
+        <p class="muted">{{ error_hint }}</p>
+      {% endif %}
+    </section>
     <div class="actions btn-group">
-      <a class="btn btn--secondary" href="/">Go Home</a>
-      <a class="btn btn--ghost" href="{{ '/platform/tenants' if platform_mode else '/tickets' }}">
-        {{ 'Tenant Management' if platform_mode else 'Open Tickets' }}
+      <a class="btn btn--secondary" href="{{ error_primary_href or '/' }}">
+        {{ error_primary_label or 'Go Home' }}
       </a>
+      {% if error_secondary_href %}
+        <a class="btn btn--ghost" href="{{ error_secondary_href }}">
+          {{ error_secondary_label or 'Open Tickets' }}
+        </a>
+      {% endif %}
     </div>
   </section>
 {% endblock %}

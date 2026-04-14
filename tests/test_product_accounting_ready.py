@@ -147,7 +147,8 @@ def test_product_edit_shows_selected_inactive_group(client, db_session):
 
     response = client.get(f"/products/{product.id}")
     assert response.status_code == 200
-    assert "Inactive Group (inactive)" in response.text
+    assert "Inactive Group" in response.text
+    assert "(inactive)" in response.text
 
 
 def test_customer_product_price_override_applies_to_product_defaults_and_ticket_save(

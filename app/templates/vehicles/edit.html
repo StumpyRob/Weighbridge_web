@@ -24,6 +24,7 @@
 
 <div class="ticket-form">
   <form id="vehicle-edit-form" class="ticket-form" method="post" action="/vehicles/{{ vehicle.id }}">
+    <input type="hidden" name="row_version" value="{{ row_version or '' }}" />
     <fieldset {% if readonly_mode %}disabled aria-disabled="true"{% endif %}>
       {% include "vehicles/_form.html" %}
     </fieldset>
@@ -39,7 +40,7 @@
             <option value="{{ id }}">{{ label }}</option>
           {% endfor %}
         </select>
-        <input type="number" step="0.001" name="tare_kg" placeholder="Tare kg" />
+        <input type="number" step="0.001" min="0" name="tare_kg" placeholder="Tare kg" />
         <button type="submit" class="btn btn--secondary">Add/Update</button>
       </form>
     {% endif %}
@@ -60,7 +61,7 @@
               <td>
                 {% if not readonly_mode %}
                   <form class="inline-form btn-group" method="post" action="/vehicles/{{ vehicle.id }}/tares/{{ tare.id }}/update">
-                    <input type="number" step="0.001" name="tare_kg" value="{{ tare.tare_kg }}" />
+                    <input type="number" step="0.001" min="0" name="tare_kg" value="{{ tare.tare_kg }}" />
                     <button type="submit" class="btn btn--secondary">Save</button>
                   </form>
                 {% else %}

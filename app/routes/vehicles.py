@@ -17,6 +17,12 @@ from ..permissions import (
 )
 from ..models.base import utcnow
 from ..security import validate_no_html_fields
+from ..services.edit_conflicts import (
+    ROW_VERSION_FIELD,
+    STALE_EDIT_MESSAGE,
+    row_version_conflict,
+    row_version_token,
+)
 from ..models import (
     Container,
     Customer,
@@ -30,6 +36,13 @@ from ..templating import templates
 
 router = APIRouter()
 REGISTRATION_SANITIZE_RE = re.compile(r"[^A-Z0-9]+")
+_VEHICLE_QUERY_ERROR_MESSAGES = {
+    "tare_missing": "Tare must be provided.",
+    "tare_invalid": "Tare must be a valid number.",
+    "tare_negative": "Tare must be 0 or greater.",
+    "container_missing": "Select a container before saving a per-container tare.",
+    "container_inactive": "Selected container is inactive or unavailable.",
+}
 
 
 def _vehicle_snapshot(vehicle: Vehicle | None) -> dict[str, object]:
@@ -78,6 +91,12 @@ def _vehicle_registration_exists(
     if exclude_vehicle_id is not None:
         query = query.where(Vehicle.id != int(exclude_vehicle_id))
     return db.execute(query.limit(1)).scalar_one_or_none() is not None
+
+
+def _vehicle_query_errors(request: Request) -> list[str]:
+    error_code = str(request.query_params.get("error", "")).strip().lower()
+    message = _VEHICLE_QUERY_ERROR_MESSAGES.get(error_code)
+    return [message] if message else []
 
 
 @router.get("/vehicles", response_class=HTMLResponse)
@@ -229,8 +248,9 @@ def vehicles_edit(
         "vehicles/edit.html",
         {
             "request": request,
-            "errors": [],
+            "errors": _vehicle_query_errors(request),
             "vehicle": vehicle,
+            "row_version": row_version_token(vehicle),
             "form": _vehicle_to_form(vehicle),
             "options": _load_options(db),
             "tares": tares,
@@ -273,6 +293,7 @@ async def vehicles_update(
                 "request": request,
                 "errors": payload["errors"],
                 "vehicle": vehicle,
+                "row_version": row_version_token(vehicle),
                 "form": payload["form"],
                 "options": _load_options(db),
                 "tares": tares,
@@ -299,11 +320,34 @@ async def vehicles_update(
                 "request": request,
                 "errors": payload["errors"],
                 "vehicle": vehicle,
+                "row_version": row_version_token(vehicle),
                 "form": payload["form"],
                 "options": _load_options(db),
                 "tares": tares,
             },
             status_code=400,
+        )
+    if row_version_conflict(vehicle, form.get(ROW_VERSION_FIELD)):
+        payload["errors"].append(STALE_EDIT_MESSAGE)
+        tares = db.execute(
+            select(VehicleTare, Container)
+            .join(Container, VehicleTare.container_id == Container.id)
+            .where(VehicleTare.vehicle_id == vehicle.id)
+            .order_by(Container.name)
+        ).all()
+        return templates.TemplateResponse(
+            request,
+            "vehicles/edit.html",
+            {
+                "request": request,
+                "errors": payload["errors"],
+                "vehicle": vehicle,
+                "row_version": row_version_token(vehicle),
+                "form": payload["form"],
+                "options": _load_options(db),
+                "tares": tares,
+            },
+            status_code=409,
         )
 
     before_audit = _vehicle_snapshot(vehicle)
@@ -358,6 +402,7 @@ async def vehicles_update(
                 "request": request,
                 "errors": payload["errors"],
                 "vehicle": vehicle,
+                "row_version": row_version_token(vehicle),
                 "form": payload["form"],
                 "options": _load_options(db),
                 "tares": tares,
@@ -382,12 +427,37 @@ async def vehicle_tares_add(
 
     form = await request.form()
     container_id = _parse_int(str(form.get("container_id", "")).strip())
-    tare_kg = _parse_float(str(form.get("tare_kg", "")).strip())
+    tare_raw = str(form.get("tare_kg", "")).strip()
+    tare_kg = _parse_float(tare_raw)
+
+    if not container_id:
+        return RedirectResponse(
+            url=f"/vehicles/{vehicle.id}?error=container_missing",
+            status_code=303,
+        )
+    if not tare_raw:
+        return RedirectResponse(
+            url=f"/vehicles/{vehicle.id}?error=tare_missing",
+            status_code=303,
+        )
+    if tare_kg is None:
+        return RedirectResponse(
+            url=f"/vehicles/{vehicle.id}?error=tare_invalid",
+            status_code=303,
+        )
+    if tare_kg < 0:
+        return RedirectResponse(
+            url=f"/vehicles/{vehicle.id}?error=tare_negative",
+            status_code=303,
+        )
 
     if container_id and tare_kg is not None:
         container = db.get(Container, container_id)
         if not container or not container.is_active:
-            return RedirectResponse(url=f"/vehicles/{vehicle.id}", status_code=303)
+            return RedirectResponse(
+                url=f"/vehicles/{vehicle.id}?error=container_inactive",
+                status_code=303,
+            )
         existing = db.execute(
             select(VehicleTare)
             .where(VehicleTare.vehicle_id == vehicle.id)
@@ -457,7 +527,23 @@ async def vehicle_tares_update(
         return RedirectResponse(url=f"/vehicles/{vehicle_id}", status_code=303)
 
     form = await request.form()
-    tare_kg = _parse_float(str(form.get("tare_kg", "")).strip())
+    tare_raw = str(form.get("tare_kg", "")).strip()
+    tare_kg = _parse_float(tare_raw)
+    if not tare_raw:
+        return RedirectResponse(
+            url=f"/vehicles/{vehicle_id}?error=tare_missing",
+            status_code=303,
+        )
+    if tare_kg is None:
+        return RedirectResponse(
+            url=f"/vehicles/{vehicle_id}?error=tare_invalid",
+            status_code=303,
+        )
+    if tare_kg < 0:
+        return RedirectResponse(
+            url=f"/vehicles/{vehicle_id}?error=tare_negative",
+            status_code=303,
+        )
     if tare_kg is not None:
         before_tare = tare.tare_kg
         vehicle = db.get(Vehicle, vehicle_id)
@@ -566,6 +652,10 @@ def _parse_vehicle_form(form) -> dict:
     errors: list[str] = []
     registration = REGISTRATION_SANITIZE_RE.sub("", value("registration").upper())
     vehicle_type_id = _parse_int(value("vehicle_type_id"))
+    default_tare_raw = value("default_tare_kg")
+    overweight_threshold_raw = value("overweight_threshold_kg")
+    default_tare_kg = _parse_float(default_tare_raw)
+    overweight_threshold_kg = _parse_float(overweight_threshold_raw)
 
     validate_no_html_fields(
         {
@@ -578,6 +668,14 @@ def _parse_vehicle_form(form) -> dict:
         errors.append("Registration is required.")
     elif len(registration) > REG_MAX:
         errors.append(f"Registration must be {REG_MAX} characters or fewer.")
+    if default_tare_raw and default_tare_kg is None:
+        errors.append("Default tare must be a valid number.")
+    elif default_tare_kg is not None and default_tare_kg < 0:
+        errors.append("Default tare must be 0 or greater.")
+    if overweight_threshold_raw and overweight_threshold_kg is None:
+        errors.append("Overweight threshold must be a valid number.")
+    elif overweight_threshold_kg is not None and overweight_threshold_kg < 0:
+        errors.append("Overweight threshold must be 0 or greater.")
     # vehicle_type_id is optional
 
     return {
@@ -587,8 +685,8 @@ def _parse_vehicle_form(form) -> dict:
             "owner_customer_id": value("owner_customer_id"),
             "default_customer_id": value("default_customer_id"),
             "vehicle_type_id": value("vehicle_type_id"),
-            "default_tare_kg": value("default_tare_kg"),
-            "overweight_threshold_kg": value("overweight_threshold_kg"),
+            "default_tare_kg": default_tare_raw,
+            "overweight_threshold_kg": overweight_threshold_raw,
             "default_haulier_id": value("default_haulier_id"),
             "default_driver_id": value("default_driver_id"),
         },
@@ -596,8 +694,8 @@ def _parse_vehicle_form(form) -> dict:
         "owner_customer_id": _parse_int(value("owner_customer_id")),
         "default_customer_id": _parse_int(value("default_customer_id")),
         "vehicle_type_id": vehicle_type_id,
-        "default_tare_kg": _parse_float(value("default_tare_kg")),
-        "overweight_threshold_kg": _parse_float(value("overweight_threshold_kg")),
+        "default_tare_kg": default_tare_kg,
+        "overweight_threshold_kg": overweight_threshold_kg,
         "default_haulier_id": _parse_int(value("default_haulier_id")),
         "default_driver_id": _parse_int(value("default_driver_id")),
     }

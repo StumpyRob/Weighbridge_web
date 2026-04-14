@@ -24,6 +24,7 @@
 {% endif %}
 
 <form class="ticket-form" method="post" action="/products/{{ product.id }}">
+  <input type="hidden" name="row_version" value="{{ row_version or '' }}" />
   <fieldset {% if readonly_mode %}disabled aria-disabled="true"{% endif %}>
     {% include "products/_form.html" %}
   </fieldset>

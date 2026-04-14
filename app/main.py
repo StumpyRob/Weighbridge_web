@@ -19,6 +19,7 @@ from fastapi.responses import (
 from sqlalchemy import extract, func, or_, select
 from sqlalchemy.orm import Session
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from .auth import (
@@ -76,6 +77,7 @@ from .services.tenant_ai_settings import resolve_tenant_ai_settings
 from .services.pdf import check_invoice_pdf_renderer
 from .services.site_agent_download import site_agent_download_state
 from .services.ui_branding import (
+    build_ui_branding,
     darken_hex_color,
     get_branding,
     lighten_hex_color,
@@ -88,10 +90,12 @@ from .tenancy import (
     host_without_port,
     platform_route_url,
     prefix_tenant_route_target,
+    request_external_scheme,
     reset_request_tenant_context,
     resolve_subdomain,
     set_request_tenant_context,
     split_tenant_route_path,
+    tenant_external_url,
     tenant_route_prefix,
 )
 from .templating import templates
@@ -1093,19 +1097,244 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 host_value = forwarded_host.split(",", 1)[0].strip()
         return host_value
 
-    def _maybe_brand_plain_error_response(request: Request, response: Response) -> Response:
+    def _should_render_html_error(request: Request) -> bool:
         if request.method not in {"GET", "HEAD"}:
-            return response
-        if _public_host_mode(request):
+            return False
+
+        request_path = _request_scope_path(request)
+        if (
+            request_path == "/health"
+            or request_path.startswith("/api/")
+            or request_path.startswith("/static/")
+            or request_path.startswith("/media/")
+        ):
+            return False
+
+        accept = str(request.headers.get("accept", "")).lower()
+        if "application/json" in accept and "text/html" not in accept:
+            return False
+        return True
+
+    def _marketing_page_context(
+        request: Request,
+        *,
+        db: Session | None,
+    ) -> dict[str, object]:
+        host_name = host_without_port(_request_host_value(request)) or host_without_port(
+            str(request.url.hostname or "")
+        )
+        base_domain = settings.effective_base_domain or host_name or "example.com"
+        scheme = request_external_scheme(request) or str(request.url.scheme or "https") or "https"
+        marketing_home_url = "/"
+        if settings.effective_marketing_subdomain and base_domain:
+            marketing_home_url = (
+                f"{scheme}://{settings.effective_marketing_subdomain}.{base_domain}/"
+            )
+
+        demo_tenant = ensure_demo_tenant(db, create_missing=False) if db is not None else None
+        return {
+            "marketing_base_domain": base_domain,
+            "marketing_home_url": marketing_home_url,
+            "marketing_demo_url": tenant_external_url(
+                settings.effective_demo_tenant_subdomain,
+                path="/",
+            ),
+            "marketing_platform_url": platform_route_url(request, path="/login"),
+            "marketing_demo_next_reset_at_display": format_demo_reset_datetime(
+                next_demo_reset_at(demo_tenant)
+            ),
+            "marketing_demo_reset_due": demo_reset_due_now(demo_tenant),
+        }
+
+    def _render_marketing_not_found_template(
+        request: Request,
+        *,
+        status_code: int,
+        title: str,
+        heading: str,
+        message: str,
+        hint: str,
+        workspace_label: str,
+        host_name: str,
+        request_path: str,
+    ) -> Response:
+        with _request_db(request) as db:
+            marketing_context = _marketing_page_context(request, db=db)
+
+        return templates.TemplateResponse(
+            request,
+            "marketing/not_found.html",
+            {
+                "request": request,
+                **marketing_context,
+                "error_title": title,
+                "error_heading": heading,
+                "error_message": message,
+                "error_hint": hint,
+                "error_workspace_label": workspace_label,
+                "error_host": host_name,
+                "error_requested_path": request_path,
+                "error_status_code": status_code,
+            },
+            status_code=status_code,
+        )
+
+    def _render_error_template(
+        request: Request,
+        *,
+        status_code: int,
+        detail: str,
+    ) -> Response:
+        normalized_detail = str(detail or "").strip() or "Not Found"
+        normalized_key = normalized_detail.rstrip(".").lower()
+        request_path = _request_scope_path(request)
+        host_name = host_without_port(_request_host_value(request))
+        platform_mode = bool(getattr(request.state, "platform_mode", False))
+        current_tenant = getattr(request.state, "tenant", None)
+        current_user = getattr(request.state, "current_user", None)
+        requested_subdomain = str(
+            getattr(request.state, "request_subdomain", "") or ""
+        ).strip()
+        tenant_route_prefix_value = str(
+            getattr(request.state, "tenant_route_prefix", "") or ""
+        ).strip()
+        public_host_mode = _public_host_mode(request)
+        unknown_tenant_marketing_fallback = (
+            normalized_key == "unknown tenant"
+            and current_tenant is None
+            and requested_subdomain
+            and not platform_mode
+            and not bool(getattr(request.state, "legacy_single_host", False))
+        )
+
+        def _tenant_href(path: str) -> str:
+            return prefix_tenant_route_target(tenant_route_prefix_value, path)
+
+        if public_host_mode or unknown_tenant_marketing_fallback:
+            if normalized_key == "unknown tenant":
+                workspace_label = requested_subdomain or "Unknown workspace"
+                if requested_subdomain:
+                    message = (
+                        f"We couldn't find a workspace called "
+                        f"\"{requested_subdomain}\"."
+                    )
+                else:
+                    message = "We couldn't find a workspace for this address."
+                hint = (
+                    "Check the workspace address, start again from the site, or use the demo "
+                    "while you verify the correct subdomain."
+                )
+                return _render_marketing_not_found_template(
+                    request,
+                    status_code=status_code,
+                    title="Workspace Not Found",
+                    heading="Workspace Not Found",
+                    message=message,
+                    hint=hint,
+                    workspace_label=workspace_label,
+                    host_name=host_name,
+                    request_path=request_path,
+                )
+
+            marketing_hint = (
+                "That page is not available on the public site. Start from the homepage, "
+                "try the demo workspace, or open platform admin if you meant to manage tenants."
+            )
+            return _render_marketing_not_found_template(
+                request,
+                status_code=status_code,
+                title="Page Not Found",
+                heading="Page Not Found",
+                message=f"No page exists at {request_path} on this site.",
+                hint=marketing_hint,
+                workspace_label="Weighbridge Web",
+                host_name=host_name,
+                request_path=request_path,
+            )
+
+        error_title = "Not Found"
+        error_heading = "Page Not Found"
+        error_message = "The page you requested could not be found."
+        error_hint = "Check the address or return to a known page in this workspace."
+        error_primary_href = "/"
+        error_primary_label = "Go Home"
+        error_secondary_href = ""
+        error_secondary_label = ""
+        error_workspace_label = ""
+
+        if normalized_key == "unknown tenant":
+            error_title = "Workspace Not Found"
+            error_heading = "Workspace Not Found"
+            error_workspace_label = requested_subdomain or "Unknown workspace"
+            if requested_subdomain:
+                error_message = (
+                    f"Unknown tenant. We couldn't find a workspace called "
+                    f"\"{requested_subdomain}\"."
+                )
+            else:
+                error_message = "Unknown tenant. We couldn't find a workspace for this address."
+            error_hint = (
+                "Check the subdomain or open the platform to choose an existing workspace."
+            )
+            error_primary_href = platform_route_url(request, path="/login")
+            error_primary_label = "Open Platform"
+        else:
+            if platform_mode:
+                error_workspace_label = "Platform Admin"
+                error_message = f"No page exists at {request_path} in platform admin."
+                error_hint = "Use Tenant Management or Help to continue."
+                error_primary_href = "/platform/tenants"
+                error_primary_label = "Tenant Management"
+                error_secondary_href = "/help"
+                error_secondary_label = "Help"
+            elif current_tenant is not None:
+                error_workspace_label = str(getattr(current_tenant, "name", "") or "").strip() or (
+                    str(getattr(current_tenant, "subdomain", "") or "").strip()
+                )
+                error_message = f"No page exists at {request_path} in this workspace."
+                error_hint = "The link may be out of date, or the record may no longer exist."
+                if current_user is None:
+                    error_primary_href = _tenant_href("/login")
+                    error_primary_label = "Sign In"
+                    error_secondary_href = _tenant_href("/")
+                    error_secondary_label = "Workspace Home"
+                else:
+                    error_primary_href = _tenant_href("/")
+                    error_primary_label = "Workspace Home"
+                    error_secondary_href = _tenant_href("/tickets")
+                    error_secondary_label = "Open Tickets"
+            elif current_user is None:
+                error_primary_href = "/login"
+                error_primary_label = "Sign In"
+
+        return templates.TemplateResponse(
+            request,
+            "errors/404.html",
+            {
+                "request": request,
+                "error_title": error_title,
+                "error_heading": error_heading,
+                "error_message": error_message,
+                "error_hint": error_hint,
+                "error_primary_href": error_primary_href,
+                "error_primary_label": error_primary_label,
+                "error_secondary_href": error_secondary_href,
+                "error_secondary_label": error_secondary_label,
+                "error_workspace_label": error_workspace_label,
+                "error_host": host_name,
+                "error_requested_path": request_path,
+                "error_detail": normalized_detail,
+                "error_status_code": status_code,
+            },
+            status_code=status_code,
+        )
+
+    def _maybe_brand_plain_error_response(request: Request, response: Response) -> Response:
+        if not _should_render_html_error(request):
             return response
 
         status_code = int(response.status_code or 0)
-        template_name = {
-            403: "errors/403.html",
-            404: "errors/404.html",
-            500: "errors/500.html",
-        }.get(status_code)
-        if template_name is None:
+        if status_code not in {403, 404, 500}:
             return response
 
         content_type = str(response.headers.get("content-type", "")).lower()
@@ -1119,12 +1348,29 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         plain_error_payloads = {
             "forbidden",
             "not found",
+            "unknown tenant",
+            "tenant disabled",
             "internal server error",
             "<h1>internal server error</h1>",
         }
         if normalized not in plain_error_payloads:
             return response
 
+        detail = "Internal Server Error" if "internal server error" in normalized else str(
+            body.decode("utf-8", errors="ignore") or ""
+        ).strip()
+        if status_code == 404:
+            return _render_error_template(
+                request,
+                status_code=status_code,
+                detail=detail,
+            )
+        template_name = {
+            403: "errors/403.html",
+            500: "errors/500.html",
+        }.get(status_code)
+        if template_name is None:
+            return response
         return templates.TemplateResponse(
             request,
             template_name,
@@ -1278,7 +1524,9 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
             return response
 
         def _plain_error(message: str, status_code: int) -> Response:
-            return _finalize_response(PlainTextResponse(message, status_code=status_code))
+            response = PlainTextResponse(message, status_code=status_code)
+            response = _maybe_brand_plain_error_response(request, response)
+            return _finalize_response(response)
 
         def _switch_tenant_context(*, tenant_id: int | None, platform_mode: bool) -> None:
             nonlocal tenant_context_tokens
@@ -1556,22 +1804,12 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
             if _is_exact_base_domain(host_name) and settings.effective_base_domain:
                 marketing_host = f"{settings.effective_marketing_subdomain}.{settings.effective_base_domain}"
                 return RedirectResponse(url=f"https://{marketing_host}/", status_code=307)
-            demo_tenant = ensure_demo_tenant(db, create_missing=False)
-            marketing_demo_next_reset_at_display = format_demo_reset_datetime(
-                next_demo_reset_at(demo_tenant)
-            )
             return templates.TemplateResponse(
                 request,
                 "marketing_home.html",
                 {
                     "request": request,
-                    "marketing_base_domain": settings.effective_base_domain or host_without_port(str(request.url.hostname or "")),
-                    "marketing_demo_url": (
-                        f"https://{settings.effective_demo_tenant_subdomain}."
-                        f"{settings.effective_base_domain or host_without_port(str(request.url.hostname or ''))}/"
-                    ),
-                    "marketing_demo_next_reset_at_display": marketing_demo_next_reset_at_display,
-                    "marketing_demo_reset_due": demo_reset_due_now(demo_tenant),
+                    **_marketing_page_context(request, db=db),
                 },
             )
         if bool(getattr(request.state, "platform_mode", False)):
@@ -1668,6 +1906,25 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 status_code=500,
             )
         return HTMLResponse("<h1>Internal Server Error</h1>", status_code=500)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+        detail = str(exc.detail or "").strip() or "Not Found"
+        normalized_detail = detail.rstrip(".").lower()
+        if (
+            exc.status_code == 404
+            and normalized_detail in {"not found", "unknown tenant"}
+            and _should_render_html_error(request)
+        ):
+            return _render_error_template(
+                request,
+                status_code=404,
+                detail=detail,
+            )
+        accept = str(request.headers.get("accept", "")).lower()
+        if "application/json" in accept and "text/html" not in accept:
+            return JSONResponse({"detail": detail}, status_code=exc.status_code)
+        return PlainTextResponse(detail, status_code=exc.status_code)
 
     if dev_mode is False:
         _strip_non_production_routes(app)

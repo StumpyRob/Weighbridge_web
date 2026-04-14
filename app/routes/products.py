@@ -28,6 +28,12 @@ from ..models import (
     EwcCode,
 )
 from ..services.pricing import product_effective_nominal_code
+from ..services.edit_conflicts import (
+    ROW_VERSION_FIELD,
+    STALE_EDIT_MESSAGE,
+    row_version_conflict,
+    row_version_token,
+)
 from ..services.unit_rules import (
     canonical_weight_unit,
     is_allowed_weight_unit,
@@ -190,7 +196,13 @@ async def products_create(
                 "request": request,
                 "errors": payload["errors"],
                 "form": payload["form"],
-                "options": _load_options(db, current_group_id=payload.get("group_id")),
+                "options": _load_options(
+                    db,
+                    current_group_id=payload.get("group_id"),
+                    current_unit_id=payload.get("unit_id"),
+                    current_ewc_code_id=payload.get("ewc_code_id"),
+                    current_default_destination_id=payload.get("default_destination_id"),
+                ),
             },
             status_code=400,
         )
@@ -246,7 +258,13 @@ async def products_create(
                 "request": request,
                 "errors": payload["errors"],
                 "form": payload["form"],
-                "options": _load_options(db, current_group_id=payload.get("group_id")),
+                "options": _load_options(
+                    db,
+                    current_group_id=payload.get("group_id"),
+                    current_unit_id=payload.get("unit_id"),
+                    current_ewc_code_id=payload.get("ewc_code_id"),
+                    current_default_destination_id=payload.get("default_destination_id"),
+                ),
             },
             status_code=400,
         )
@@ -961,6 +979,7 @@ def products_edit(
             "request": request,
             "errors": [],
             "product": product,
+            "row_version": row_version_token(product),
             "form": _product_to_form(product),
             "options": _load_options(
                 db,
@@ -1033,12 +1052,49 @@ async def products_update(
                     current_group_id=payload.get("group_id")
                     if payload.get("group_id") is not None
                     else product.group_id,
-                    current_unit_id=product.unit_id,
-                    current_ewc_code_id=product.ewc_code_id,
-                    current_default_destination_id=product.default_destination_id,
+                    current_unit_id=payload.get("unit_id")
+                    if payload.get("unit_id") is not None
+                    else product.unit_id,
+                    current_ewc_code_id=payload.get("ewc_code_id")
+                    if payload.get("ewc_code_id") is not None
+                    else product.ewc_code_id,
+                    current_default_destination_id=payload.get("default_destination_id")
+                    if payload.get("default_destination_id") is not None
+                    else product.default_destination_id,
                 ),
+                "row_version": row_version_token(product),
             },
             status_code=400,
+        )
+    if row_version_conflict(product, form.get(ROW_VERSION_FIELD)):
+        payload["errors"].append(STALE_EDIT_MESSAGE)
+        _hydrate_effective_nominal_code_form(db, payload["form"])
+        return templates.TemplateResponse(
+            request,
+            "products/edit.html",
+            {
+                "request": request,
+                "errors": payload["errors"],
+                "product": product,
+                "form": payload["form"],
+                "options": _load_options(
+                    db,
+                    current_group_id=payload.get("group_id")
+                    if payload.get("group_id") is not None
+                    else product.group_id,
+                    current_unit_id=payload.get("unit_id")
+                    if payload.get("unit_id") is not None
+                    else product.unit_id,
+                    current_ewc_code_id=payload.get("ewc_code_id")
+                    if payload.get("ewc_code_id") is not None
+                    else product.ewc_code_id,
+                    current_default_destination_id=payload.get("default_destination_id")
+                    if payload.get("default_destination_id") is not None
+                    else product.default_destination_id,
+                ),
+                "row_version": row_version_token(product),
+            },
+            status_code=409,
         )
 
     before_unit = db.get(Unit, product.unit_id) if product.unit_id else None
@@ -1117,10 +1173,17 @@ async def products_update(
                     current_group_id=payload.get("group_id")
                     if payload.get("group_id") is not None
                     else product.group_id,
-                    current_unit_id=product.unit_id,
-                    current_ewc_code_id=product.ewc_code_id,
-                    current_default_destination_id=product.default_destination_id,
+                    current_unit_id=payload.get("unit_id")
+                    if payload.get("unit_id") is not None
+                    else product.unit_id,
+                    current_ewc_code_id=payload.get("ewc_code_id")
+                    if payload.get("ewc_code_id") is not None
+                    else product.ewc_code_id,
+                    current_default_destination_id=payload.get("default_destination_id")
+                    if payload.get("default_destination_id") is not None
+                    else product.default_destination_id,
                 ),
+                "row_version": row_version_token(product),
             },
             status_code=400,
         )

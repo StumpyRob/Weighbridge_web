@@ -1169,7 +1169,29 @@ body.is-shell-nav-open .app-sidebar {
   }
 
   .list-table {
-    min-width: 600px;
+    min-width: 100%;
+  }
+
+  .list-table th,
+  .list-table td,
+  .data-table th.actions-col,
+  .data-table td.actions-col {
+    white-space: normal;
+  }
+
+  .data-table th.actions-col,
+  .data-table td.actions-col,
+  .lookup-list-table th.actions-col,
+  .lookup-list-table td.actions-col {
+    width: auto;
+    min-width: 0;
+  }
+
+  .data-table .actions-col .btn-group,
+  .data-table .actions-col .actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    white-space: normal;
   }
 }
 

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en" class="marketing-landing-root">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ error_title or 'Not Found' }} | Weighbridge Web</title>
+    <meta
+      name="description"
+      content="{{ error_message or 'The page you requested could not be found.' }}"
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="{{ error_title or 'Not Found' }} | Weighbridge Web" />
+    <meta
+      property="og:description"
+      content="{{ error_message or 'The page you requested could not be found.' }}"
+    />
+    <meta property="og:url" content="{{ marketing_home_url or ('https://software.' ~ (marketing_base_domain or 'example.com') ~ '/') }}" />
+    <link rel="icon" type="image/svg+xml" href="/static/img/default-company-logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/marketing.css?v={{ BUILD_STAMP }}" />
+  </head>
+  <body class="marketing-landing-page marketing-error-page">
+    <main class="marketing-hero marketing-hero--error">
+      <span class="marketing-hero__eyebrow">Weighbridge Web</span>
+
+      <div class="marketing-hero__content">
+        <p class="marketing-error__status">Error {{ error_status_code or 404 }}</p>
+        <h1 class="marketing-hero__title">
+          <span>{{ error_heading or 'Page Not Found' }}</span>
+        </h1>
+        <p class="marketing-error__lead">
+          {{ error_message or 'The page you requested could not be found.' }}
+        </p>
+
+        <section class="marketing-error__details" aria-label="Request details">
+          {% if error_workspace_label %}
+            <article class="marketing-error__card">
+              <span class="marketing-error__label">Workspace</span>
+              <strong class="marketing-error__value">{{ error_workspace_label }}</strong>
+            </article>
+          {% endif %}
+          {% if error_host %}
+            <article class="marketing-error__card">
+              <span class="marketing-error__label">Host</span>
+              <strong class="marketing-error__value">{{ error_host }}</strong>
+            </article>
+          {% endif %}
+          {% if error_requested_path %}
+            <article class="marketing-error__card">
+              <span class="marketing-error__label">Requested path</span>
+              <strong class="marketing-error__value"><code>{{ error_requested_path }}</code></strong>
+            </article>
+          {% endif %}
+        </section>
+
+        <div class="marketing-error__actions">
+          <a class="marketing-demo-cta__button" href="{{ marketing_home_url or '/' }}">
+            Visit the Site
+          </a>
+          <a class="marketing-secondary-button" href="{{ marketing_demo_url or '/' }}">
+            Try the Demo
+          </a>
+          <a class="marketing-secondary-button" href="{{ marketing_platform_url or '/' }}">
+            Open Platform
+          </a>
+        </div>
+
+        <div class="marketing-demo-cta__credentials" aria-label="Demo login credentials">
+          <p><strong>Username:</strong> demo@demo.com</p>
+          <p><strong>Password:</strong> password</p>
+        </div>
+
+        <div class="marketing-demo-cta__note" aria-label="Not found guidance">
+          <p>{{ error_hint or 'Check the address and try again from a known page.' }}</p>
+          {% if marketing_demo_next_reset_at_display and not marketing_demo_reset_due %}
+            <p><strong>Next demo reset:</strong> {{ marketing_demo_next_reset_at_display }}</p>
+          {% elif marketing_demo_reset_due %}
+            <p><strong>Next demo reset:</strong> Due now and will run on the next demo visit.</p>
+          {% endif %}
+        </div>
+      </div>
+    </main>
+  </body>
+</html>
