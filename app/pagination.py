@@ -11,7 +11,7 @@ DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 
 
-def normalize_page_number(value: int | None) -> int:
+def normalize_page_number(value: int | str | None) -> int:
     try:
         page = int(value or 1)
     except (TypeError, ValueError):
@@ -20,7 +20,7 @@ def normalize_page_number(value: int | None) -> int:
 
 
 def normalize_page_size(
-    value: int | None,
+    value: int | str | None,
     *,
     default_page_size: int = DEFAULT_PAGE_SIZE,
     max_page_size: int = MAX_PAGE_SIZE,
@@ -42,8 +42,8 @@ def count_rows(db: Session, stmt: Select) -> int:
 def build_pagination_context(
     request: Request,
     *,
-    page: int,
-    page_size: int,
+    page: int | str | None,
+    page_size: int | str | None,
     total_count: int,
     singular_label: str = "record",
     plural_label: str = "records",
@@ -94,18 +94,7 @@ def build_pagination_context(
         )
         if resolved_page < total_pages
         else "",
-    }
-
-
-def slice_page_items(
-    items: list[object] | tuple[object, ...],
-    pagination: dict[str, object],
-) -> list[object]:
-    page = int(pagination["page"])
-    page_size = int(pagination["page_size"])
-    start = (page - 1) * page_size
-    end = start + page_size
-    return list(items[start:end])
+}
 
 
 def build_page_url(

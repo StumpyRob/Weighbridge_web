@@ -145,8 +145,8 @@ def _customer_admin_controls_requested(payload: dict[str, object]) -> bool:
 def customers_list(
     request: Request,
     q: str | None = None,
-    page: int = 1,
-    page_size: int = 20,
+    page: str | None = None,
+    page_size: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     require_permission(request, PERM_VIEW_CUSTOMERS)

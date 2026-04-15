@@ -226,8 +226,8 @@ def tickets_list(
     walk_in_sale_only: int | None = None,
     ticket_no: str | None = None,
     q: str | None = None,
-    page: int = 1,
-    page_size: int = 20,
+    page: str | None = None,
+    page_size: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     search_query = _normalize_ticket_search_query(q)

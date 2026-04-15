@@ -203,6 +203,51 @@ def test_tickets_list_pagination_links_render_as_buttons(client, db_session):
     assert 'Showing 2-2 of 3 tickets' in response.text
 
 
+def test_tickets_list_non_numeric_page_defaults_to_first_page(client, db_session):
+    for index in range(3):
+        db_session.add(
+            Ticket(
+                ticket_no=f"T-LIST-INVALID-PAGE-{index + 1}",
+                datetime=datetime(2026, 2, 18, 9, 30 + index, 0),
+                status=TicketStatusEnum.OPEN.value,
+                direction=DirectionEnum.INWARD.value,
+                transaction_type=TransactionTypeEnum.SALE.value,
+                dont_invoice=False,
+                paid=False,
+            )
+        )
+    db_session.commit()
+
+    response = client.get("/tickets?q=T-LIST-INVALID-PAGE&page=abc&page_size=1")
+
+    assert response.status_code == 200
+    assert 'Showing 1-1 of 3 tickets' in response.text
+    assert 'name="page"' in response.text
+    assert 'value="1"' in response.text
+
+
+def test_tickets_list_non_numeric_page_size_defaults_safely(client, db_session):
+    for index in range(3):
+        db_session.add(
+            Ticket(
+                ticket_no=f"T-LIST-INVALID-SIZE-{index + 1}",
+                datetime=datetime(2026, 2, 18, 10, 30 + index, 0),
+                status=TicketStatusEnum.OPEN.value,
+                direction=DirectionEnum.INWARD.value,
+                transaction_type=TransactionTypeEnum.SALE.value,
+                dont_invoice=False,
+                paid=False,
+            )
+        )
+    db_session.commit()
+
+    response = client.get("/tickets?q=T-LIST-INVALID-SIZE&page=2&page_size=abc")
+
+    assert response.status_code == 200
+    assert 'Showing 1-3 of 3 tickets' in response.text
+    assert 'name="page"' not in response.text
+
+
 def test_customers_list_renders_page_jump_input(client, db_session):
     for index in range(21):
         db_session.add(

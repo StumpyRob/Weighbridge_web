@@ -119,8 +119,8 @@ def invoices_list(
     q: str | None = None,
     customer_id: int | None = Query(None),
     unpaid_only: int | None = Query(None),
-    page: int = 1,
-    page_size: int = 20,
+    page: str | None = None,
+    page_size: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     require_permission(request, PERM_VIEW_INVOICES)

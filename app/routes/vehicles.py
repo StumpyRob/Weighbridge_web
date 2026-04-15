@@ -104,8 +104,8 @@ def _vehicle_query_errors(request: Request) -> list[str]:
 def vehicles_list(
     request: Request,
     q: str | None = None,
-    page: int = 1,
-    page_size: int = 20,
+    page: str | None = None,
+    page_size: str | None = None,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     require_permission(request, PERM_VIEW_VEHICLES)
