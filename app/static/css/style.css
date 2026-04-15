@@ -2986,8 +2986,12 @@ body.js-help-tooltips .help-tooltip {
   color: #374151;
 }
 
-.pagination-form select {
-  min-width: 9rem;
+.pagination-form input[type="number"] {
+  width: 5.5rem;
+}
+
+.pagination-form__meta {
+  white-space: nowrap;
 }
 
 .link-muted {

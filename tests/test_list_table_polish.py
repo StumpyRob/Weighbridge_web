@@ -203,7 +203,7 @@ def test_tickets_list_pagination_links_render_as_buttons(client, db_session):
     assert 'Showing 2-2 of 3 tickets' in response.text
 
 
-def test_customers_list_renders_page_jump_dropdown(client, db_session):
+def test_customers_list_renders_page_jump_input(client, db_session):
     for index in range(21):
         db_session.add(
             Customer(
@@ -217,7 +217,11 @@ def test_customers_list_renders_page_jump_dropdown(client, db_session):
 
     assert response.status_code == 200
     assert 'Showing 21-21 of 21 customers' in response.text
-    assert 'value="2" selected' in response.text
+    assert 'type="number"' in response.text
+    assert 'name="page"' in response.text
+    assert 'value="2"' in response.text
+    assert 'max="2"' in response.text
+    assert "of 2" in response.text
     assert 'Page Jump Customer 21' in response.text
     assert 'Page Jump Customer 01' not in response.text
     assert (

@@ -22,13 +22,16 @@
             <input type="hidden" name="{{ key }}" value="{{ value }}" />
           {% endfor %}
           <label class="pagination-form__label" for="{{ pagination.select_id }}">Page</label>
-          <select id="{{ pagination.select_id }}" name="page">
-            {% for option in pagination.page_options %}
-              <option value="{{ option }}" {% if option == pagination.page %}selected{% endif %}>
-                {{ option }} of {{ pagination.total_pages }}
-              </option>
-            {% endfor %}
-          </select>
+          <input
+            type="number"
+            id="{{ pagination.select_id }}"
+            name="page"
+            min="1"
+            max="{{ pagination.total_pages }}"
+            value="{{ pagination.page }}"
+            inputmode="numeric"
+          />
+          <span class="pagination-form__meta muted">of {{ pagination.total_pages }}</span>
           <button type="submit" class="btn btn--outline btn--sm">Go</button>
         </form>
       </div>

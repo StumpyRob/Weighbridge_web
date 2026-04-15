@@ -80,7 +80,6 @@ def build_pagination_context(
         "query_pairs": query_pairs,
         "form_action": str(request.url.path),
         "select_id": select_id,
-        "page_options": list(range(1, total_pages + 1)),
         "previous_url": build_page_url(
             str(request.url.path),
             query_pairs,
