@@ -1,9 +1,14 @@
 from datetime import datetime
 from decimal import Decimal
 
+import app.routes.invoices as invoice_routes
+from sqlalchemy import select
+
 from app.models import (
     Customer,
     DirectionEnum,
+    Invoice,
+    InvoiceSequence,
     Product,
     Ticket,
     TicketStatusEnum,
@@ -164,3 +169,123 @@ def test_invoice_generate_preview_rejects_from_after_to(client, db_session):
 
     assert response.status_code == 200
     assert "Date from must be on or before date to." in response.text
+
+
+def test_invoice_generate_confirm_resyncs_stale_invoice_sequence(
+    client, db_session, monkeypatch
+):
+    fixed_now = datetime(2026, 4, 15, 12, 0, 0)
+    monkeypatch.setattr(invoice_routes, "utcnow", lambda: fixed_now)
+
+    customer = Customer(
+        account_code="C-INV-SEQ-1",
+        name="Invoice Sequence Customer",
+    )
+    db_session.add(customer)
+    db_session.flush()
+
+    # Simulate a demo/imported dataset where invoice rows already exist but the
+    # sequence table was left behind.
+    db_session.add_all(
+        [
+            Invoice(
+                invoice_no="INV-26-00001",
+                customer_id=customer.id,
+                invoice_date=fixed_now.date(),
+                status="PAID",
+                net_total=Decimal("10.00"),
+                vat_total=Decimal("2.00"),
+                gross_total=Decimal("12.00"),
+            ),
+            Invoice(
+                invoice_no="INV-26-00007",
+                customer_id=customer.id,
+                invoice_date=fixed_now.date(),
+                status="PAID",
+                net_total=Decimal("10.00"),
+                vat_total=Decimal("2.00"),
+                gross_total=Decimal("12.00"),
+            ),
+            InvoiceSequence(
+                year=2026,
+                last_number=0,
+                updated_at=fixed_now,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    _make_invoiceable_ticket(
+        db_session,
+        customer_id=customer.id,
+        ticket_no="T-INV-SEQ-1",
+        dt=datetime(2026, 4, 14, 10, 0, 0),
+    )
+
+    response = client.post(
+        "/invoices/generate/confirm",
+        data={
+            "customer_id": str(customer.id),
+            "date_from": "01/04/2026",
+            "date_to": "30/04/2026",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    invoice = db_session.execute(
+        select(Invoice).order_by(Invoice.id.desc()).limit(1)
+    ).scalar_one()
+    assert invoice.invoice_no == "INV-26-00008"
+
+    sequence = db_session.get(InvoiceSequence, 2026)
+    assert sequence is not None
+    assert sequence.last_number == 8
+
+
+def test_generate_invoice_no_uses_postgres_safe_insert(monkeypatch):
+    fixed_now = datetime(2026, 4, 15, 12, 0, 0)
+    monkeypatch.setattr(invoice_routes, "utcnow", lambda: fixed_now)
+
+    class _FakeDialect:
+        name = "postgresql"
+
+    class _FakeBind:
+        dialect = _FakeDialect()
+
+    class _FakeResult:
+        def __init__(self, *, rows=None, scalar=None):
+            self._rows = rows or []
+            self._scalar = scalar
+
+        def scalars(self):
+            return self._rows
+
+        def scalar_one(self):
+            return self._scalar
+
+    class _FakeSession:
+        def __init__(self):
+            self.calls = []
+
+        def get_bind(self):
+            return _FakeBind()
+
+        def execute(self, statement, params=None):
+            sql = str(statement)
+            self.calls.append((sql, params))
+            if "SELECT invoices.invoice_no" in sql:
+                return _FakeResult(rows=[])
+            if "SELECT last_number FROM invoice_sequences" in sql:
+                return _FakeResult(scalar=1)
+            return _FakeResult()
+
+    fake_db = _FakeSession()
+
+    invoice_no = invoice_routes._generate_invoice_no(fake_db)
+
+    assert invoice_no == "INV-26-00001"
+    assert any(
+        "ON CONFLICT (year) DO NOTHING" in sql for sql, _params in fake_db.calls
+    )
+    assert not any("INSERT OR IGNORE" in sql for sql, _params in fake_db.calls)

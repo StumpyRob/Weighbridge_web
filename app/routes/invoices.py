@@ -92,6 +92,7 @@ INVOICE_EMAIL_DEFAULT_BODY = (
     "Regards,\n"
     "{company_name}"
 )
+INVOICE_NO_PREFIX_TEMPLATE = "INV-{year_short}-"
 
 
 def _uk_today() -> date:
@@ -1092,13 +1093,59 @@ async def invoices_void(
 def _generate_invoice_no(db: Session) -> str:
     current_utc = utcnow()
     year = uk_date_from_utc(current_utc).year
-    db.execute(
-        text(
-            "INSERT OR IGNORE INTO invoice_sequences (year, last_number, updated_at) "
-            "VALUES (:year, 0, :updated_at)"
-        ),
-        {"year": year, "updated_at": current_utc},
-    )
+    year_short = str(year)[2:]
+    invoice_prefix = INVOICE_NO_PREFIX_TEMPLATE.format(year_short=year_short)
+    dialect = str(
+        getattr(getattr(db.get_bind(), "dialect", None), "name", "") or ""
+    ).lower()
+
+    # Keep the allocator in sync with seeded/imported rows so a stale
+    # invoice_sequences row cannot generate duplicate invoice numbers.
+    existing_numbers = db.execute(
+        select(Invoice.invoice_no).where(Invoice.invoice_no.like(f"{invoice_prefix}%"))
+    ).scalars()
+    existing_floor = 0
+    for invoice_no in existing_numbers:
+        invoice_text = str(invoice_no or "").strip().upper()
+        if not invoice_text.startswith(invoice_prefix):
+            continue
+        suffix = invoice_text[len(invoice_prefix) :]
+        if suffix.isdigit():
+            existing_floor = max(existing_floor, int(suffix))
+
+    if dialect == "postgresql":
+        db.execute(
+            text(
+                "INSERT INTO invoice_sequences (year, last_number, updated_at) "
+                "VALUES (:year, 0, :updated_at) "
+                "ON CONFLICT (year) DO NOTHING"
+            ),
+            {"year": year, "updated_at": current_utc},
+        )
+    else:
+        db.execute(
+            text(
+                "INSERT OR IGNORE INTO invoice_sequences (year, last_number, updated_at) "
+                "VALUES (:year, 0, :updated_at)"
+            ),
+            {"year": year, "updated_at": current_utc},
+        )
+    if existing_floor:
+        db.execute(
+            text(
+                "UPDATE invoice_sequences "
+                "SET last_number = CASE "
+                "WHEN last_number < :existing_floor THEN :existing_floor "
+                "ELSE last_number END, "
+                "updated_at = :updated_at "
+                "WHERE year = :year"
+            ),
+            {
+                "year": year,
+                "existing_floor": existing_floor,
+                "updated_at": current_utc,
+            },
+        )
     db.execute(
         text(
             "UPDATE invoice_sequences "
@@ -1112,7 +1159,7 @@ def _generate_invoice_no(db: Session) -> str:
         {"year": year},
     ).scalar_one()
 
-    return f"INV-{str(year)[2:]}-{next_number:05d}"
+    return f"{invoice_prefix}{next_number:05d}"
 
 
 def _parse_date(value: str) -> date | None:
