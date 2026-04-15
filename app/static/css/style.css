@@ -785,9 +785,18 @@ body.is-shell-nav-open .app-sidebar {
 
 .tickets-list-toggle-group .field.checkbox {
   margin: 0;
+  flex-wrap: nowrap;
+  gap: 0.45rem;
+  min-height: auto;
+  padding: 0;
 }
 
 .tickets-list-toggle-group .field.checkbox label {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: auto;
+  margin: 0;
   white-space: nowrap;
 }
 
