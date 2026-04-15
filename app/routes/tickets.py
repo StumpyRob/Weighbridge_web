@@ -37,6 +37,7 @@ from ..permissions import (
     PERM_VOID_TICKETS,
     require_permission,
 )
+from ..pagination import build_pagination_context, count_rows
 from ..models import (
     Area,
     Container,
@@ -229,8 +230,6 @@ def tickets_list(
     page_size: int = 20,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
-    page = max(page, 1)
-    page_size = min(max(page_size, 1), 100)
     search_query = _normalize_ticket_search_query(q)
 
     filters = []
@@ -285,17 +284,14 @@ def tickets_list(
         .outerjoin(Product, Ticket.product_id == Product.id)
         .where(*filters)
     )
-    count_stmt = (
-        select(func.count(func.distinct(Ticket.id)))
-        .select_from(Ticket)
-        .outerjoin(Vehicle, Ticket.vehicle_id == Vehicle.id)
-        .outerjoin(Customer, Ticket.customer_id == Customer.id)
-        .outerjoin(Product, Ticket.product_id == Product.id)
-        .where(*filters)
+    pagination = build_pagination_context(
+        request,
+        page=page,
+        page_size=page_size,
+        total_count=count_rows(db, base_stmt),
+        singular_label="ticket",
+        plural_label="tickets",
     )
-    total_count = db.execute(count_stmt).scalar() or 0
-    total_pages = max((total_count + page_size - 1) // page_size, 1)
-    page = min(page, total_pages)
 
     status_priority = case(
         (Ticket.status == TicketStatusEnum.OPEN.value, 0),
@@ -306,8 +302,8 @@ def tickets_list(
     rows = (
         db.execute(
             base_stmt.order_by(Ticket.datetime.desc(), status_priority.asc())
-            .limit(page_size)
-            .offset((page - 1) * page_size)
+            .limit(int(pagination["page_size"]))
+            .offset((int(pagination["page"]) - 1) * int(pagination["page_size"]))
         )
         .all()
     )
@@ -317,10 +313,11 @@ def tickets_list(
         {
             "request": request,
             "rows": rows,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": total_pages,
-            "total_count": total_count,
+            "page": pagination["page"],
+            "page_size": pagination["page_size"],
+            "total_pages": pagination["total_pages"],
+            "total_count": pagination["total_count"],
+            "pagination": pagination,
             "reprint_sent": request.query_params.get("reprint_sent") == "1",
             "reprint_error": request.query_params.get("reprint_error", ""),
             "reprint_error_detail": request.query_params.get("reprint_error_detail", ""),

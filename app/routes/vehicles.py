@@ -15,6 +15,7 @@ from ..permissions import (
     PERM_VIEW_VEHICLES,
     require_permission,
 )
+from ..pagination import build_pagination_context, count_rows
 from ..models.base import utcnow
 from ..security import validate_no_html_fields
 from ..services.edit_conflicts import (
@@ -103,6 +104,8 @@ def _vehicle_query_errors(request: Request) -> list[str]:
 def vehicles_list(
     request: Request,
     q: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     require_permission(request, PERM_VIEW_VEHICLES)
@@ -116,13 +119,26 @@ def vehicles_list(
     if q:
         like = f"%{q}%"
         query = query.where(Vehicle.registration.ilike(like))
-    rows = db.execute(query).all()
+    pagination = build_pagination_context(
+        request,
+        page=page,
+        page_size=page_size,
+        total_count=count_rows(db, query),
+        singular_label="vehicle",
+        plural_label="vehicles",
+    )
+    rows = db.execute(
+        query.limit(int(pagination["page_size"])).offset(
+            (int(pagination["page"]) - 1) * int(pagination["page_size"])
+        )
+    ).all()
     return templates.TemplateResponse(request, 
         "vehicles/list.html",
         {
             "request": request,
             "rows": rows,
             "q": q or "",
+            "pagination": pagination,
             "saved": request.query_params.get("saved") == "1",
         },
     )

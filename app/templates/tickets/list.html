@@ -186,17 +186,5 @@
   </table>
 </div>
 
-<div class="pagination">
-  <div class="muted">
-    Page {{ page }} of {{ total_pages }} ({{ total_count }} tickets)
-  </div>
-  <div class="pager-links">
-    {% if page > 1 %}
-      <a class="btn btn--outline" href="/tickets?page={{ page - 1 }}">Previous</a>
-    {% endif %}
-    {% if page < total_pages %}
-      <a class="btn btn--outline" href="/tickets?page={{ page + 1 }}">Next</a>
-    {% endif %}
-  </div>
-</div>
+{% include "_pagination.html" %}
 {% endblock %}

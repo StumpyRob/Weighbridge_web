@@ -23,6 +23,7 @@ from ..permissions import (
     PERM_VOID_INVOICES,
     require_permission,
 )
+from ..pagination import build_pagination_context, count_rows
 from ..models import (
     CompanySetting,
     Customer,
@@ -118,6 +119,8 @@ def invoices_list(
     q: str | None = None,
     customer_id: int | None = Query(None),
     unpaid_only: int | None = Query(None),
+    page: int = 1,
+    page_size: int = 20,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     require_permission(request, PERM_VIEW_INVOICES)
@@ -140,7 +143,19 @@ def invoices_list(
         query = query.where(
             or_(Invoice.invoice_no.ilike(like), Customer.name.ilike(like))
         )
-    rows = db.execute(query).all()
+    pagination = build_pagination_context(
+        request,
+        page=page,
+        page_size=page_size,
+        total_count=count_rows(db, query),
+        singular_label="invoice",
+        plural_label="invoices",
+    )
+    rows = db.execute(
+        query.limit(int(pagination["page_size"])).offset(
+            (int(pagination["page"]) - 1) * int(pagination["page_size"])
+        )
+    ).all()
     customer_filter = db.get(Customer, customer_id) if customer_id else None
     return templates.TemplateResponse(request, 
         "invoices/list.html",
@@ -150,6 +165,7 @@ def invoices_list(
             "q": q or "",
             "customer_id": customer_id,
             "customer_filter": customer_filter,
+            "pagination": pagination,
             "unpaid_only": bool(unpaid_only),
         },
     )

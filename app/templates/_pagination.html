@@ -1,0 +1,37 @@
+{% if pagination %}
+  <div class="pagination">
+    <div class="muted">
+      {% if pagination.total_count %}
+        Showing {{ pagination.start_index }}-{{ pagination.end_index }} of {{ pagination.total_count }} {{ pagination.label }}
+      {% else %}
+        Showing 0 {{ pagination.label }}
+      {% endif %}
+    </div>
+    {% if pagination.has_multiple_pages %}
+      <div class="pagination-controls">
+        <div class="pager-links">
+          {% if pagination.previous_url %}
+            <a class="btn btn--outline" href="{{ pagination.previous_url }}">Previous</a>
+          {% endif %}
+          {% if pagination.next_url %}
+            <a class="btn btn--outline" href="{{ pagination.next_url }}">Next</a>
+          {% endif %}
+        </div>
+        <form class="pagination-form" method="get" action="{{ pagination.form_action }}">
+          {% for key, value in pagination.query_pairs %}
+            <input type="hidden" name="{{ key }}" value="{{ value }}" />
+          {% endfor %}
+          <label class="pagination-form__label" for="{{ pagination.select_id }}">Page</label>
+          <select id="{{ pagination.select_id }}" name="page">
+            {% for option in pagination.page_options %}
+              <option value="{{ option }}" {% if option == pagination.page %}selected{% endif %}>
+                {{ option }} of {{ pagination.total_pages }}
+              </option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn--outline btn--sm">Go</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+{% endif %}

@@ -188,11 +188,42 @@ def test_tickets_list_pagination_links_render_as_buttons(client, db_session):
         )
     db_session.commit()
 
-    response = client.get("/tickets?page=2&page_size=1")
+    response = client.get("/tickets?q=T-LIST-PAGE&page=2&page_size=1")
 
     assert response.status_code == 200
-    assert 'class="btn btn--outline" href="/tickets?page=1">Previous</a>' in response.text
-    assert 'class="btn btn--outline" href="/tickets?page=3">Next</a>' in response.text
+    assert (
+        'class="btn btn--outline" href="/tickets?q=T-LIST-PAGE&amp;page_size=1&amp;page=1">Previous</a>'
+        in response.text
+    )
+    assert (
+        'class="btn btn--outline" href="/tickets?q=T-LIST-PAGE&amp;page_size=1&amp;page=3">Next</a>'
+        in response.text
+    )
+    assert 'name="page"' in response.text
+    assert 'Showing 2-2 of 3 tickets' in response.text
+
+
+def test_customers_list_renders_page_jump_dropdown(client, db_session):
+    for index in range(21):
+        db_session.add(
+            Customer(
+                account_code=f"C-PAGE-{index + 1:02d}",
+                name=f"Page Jump Customer {index + 1:02d}",
+            )
+        )
+    db_session.commit()
+
+    response = client.get("/customers?q=Page+Jump+Customer&page=2&page_size=20")
+
+    assert response.status_code == 200
+    assert 'Showing 21-21 of 21 customers' in response.text
+    assert 'value="2" selected' in response.text
+    assert 'Page Jump Customer 21' in response.text
+    assert 'Page Jump Customer 01' not in response.text
+    assert (
+        'class="btn btn--outline" href="/customers?q=Page+Jump+Customer&amp;page_size=20&amp;page=1">Previous</a>'
+        in response.text
+    )
 
 
 def test_customers_list_hides_contact_columns_and_shows_operational_badges(

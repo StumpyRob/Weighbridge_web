@@ -24,6 +24,7 @@ from ..permissions import (
     PERM_VIEW_CUSTOMERS,
     require_permission,
 )
+from ..pagination import build_pagination_context, count_rows
 from ..security import validate_no_html_fields
 from ..models.base import utcnow
 from ..models import (
@@ -144,6 +145,8 @@ def _customer_admin_controls_requested(payload: dict[str, object]) -> bool:
 def customers_list(
     request: Request,
     q: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
     db: Session = Depends(get_db),
 ) -> HTMLResponse:
     require_permission(request, PERM_VIEW_CUSTOMERS)
@@ -167,13 +170,26 @@ def customers_list(
         query = query.where(
             or_(Customer.name.ilike(like), Customer.account_code.ilike(like))
         )
-    rows = db.execute(query).all()
+    pagination = build_pagination_context(
+        request,
+        page=page,
+        page_size=page_size,
+        total_count=count_rows(db, query),
+        singular_label="customer",
+        plural_label="customers",
+    )
+    rows = db.execute(
+        query.limit(int(pagination["page_size"])).offset(
+            (int(pagination["page"]) - 1) * int(pagination["page_size"])
+        )
+    ).all()
     return templates.TemplateResponse(request, 
         "customers/list.html",
         {
             "request": request,
             "rows": rows,
             "q": q or "",
+            "pagination": pagination,
             "saved": request.query_params.get("saved") == "1",
         },
     )

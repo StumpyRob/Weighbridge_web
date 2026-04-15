@@ -2951,6 +2951,14 @@ body.js-help-tooltips .help-tooltip {
   margin-top: 1.5rem;
 }
 
+.pagination-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
 .pager-links {
   display: flex;
   flex-wrap: wrap;
@@ -2964,6 +2972,22 @@ body.js-help-tooltips .help-tooltip {
 .pager-links a:hover,
 .pager-links a:focus {
   text-decoration: none;
+}
+
+.pagination-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pagination-form__label {
+  font-size: 0.95rem;
+  color: #374151;
+}
+
+.pagination-form select {
+  min-width: 9rem;
 }
 
 .link-muted {
