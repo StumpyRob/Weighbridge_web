@@ -2,6 +2,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import FastAPI
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -212,3 +213,58 @@ def test_missing_page_on_marketing_host_uses_marketing_not_found_page(tmp_path, 
     assert "Try the Demo" in response.text
     assert "Open Platform" in response.text
     assert "/missing-page" in response.text
+
+
+def test_tenant_host_payment_required_error_uses_branded_html_page(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path,
+        db_name="tenant-payment-required-page.db",
+        monkeypatch=monkeypatch,
+    )
+    _seed_tenant(
+        SessionLocal,
+        name="Tenant One",
+        subdomain="tenant-one",
+        company_name="Tenant One Branding",
+    )
+
+    @app.get("/billing-problem")
+    def billing_problem():
+        raise HTTPException(status_code=402, detail="Payment required: Insufficient balance")
+
+    with TestClient(app, base_url="https://tenant-one.localhost") as client:
+        response = client.get("/billing-problem")
+
+    assert response.status_code == 402
+    assert "<h1>Payment Required</h1>" in response.text
+    assert "Tenant One Branding" in response.text
+    assert "Payment required: Insufficient balance" in response.text
+    assert "Restore billing or service balance, then try again." in response.text
+    assert 'class="btn btn--secondary error-page-home-button"' in response.text
+
+
+def test_html_error_route_still_returns_json_when_json_is_explicitly_requested(tmp_path, monkeypatch):
+    app, SessionLocal = _build_app_and_session(
+        tmp_path,
+        db_name="tenant-payment-required-json.db",
+        monkeypatch=monkeypatch,
+    )
+    _seed_tenant(
+        SessionLocal,
+        name="Tenant One",
+        subdomain="tenant-one",
+        company_name="Tenant One Branding",
+    )
+
+    @app.get("/billing-problem-json")
+    def billing_problem_json():
+        raise HTTPException(status_code=402, detail="Payment required: Insufficient balance")
+
+    with TestClient(app, base_url="https://tenant-one.localhost") as client:
+        response = client.get(
+            "/billing-problem-json",
+            headers={"accept": "application/json"},
+        )
+
+    assert response.status_code == 402
+    assert response.json() == {"detail": "Payment required: Insufficient balance"}

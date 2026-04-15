@@ -1260,27 +1260,73 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         error_workspace_label = ""
         error_feedback_enabled = False
 
-        if normalized_key == "unknown tenant":
-            error_title = "Workspace Not Found"
-            error_heading = "Workspace Not Found"
-            error_workspace_label = requested_subdomain or "Unknown workspace"
-            if requested_subdomain:
-                error_message = (
-                    f"Unknown tenant. We couldn't find a workspace called "
-                    f"\"{requested_subdomain}\"."
+        if status_code == 402:
+            error_title = "Payment Required"
+            error_heading = "Payment Required"
+            error_message = normalized_detail or "A required paid service is unavailable."
+            error_hint = "Restore billing or service balance, then try again."
+        elif status_code == 403:
+            error_title = "Access Denied"
+            error_heading = "Access Denied"
+            error_message = normalized_detail or "You do not have permission to view this page."
+            error_hint = "Sign in with the correct account or return to a page you can access."
+        elif status_code == 500:
+            error_title = "Server Error"
+            error_heading = "Server Error"
+            error_message = "Something went wrong while loading this page."
+            error_hint = "Refresh the page. If the problem persists, report it."
+        elif status_code == 502:
+            error_title = "Upstream Service Error"
+            error_heading = "Upstream Service Error"
+            error_message = normalized_detail or "A connected service returned an error."
+            error_hint = "Try again shortly. If it keeps happening, report it."
+        elif status_code == 503:
+            error_title = "Service Unavailable"
+            error_heading = "Service Unavailable"
+            error_message = normalized_detail or "This service is temporarily unavailable."
+            error_hint = "Wait a moment and try again."
+
+        if status_code == 404:
+            if normalized_key == "unknown tenant":
+                error_title = "Workspace Not Found"
+                error_heading = "Workspace Not Found"
+                error_workspace_label = requested_subdomain or "Unknown workspace"
+                if requested_subdomain:
+                    error_message = (
+                        f"Unknown tenant. We couldn't find a workspace called "
+                        f"\"{requested_subdomain}\"."
+                    )
+                else:
+                    error_message = "Unknown tenant. We couldn't find a workspace for this address."
+                error_hint = (
+                    "Check the subdomain or open the platform to choose an existing workspace."
                 )
+                error_primary_href = platform_route_url(request, path="/login")
+                error_primary_label = "Open Platform"
             else:
-                error_message = "Unknown tenant. We couldn't find a workspace for this address."
-            error_hint = (
-                "Check the subdomain or open the platform to choose an existing workspace."
-            )
-            error_primary_href = platform_route_url(request, path="/login")
-            error_primary_label = "Open Platform"
+                if platform_mode:
+                    error_workspace_label = "Platform Admin"
+                    error_message = f"No page exists at {request_path} in platform admin."
+                    error_hint = "Use Tenant Management or Help to continue."
+                    error_primary_href = "/platform/tenants"
+                    error_primary_label = "Tenant Management"
+                    error_secondary_href = "/help"
+                    error_secondary_label = "Help"
+                elif current_tenant is not None:
+                    error_workspace_label = str(getattr(current_tenant, "name", "") or "").strip() or (
+                        str(getattr(current_tenant, "subdomain", "") or "").strip()
+                    )
+                    error_message = f"No page exists at {request_path} in this workspace."
+                    error_hint = "The link may be out of date, or the record may no longer exist."
+                    error_primary_href = _tenant_href("/")
+                    error_primary_label = "Home"
+                    error_feedback_enabled = current_user is not None
+                elif current_user is None:
+                    error_primary_href = "/login"
+                    error_primary_label = "Sign In"
         else:
             if platform_mode:
                 error_workspace_label = "Platform Admin"
-                error_message = f"No page exists at {request_path} in platform admin."
-                error_hint = "Use Tenant Management or Help to continue."
                 error_primary_href = "/platform/tenants"
                 error_primary_label = "Tenant Management"
                 error_secondary_href = "/help"
@@ -1289,8 +1335,6 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 error_workspace_label = str(getattr(current_tenant, "name", "") or "").strip() or (
                     str(getattr(current_tenant, "subdomain", "") or "").strip()
                 )
-                error_message = f"No page exists at {request_path} in this workspace."
-                error_hint = "The link may be out of date, or the record may no longer exist."
                 error_primary_href = _tenant_href("/")
                 error_primary_label = "Home"
                 error_feedback_enabled = current_user is not None
@@ -1897,6 +1941,12 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
                 {"detail": "Internal Server Error"},
                 status_code=500,
             )
+        if _should_render_html_error(request):
+            return _render_error_template(
+                request,
+                status_code=500,
+                detail="Internal Server Error",
+            )
         return HTMLResponse("<h1>Internal Server Error</h1>", status_code=500)
 
     @app.exception_handler(StarletteHTTPException)
@@ -1904,13 +1954,15 @@ def create_app(dev_mode: bool | None = None) -> FastAPI:
         detail = str(exc.detail or "").strip() or "Not Found"
         normalized_detail = detail.rstrip(".").lower()
         if (
-            exc.status_code == 404
-            and normalized_detail in {"not found", "unknown tenant"}
-            and _should_render_html_error(request)
+            _should_render_html_error(request)
+            and (
+                exc.status_code != 404
+                or normalized_detail in {"not found", "unknown tenant"}
+            )
         ):
             return _render_error_template(
                 request,
-                status_code=404,
+                status_code=exc.status_code,
                 detail=detail,
             )
         accept = str(request.headers.get("accept", "")).lower()
