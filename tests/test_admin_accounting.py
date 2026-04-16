@@ -275,14 +275,26 @@ def _client_for(app: FastAPI, *, base_url: str) -> TestClient:
 
 
 def _prepare_environment(tmp_path: Path, monkeypatch):
+    return _prepare_environment_with_settings(
+        tmp_path,
+        monkeypatch,
+        quickbooks_redirect_uri="https://{tenant_subdomain}.localhost/admin/accounting/quickbooks/callback",
+        base_domain="",
+    )
+
+
+def _prepare_environment_with_settings(
+    tmp_path: Path,
+    monkeypatch,
+    *,
+    quickbooks_redirect_uri: str,
+    base_domain: str,
+):
     monkeypatch.setattr(settings, "quickbooks_client_id", "qb-client-id")
     monkeypatch.setattr(settings, "quickbooks_client_secret", "qb-client-secret")
-    monkeypatch.setattr(
-        settings,
-        "quickbooks_redirect_uri",
-        "https://{tenant_subdomain}.localhost/admin/accounting/quickbooks/callback",
-    )
+    monkeypatch.setattr(settings, "quickbooks_redirect_uri", quickbooks_redirect_uri)
     monkeypatch.setattr(settings, "quickbooks_environment", "sandbox")
+    monkeypatch.setattr(settings, "base_domain", base_domain)
     monkeypatch.setattr(
         settings,
         "app_encryption_key",
@@ -509,6 +521,55 @@ def test_connect_route_redirects_to_quickbooks_authorize_url(tmp_path, monkeypat
         assert _authorize_state_from_redirect(location)
         assert "ACCOUNTING_CONNECT_START" in _audit_actions(env["SessionLocal"], env["tenant_id"])
         assert "oauth_connect_started" in _sync_event_types(env["SessionLocal"], env["tenant_id"])
+    finally:
+        client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_connect_route_uses_current_tenant_host_on_custom_domain_even_if_env_points_to_platform_host(
+    tmp_path,
+    monkeypatch,
+):
+    env = _prepare_environment_with_settings(
+        tmp_path,
+        monkeypatch,
+        quickbooks_redirect_uri="https://admin.roberthetherington.com{tenant_route_prefix}/admin/accounting/quickbooks/callback",
+        base_domain="roberthetherington.com",
+    )
+    client = _client_for(env["app"], base_url="https://acme.roberthetherington.com")
+    try:
+        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
+        response = client.get("/admin/accounting/quickbooks/connect", follow_redirects=False)
+        assert response.status_code == 302
+        location = response.headers["location"]
+        assert _oauth_redirect_uri_from_redirect(location) == (
+            "https://acme.roberthetherington.com/admin/accounting/quickbooks/callback"
+        )
+        assert "admin.roberthetherington.com/admin/accounting/quickbooks/callback" not in location
+    finally:
+        client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_connect_route_supports_tenant_host_redirect_uri_placeholder_on_custom_domain(
+    tmp_path,
+    monkeypatch,
+):
+    env = _prepare_environment_with_settings(
+        tmp_path,
+        monkeypatch,
+        quickbooks_redirect_uri="https://{tenant_host}{tenant_route_prefix}/admin/accounting/quickbooks/callback",
+        base_domain="roberthetherington.com",
+    )
+    client = _client_for(env["app"], base_url="https://acme.roberthetherington.com")
+    try:
+        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
+        response = client.get("/admin/accounting/quickbooks/connect", follow_redirects=False)
+        assert response.status_code == 302
+        location = response.headers["location"]
+        assert _oauth_redirect_uri_from_redirect(location) == (
+            "https://acme.roberthetherington.com/admin/accounting/quickbooks/callback"
+        )
     finally:
         client.close()
         env["app"].dependency_overrides.clear()
