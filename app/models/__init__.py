@@ -1,4 +1,13 @@
 from .base import Base
+from .accounting import (
+    AccountingConnection,
+    AccountingCustomerMap,
+    AccountingInvoiceSync,
+    AccountingProductMap,
+    AccountingSyncEvent,
+    AccountingSyncJob,
+    AccountingTaxMap,
+)
 from .ai_usage_log import AIUsageLog
 from .audit_event import AuditEvent
 from .company_setting import CompanySetting
@@ -58,6 +67,13 @@ from .vehicle_tare import VehicleTare
 
 __all__ = [
     "Base",
+    "AccountingConnection",
+    "AccountingCustomerMap",
+    "AccountingInvoiceSync",
+    "AccountingProductMap",
+    "AccountingSyncEvent",
+    "AccountingSyncJob",
+    "AccountingTaxMap",
     "AIUsageLog",
     "AuditEvent",
     "CompanySetting",

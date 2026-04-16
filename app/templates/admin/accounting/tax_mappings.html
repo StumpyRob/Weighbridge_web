@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}QuickBooks Tax Mappings | Weighbridge Web{% endblock %}
+
+{% block toast_messages %}
+  {% if tax_mapping_saved %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">QuickBooks tax mapping saved.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+  {% if tax_mapping_deleted %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">QuickBooks tax mapping removed.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+  {% if error %}
+    <div class="flash-toast flash-toast--error" data-flash-toast>
+      <div class="flash-toast__content">{{ error }}</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  {% set setup = setup_summary %}
+  {% set is_connected = connection and connection.status == "connected" %}
+  <div class="page-header">
+    <div>
+      <h1>QuickBooks Tax Mappings</h1>
+      <p class="muted">Manage tenant-scoped local tax rate mappings for QuickBooks sandbox testing. The UI only exposes the current tenant's required tax rates and saved mappings.</p>
+    </div>
+    <div class="actions btn-group">
+      <a class="btn btn--secondary" href="{{ tenant_path('/admin/accounting') }}">Back to Accounting</a>
+    </div>
+  </div>
+
+  <div class="stacked-frames">
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Setup Summary</h2>
+      </div>
+      <div class="frame-body">
+        <div class="invoice-summary-grid">
+          <div class="card">
+            <div class="summary-label">Connection State</div>
+            <strong>{{ (connection.status if connection else "disconnected") | replace("_", " ") | title }}</strong>
+          </div>
+          <div class="card">
+            <div class="summary-label">Required Tax Mappings</div>
+            <strong>{{ setup.usable_required_tax_mapping_count if setup else 0 }} / {{ setup.required_tax_rate_count if setup else 0 }}</strong>
+          </div>
+          <div class="card">
+            <div class="summary-label">Missing Tax Mappings</div>
+            <strong>{{ setup.missing_tax_mapping_count if setup else 0 }}</strong>
+          </div>
+          <div class="card">
+            <div class="summary-label">Sandbox Ready</div>
+            <strong>{% if setup and setup.is_ready_for_sandbox %}Yes{% else %}No{% endif %}</strong>
+          </div>
+        </div>
+
+        <p class="muted">
+          Keep provider fixed to QuickBooks for now. Use `TAX` or `NON` as the line tax code only when that matches your sandbox setup. `TAX` mappings also need the invoice tax code/group external ID in the external ID field.
+        </p>
+
+        {% if setup and setup.next_steps %}
+          <h3>Next Steps</h3>
+          <ul>
+            {% for step in setup.next_steps %}
+              <li>{{ step }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Manage Mappings</h2>
+      </div>
+      <div class="frame-body">
+        {% if setup and setup.tax_mapping_rows %}
+          {% for row in setup.tax_mapping_rows %}
+            <div class="card" style="margin-bottom: 1rem;">
+              <div class="invoice-summary-grid">
+                <div>
+                  <div class="summary-label">Local Tax Rate</div>
+                  <strong>{{ row.tax_rate_code }}</strong>
+                  {% if row.tax_rate_description %}<div class="muted">{{ row.tax_rate_description }}</div>{% endif %}
+                </div>
+                <div>
+                  <div class="summary-label">Rate</div>
+                  <strong>{{ row.rate_percent or "-" }}</strong>
+                </div>
+                <div>
+                  <div class="summary-label">Products Using This Rate</div>
+                  <strong>{{ row.product_count }}</strong>
+                </div>
+                <div>
+                  <div class="summary-label">Status</div>
+                  <strong>{{ row.status_label }}</strong>
+                  {% if row.status_detail %}<div class="muted">{{ row.status_detail }}</div>{% endif %}
+                </div>
+                <div>
+                  <div class="summary-label">Connection</div>
+                  <strong>{% if is_connected %}Connected{% else %}Disconnected{% endif %}</strong>
+                </div>
+              </div>
+
+              {% if row.mapping_id %}
+                <form method="post" action="{{ tenant_path('/admin/accounting/tax-mappings/' ~ row.mapping_id ~ '/update') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                  <div class="invoice-summary-grid">
+                    <div>
+                      <label for="mapping-name-{{ row.tax_rate_id }}">Label</label>
+                      <input id="mapping-name-{{ row.tax_rate_id }}" name="name" type="text" value="{{ row.mapping_name or '' }}" maxlength="255" />
+                    </div>
+                    <div>
+                      <label for="mapping-external-id-{{ row.tax_rate_id }}">QuickBooks External ID</label>
+                      <input id="mapping-external-id-{{ row.tax_rate_id }}" name="external_id" type="text" value="{{ row.external_id or '' }}" maxlength="255" />
+                    </div>
+                    <div>
+                      <label for="mapping-external-code-{{ row.tax_rate_id }}">QuickBooks External Code</label>
+                      <input id="mapping-external-code-{{ row.tax_rate_id }}" name="external_code" type="text" value="{{ row.external_code or '' }}" maxlength="255" />
+                    </div>
+                    <div>
+                      <label for="mapping-active-{{ row.tax_rate_id }}">Active</label>
+                      <div>
+                        <input id="mapping-active-{{ row.tax_rate_id }}" name="is_active" type="checkbox" value="1" {% if row.is_active %}checked{% endif %} />
+                      </div>
+                    </div>
+                  </div>
+                  <div class="actions btn-group" style="margin-top: 1rem;">
+                    <button type="submit" class="btn btn--primary">Save Mapping</button>
+                  </div>
+                </form>
+                <form method="post" action="{{ tenant_path('/admin/accounting/tax-mappings/' ~ row.mapping_id ~ '/delete') }}" style="margin-top: 0.75rem;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                  <button type="submit" class="btn btn--secondary">Remove Mapping</button>
+                </form>
+              {% else %}
+                <form method="post" action="{{ tenant_path('/admin/accounting/tax-mappings') }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                  <input type="hidden" name="tax_rate_id" value="{{ row.tax_rate_id }}" />
+                  <div class="invoice-summary-grid">
+                    <div>
+                      <label for="mapping-name-new-{{ row.tax_rate_id }}">Label</label>
+                      <input id="mapping-name-new-{{ row.tax_rate_id }}" name="name" type="text" value="" maxlength="255" />
+                    </div>
+                    <div>
+                      <label for="mapping-external-id-new-{{ row.tax_rate_id }}">QuickBooks External ID</label>
+                      <input id="mapping-external-id-new-{{ row.tax_rate_id }}" name="external_id" type="text" value="" maxlength="255" />
+                    </div>
+                    <div>
+                      <label for="mapping-external-code-new-{{ row.tax_rate_id }}">QuickBooks External Code</label>
+                      <input id="mapping-external-code-new-{{ row.tax_rate_id }}" name="external_code" type="text" value="" maxlength="255" />
+                    </div>
+                    <div>
+                      <label for="mapping-active-new-{{ row.tax_rate_id }}">Active</label>
+                      <div>
+                        <input id="mapping-active-new-{{ row.tax_rate_id }}" name="is_active" type="checkbox" value="1" checked />
+                      </div>
+                    </div>
+                  </div>
+                  <div class="actions btn-group" style="margin-top: 1rem;">
+                    <button type="submit" class="btn btn--primary">Create Mapping</button>
+                  </div>
+                </form>
+              {% endif %}
+
+              {% if not row.is_required %}
+                <p class="muted" style="margin-top: 0.75rem;">This tax rate is not currently required by tenant products, but an existing mapping can still be reviewed or removed here.</p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        {% else %}
+          <p class="muted">No local tax rates are currently in use by this tenant's products.</p>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+{% endblock %}

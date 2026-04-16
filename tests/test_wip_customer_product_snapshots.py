@@ -267,6 +267,12 @@ def test_invoice_generation_stores_customer_and_product_wip_snapshots(client, db
     assert line.product_snapshot_json == {
         "final_disposal_wip": False,
         "used_on_site_wip": True,
+        "product_id": product.id,
+        "product_code": "P-WIP-INV-1",
+        "tax_rate_id": tax_rate.id,
+        "tax_rate_code": "WIP VAT 0",
+        "tax_rate_percent": "0.000",
+        "nominal_code": None,
     }
 
     customer.vat_number = "GBINVCHANGED"

@@ -41,6 +41,10 @@ from ..services.credit import (
     money_decimal,
     outstanding_display_values,
 )
+from ..services.accounting.jobs import (
+    commit_enqueued_accounting_job,
+    enqueue_sync_customer,
+)
 from ..services.edit_conflicts import (
     ROW_VERSION_FIELD,
     STALE_EDIT_MESSAGE,
@@ -297,6 +301,12 @@ async def customers_create(
             },
             status_code=400,
         )
+    commit_enqueued_accounting_job(
+        db,
+        enqueue_sync_customer,
+        tenant_id=int(tenant_id or getattr(customer, "tenant_id", 0) or 0),
+        customer_id=int(customer.id),
+    )
     return RedirectResponse(url="/customers?saved=1", status_code=303)
 
 
@@ -451,6 +461,12 @@ async def customers_update(
             form=payload["form"],
             status_code=400,
         )
+    commit_enqueued_accounting_job(
+        db,
+        enqueue_sync_customer,
+        tenant_id=int(tenant_id or getattr(customer, "tenant_id", 0) or 0),
+        customer_id=int(customer.id),
+    )
     return RedirectResponse(url="/customers?saved=1", status_code=303)
 
 

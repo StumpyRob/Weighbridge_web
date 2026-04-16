@@ -28,6 +28,10 @@ from ..models import (
     EwcCode,
 )
 from ..services.pricing import product_effective_nominal_code
+from ..services.accounting.jobs import (
+    commit_enqueued_accounting_job,
+    enqueue_sync_product,
+)
 from ..services.edit_conflicts import (
     ROW_VERSION_FIELD,
     STALE_EDIT_MESSAGE,
@@ -268,6 +272,12 @@ async def products_create(
             },
             status_code=400,
         )
+    commit_enqueued_accounting_job(
+        db,
+        enqueue_sync_product,
+        tenant_id=int(getattr(product, "tenant_id", 0) or 0),
+        product_id=int(product.id),
+    )
     return RedirectResponse(url="/products?saved=1", status_code=303)
 
 
@@ -1187,6 +1197,12 @@ async def products_update(
             },
             status_code=400,
         )
+    commit_enqueued_accounting_job(
+        db,
+        enqueue_sync_product,
+        tenant_id=int(getattr(product, "tenant_id", 0) or 0),
+        product_id=int(product.id),
+    )
     return RedirectResponse(url="/products?saved=1", status_code=303)
 
 

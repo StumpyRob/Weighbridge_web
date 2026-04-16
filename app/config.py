@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     database_url: str
     secret_key: str = ""
     app_secret_key: str = ""
+    app_encryption_key: str = ""
     indicator_connected: bool = False
     debug: bool = False
     dev_mode: bool = False
@@ -36,6 +37,10 @@ class Settings(BaseSettings):
     enable_invoice_pdf_emailing: bool = False
     enable_invoice_pdf_printing: bool = False
     openai_api_key: str = ""
+    quickbooks_client_id: str = ""
+    quickbooks_client_secret: str = ""
+    quickbooks_redirect_uri: str = ""
+    quickbooks_environment: str = ""
     base_domain: str = ""
     allowed_hosts: str = ""
     platform_subdomain: str = "admin"

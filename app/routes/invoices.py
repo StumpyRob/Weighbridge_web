@@ -48,7 +48,13 @@ from ..services.pdf import (
     render_invoice_pdf,
     render_invoice_pdf_html,
 )
-from ..services.wip_snapshots import customer_wip_snapshot, product_wip_snapshot
+from ..services.wip_snapshots import customer_wip_snapshot, invoice_product_snapshot
+from ..services.accounting.jobs import (
+    commit_enqueued_accounting_job,
+    enqueue_mark_invoice_paid,
+    enqueue_sync_invoice,
+    enqueue_void_invoice,
+)
 from ..services.credit import (
     INVOICE_OUTSTANDING_EXCLUDED_STATUSES,
     INVOICE_OUTSTANDING_ISSUED_STATUSES,
@@ -490,7 +496,10 @@ async def invoices_generate_confirm(
                 net=net,
                 vat=vat,
                 gross=gross,
-                product_snapshot_json=product_wip_snapshot(product),
+                product_snapshot_json=invoice_product_snapshot(
+                    product,
+                    tax_rate=tax_rate,
+                ),
             )
             db.add(line)
             ticket.invoice_id = invoice.id
@@ -535,6 +544,12 @@ async def invoices_generate_confirm(
             },
         )
 
+    commit_enqueued_accounting_job(
+        db,
+        enqueue_sync_invoice,
+        tenant_id=int(getattr(invoice, "tenant_id", 0) or 0),
+        invoice_id=int(invoice.id),
+    )
     return RedirectResponse(url=f"/invoices/{invoice.id}?created=1", status_code=303)
 
 
@@ -990,6 +1005,12 @@ async def invoices_mark_paid(
         },
     )
     db.commit()
+    commit_enqueued_accounting_job(
+        db,
+        enqueue_mark_invoice_paid,
+        tenant_id=int(getattr(invoice, "tenant_id", 0) or 0),
+        invoice_id=int(invoice.id),
+    )
     return RedirectResponse(url=f"/invoices/{invoice.id}?paid=1", status_code=303)
 
 
@@ -1103,6 +1124,12 @@ async def invoices_void(
         },
     )
     db.commit()
+    commit_enqueued_accounting_job(
+        db,
+        enqueue_void_invoice,
+        tenant_id=int(getattr(invoice, "tenant_id", 0) or 0),
+        invoice_id=int(invoice.id),
+    )
     return RedirectResponse(url=f"/invoices/{invoice.id}?voided=1", status_code=303)
 
 

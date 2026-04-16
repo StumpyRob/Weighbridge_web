@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from ..models import Customer, Product
+from ..models import Customer, Product, TaxRate
+from .pricing import product_effective_nominal_code
+
+
+def _snapshot_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def customer_wip_snapshot(customer: Customer | None) -> dict[str, object]:
@@ -33,6 +41,41 @@ def product_wip_snapshot(product: Product | None) -> dict[str, object]:
         "final_disposal_wip": final_disposal,
         "used_on_site_wip": used_on_site,
     }
+
+
+def invoice_product_snapshot(
+    product: Product | None,
+    *,
+    tax_rate: TaxRate | None = None,
+) -> dict[str, object]:
+    snapshot = product_wip_snapshot(product)
+    if product is None:
+        snapshot.update(
+            {
+                "product_id": None,
+                "product_code": None,
+                "tax_rate_id": None,
+                "tax_rate_code": None,
+                "tax_rate_percent": None,
+                "nominal_code": None,
+            }
+        )
+        return snapshot
+
+    resolved_tax_rate = tax_rate or getattr(product, "tax_rate", None)
+    snapshot.update(
+        {
+            "product_id": getattr(product, "id", None),
+            "product_code": _snapshot_text(getattr(product, "code", None)),
+            "tax_rate_id": getattr(product, "tax_rate_id", None),
+            "tax_rate_code": _snapshot_text(getattr(resolved_tax_rate, "code", None)),
+            "tax_rate_percent": _snapshot_text(
+                getattr(resolved_tax_rate, "rate_percent", None)
+            ),
+            "nominal_code": product_effective_nominal_code(product),
+        }
+    )
+    return snapshot
 
 
 def ticket_wip_snapshot(

@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+
+{% block title %}Accounting Integrations | Weighbridge Web{% endblock %}
+
+{% block toast_messages %}
+  {% if quickbooks_connected %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">QuickBooks connected.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+  {% if quickbooks_disconnected %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">QuickBooks disconnected.</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+  {% if sync_run %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">
+        {% if sync_retry_run %}Retry run finished.{% else %}Sync run finished.{% endif %}
+        Processed {{ sync_processed }}, succeeded {{ sync_succeeded }}, failed {{ sync_failed }}.
+      </div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+  {% if error %}
+    <div class="flash-toast flash-toast--error" data-flash-toast>
+      <div class="flash-toast__content">{{ error }}</div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+  {% set setup = setup_summary %}
+  {% set is_connected = connection and connection.status == "connected" %}
+  <div class="page-header">
+    <div>
+      <h1>Accounting Integrations</h1>
+      <p class="muted">Manage tenant-scoped QuickBooks access, tax mappings, and sandbox readiness before running manual sync jobs.</p>
+    </div>
+    <div class="actions btn-group">
+      <a class="btn btn--secondary" href="{{ tenant_path('/admin') }}">Back to Settings</a>
+      <a class="btn btn--secondary" href="{{ tenant_path('/admin/accounting/tax-mappings') }}">Manage Tax Mappings</a>
+    </div>
+  </div>
+
+  {% if config_error %}
+    <div class="alert alert--danger">
+      QuickBooks OAuth is not configured: {{ config_error }}
+    </div>
+  {% endif %}
+
+  {% if connection and connection.last_error %}
+    <div class="alert alert--danger">
+      Last QuickBooks error: {{ connection.last_error }}
+    </div>
+  {% endif %}
+
+  <div class="stacked-frames">
+    <section class="frame">
+      <div class="frame-header">
+        <h2>QuickBooks Online</h2>
+      </div>
+      <div class="frame-body">
+        <div class="invoice-summary-grid">
+          <div class="card">
+            <div class="summary-label">Connection State</div>
+            <strong>{{ (connection.status if connection else "disconnected") | replace("_", " ") | title }}</strong>
+          </div>
+          <div class="card">
+            <div class="summary-label">Realm ID</div>
+            <strong>{{ connection.realm_id if connection and connection.realm_id else "Not connected" }}</strong>
+          </div>
+          <div class="card">
+            <div class="summary-label">Connected At</div>
+            <strong>{{ connection.connected_at | uk_datetime('%d/%m/%Y %H:%M:%S') if connection and connection.connected_at else "-" }}</strong>
+          </div>
+          <div class="card">
+            <div class="summary-label">Disconnected At</div>
+            <strong>{{ connection.disconnected_at | uk_datetime('%d/%m/%Y %H:%M:%S') if connection and connection.disconnected_at else "-" }}</strong>
+          </div>
+        </div>
+
+        <p class="muted">
+          This phase supports tenant-admin setup and manual outbound sandbox sync only. Automatic processing, webhooks, and bidirectional sync are not active.
+        </p>
+
+        <div class="actions btn-group">
+          {% if config_error %}
+            <button type="button" class="btn btn--primary" disabled>Connect QuickBooks</button>
+          {% else %}
+            <a class="btn btn--primary" href="{{ tenant_path('/admin/accounting/quickbooks/connect') }}">
+              {% if is_connected %}Reconnect QuickBooks{% else %}Connect QuickBooks{% endif %}
+            </a>
+          {% endif %}
+
+          {% if connection %}
+            <form method="post" action="{{ tenant_path('/admin/accounting/quickbooks/disconnect') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+              <button type="submit" class="btn btn--secondary">Disconnect</button>
+            </form>
+          {% endif %}
+        </div>
+
+        {% if is_connected %}
+          <hr>
+          <p class="muted">Manual sync processes up to 5 jobs per click for this tenant only.</p>
+          <div class="actions btn-group">
+            <form method="post" action="{{ tenant_path('/admin/accounting/run-sync') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+              <button type="submit" class="btn btn--primary">Run Pending Sync Jobs</button>
+            </form>
+            <form method="post" action="{{ tenant_path('/admin/accounting/run-sync') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+              <input type="hidden" name="retry_failed" value="1" />
+              <button type="submit" class="btn btn--secondary">Retry Failed Jobs</button>
+            </form>
+          </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Configuration Blockers &amp; Readiness</h2>
+      </div>
+      <div class="frame-body">
+        <p class="muted">QuickBooks sandbox UAT requires explicit tenant-scoped tax mappings, valid product tax setup, and nominal codes that resolve cleanly to QuickBooks income accounts.</p>
+
+        <div class="invoice-summary-grid">
+          <div class="card">
+            <div class="summary-label">Required Tax Mappings</div>
+            <strong>{{ setup.usable_required_tax_mapping_count if setup else 0 }} / {{ setup.required_tax_rate_count if setup else 0 }}</strong>
+          </div>
+          <div class="card">
+            <div class="summary-label">Missing Tax Mappings</div>
+            <strong>{{ setup.missing_tax_mapping_count if setup else 0 }}</strong>
+          </div>
+          <div class="card">
+            <div class="summary-label">Products Missing Tax Rate</div>
+            <strong>{{ setup.products_missing_tax_rate if setup else 0 }}</strong>
+          </div>
+          <div class="card">
+            <div class="summary-label">Products Missing Nominal Code</div>
+            <strong>{{ setup.products_missing_nominal_code if setup else 0 }}</strong>
+          </div>
+          <div class="card">
+            <div class="summary-label">Pending Sync Jobs</div>
+            <strong>{{ setup.pending_job_count if setup else 0 }}</strong>
+          </div>
+          <div class="card">
+            <div class="summary-label">Failed Sync Jobs</div>
+            <strong>{{ setup.failed_job_count if setup else 0 }}</strong>
+          </div>
+          <div class="card">
+            <div class="summary-label">Sandbox Ready</div>
+            <strong>{% if setup and setup.is_ready_for_sandbox %}Yes{% else %}No{% endif %}</strong>
+          </div>
+        </div>
+
+        <div class="actions btn-group">
+          <a class="btn btn--primary" href="{{ tenant_path('/admin/accounting/tax-mappings') }}">Review Tax Mappings</a>
+        </div>
+
+        {% if setup and setup.next_steps %}
+          <hr>
+          <h3>Next Steps for Sandbox Testing</h3>
+          <ul>
+            {% for step in setup.next_steps %}
+              <li>{{ step }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+
+        {% if setup and setup.tax_mapping_rows %}
+          <div class="table-responsive">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Local Tax Rate</th>
+                  <th>Rate</th>
+                  <th>Products</th>
+                  <th>QuickBooks Mapping</th>
+                  <th>Status</th>
+                  <th>Detail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in setup.tax_mapping_rows %}
+                  <tr>
+                    <td>
+                      {{ row.tax_rate_code }}
+                      {% if row.tax_rate_description %}<div class="muted">{{ row.tax_rate_description }}</div>{% endif %}
+                    </td>
+                    <td>{{ row.rate_percent or "-" }}</td>
+                    <td>{{ row.product_count }}</td>
+                    <td>
+                      {% if row.mapping_name %}<div>{{ row.mapping_name }}</div>{% endif %}
+                      <div class="muted">ID: {{ row.external_id or "-" }}</div>
+                      <div class="muted">Code: {{ row.external_code or "-" }}</div>
+                    </td>
+                    <td>{{ row.status_label }}</td>
+                    <td>{{ row.status_detail or "-" }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="muted">No tenant product tax rates are in use yet.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Recent Sync Jobs</h2>
+      </div>
+      <div class="frame-body">
+        {% if recent_jobs %}
+          <div class="table-responsive">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Type</th>
+                  <th>Entity</th>
+                  <th>Status</th>
+                  <th>Attempts</th>
+                  <th>Updated</th>
+                  <th>Error</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for job in recent_jobs %}
+                  <tr>
+                    <td>{{ job.id }}</td>
+                    <td>{{ job.job_type }}</td>
+                    <td>{{ job.entity_type }} {{ job.entity_id }}</td>
+                    <td>{{ job.status | replace('_', ' ') | title }}</td>
+                    <td>{{ job.attempts }}</td>
+                    <td>{{ job.updated_at | uk_datetime('%d/%m/%Y %H:%M:%S') if job.updated_at else '-' }}</td>
+                    <td>{{ job.error_text or '-' }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="muted">No sync jobs recorded yet.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Recent Accounting Events</h2>
+      </div>
+      <div class="frame-body">
+        {% if recent_events %}
+          <div class="table-responsive">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Event</th>
+                  <th>Entity</th>
+                  <th>Direction</th>
+                  <th>Summary</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for event in recent_events %}
+                  <tr>
+                    <td>{{ event.created_at | uk_datetime('%d/%m/%Y %H:%M:%S') if event.created_at else '-' }}</td>
+                    <td>{{ event.event_type }}</td>
+                    <td>{% if event.entity_type %}{{ event.entity_type }} {{ event.entity_id or '' }}{% else %}-{% endif %}</td>
+                    <td>{{ event.direction }}</td>
+                    <td>{{ event.summary }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="muted">No accounting events recorded yet.</p>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+{% endblock %}

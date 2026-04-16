@@ -41,6 +41,16 @@
 
         {% if permissions.manage_settings %}
           <article class="admin-hub-card">
+            <h3>Accounting Integrations</h3>
+            <p>Manage tenant-scoped accounting connections and provider status.</p>
+            <div class="actions btn-group">
+              <a class="btn btn--secondary btn--sm" href="/admin/accounting">Manage Accounting</a>
+            </div>
+          </article>
+        {% endif %}
+
+        {% if permissions.manage_settings %}
+          <article class="admin-hub-card">
             <h3>EWC Codes</h3>
             <p>Upload and refresh EWC regulatory codes from CSV.</p>
             <div class="actions btn-group">

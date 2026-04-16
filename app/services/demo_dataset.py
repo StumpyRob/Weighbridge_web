@@ -33,7 +33,7 @@ from ..models import (
 )
 from ..models.base import utcnow
 from ..timezones import uk_date_from_utc
-from .wip_snapshots import product_wip_snapshot, ticket_wip_snapshot
+from .wip_snapshots import invoice_product_snapshot, ticket_wip_snapshot
 
 MONEY_PLACES = Decimal("0.01")
 WEIGHT_PLACES = Decimal("0.001")
@@ -927,7 +927,10 @@ def seed_demo_dataset(db: Session, tenant_id: int) -> dict[str, int]:
                     net=line_net,
                     vat=line_vat,
                     gross=_money(line_net + line_vat),
-                    product_snapshot_json=product_wip_snapshot(product),
+                    product_snapshot_json=invoice_product_snapshot(
+                        product,
+                        tax_rate=product.tax_rate,
+                    ),
                 )
             )
             ticket.invoice_id = invoice.id
