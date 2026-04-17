@@ -13,6 +13,13 @@ from sqlalchemy.orm import Session
 from ..audit import log as audit_log
 from ..auth import hash_password, user_identity_kwargs
 from ..models import (
+    AccountingConnection,
+    AccountingCustomerMap,
+    AccountingInvoiceSync,
+    AccountingProductMap,
+    AccountingSyncEvent,
+    AccountingSyncJob,
+    AccountingTaxMap,
     AIUsageLog,
     Area,
     AuditEvent,
@@ -80,6 +87,19 @@ DEMO_LOGO_FILENAME = "demo-logo.png"
 DEMO_LOGO_WEB_PATH = f"/static/uploads/company/{DEMO_LOGO_FILENAME}"
 DEMO_LOGO_SOURCE = (
     Path(__file__).resolve().parents[1] / "static" / "uploads" / "company" / DEMO_LOGO_FILENAME
+)
+
+_ACCOUNTING_RESET_MODELS = (
+    # Remove entity-linked accounting rows before deleting invoices, customers, or products.
+    AccountingInvoiceSync,
+    AccountingCustomerMap,
+    AccountingProductMap,
+    AccountingTaxMap,
+    # Remaining tenant-scoped accounting state has no direct FK back to tenant business rows
+    # but still needs clearing to keep the demo tenant sandbox-safe between resets.
+    AccountingSyncJob,
+    AccountingSyncEvent,
+    AccountingConnection,
 )
 
 _DELETE_CASCADE_MODELS = (
@@ -407,6 +427,7 @@ def reset_demo_tenant_data(
 
     db.execute(delete(AuditEvent).where(AuditEvent.tenant_id == str(tenant_id)))
     db.execute(delete(AIUsageLog).where(AIUsageLog.tenant_id == tenant_id))
+    _delete_tenant_rows(db, tenant_id, _ACCOUNTING_RESET_MODELS)
     _clear_tenant_printing_state(db, tenant_id)
     _delete_tenant_rows(db, tenant_id, _DELETE_CASCADE_MODELS)
     db.execute(delete(User).where(User.tenant_id == tenant_id))
