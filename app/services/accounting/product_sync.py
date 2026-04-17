@@ -18,6 +18,7 @@ from .quickbooks_client import (
     quote_query_value,
 )
 from .quickbooks_oauth import QUICKBOOKS_PROVIDER
+from .revenue_account_mapping import resolve_revenue_account
 from .tax_mapping import require_quickbooks_tax_selection
 
 
@@ -122,10 +123,6 @@ def sync_product_to_quickbooks(
     product = _product_for_sync(db, tenant_id=int(tenant_id), product_id=int(product_id))
     product_label = str(product.code or "").strip() or f"Product {product.id}"
     nominal_code = str(product_effective_nominal_code(product) or "").strip()
-    if not nominal_code:
-        raise QuickBooksApiError(
-            f"Product {product_label} is missing a nominal code, so its QuickBooks income account cannot be resolved safely."
-        )
     if product.tax_rate_id is None:
         raise QuickBooksApiError(
             f"Product {product_label} is missing a tax rate, so its QuickBooks tax handling cannot be resolved safely."
@@ -139,9 +136,17 @@ def sync_product_to_quickbooks(
         usage_label=f"Product {product_label}",
     )
     client = quickbooks_client_for_connection(db, connection)
+    resolved_revenue_account = resolve_revenue_account(
+        db,
+        tenant_id=int(tenant_id),
+        provider=provider,
+        product_label=product_label,
+        nominal_code=nominal_code or None,
+        client=client,
+    )
     payload = _product_payload(
         product,
-        income_account_ref=client.resolve_income_account_ref(nominal_code=nominal_code),
+        income_account_ref=resolved_revenue_account.remote_account_id,
         is_taxable=tax_selection.is_taxable,
         nominal_code=nominal_code,
     )
@@ -217,8 +222,15 @@ def sync_product_to_quickbooks(
     detail_json = {
         "external_id": external_id,
         "response_status_code": response_status_code,
-        "nominal_code": nominal_code,
+        "nominal_code": nominal_code or None,
         "income_account_ref": payload["IncomeAccountRef"]["value"],
+        "revenue_account_resolution_source": resolved_revenue_account.resolution_source,
+        "revenue_account_mapping_id": resolved_revenue_account.mapping_id,
+        "resolved_remote_account_id": resolved_revenue_account.remote_account_id,
+        "resolved_remote_account_code": resolved_revenue_account.remote_account_code,
+        "resolved_remote_account_name": resolved_revenue_account.remote_account_name,
+        "resolved_remote_account_type": resolved_revenue_account.remote_account_type,
+        "resolved_remote_account_detail_type": resolved_revenue_account.remote_account_detail_type,
         "tax_mapping_id": tax_selection.tax_map_id,
         "tax_code_ref": tax_selection.line_tax_code_ref,
         "taxable": tax_selection.is_taxable,

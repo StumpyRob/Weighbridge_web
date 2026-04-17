@@ -20,6 +20,7 @@ from app.models import (
     AccountingCustomerMap,
     AccountingInvoiceSync,
     AccountingProductMap,
+    AccountingRevenueAccountMap,
     AccountingSyncEvent,
     AccountingSyncJob,
     AccountingTaxMap,
@@ -162,6 +163,22 @@ def test_head_migration_creates_accounting_foundation_tables(monkeypatch) -> Non
             "is_active",
         } <= tax_map_columns
 
+        revenue_account_map_columns = _sqlite_columns(
+            db_path, "accounting_revenue_account_maps"
+        )
+        assert {
+            "tenant_id",
+            "provider",
+            "local_scope_type",
+            "local_scope_id",
+            "local_nominal_code",
+            "remote_account_id",
+            "remote_account_code",
+            "remote_account_name",
+            "remote_account_type",
+            "is_active",
+        } <= revenue_account_map_columns
+
         connection_uniques = _sqlite_unique_sets(db_path, "accounting_connections")
         assert ("tenant_id", "provider") in connection_uniques
 
@@ -176,6 +193,23 @@ def test_head_migration_creates_accounting_foundation_tables(monkeypatch) -> Non
         tax_map_uniques = _sqlite_unique_sets(db_path, "accounting_tax_maps")
         assert ("tenant_id", "provider", "tax_rate_id") in tax_map_uniques
 
+        revenue_account_map_uniques = _sqlite_unique_sets(
+            db_path, "accounting_revenue_account_maps"
+        )
+        assert (
+            "tenant_id",
+            "provider",
+            "local_scope_type",
+            "local_scope_id",
+        ) in revenue_account_map_uniques
+        assert (
+            "tenant_id",
+            "provider",
+            "local_scope_type",
+            "local_nominal_code",
+        ) in revenue_account_map_uniques
+        assert ("tenant_id", "provider", "local_scope_type") in revenue_account_map_uniques
+
         invoice_sync_uniques = _sqlite_unique_sets(db_path, "accounting_invoice_syncs")
         assert ("tenant_id", "provider", "invoice_id") in invoice_sync_uniques
 
@@ -186,6 +220,7 @@ def test_accounting_models_are_tenant_scoped(engine) -> None:
         AccountingCustomerMap,
         AccountingInvoiceSync,
         AccountingProductMap,
+        AccountingRevenueAccountMap,
         AccountingSyncEvent,
         AccountingSyncJob,
         AccountingTaxMap,
@@ -413,6 +448,53 @@ def test_accounting_tax_map_unique_per_tax_rate_provider(db_session) -> None:
             provider="quickbooks",
             tax_rate_id=tax_rate_two.id,
             external_code="NON",
+            is_active=True,
+        )
+    )
+    db_session.commit()
+
+
+def test_accounting_revenue_account_map_unique_per_scope_provider(db_session) -> None:
+    ids = _seed_accounting_entities(db_session)
+    db_session.add(
+        AccountingRevenueAccountMap(
+            tenant_id=ids["tenant_id"],
+            provider="quickbooks",
+            local_scope_type="global_default",
+            remote_account_id="QB-ACC-1",
+            remote_account_code="4100",
+            remote_account_name="Sales Income",
+            remote_account_type="Income",
+            is_active=True,
+        )
+    )
+    db_session.commit()
+
+    db_session.add(
+        AccountingRevenueAccountMap(
+            tenant_id=ids["tenant_id"],
+            provider="quickbooks",
+            local_scope_type="global_default",
+            remote_account_id="QB-ACC-2",
+            remote_account_code="4200",
+            remote_account_name="Skip Income",
+            remote_account_type="Income",
+            is_active=True,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
+
+    db_session.add(
+        AccountingRevenueAccountMap(
+            tenant_id=ids["other_tenant_id"],
+            provider="quickbooks",
+            local_scope_type="global_default",
+            remote_account_id="QB-ACC-1",
+            remote_account_code="4100",
+            remote_account_name="Sales Income",
+            remote_account_type="Income",
             is_active=True,
         )
     )

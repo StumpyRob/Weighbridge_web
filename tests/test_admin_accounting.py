@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import parse_qs, unquote_plus, urlsplit
 
@@ -13,24 +13,30 @@ from decimal import Decimal
 
 import app.routes.admin_accounting as admin_accounting_route
 import app.services.accounting.quickbooks_client as quickbooks_client_module
+import app.services.accounting.revenue_account_mapping as revenue_account_mapping_module
 from app.auth import ROLE_OPERATOR, ROLE_SUPERADMIN, ROLE_TENANT_ADMIN, hash_password, user_identity_kwargs
 from app.config import settings
 from app.db import TenantSession, get_db
 from app.main import create_app
 from app.models import (
     AccountingConnection,
+    AccountingRevenueAccountMap,
     AccountingSyncEvent,
     AccountingSyncJob,
     AccountingTaxMap,
     AuditEvent,
     Base,
     Customer,
+    Invoice,
+    InvoiceLine,
     Product,
+    ProductGroup,
     TaxRate,
     Tenant,
     User,
 )
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER_NAME
+from app.services.accounting.revenue_account_mapping import ProviderRevenueAccount
 from app.services.accounting.quickbooks_oauth import QuickBooksTokenBundle
 from app.services.secrets import decrypt_string, encrypt_string
 from app.services.system_setup import (
@@ -247,6 +253,23 @@ def _tax_maps_for_tenant(SessionLocal: sessionmaker, tenant_id: int) -> list[Acc
         )
 
 
+def _revenue_account_maps_for_tenant(
+    SessionLocal: sessionmaker,
+    tenant_id: int,
+) -> list[AccountingRevenueAccountMap]:
+    with SessionLocal() as db:
+        return list(
+            db.execute(
+                select(AccountingRevenueAccountMap)
+                .where(
+                    AccountingRevenueAccountMap.tenant_id == tenant_id,
+                    AccountingRevenueAccountMap.provider == "quickbooks",
+                )
+                .order_by(AccountingRevenueAccountMap.id.asc())
+            ).scalars()
+        )
+
+
 def _audit_actions(SessionLocal: sessionmaker, tenant_id: int) -> set[str]:
     with SessionLocal() as db:
         return {
@@ -341,6 +364,16 @@ def _prepare_environment_with_settings(
         password=password,
         role=ROLE_SUPERADMIN,
     )
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_revenue_accounts",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        revenue_account_mapping_module,
+        "list_provider_revenue_accounts",
+        lambda *args, **kwargs: [],
+    )
     return {
         "app": app,
         "SessionLocal": SessionLocal,
@@ -367,6 +400,179 @@ def test_tenant_admin_can_access_admin_accounting(tmp_path, monkeypatch):
         assert "qb-client-secret" not in response.text
     finally:
         client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_admin_accounting_can_view_and_save_default_revenue_account_mapping(
+    tmp_path,
+    monkeypatch,
+):
+    env = _prepare_environment(tmp_path, monkeypatch)
+    _seed_connected_connection(
+        env["SessionLocal"],
+        tenant_id=env["tenant_id"],
+        realm_id="realm-revenue-account",
+    )
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_revenue_accounts",
+        lambda *args, **kwargs: revenue_accounts,
+    )
+    revenue_accounts = [
+        ProviderRevenueAccount(
+            remote_account_id="79",
+            remote_account_code="4100",
+            remote_account_name="Sales Income",
+            remote_account_type="Income",
+            remote_account_detail_type="SalesOfProductIncome",
+            is_active=True,
+            is_usable=True,
+            display_label="4100 - Sales Income (Income / SalesOfProductIncome)",
+        ),
+        ProviderRevenueAccount(
+            remote_account_id="88",
+            remote_account_code="4200",
+            remote_account_name="Skip Hire Sales",
+            remote_account_type="Income",
+            remote_account_detail_type="SalesOfProductIncome",
+            is_active=True,
+            is_usable=True,
+            display_label="4200 - Skip Hire Sales (Income / SalesOfProductIncome)",
+        ),
+    ]
+    monkeypatch.setattr(
+        revenue_account_mapping_module,
+        "list_provider_revenue_accounts",
+        lambda *args, **kwargs: revenue_accounts,
+    )
+
+    client = _client_for(env["app"], base_url="https://acme.localhost")
+    try:
+        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
+
+        page = client.get("/admin/accounting")
+        assert page.status_code == 200
+        assert "Default Revenue Account" in page.text
+        assert (
+            "Select a default QuickBooks revenue account after connection. "
+            "If no default is saved, product nominal codes still fall back to exact QuickBooks AcctNum matching for now."
+        ) in " ".join(page.text.split())
+        assert "4100 - Sales Income (Income / SalesOfProductIncome)" in page.text
+        assert "Use nominal-code fallback only" in page.text
+
+        save_response = _post_with_csrf(
+            client,
+            "/admin/accounting/revenue-account",
+            data={"remote_account_id": "79"},
+        )
+        assert save_response.status_code == 303
+        assert save_response.headers["location"] == "/admin/accounting?revenue_account_saved=1"
+
+        mappings = _revenue_account_maps_for_tenant(env["SessionLocal"], env["tenant_id"])
+        assert len(mappings) == 1
+        assert mappings[0].local_scope_type == "global_default"
+        assert mappings[0].local_scope_id is None
+        assert mappings[0].local_nominal_code is None
+        assert mappings[0].remote_account_id == "79"
+        assert mappings[0].remote_account_code == "4100"
+        assert mappings[0].remote_account_name == "Sales Income"
+        assert mappings[0].remote_account_type == "Income"
+        assert mappings[0].is_active is True
+
+        follow = client.get(save_response.headers["location"])
+        assert follow.status_code == 200
+        assert "Default revenue account saved." in follow.text
+        assert "Current default:" in follow.text
+    finally:
+        client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_default_revenue_account_mapping_preserves_tenant_isolation(tmp_path, monkeypatch):
+    env = _prepare_environment(tmp_path, monkeypatch)
+    _seed_connected_connection(
+        env["SessionLocal"],
+        tenant_id=env["tenant_id"],
+        realm_id="realm-acme-revenue",
+    )
+    _seed_connected_connection(
+        env["SessionLocal"],
+        tenant_id=env["other_tenant_id"],
+        realm_id="realm-other-revenue",
+    )
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_revenue_accounts",
+        lambda *args, **kwargs: revenue_accounts,
+    )
+    revenue_accounts = [
+        ProviderRevenueAccount(
+            remote_account_id="79",
+            remote_account_code="4100",
+            remote_account_name="Sales Income",
+            remote_account_type="Income",
+            remote_account_detail_type="SalesOfProductIncome",
+            is_active=True,
+            is_usable=True,
+            display_label="4100 - Sales Income (Income / SalesOfProductIncome)",
+        ),
+        ProviderRevenueAccount(
+            remote_account_id="88",
+            remote_account_code="4200",
+            remote_account_name="Skip Hire Sales",
+            remote_account_type="Income",
+            remote_account_detail_type="SalesOfProductIncome",
+            is_active=True,
+            is_usable=True,
+            display_label="4200 - Skip Hire Sales (Income / SalesOfProductIncome)",
+        ),
+    ]
+    monkeypatch.setattr(
+        revenue_account_mapping_module,
+        "list_provider_revenue_accounts",
+        lambda *args, **kwargs: revenue_accounts,
+    )
+    with env["SessionLocal"]() as db:
+        db.add(
+            AccountingRevenueAccountMap(
+                tenant_id=env["tenant_id"],
+                provider="quickbooks",
+                local_scope_type="global_default",
+                remote_account_id="79",
+                remote_account_code="4100",
+                remote_account_name="Sales Income",
+                remote_account_type="Income",
+                is_active=True,
+            )
+        )
+        db.commit()
+
+    other_client = _client_for(env["app"], base_url="https://other.localhost")
+    try:
+        _login(
+            other_client,
+            email=env["other_admin_email"],
+            password=env["password"],
+            next_path="/admin",
+        )
+        response = _post_with_csrf(
+            other_client,
+            "/admin/accounting/revenue-account",
+            data={"remote_account_id": "88"},
+        )
+        assert response.status_code == 303
+        assert response.headers["location"] == "/admin/accounting?revenue_account_saved=1"
+
+        acme_mappings = _revenue_account_maps_for_tenant(env["SessionLocal"], env["tenant_id"])
+        other_mappings = _revenue_account_maps_for_tenant(
+            env["SessionLocal"], env["other_tenant_id"]
+        )
+        assert len(acme_mappings) == 1
+        assert acme_mappings[0].remote_account_id == "79"
+        assert len(other_mappings) == 1
+        assert other_mappings[0].remote_account_id == "88"
+    finally:
+        other_client.close()
         env["app"].dependency_overrides.clear()
 
 
@@ -469,6 +675,109 @@ def test_admin_accounting_shows_tax_mapping_blockers(tmp_path, monkeypatch):
         assert "Review Tax Mappings" in response.text
         assert "qb-access-token" not in response.text
         assert "qb-refresh-token" not in response.text
+    finally:
+        client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_admin_accounting_shows_invoice_account_mismatch_context_for_failed_jobs(
+    tmp_path,
+    monkeypatch,
+):
+    env = _prepare_environment(tmp_path, monkeypatch)
+    _seed_connected_connection(
+        env["SessionLocal"],
+        tenant_id=env["tenant_id"],
+        realm_id="realm-account-mismatch",
+    )
+    with env["SessionLocal"]() as db:
+        customer = Customer(
+            tenant_id=env["tenant_id"],
+            account_code="C-ADMIN-ACCT-FAIL",
+            name="Accounting Failure Customer",
+        )
+        product_group = ProductGroup(
+            tenant_id=env["tenant_id"],
+            code="ADMIN-ACCT-GROUP",
+            name="Admin Account Group",
+            nominal_code_default="4000",
+            is_active=True,
+        )
+        product = Product(
+            tenant_id=env["tenant_id"],
+            code="ADMIN-ACCT-PROD",
+            description="Admin Account Product",
+            product_group=product_group,
+            unit_price=Decimal("10.00"),
+        )
+        db.add_all([customer, product_group, product])
+        db.flush()
+        invoice = Invoice(
+            tenant_id=env["tenant_id"],
+            invoice_no="INV-ADMIN-ACCT-FAIL",
+            customer_id=customer.id,
+            invoice_date=date(2026, 4, 16),
+            due_date=date(2026, 5, 16),
+            status="DRAFT",
+            net_total=Decimal("10.00"),
+            vat_total=Decimal("2.00"),
+            gross_total=Decimal("12.00"),
+        )
+        db.add(invoice)
+        db.flush()
+        db.add(
+            InvoiceLine(
+                tenant_id=env["tenant_id"],
+                invoice_id=invoice.id,
+                description="Admin Account Failure Line",
+                quantity=Decimal("1.000"),
+                unit_price=Decimal("10.00"),
+                net=Decimal("10.00"),
+                vat=Decimal("2.00"),
+                gross=Decimal("12.00"),
+                product_snapshot_json={
+                    "product_id": product.id,
+                    "product_code": product.code,
+                    "nominal_code": "4000",
+                },
+            )
+        )
+        db.add(
+            AccountingSyncJob(
+                tenant_id=env["tenant_id"],
+                provider="quickbooks",
+                job_type="sync_invoice",
+                entity_type="invoice",
+                entity_id=invoice.id,
+                status="failed",
+                attempts=2,
+                available_at=datetime(2026, 4, 16, 10, 0, 0),
+                error_text="QuickBooks income account with AcctNum 4000 was not found.",
+            )
+        )
+        db.commit()
+        invoice_id = int(invoice.id)
+        product_id = int(product.id)
+
+    client = _client_for(env["app"], base_url="https://acme.localhost")
+    try:
+        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
+        response = client.get("/admin/accounting")
+        assert response.status_code == 200
+        page_text = " ".join(response.text.split())
+        assert (
+            "Retry Failed Jobs retries the existing failed jobs below. "
+            "It does not create a fresh invoice. "
+            "After fixing product/account setup, you may need to create and sync a new invoice instead."
+        ) in page_text
+        assert (
+            f"Invoice {invoice_id} requested AcctNum 4000. "
+            "Retry Failed Jobs retries this existing failed job; it does not create a fresh invoice."
+        ) in page_text
+        assert (
+            f"Product {product_id} ADMIN-ACCT-PROD - Admin Account Product "
+            "(product group default nominal code: 4000)"
+        ) in page_text
     finally:
         client.close()
         env["app"].dependency_overrides.clear()

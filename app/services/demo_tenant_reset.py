@@ -17,6 +17,7 @@ from ..models import (
     AccountingCustomerMap,
     AccountingInvoiceSync,
     AccountingProductMap,
+    AccountingRevenueAccountMap,
     AccountingSyncEvent,
     AccountingSyncJob,
     AccountingTaxMap,
@@ -96,6 +97,7 @@ _ACCOUNTING_RESET_MODELS = (
     AccountingCustomerMap,
     AccountingProductMap,
     AccountingTaxMap,
+    AccountingRevenueAccountMap,
     # Remaining tenant-scoped accounting state has no direct FK back to tenant business rows
     # but still needs clearing to keep the demo tenant sandbox-safe between resets.
     AccountingSyncJob,

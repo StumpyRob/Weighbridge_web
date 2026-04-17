@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 from datetime import datetime, timedelta
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -18,9 +19,12 @@ from ..config import settings
 from ..db import get_db
 from ..models import (
     AccountingConnection,
+    InvoiceLine,
     AccountingSyncEvent,
     AccountingSyncJob,
+    Product,
     Tenant,
+    Ticket,
     User,
 )
 from ..models.base import utcnow
@@ -37,6 +41,14 @@ from ..services.accounting.quickbooks_oauth import (
     resolve_quickbooks_redirect_uri,
     store_quickbooks_tokens,
 )
+from ..services.accounting.quickbooks_client import QuickBooksApiError
+from ..services.accounting.revenue_account_mapping import (
+    RevenueAccountMappingValidationError,
+    clear_default_revenue_account_mapping,
+    get_default_revenue_account_mapping,
+    list_provider_revenue_accounts,
+    save_default_revenue_account_mapping,
+)
 from ..services.accounting.tax_mapping import (
     TaxMappingValidationError,
     create_quickbooks_tax_mapping,
@@ -50,6 +62,17 @@ from ..user_roles import ROLE_TENANT_ADMIN
 
 router = APIRouter()
 _OAUTH_STATE_TTL = timedelta(minutes=10)
+_ACCTNUM_ERROR_PATTERNS = (
+    re.compile(r"\bAcctNum\s+(?P<acct>[A-Za-z0-9._/-]+)\b", re.IGNORECASE),
+    re.compile(
+        r"\baccount\s+(?P<acct>[A-Za-z0-9._/-]+)\s+exists but is not\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bincome account\s+(?P<acct>[A-Za-z0-9._/-]+)\s+did not include an Id\b",
+        re.IGNORECASE,
+    ),
+)
 
 
 def _require_tenant_accounting_admin(request: Request, db: Session) -> User:
@@ -271,6 +294,228 @@ def _form_int(form: object, key: str, *, label: str) -> int:
         raise TaxMappingValidationError(f"{label} is required.")
 
 
+def _snapshot_dict(value: object) -> dict[str, object]:
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
+def _snapshot_int(snapshot: dict[str, object], key: str) -> int | None:
+    raw = snapshot.get(key)
+    try:
+        resolved = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return resolved if resolved > 0 else None
+
+
+def _snapshot_text(snapshot: dict[str, object], key: str) -> str | None:
+    value = snapshot.get(key)
+    text = str(value or "").strip()
+    return text or None
+
+
+def _requested_acctnum(error_text: str | None) -> str | None:
+    message = str(error_text or "").strip()
+    if not message:
+        return None
+    for pattern in _ACCTNUM_ERROR_PATTERNS:
+        match = pattern.search(message)
+        if match:
+            acctnum = str(match.group("acct") or "").strip()
+            if acctnum:
+                return acctnum
+    return None
+
+
+def _invoice_line_product(
+    db: Session,
+    *,
+    tenant_id: int,
+    snapshot: dict[str, object],
+    ticket: Ticket | None,
+    product: Product | None,
+) -> Product | None:
+    snapshot_product_id = _snapshot_int(snapshot, "product_id")
+    if product is not None:
+        if snapshot_product_id is None or int(product.id or 0) == snapshot_product_id:
+            return product
+    if snapshot_product_id is not None:
+        return (
+            db.execute(
+                select(Product).where(
+                    Product.id == int(snapshot_product_id),
+                    Product.tenant_id == int(tenant_id),
+                )
+            )
+            .scalars()
+            .first()
+        )
+    if product is not None:
+        return product
+    if ticket is not None and ticket.product_id is not None:
+        return (
+            db.execute(
+                select(Product).where(
+                    Product.id == int(ticket.product_id),
+                    Product.tenant_id == int(tenant_id),
+                )
+            )
+            .scalars()
+            .first()
+        )
+    return None
+
+
+def _invoice_line_nominal_source(
+    *,
+    product: Product | None,
+    snapshot: dict[str, object],
+    requested_acctnum: str,
+) -> tuple[str, str | None]:
+    direct_nominal = str(getattr(product, "nominal_code", "") or "").strip() or None
+    group_default = (
+        str(getattr(getattr(product, "product_group", None), "nominal_code_default", "") or "").strip()
+        or None
+    )
+    snapshot_nominal = _snapshot_text(snapshot, "nominal_code")
+    candidates: list[tuple[str, str | None]] = []
+    if direct_nominal:
+        candidates.append(("product nominal code", direct_nominal))
+    if group_default:
+        candidates.append(("product group default nominal code", group_default))
+    if snapshot_nominal:
+        candidates.append(("invoice snapshot nominal code", snapshot_nominal))
+    for source_label, nominal_code in candidates:
+        if nominal_code == requested_acctnum:
+            return source_label, nominal_code
+    if candidates:
+        return candidates[0]
+    return "nominal code source unavailable", None
+
+
+def _invoice_account_mismatch_context(
+    db: Session,
+    *,
+    tenant_id: int,
+    invoice_id: int,
+    error_text: str | None,
+) -> dict[str, object] | None:
+    requested_acctnum = _requested_acctnum(error_text)
+    if requested_acctnum is None:
+        return None
+
+    line_rows = list(
+        db.execute(
+            select(InvoiceLine, Ticket, Product)
+            .outerjoin(
+                Ticket,
+                (Ticket.id == InvoiceLine.ticket_id)
+                & (Ticket.tenant_id == InvoiceLine.tenant_id),
+            )
+            .outerjoin(
+                Product,
+                (Product.id == Ticket.product_id)
+                & (Product.tenant_id == Ticket.tenant_id),
+            )
+            .where(
+                InvoiceLine.tenant_id == int(tenant_id),
+                InvoiceLine.invoice_id == int(invoice_id),
+            )
+            .order_by(InvoiceLine.id.asc())
+        ).all()
+    )
+
+    product_sources: list[dict[str, object]] = []
+    seen_sources: set[tuple[object, ...]] = set()
+    for line, ticket, product in line_rows:
+        snapshot = _snapshot_dict(getattr(line, "product_snapshot_json", None))
+        resolved_product = _invoice_line_product(
+            db,
+            tenant_id=int(tenant_id),
+            snapshot=snapshot,
+            ticket=ticket,
+            product=product,
+        )
+        product_id = (
+            int(getattr(resolved_product, "id", 0) or 0)
+            or _snapshot_int(snapshot, "product_id")
+            or int(getattr(ticket, "product_id", 0) or 0)
+            or None
+        )
+        product_code = (
+            str(getattr(resolved_product, "code", "") or "").strip()
+            or _snapshot_text(snapshot, "product_code")
+        )
+        product_description = (
+            str(getattr(resolved_product, "description", "") or "").strip() or None
+        )
+        nominal_source, nominal_code = _invoice_line_nominal_source(
+            product=resolved_product,
+            snapshot=snapshot,
+            requested_acctnum=requested_acctnum,
+        )
+        source_key = (
+            product_id,
+            product_code,
+            product_description,
+            nominal_source,
+            nominal_code,
+        )
+        if source_key in seen_sources:
+            continue
+        seen_sources.add(source_key)
+        product_sources.append(
+            {
+                "product_id": product_id,
+                "product_code": product_code,
+                "product_description": product_description,
+                "nominal_source": nominal_source,
+                "nominal_code": nominal_code,
+            }
+        )
+
+    return {
+        "invoice_id": int(invoice_id),
+        "requested_acctnum": requested_acctnum,
+        "summary_text": (
+            f"Invoice {int(invoice_id)} requested AcctNum {requested_acctnum}. "
+            "Retry Failed Jobs retries this existing failed job; it does not create a fresh invoice."
+        ),
+        "product_sources": product_sources,
+    }
+
+
+def _recent_job_row(
+    db: Session,
+    *,
+    tenant_id: int,
+    job: AccountingSyncJob,
+) -> dict[str, object]:
+    return {
+        "id": job.id,
+        "job_type": job.job_type,
+        "entity_type": job.entity_type,
+        "entity_id": job.entity_id,
+        "status": job.status,
+        "attempts": job.attempts,
+        "updated_at": job.updated_at,
+        "error_text": job.error_text,
+        "account_mismatch": (
+            _invoice_account_mismatch_context(
+                db,
+                tenant_id=int(tenant_id),
+                invoice_id=int(job.entity_id),
+                error_text=job.error_text,
+            )
+            if str(job.status or "").strip().lower() == "failed"
+            and str(job.job_type or "").strip().lower() == "sync_invoice"
+            and str(job.entity_type or "").strip().lower() == "invoice"
+            else None
+        ),
+    }
+
+
 def _tax_mappings_redirect(
     *,
     saved: bool = False,
@@ -290,6 +535,25 @@ def _tax_mappings_redirect(
     return RedirectResponse(url=url, status_code=303)
 
 
+def _revenue_account_redirect(
+    *,
+    saved: bool = False,
+    cleared: bool = False,
+    error: str = "",
+) -> RedirectResponse:
+    query: dict[str, str] = {}
+    if saved:
+        query["revenue_account_saved"] = "1"
+    if cleared:
+        query["revenue_account_cleared"] = "1"
+    if error:
+        query["error"] = error
+    url = "/admin/accounting"
+    if query:
+        url = f"{url}?{urlencode(query)}"
+    return RedirectResponse(url=url, status_code=303)
+
+
 def _page_context(
     request: Request,
     *,
@@ -298,6 +562,9 @@ def _page_context(
     recent_events: list[AccountingSyncEvent] | None = None,
     setup_summary: object | None = None,
     config_error: str = "",
+    revenue_account_options: list[object] | None = None,
+    current_revenue_account_mapping: object | None = None,
+    revenue_account_error: str = "",
 ) -> dict[str, object]:
     return {
         "request": request,
@@ -305,10 +572,15 @@ def _page_context(
         "recent_jobs": recent_jobs or [],
         "recent_events": recent_events or [],
         "config_error": config_error,
+        "revenue_account_options": revenue_account_options or [],
+        "current_revenue_account_mapping": current_revenue_account_mapping,
+        "revenue_account_error": revenue_account_error,
         "quickbooks_connected": _query_flag(request, "quickbooks_connected"),
         "quickbooks_disconnected": _query_flag(request, "quickbooks_disconnected"),
         "tax_mapping_saved": _query_flag(request, "tax_mapping_saved"),
         "tax_mapping_deleted": _query_flag(request, "tax_mapping_deleted"),
+        "revenue_account_saved": _query_flag(request, "revenue_account_saved"),
+        "revenue_account_cleared": _query_flag(request, "revenue_account_cleared"),
         "sync_run": _query_flag(request, "sync_run"),
         "sync_retry_run": _query_flag(request, "sync_retry_run"),
         "sync_processed": _query_int(request, "sync_processed"),
@@ -327,6 +599,11 @@ def admin_accounting(
     _require_tenant_accounting_admin(request, db)
     tenant_id = request_tenant_id(request)
     connection = _quickbooks_connection(db, tenant_id=tenant_id)
+    current_revenue_account_mapping = get_default_revenue_account_mapping(
+        db,
+        tenant_id=int(tenant_id),
+        provider=QUICKBOOKS_PROVIDER,
+    )
     setup_summary = summarize_quickbooks_setup(
         db,
         tenant_id=tenant_id,
@@ -345,6 +622,14 @@ def admin_accounting(
         .scalars()
         .all()
     )
+    recent_job_rows = [
+        _recent_job_row(
+            db,
+            tenant_id=int(tenant_id),
+            job=job,
+        )
+        for job in recent_jobs
+    ]
     recent_events = (
         db.execute(
             select(AccountingSyncEvent)
@@ -366,16 +651,30 @@ def admin_accounting(
         build_quickbooks_authorize_url(state="preview", redirect_uri=redirect_uri)
     except QuickBooksOAuthError as exc:
         config_error = str(exc)
+    revenue_account_options: list[object] = []
+    revenue_account_error = ""
+    if connection is not None and str(connection.status or "").strip().lower() == "connected":
+        try:
+            revenue_account_options = list_provider_revenue_accounts(
+                db,
+                tenant_id=int(tenant_id),
+                provider=QUICKBOOKS_PROVIDER,
+            )
+        except (RevenueAccountMappingValidationError, QuickBooksApiError) as exc:
+            revenue_account_error = str(exc)
     return templates.TemplateResponse(
         request,
         "admin/accounting/index.html",
         _page_context(
             request,
             connection=connection,
-            recent_jobs=recent_jobs,
+            recent_jobs=recent_job_rows,
             recent_events=recent_events,
             setup_summary=setup_summary,
             config_error=config_error,
+            revenue_account_options=revenue_account_options,
+            current_revenue_account_mapping=current_revenue_account_mapping,
+            revenue_account_error=revenue_account_error,
         ),
     )
 
@@ -402,6 +701,37 @@ def admin_accounting_tax_mappings(
             setup_summary=setup_summary,
         ),
     )
+
+
+@router.post("/admin/accounting/revenue-account")
+async def admin_accounting_revenue_account_update(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    _require_tenant_accounting_admin(request, db)
+    tenant_id = request_tenant_id(request)
+    form = await request.form()
+    remote_account_id = str(form.get("remote_account_id", "") or "").strip()
+    try:
+        if remote_account_id:
+            save_default_revenue_account_mapping(
+                db,
+                tenant_id=int(tenant_id),
+                provider=QUICKBOOKS_PROVIDER,
+                remote_account_id=remote_account_id,
+            )
+            db.commit()
+            return _revenue_account_redirect(saved=True)
+        clear_default_revenue_account_mapping(
+            db,
+            tenant_id=int(tenant_id),
+            provider=QUICKBOOKS_PROVIDER,
+        )
+        db.commit()
+    except (RevenueAccountMappingValidationError, QuickBooksApiError) as exc:
+        db.rollback()
+        return _revenue_account_redirect(error=str(exc))
+    return _revenue_account_redirect(saved=True, cleared=True)
 
 
 @router.post("/admin/accounting/tax-mappings")

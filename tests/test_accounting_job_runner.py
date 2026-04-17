@@ -15,6 +15,7 @@ from app.models import (
     AccountingCustomerMap,
     AccountingInvoiceSync,
     AccountingProductMap,
+    AccountingRevenueAccountMap,
     AccountingSyncEvent,
     AccountingSyncJob,
     AccountingTaxMap,
@@ -36,6 +37,7 @@ from app.services.accounting.jobs import (
     enqueue_sync_product,
     enqueue_void_invoice,
 )
+from app.services.accounting.revenue_account_mapping import list_provider_revenue_accounts
 from app.services.secrets import decrypt_string, encrypt_string
 
 
@@ -172,6 +174,54 @@ def test_customer_job_runs_and_writes_customer_map(db_session, monkeypatch):
     assert len(calls) == 2
 
 
+def test_quickbooks_revenue_account_discovery_filters_income_accounts(db_session, monkeypatch):
+    _configure_settings(monkeypatch)
+    _seed_connection(db_session)
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        if url.endswith("/query") and "FROM Account" in str((params or {}).get("query")):
+            return _response(
+                200,
+                {
+                    "QueryResponse": {
+                        "Account": [
+                            {
+                                "Id": "79",
+                                "AcctNum": "4100",
+                                "Name": "Sales Income",
+                                "AccountType": "Income",
+                                "AccountSubType": "SalesOfProductIncome",
+                                "Classification": "Revenue",
+                                "Active": True,
+                            },
+                            {
+                                "Id": "80",
+                                "AcctNum": "5000",
+                                "Name": "Expense Account",
+                                "AccountType": "Expense",
+                                "Classification": "Expense",
+                                "Active": True,
+                            },
+                        ]
+                    }
+                },
+            )
+        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+
+    accounts = list_provider_revenue_accounts(db_session, tenant_id=1, provider="quickbooks")
+
+    assert len(accounts) == 1
+    assert accounts[0].remote_account_id == "79"
+    assert accounts[0].remote_account_code == "4100"
+    assert accounts[0].remote_account_name == "Sales Income"
+    assert accounts[0].remote_account_type == "Income"
+    assert accounts[0].remote_account_detail_type == "SalesOfProductIncome"
+    assert accounts[0].is_active is True
+    assert accounts[0].is_usable is True
+
+
 def test_product_job_runs_and_writes_product_map(db_session, monkeypatch):
     _configure_settings(monkeypatch)
     tax_rate = TaxRate(code="QB VAT", description="QB VAT", rate_percent=Decimal("20.000"), is_active=True)
@@ -240,6 +290,8 @@ def test_product_job_runs_and_writes_product_map(db_session, monkeypatch):
     assert mapping.external_id == "QB-ITEM-1"
     assert mapping.sync_status == "synced"
     assert _job(db_session, job_type="sync_product").status == "succeeded"
+    product_synced_payloads = _event_payloads(db_session, event_type="product_synced")
+    assert any("nominal_code_fallback" in payload for payload in product_synced_payloads)
 
 
 def test_product_job_fails_clearly_when_nominal_code_is_missing(db_session, monkeypatch):
@@ -280,7 +332,8 @@ def test_product_job_fails_clearly_when_nominal_code_is_missing(db_session, monk
     assert result.failed == 1
     job = _job(db_session, job_type="sync_product")
     assert job.status == "failed"
-    assert "missing a nominal code" in (job.error_text or "").lower()
+    assert "no default revenue account is selected" in (job.error_text or "").lower()
+    assert "no nominal code fallback" in (job.error_text or "").lower()
 
 
 def test_invoice_job_runs_and_writes_invoice_sync_row(db_session, monkeypatch):
@@ -429,6 +482,198 @@ def test_invoice_job_runs_and_writes_invoice_sync_row(db_session, monkeypatch):
     assert sync_row.provider_response_json["txn_tax_code_ref"] == "QB-TAX-GROUP-20"
     assert sync_row.provider_response_json["local_totals"]["gross_total"] == 12.0
     assert _job(db_session, job_type="sync_invoice").status == "succeeded"
+
+
+def test_invoice_job_prefers_default_revenue_account_mapping_over_nominal_fallback(
+    db_session,
+    monkeypatch,
+):
+    _configure_settings(monkeypatch)
+    customer = Customer(account_code="C-QB-INV-MAP-1", name="Invoice Mapping Customer")
+    tax_rate = TaxRate(
+        code="QB VAT MAP",
+        description="QB VAT Map",
+        rate_percent=Decimal("20.000"),
+        is_active=True,
+    )
+    product = Product(
+        code="QB-INV-PROD-MAP-1",
+        description="Invoice Mapping Product",
+        nominal_code="4000",
+        unit_price=Decimal("12.00"),
+        tax_rate=tax_rate,
+    )
+    db_session.add_all([customer, tax_rate, product])
+    db_session.flush()
+    ticket = Ticket(
+        ticket_no="QB-INV-T-MAP-1",
+        datetime=datetime(2026, 2, 12, 10, 0, 0),
+        status=TicketStatusEnum.COMPLETE.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        customer_id=customer.id,
+        product_id=product.id,
+        qty=1,
+        unit_price=Decimal("10.00"),
+        total=Decimal("12.00"),
+        dont_invoice=False,
+        paid=False,
+    )
+    invoice = Invoice(
+        invoice_no="INV-QB-MAP-1",
+        customer_id=customer.id,
+        invoice_date=date(2026, 2, 12),
+        due_date=date(2026, 3, 12),
+        status="DRAFT",
+        net_total=Decimal("10.00"),
+        vat_total=Decimal("2.00"),
+        gross_total=Decimal("12.00"),
+    )
+    db_session.add_all([ticket, invoice])
+    db_session.flush()
+    db_session.add(
+        InvoiceLine(
+            invoice_id=invoice.id,
+            ticket_id=ticket.id,
+            description="Invoice Mapping Line",
+            quantity=Decimal("1.000"),
+            unit_price=Decimal("10.00"),
+            net=Decimal("10.00"),
+            vat=Decimal("2.00"),
+            gross=Decimal("12.00"),
+            product_snapshot_json={
+                "product_id": product.id,
+                "product_code": product.code,
+                "tax_rate_id": tax_rate.id,
+                "tax_rate_code": tax_rate.code,
+                "tax_rate_percent": "20.000",
+                "nominal_code": "4000",
+            },
+        )
+    )
+    db_session.add(
+        AccountingRevenueAccountMap(
+            tenant_id=1,
+            provider="quickbooks",
+            local_scope_type="global_default",
+            remote_account_id="79",
+            remote_account_code="4100",
+            remote_account_name="Mapped Sales Income",
+            remote_account_type="Income",
+            is_active=True,
+        )
+    )
+    db_session.add_all(
+        [
+            AccountingCustomerMap(
+                tenant_id=1,
+                provider="quickbooks",
+                customer_id=customer.id,
+                external_id="QB-CUST-INV-MAP",
+                sync_status="synced",
+                payload_hash="ready",
+            ),
+            AccountingProductMap(
+                tenant_id=1,
+                provider="quickbooks",
+                product_id=product.id,
+                external_id="QB-ITEM-INV-MAP",
+                sync_status="synced",
+                payload_hash="stale",
+            ),
+        ]
+    )
+    db_session.commit()
+    _seed_tax_map(
+        db_session,
+        tax_rate=tax_rate,
+        external_id="QB-TAX-GROUP-20",
+        external_code="TAX",
+    )
+    _seed_connection(db_session)
+
+    enqueue_sync_invoice(db_session, tenant_id=1, invoice_id=invoice.id)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        invoice_sync_module,
+        "sync_customer_to_quickbooks",
+        lambda *args, **kwargs: {"external_id": "QB-CUST-INV-MAP"},
+    )
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        if url.endswith("/query") and "FROM Account" in str((params or {}).get("query")):
+            return _response(
+                200,
+                {
+                    "QueryResponse": {
+                        "Account": [
+                            {
+                                "Id": "79",
+                                "AcctNum": "4100",
+                                "Name": "Mapped Sales Income",
+                                "AccountType": "Income",
+                                "AccountSubType": "SalesOfProductIncome",
+                                "Classification": "Revenue",
+                                "Active": True,
+                            }
+                        ]
+                    }
+                },
+            )
+        if url.endswith("/item/QB-ITEM-INV-MAP"):
+            return _response(
+                200,
+                {
+                    "Item": {
+                        "Id": "QB-ITEM-INV-MAP",
+                        "SyncToken": "1",
+                        "Name": "QB-INV-PROD-MAP-1",
+                    }
+                },
+            )
+        if url.endswith("/item") and str((params or {}).get("operation")) == "update":
+            assert json["IncomeAccountRef"]["value"] == "79"
+            return _response(
+                200,
+                {
+                    "Item": {
+                        "Id": "QB-ITEM-INV-MAP",
+                        "SyncToken": "2",
+                        "Name": "QB-INV-PROD-MAP-1",
+                    }
+                },
+            )
+        if url.endswith("/query") and "FROM Invoice" in str((params or {}).get("query")):
+            return _response(200, {"QueryResponse": {}})
+        if url.endswith("/invoice"):
+            assert json["DocNumber"] == "INV-QB-MAP-1"
+            return _response(
+                200,
+                {
+                    "Invoice": {
+                        "Id": "QB-INV-MAP-1",
+                        "DocNumber": "INV-QB-MAP-1",
+                        "SyncToken": "0",
+                        "TotalAmt": 12.0,
+                        "TxnTaxDetail": {"TotalTax": 2.0},
+                    }
+                },
+            )
+        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+
+    result = process_pending_accounting_jobs(db_session, tenant_id=1, limit=1)
+
+    assert result.processed == 1
+    assert result.succeeded == 1
+    sync_row = db_session.execute(
+        select(AccountingInvoiceSync).where(AccountingInvoiceSync.invoice_id == invoice.id)
+    ).scalar_one()
+    assert sync_row.sync_status == "invoice_synced"
+    product_synced_payloads = _event_payloads(db_session, event_type="product_synced")
+    assert any("global_default_mapping" in payload for payload in product_synced_payloads)
 
 
 def test_invoice_job_fails_clearly_when_tax_mapping_is_missing(db_session, monkeypatch):

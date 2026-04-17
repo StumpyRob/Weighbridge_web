@@ -7,7 +7,7 @@ import sqlalchemy as sa
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..constants import CODE_MAX, DESC_MAX
+from ..constants import CODE_MAX, DESC_MAX, NOMINAL_CODE_MAX
 from .base import Base, utcnow
 
 
@@ -157,6 +157,71 @@ class AccountingTaxMap(Base):
     external_id: Mapped[str | None] = mapped_column(String(DESC_MAX), nullable=True)
     external_code: Mapped[str | None] = mapped_column(String(CODE_MAX), nullable=True)
     name: Mapped[str | None] = mapped_column(String(DESC_MAX), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow
+    )
+
+
+class AccountingRevenueAccountMap(Base):
+    __tablename__ = "accounting_revenue_account_maps"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "tenant_id",
+            "provider",
+            "local_scope_type",
+            "local_scope_id",
+            name="uq_accounting_revenue_account_maps_scope_id",
+        ),
+        sa.UniqueConstraint(
+            "tenant_id",
+            "provider",
+            "local_scope_type",
+            "local_nominal_code",
+            name="uq_accounting_revenue_account_maps_nominal_code",
+        ),
+        sa.Index("ix_accounting_revenue_account_maps_tenant_id", "tenant_id"),
+        sa.Index(
+            "ix_accounting_revenue_account_maps_provider_scope",
+            "tenant_id",
+            "provider",
+            "local_scope_type",
+            "is_active",
+        ),
+        sa.Index(
+            "uq_accounting_revenue_account_maps_global_default",
+            "tenant_id",
+            "provider",
+            "local_scope_type",
+            unique=True,
+            sqlite_where=sa.text(
+                "local_scope_type = 'global_default' "
+                "AND local_scope_id IS NULL "
+                "AND local_nominal_code IS NULL"
+            ),
+            postgresql_where=sa.text(
+                "local_scope_type = 'global_default' "
+                "AND local_scope_id IS NULL "
+                "AND local_nominal_code IS NULL"
+            ),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, default=1
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    local_scope_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    local_scope_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    local_nominal_code: Mapped[str | None] = mapped_column(
+        String(NOMINAL_CODE_MAX), nullable=True
+    )
+    remote_account_id: Mapped[str] = mapped_column(String(DESC_MAX), nullable=False)
+    remote_account_code: Mapped[str | None] = mapped_column(String(CODE_MAX), nullable=True)
+    remote_account_name: Mapped[str] = mapped_column(String(DESC_MAX), nullable=False)
+    remote_account_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(

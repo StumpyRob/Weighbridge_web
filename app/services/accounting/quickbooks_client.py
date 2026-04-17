@@ -56,6 +56,17 @@ class QuickBooksEntityResult:
     payload: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class QuickBooksRevenueAccount:
+    remote_account_id: str
+    remote_account_code: str | None
+    remote_account_name: str
+    remote_account_type: str | None
+    remote_account_detail_type: str | None
+    is_active: bool
+    is_usable: bool
+
+
 def quote_query_value(value: object) -> str:
     text = str(value or "")
     return text.replace("\\", "\\\\").replace("'", "\\'")
@@ -80,6 +91,41 @@ def _safe_number(value: object) -> float | int | None:
     if numeric.is_integer():
         return int(numeric)
     return numeric
+
+
+def _normalized_text(value: object) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _account_is_revenue(account: dict[str, Any]) -> bool:
+    account_type = str(account.get("AccountType") or "").strip().lower()
+    classification = str(account.get("Classification") or "").strip().lower()
+    return account_type == "income" or classification == "revenue"
+
+
+def _account_name(account: dict[str, Any]) -> str:
+    return (
+        str(account.get("FullyQualifiedName") or "").strip()
+        or str(account.get("Name") or "").strip()
+        or f"Account {str(account.get('Id') or '').strip() or '?'}"
+    )
+
+
+def _quickbooks_revenue_account(account: dict[str, Any]) -> QuickBooksRevenueAccount | None:
+    resolved_id = str(account.get("Id") or "").strip()
+    if not resolved_id:
+        return None
+    return QuickBooksRevenueAccount(
+        remote_account_id=resolved_id,
+        remote_account_code=_normalized_text(account.get("AcctNum")),
+        remote_account_name=_account_name(account),
+        remote_account_type=_normalized_text(account.get("AccountType"))
+        or _normalized_text(account.get("Classification")),
+        remote_account_detail_type=_normalized_text(account.get("AccountSubType")),
+        is_active=bool(account.get("Active", True)),
+        is_usable=_account_is_revenue(account),
+    )
 
 
 def _fault_detail(payload: object, *, status_code: int, fallback_text: str) -> dict[str, Any]:
@@ -158,7 +204,7 @@ class QuickBooksClient:
     def __init__(self, db: Session, connection: AccountingConnection) -> None:
         self.db = db
         self.connection = connection
-        self._income_account_refs: dict[str, str] = {}
+        self._active_accounts_cache: list[dict[str, Any]] | None = None
 
     @property
     def realm_id(self) -> str:
@@ -386,18 +432,51 @@ class QuickBooksClient:
     def create_payment(self, payload: dict[str, Any]) -> QuickBooksEntityResult:
         return self.create_entity("payment", payload)
 
-    def resolve_income_account_ref(self, *, nominal_code: str) -> str:
+    def _active_accounts(self) -> list[dict[str, Any]]:
+        if self._active_accounts_cache is None:
+            self._active_accounts_cache = self.query_entities(
+                "account",
+                "SELECT * FROM Account WHERE Active = true",
+            )
+        return list(self._active_accounts_cache)
+
+    def list_revenue_accounts(self) -> list[QuickBooksRevenueAccount]:
+        revenue_accounts: list[QuickBooksRevenueAccount] = []
+        for account in self._active_accounts():
+            if not _account_is_revenue(account):
+                continue
+            resolved = _quickbooks_revenue_account(account)
+            if resolved is None:
+                continue
+            revenue_accounts.append(resolved)
+        revenue_accounts.sort(
+            key=lambda account: (
+                account.remote_account_code is None,
+                str(account.remote_account_code or ""),
+                str(account.remote_account_name or "").lower(),
+                str(account.remote_account_id or ""),
+            )
+        )
+        return revenue_accounts
+
+    def resolve_income_account_by_id(self, *, remote_account_id: str) -> QuickBooksRevenueAccount:
+        normalized_account_id = str(remote_account_id or "").strip()
+        if not normalized_account_id:
+            raise QuickBooksApiError("Mapped QuickBooks revenue account ID is missing.")
+        for account in self.list_revenue_accounts():
+            if str(account.remote_account_id) == normalized_account_id:
+                return account
+        raise QuickBooksApiError(
+            f"QuickBooks revenue account {normalized_account_id} was not found among active income/revenue accounts."
+        )
+
+    def resolve_income_account_by_nominal_code(self, *, nominal_code: str) -> QuickBooksRevenueAccount:
         normalized_nominal_code = str(nominal_code or "").strip()
         if not normalized_nominal_code:
             raise QuickBooksApiError(
                 "Local nominal code is missing; QuickBooks income account cannot be resolved safely."
             )
-        if normalized_nominal_code in self._income_account_refs:
-            return self._income_account_refs[normalized_nominal_code]
-        candidates = self.query_entities(
-            "account",
-            "SELECT * FROM Account WHERE Active = true",
-        )
+        candidates = self._active_accounts()
         exact_matches = [
             account
             for account in candidates
@@ -410,9 +489,7 @@ class QuickBooksClient:
 
         revenue_matches: list[dict[str, Any]] = []
         for account in exact_matches:
-            account_type = str(account.get("AccountType") or "").strip().lower()
-            classification = str(account.get("Classification") or "").strip().lower()
-            if account_type == "income" or classification == "revenue":
+            if _account_is_revenue(account):
                 revenue_matches.append(account)
 
         if not revenue_matches:
@@ -429,8 +506,22 @@ class QuickBooksClient:
             raise QuickBooksApiError(
                 f"QuickBooks income account {normalized_nominal_code} did not include an Id."
             )
-        self._income_account_refs[normalized_nominal_code] = resolved_id
-        return resolved_id
+        resolved_account = _quickbooks_revenue_account(revenue_matches[0])
+        if resolved_account is None:
+            raise QuickBooksApiError(
+                f"QuickBooks income account {normalized_nominal_code} did not include an Id."
+            )
+        return resolved_account
+
+    def resolve_income_account_ref(self, *, nominal_code: str) -> str:
+        return self.resolve_income_account_by_nominal_code(
+            nominal_code=nominal_code
+        ).remote_account_id
+
+    def resolve_income_account_ref_by_id(self, *, remote_account_id: str) -> str:
+        return self.resolve_income_account_by_id(
+            remote_account_id=remote_account_id
+        ).remote_account_id
 
     def void_invoice(self, *, external_id: str, sync_token: str) -> QuickBooksEntityResult:
         raise QuickBooksUnsupportedError(

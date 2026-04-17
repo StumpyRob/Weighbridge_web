@@ -15,6 +15,18 @@
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
   {% endif %}
+  {% if revenue_account_saved %}
+    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+      <div class="flash-toast__content">
+        {% if revenue_account_cleared %}
+          Default revenue account cleared. Nominal-code fallback remains available.
+        {% else %}
+          Default revenue account saved.
+        {% endif %}
+      </div>
+      <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
+    </div>
+  {% endif %}
   {% if sync_run %}
     <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
       <div class="flash-toast__content">
@@ -38,7 +50,7 @@
   <div class="page-header">
     <div>
       <h1>Accounting Integrations</h1>
-      <p class="muted">Manage tenant-scoped QuickBooks access, tax mappings, and sandbox readiness before running manual sync jobs.</p>
+      <p class="muted">Manage tenant-scoped QuickBooks access, a default revenue account, tax mappings, and sandbox readiness before running manual sync jobs.</p>
     </div>
     <div class="actions btn-group">
       <a class="btn btn--secondary" href="{{ tenant_path('/admin') }}">Back to Settings</a>
@@ -118,6 +130,60 @@
               <button type="submit" class="btn btn--secondary">Retry Failed Jobs</button>
             </form>
           </div>
+          <p class="muted">Retry Failed Jobs retries the existing failed jobs below. It does not create a fresh invoice. After fixing product/account setup, you may need to create and sync a new invoice instead.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Default Revenue Account</h2>
+      </div>
+      <div class="frame-body">
+        <p class="muted">Select a default QuickBooks revenue account after connection. If no default is saved, product nominal codes still fall back to exact QuickBooks AcctNum matching for now.</p>
+
+        {% if is_connected %}
+          {% if revenue_account_error %}
+            <div class="alert alert--danger">
+              QuickBooks revenue accounts could not be loaded: {{ revenue_account_error }}
+            </div>
+          {% endif %}
+
+          <form method="post" action="{{ tenant_path('/admin/accounting/revenue-account') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+            <div class="form-grid">
+              <div>
+                <label for="remote_account_id">Tenant Default Revenue Account</label>
+                <select id="remote_account_id" name="remote_account_id">
+                  <option value="">Use nominal-code fallback only</option>
+                  {% for account in revenue_account_options %}
+                    <option value="{{ account.remote_account_id }}" {% if current_revenue_account_mapping and current_revenue_account_mapping.remote_account_id == account.remote_account_id %}selected{% endif %}>
+                      {{ account.display_label }}
+                    </option>
+                  {% endfor %}
+                </select>
+                {% if current_revenue_account_mapping %}
+                  <div class="hint">
+                    Current default:
+                    {% if current_revenue_account_mapping.remote_account_code %}{{ current_revenue_account_mapping.remote_account_code }} - {% endif %}
+                    {{ current_revenue_account_mapping.remote_account_name }}
+                    {% if current_revenue_account_mapping.remote_account_type %} ({{ current_revenue_account_mapping.remote_account_type }}){% endif %}
+                  </div>
+                {% else %}
+                  <div class="hint">No default revenue account is selected yet.</div>
+                {% endif %}
+              </div>
+            </div>
+            <div class="actions btn-group" style="margin-top: 0.75rem;">
+              <button type="submit" class="btn btn--primary">Save Default Revenue Account</button>
+            </div>
+          </form>
+
+          {% if not revenue_account_options and not revenue_account_error %}
+            <p class="muted">No active QuickBooks income or revenue accounts were discovered.</p>
+          {% endif %}
+        {% else %}
+          <p class="muted">Connect QuickBooks to load revenue accounts and choose a tenant default.</p>
         {% endif %}
       </div>
     </section>
@@ -127,7 +193,7 @@
         <h2>Configuration Blockers &amp; Readiness</h2>
       </div>
       <div class="frame-body">
-        <p class="muted">QuickBooks sandbox UAT requires explicit tenant-scoped tax mappings, valid product tax setup, and nominal codes that resolve cleanly to QuickBooks income accounts.</p>
+        <p class="muted">QuickBooks sandbox UAT requires explicit tenant-scoped tax mappings, valid product tax setup, and either a default revenue account or nominal codes that resolve cleanly to QuickBooks income accounts.</p>
 
         <div class="invoice-summary-grid">
           <div class="card">
@@ -143,7 +209,7 @@
             <strong>{{ setup.products_missing_tax_rate if setup else 0 }}</strong>
           </div>
           <div class="card">
-            <div class="summary-label">Products Missing Nominal Code</div>
+            <div class="summary-label">Products Missing Nominal Code Fallback</div>
             <strong>{{ setup.products_missing_nominal_code if setup else 0 }}</strong>
           </div>
           <div class="card">
@@ -242,7 +308,24 @@
                     <td>{{ job.status | replace('_', ' ') | title }}</td>
                     <td>{{ job.attempts }}</td>
                     <td>{{ job.updated_at | uk_datetime('%d/%m/%Y %H:%M:%S') if job.updated_at else '-' }}</td>
-                    <td>{{ job.error_text or '-' }}</td>
+                    <td>
+                      {% if job.error_text %}
+                        <div>{{ job.error_text }}</div>
+                        {% if job.account_mismatch %}
+                          <div class="muted">{{ job.account_mismatch.summary_text }}</div>
+                          {% for source in job.account_mismatch.product_sources %}
+                            <div class="muted">
+                              {% if source.product_id %}Product {{ source.product_id }}{% else %}Product{% endif %}
+                              {% if source.product_code %} {{ source.product_code }}{% endif %}
+                              {% if source.product_description %} - {{ source.product_description }}{% endif %}
+                              {% if source.nominal_code %} ({{ source.nominal_source }}: {{ source.nominal_code }}){% else %} ({{ source.nominal_source }}){% endif %}
+                            </div>
+                          {% endfor %}
+                        {% endif %}
+                      {% else %}
+                        -
+                      {% endif %}
+                    </td>
                   </tr>
                 {% endfor %}
               </tbody>

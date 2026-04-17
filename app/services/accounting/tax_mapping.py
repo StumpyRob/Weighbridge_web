@@ -10,6 +10,7 @@ from ...models import AccountingSyncJob, AccountingTaxMap, Product, TaxRate
 from ..pricing import product_effective_nominal_code
 from .quickbooks_client import QuickBooksApiError
 from .quickbooks_oauth import QUICKBOOKS_PROVIDER
+from .revenue_account_mapping import get_default_revenue_account_mapping
 
 _PSEUDO_LINE_CODES = {"TAX", "NON"}
 
@@ -94,6 +95,7 @@ class QuickBooksSetupSummary:
     missing_tax_mapping_count: int
     products_missing_tax_rate: int
     products_missing_nominal_code: int
+    has_default_revenue_account_mapping: bool
     pending_job_count: int
     failed_job_count: int
     required_tax_mappings_complete: bool
@@ -454,6 +456,7 @@ def _setup_guidance(
     missing_tax_mapping_count: int,
     products_missing_tax_rate: int,
     products_missing_nominal_code: int,
+    has_default_revenue_account_mapping: bool,
     pending_job_count: int,
     failed_job_count: int,
     is_ready_for_sandbox: bool,
@@ -469,9 +472,9 @@ def _setup_guidance(
         steps.append(
             f"Update {products_missing_tax_rate} product(s) so each has a local tax rate."
         )
-    if products_missing_nominal_code:
+    if products_missing_nominal_code and not has_default_revenue_account_mapping:
         steps.append(
-            f"Update {products_missing_nominal_code} product(s) so each has a nominal code that matches a QuickBooks income account AcctNum."
+            f"Choose a default QuickBooks revenue account or update {products_missing_nominal_code} product(s) so each has a nominal code that matches a QuickBooks income account AcctNum."
         )
     if failed_job_count:
         steps.append(
@@ -519,6 +522,14 @@ def summarize_quickbooks_setup(
     products_missing_nominal_code = sum(
         1 for product in products if not str(product_effective_nominal_code(product) or "").strip()
     )
+    has_default_revenue_account_mapping = (
+        get_default_revenue_account_mapping(
+            db,
+            tenant_id=int(tenant_id),
+            provider=provider,
+        )
+        is not None
+    )
     pending_job_count, failed_job_count = _job_counts(
         db,
         tenant_id=int(tenant_id),
@@ -529,13 +540,14 @@ def summarize_quickbooks_setup(
         str(connection_status or "").strip().lower() == "connected"
         and required_tax_mappings_complete
         and products_missing_tax_rate == 0
-        and products_missing_nominal_code == 0
+        and (has_default_revenue_account_mapping or products_missing_nominal_code == 0)
     )
     next_steps = _setup_guidance(
         connection_status=connection_status,
         missing_tax_mapping_count=missing_tax_mapping_count,
         products_missing_tax_rate=products_missing_tax_rate,
         products_missing_nominal_code=products_missing_nominal_code,
+        has_default_revenue_account_mapping=has_default_revenue_account_mapping,
         pending_job_count=pending_job_count,
         failed_job_count=failed_job_count,
         is_ready_for_sandbox=is_ready_for_sandbox,
@@ -547,6 +559,7 @@ def summarize_quickbooks_setup(
         missing_tax_mapping_count=missing_tax_mapping_count,
         products_missing_tax_rate=products_missing_tax_rate,
         products_missing_nominal_code=products_missing_nominal_code,
+        has_default_revenue_account_mapping=has_default_revenue_account_mapping,
         pending_job_count=pending_job_count,
         failed_job_count=failed_job_count,
         required_tax_mappings_complete=required_tax_mappings_complete,

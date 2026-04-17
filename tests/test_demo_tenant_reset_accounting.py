@@ -13,6 +13,7 @@ from app.models import (
     AccountingCustomerMap,
     AccountingInvoiceSync,
     AccountingProductMap,
+    AccountingRevenueAccountMap,
     AccountingSyncEvent,
     AccountingSyncJob,
     AccountingTaxMap,
@@ -173,6 +174,16 @@ def _seed_demo_tenant_with_accounting_rows(db_session) -> dict[str, int]:
                 external_code="TAX",
                 is_active=True,
             ),
+            AccountingRevenueAccountMap(
+                tenant_id=tenant.id,
+                provider="quickbooks",
+                local_scope_type="global_default",
+                remote_account_id="QB-REV-DEMO",
+                remote_account_code="4100",
+                remote_account_name="Demo Sales Income",
+                remote_account_type="Income",
+                is_active=True,
+            ),
             UserFeedback(
                 tenant_id=tenant.id,
                 submitted_by_user_id=user.id,
@@ -226,6 +237,7 @@ def test_reset_demo_tenant_data_clears_accounting_rows_before_core_entities(
         AccountingSyncJob,
         AccountingSyncEvent,
         AccountingTaxMap,
+        AccountingRevenueAccountMap,
         UserFeedback,
     ):
         assert _tenant_row_count(db_session, model, ids["tenant_id"]) == 0
@@ -331,6 +343,7 @@ def test_maybe_auto_reset_demo_tenant_handles_accounting_rows_when_reset_is_due(
     assert _tenant_row_count(db_session, AccountingSyncEvent, ids["tenant_id"]) == 0
     assert _tenant_row_count(db_session, AccountingConnection, ids["tenant_id"]) == 0
     assert _tenant_row_count(db_session, AccountingTaxMap, ids["tenant_id"]) == 0
+    assert _tenant_row_count(db_session, AccountingRevenueAccountMap, ids["tenant_id"]) == 0
     assert _tenant_row_count(db_session, UserFeedback, ids["tenant_id"]) == 0
     assert (
         db_session.execute(
