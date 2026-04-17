@@ -23,6 +23,7 @@ from app.models import (
     TaxRate,
     Tenant,
     User,
+    UserFeedback,
 )
 from app.models.base import utcnow
 from app.services.demo_tenant_reset import (
@@ -172,6 +173,17 @@ def _seed_demo_tenant_with_accounting_rows(db_session) -> dict[str, int]:
                 external_code="TAX",
                 is_active=True,
             ),
+            UserFeedback(
+                tenant_id=tenant.id,
+                submitted_by_user_id=user.id,
+                reviewed_by_user_id=user.id,
+                kind="bug",
+                status="reviewed",
+                title="Stale demo feedback",
+                message="This stale feedback row should be deleted during demo reset.",
+                submitted_by_display_name="Stale Demo Admin",
+                submitted_by_email="stale-demo@example.com",
+            ),
         ]
     )
     db_session.commit()
@@ -214,6 +226,7 @@ def test_reset_demo_tenant_data_clears_accounting_rows_before_core_entities(
         AccountingSyncJob,
         AccountingSyncEvent,
         AccountingTaxMap,
+        UserFeedback,
     ):
         assert _tenant_row_count(db_session, model, ids["tenant_id"]) == 0
 
@@ -318,6 +331,7 @@ def test_maybe_auto_reset_demo_tenant_handles_accounting_rows_when_reset_is_due(
     assert _tenant_row_count(db_session, AccountingSyncEvent, ids["tenant_id"]) == 0
     assert _tenant_row_count(db_session, AccountingConnection, ids["tenant_id"]) == 0
     assert _tenant_row_count(db_session, AccountingTaxMap, ids["tenant_id"]) == 0
+    assert _tenant_row_count(db_session, UserFeedback, ids["tenant_id"]) == 0
     assert (
         db_session.execute(
             select(Invoice).where(

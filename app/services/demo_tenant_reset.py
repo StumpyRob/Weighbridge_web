@@ -48,6 +48,7 @@ from ..models import (
     TicketVoid,
     Unit,
     User,
+    UserFeedback,
     Vehicle,
     VehicleTare,
     Yard,
@@ -133,6 +134,12 @@ _PRINTING_RESET_MODELS = (
     PrintDestination,
     PrintTemplateVersion,
     PrintTemplate,
+)
+
+_USER_RESET_MODELS = (
+    # Feedback rows can still point at tenant users via submitted_by_user_id /
+    # reviewed_by_user_id, so clear them before deleting users.
+    UserFeedback,
 )
 
 
@@ -430,6 +437,7 @@ def reset_demo_tenant_data(
     _delete_tenant_rows(db, tenant_id, _ACCOUNTING_RESET_MODELS)
     _clear_tenant_printing_state(db, tenant_id)
     _delete_tenant_rows(db, tenant_id, _DELETE_CASCADE_MODELS)
+    _delete_tenant_rows(db, tenant_id, _USER_RESET_MODELS)
     db.execute(delete(User).where(User.tenant_id == tenant_id))
 
     tenant.is_active = True
