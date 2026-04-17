@@ -170,8 +170,8 @@ def _fake_token_bundle(*, realm_id: str) -> QuickBooksTokenBundle:
     return QuickBooksTokenBundle(
         access_token="qb-access-token",
         refresh_token="qb-refresh-token",
-        access_token_expires_at=datetime(2026, 4, 17, 12, 0, 0),
-        refresh_token_expires_at=datetime(2026, 9, 1, 12, 0, 0),
+        access_token_expires_at=datetime(2027, 4, 17, 12, 0, 0),
+        refresh_token_expires_at=datetime(2027, 9, 1, 12, 0, 0),
         scopes="com.intuit.quickbooks.accounting",
         realm_id=realm_id,
         raw_response={"token_type": "bearer"},
@@ -192,10 +192,10 @@ def _seed_connected_connection(
             realm_id=realm_id,
             encrypted_access_token=encrypt_string("qb-access-token"),
             encrypted_refresh_token=encrypt_string("qb-refresh-token"),
-            access_token_expires_at=datetime(2026, 4, 17, 12, 0, 0),
-            refresh_token_expires_at=datetime(2026, 9, 1, 12, 0, 0),
+            access_token_expires_at=datetime(2027, 4, 17, 12, 0, 0),
+            refresh_token_expires_at=datetime(2027, 9, 1, 12, 0, 0),
             scopes="com.intuit.quickbooks.accounting",
-            connected_at=datetime(2026, 4, 16, 12, 0, 0),
+            connected_at=datetime(2027, 4, 16, 12, 0, 0),
             disconnected_at=None,
             last_error=None,
         )
@@ -278,7 +278,7 @@ def _prepare_environment(tmp_path: Path, monkeypatch):
     return _prepare_environment_with_settings(
         tmp_path,
         monkeypatch,
-        quickbooks_redirect_uri="https://{tenant_subdomain}.localhost/admin/accounting/quickbooks/callback",
+        quickbooks_redirect_uri="https://admin.localhost/api/accounting/quickbooks/callback",
         base_domain="",
     )
 
@@ -516,7 +516,7 @@ def test_connect_route_redirects_to_quickbooks_authorize_url(tmp_path, monkeypat
         assert query["response_type"] == ["code"]
         assert query["scope"] == ["com.intuit.quickbooks.accounting"]
         assert _oauth_redirect_uri_from_redirect(location) == (
-            "https://acme.localhost/admin/accounting/quickbooks/callback"
+            "https://admin.localhost/api/accounting/quickbooks/callback"
         )
         assert _authorize_state_from_redirect(location)
         assert "ACCOUNTING_CONNECT_START" in _audit_actions(env["SessionLocal"], env["tenant_id"])
@@ -526,14 +526,14 @@ def test_connect_route_redirects_to_quickbooks_authorize_url(tmp_path, monkeypat
         env["app"].dependency_overrides.clear()
 
 
-def test_connect_route_uses_current_tenant_host_on_custom_domain_even_if_env_points_to_platform_host(
+def test_connect_route_uses_canonical_platform_callback_on_custom_domain(
     tmp_path,
     monkeypatch,
 ):
     env = _prepare_environment_with_settings(
         tmp_path,
         monkeypatch,
-        quickbooks_redirect_uri="https://admin.roberthetherington.com{tenant_route_prefix}/admin/accounting/quickbooks/callback",
+        quickbooks_redirect_uri="https://admin.roberthetherington.com/api/accounting/quickbooks/callback",
         base_domain="roberthetherington.com",
     )
     client = _client_for(env["app"], base_url="https://acme.roberthetherington.com")
@@ -543,32 +543,7 @@ def test_connect_route_uses_current_tenant_host_on_custom_domain_even_if_env_poi
         assert response.status_code == 302
         location = response.headers["location"]
         assert _oauth_redirect_uri_from_redirect(location) == (
-            "https://acme.roberthetherington.com/admin/accounting/quickbooks/callback"
-        )
-        assert "admin.roberthetherington.com/admin/accounting/quickbooks/callback" not in location
-    finally:
-        client.close()
-        env["app"].dependency_overrides.clear()
-
-
-def test_connect_route_supports_tenant_host_redirect_uri_placeholder_on_custom_domain(
-    tmp_path,
-    monkeypatch,
-):
-    env = _prepare_environment_with_settings(
-        tmp_path,
-        monkeypatch,
-        quickbooks_redirect_uri="https://{tenant_host}{tenant_route_prefix}/admin/accounting/quickbooks/callback",
-        base_domain="roberthetherington.com",
-    )
-    client = _client_for(env["app"], base_url="https://acme.roberthetherington.com")
-    try:
-        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
-        response = client.get("/admin/accounting/quickbooks/connect", follow_redirects=False)
-        assert response.status_code == 302
-        location = response.headers["location"]
-        assert _oauth_redirect_uri_from_redirect(location) == (
-            "https://acme.roberthetherington.com/admin/accounting/quickbooks/callback"
+            "https://admin.roberthetherington.com/api/accounting/quickbooks/callback"
         )
     finally:
         client.close()
@@ -577,25 +552,29 @@ def test_connect_route_supports_tenant_host_redirect_uri_placeholder_on_custom_d
 
 def test_callback_with_invalid_state_fails_safely(tmp_path, monkeypatch):
     env = _prepare_environment(tmp_path, monkeypatch)
-    client = _client_for(env["app"], base_url="https://acme.localhost")
+    client = _client_for(env["app"], base_url="https://admin.localhost")
     try:
-        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
         response = client.get(
-            "/admin/accounting/quickbooks/callback?code=auth-code&realmId=realm-123",
+            "/api/accounting/quickbooks/callback?code=auth-code&realmId=realm-123",
             follow_redirects=False,
         )
-        assert response.status_code == 303
-        assert response.headers["location"].startswith("/admin/accounting?")
-        follow = client.get(response.headers["location"])
-        assert follow.status_code == 200
-        assert "QuickBooks callback could not be verified." in follow.text
+        assert response.status_code == 400
+        assert response.text == "QuickBooks callback could not be verified."
         assert _connection_for_tenant(env["SessionLocal"], env["tenant_id"]) is None
-        assert "ACCOUNTING_CALLBACK_FAILED" in _audit_actions(
-            env["SessionLocal"], env["tenant_id"]
+    finally:
+        client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_canonical_callback_route_is_not_available_on_tenant_host(tmp_path, monkeypatch):
+    env = _prepare_environment(tmp_path, monkeypatch)
+    client = _client_for(env["app"], base_url="https://acme.localhost")
+    try:
+        response = client.get(
+            "/api/accounting/quickbooks/callback?state=invalid&code=auth-code",
+            follow_redirects=False,
         )
-        assert "oauth_callback_failed" in _sync_event_types(
-            env["SessionLocal"], env["tenant_id"]
-        )
+        assert response.status_code == 404
     finally:
         client.close()
         env["app"].dependency_overrides.clear()
@@ -603,26 +582,29 @@ def test_callback_with_invalid_state_fails_safely(tmp_path, monkeypatch):
 
 def test_callback_success_stores_encrypted_tokens_and_realm_id(tmp_path, monkeypatch):
     env = _prepare_environment(tmp_path, monkeypatch)
-    client = _client_for(env["app"], base_url="https://acme.localhost")
+    tenant_client = _client_for(env["app"], base_url="https://acme.localhost")
+    platform_client = _client_for(env["app"], base_url="https://admin.localhost")
     monkeypatch.setattr(
         admin_accounting_route,
         "exchange_code_for_tokens",
         lambda **kwargs: _fake_token_bundle(realm_id=str(kwargs["realm_id"])),
     )
     try:
-        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
-        connect_response = client.get(
+        _login(tenant_client, email=env["admin_email"], password=env["password"], next_path="/admin")
+        connect_response = tenant_client.get(
             "/admin/accounting/quickbooks/connect",
             follow_redirects=False,
         )
         state = _authorize_state_from_redirect(connect_response.headers["location"])
 
-        callback = client.get(
-            f"/admin/accounting/quickbooks/callback?state={state}&code=auth-code&realmId=realm-123",
+        callback = platform_client.get(
+            f"/api/accounting/quickbooks/callback?state={state}&code=auth-code&realmId=realm-123",
             follow_redirects=False,
         )
         assert callback.status_code == 303
-        assert callback.headers["location"] == "/admin/accounting?quickbooks_connected=1"
+        assert callback.headers["location"] == (
+            "https://acme.localhost/admin/accounting?quickbooks_connected=1"
+        )
 
         connection = _connection_for_tenant(env["SessionLocal"], env["tenant_id"])
         assert connection is not None
@@ -638,7 +620,7 @@ def test_callback_success_stores_encrypted_tokens_and_realm_id(tmp_path, monkeyp
         assert connection.scopes == "com.intuit.quickbooks.accounting"
         assert connection.last_error is None
 
-        accounting_page = client.get("/admin/accounting")
+        accounting_page = tenant_client.get("/admin/accounting")
         assert accounting_page.status_code == 200
         assert "qb-access-token" not in accounting_page.text
         assert "qb-refresh-token" not in accounting_page.text
@@ -651,7 +633,47 @@ def test_callback_success_stores_encrypted_tokens_and_realm_id(tmp_path, monkeyp
             env["SessionLocal"], env["tenant_id"]
         )
     finally:
-        client.close()
+        tenant_client.close()
+        platform_client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_callback_requires_initiating_user_to_still_match_tenant_admin_binding(tmp_path, monkeypatch):
+    env = _prepare_environment(tmp_path, monkeypatch)
+    tenant_client = _client_for(env["app"], base_url="https://acme.localhost")
+    platform_client = _client_for(env["app"], base_url="https://admin.localhost")
+    try:
+        _login(tenant_client, email=env["admin_email"], password=env["password"], next_path="/admin")
+        connect_response = tenant_client.get(
+            "/admin/accounting/quickbooks/connect",
+            follow_redirects=False,
+        )
+        state = _authorize_state_from_redirect(connect_response.headers["location"])
+
+        with env["SessionLocal"]() as db:
+            user = (
+                db.execute(
+                    select(User).where(User.email == env["admin_email"])
+                )
+                .scalars()
+                .first()
+            )
+            assert user is not None
+            user.tenant_id = env["other_tenant_id"]
+            db.commit()
+
+        callback = platform_client.get(
+            f"/api/accounting/quickbooks/callback?state={state}&code=auth-code&realmId=realm-123",
+            follow_redirects=False,
+        )
+        assert callback.status_code == 303
+        assert callback.headers["location"] == (
+            "https://acme.localhost/admin/accounting?error=QuickBooks+callback+could+not+be+verified."
+        )
+        assert _connection_for_tenant(env["SessionLocal"], env["tenant_id"]) is None
+    finally:
+        tenant_client.close()
+        platform_client.close()
         env["app"].dependency_overrides.clear()
 
 

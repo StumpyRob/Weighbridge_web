@@ -12,11 +12,12 @@ from sqlalchemy.orm import Session
 from ...config import settings
 from ...models import AccountingConnection
 from ...models.base import utcnow
-from ...tenancy import request_external_host, request_external_scheme, tenant_request_url
+from ...tenancy import platform_route_url
 from ..secrets import decrypt_string, encrypt_string
 
 QUICKBOOKS_PROVIDER = "quickbooks"
 QUICKBOOKS_SCOPE = "com.intuit.quickbooks.accounting"
+QUICKBOOKS_CALLBACK_PATH = "/api/accounting/quickbooks/callback"
 _QUICKBOOKS_AUTHORIZE_URL = "https://appcenter.intuit.com/connect/oauth2"
 _QUICKBOOKS_TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
 _QUICKBOOKS_API_BASE_BY_ENV = {
@@ -68,35 +69,19 @@ def _validated_client_secret() -> str:
 
 def resolve_quickbooks_redirect_uri(request: Request | None = None) -> str:
     configured = str(settings.quickbooks_redirect_uri or "").strip()
+    if configured:
+        return configured
     if request is None:
-        if configured:
-            return configured
+        base_domain = str(settings.effective_base_domain or "").strip()
+        if not base_domain:
+            raise QuickBooksOAuthError("QUICKBOOKS_REDIRECT_URI is not configured.")
+        return (
+            f"https://{settings.effective_platform_subdomain}.{base_domain}"
+            f"{QUICKBOOKS_CALLBACK_PATH}"
+        )
+    resolved = platform_route_url(request, path=QUICKBOOKS_CALLBACK_PATH)
+    if resolved.startswith("/"):
         raise QuickBooksOAuthError("QUICKBOOKS_REDIRECT_URI is not configured.")
-
-    callback_url = tenant_request_url(
-        request,
-        path="/admin/accounting/quickbooks/callback",
-    )
-    if not configured:
-        return callback_url
-
-    tenant_subdomain = str(
-        getattr(getattr(request, "state", None), "request_subdomain", "") or ""
-    ).strip()
-    tenant_route_prefix = str(
-        getattr(getattr(request, "state", None), "tenant_route_prefix", "") or ""
-    ).strip()
-    tenant_host = str(request_external_host(request) or "").strip()
-    tenant_origin = f"{request_external_scheme(request)}://{tenant_host}".rstrip("/")
-    resolved = configured.replace("{tenant_subdomain}", tenant_subdomain)
-    resolved = resolved.replace("{tenant_route_prefix}", tenant_route_prefix)
-    resolved = resolved.replace("{tenant_host}", tenant_host)
-    resolved = resolved.replace("{tenant_origin}", tenant_origin)
-
-    # QuickBooks accounting OAuth is tenant-admin only, so the active tenant request
-    # host is the source of truth for callback routing.
-    if not bool(getattr(getattr(request, "state", None), "platform_mode", False)):
-        return callback_url
     return resolved
 
 

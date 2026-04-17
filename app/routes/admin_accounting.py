@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-import secrets
+import base64
+import hashlib
+import hmac
+import json
 from datetime import datetime, timedelta
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,12 +20,14 @@ from ..models import (
     AccountingConnection,
     AccountingSyncEvent,
     AccountingSyncJob,
+    Tenant,
     User,
 )
 from ..models.base import utcnow
 from ..permissions import PERM_MANAGE_SETTINGS, require_permission
 from ..services.accounting.job_runner import process_pending_accounting_jobs
 from ..services.accounting.quickbooks_oauth import (
+    QUICKBOOKS_CALLBACK_PATH,
     QUICKBOOKS_PROVIDER,
     QuickBooksOAuthError,
     build_quickbooks_authorize_url,
@@ -40,11 +45,10 @@ from ..services.accounting.tax_mapping import (
     update_quickbooks_tax_mapping,
 )
 from ..templating import templates
-from ..tenancy import request_platform_mode, request_tenant_id
+from ..tenancy import request_platform_mode, request_tenant_id, tenant_request_url
 from ..user_roles import ROLE_TENANT_ADMIN
 
 router = APIRouter()
-_OAUTH_STATE_SESSION_KEY = "accounting_quickbooks_oauth_state"
 _OAUTH_STATE_TTL = timedelta(minutes=10)
 
 
@@ -75,26 +79,73 @@ def _quickbooks_connection(
     )
 
 
-def _configure_state_bucket(request: Request) -> dict[str, dict[str, object]]:
-    raw_value = request.session.get(_OAUTH_STATE_SESSION_KEY)
-    states = raw_value if isinstance(raw_value, dict) else {}
-    cutoff = utcnow() - _OAUTH_STATE_TTL
-    pruned: dict[str, dict[str, object]] = {}
-    for key, payload in states.items():
-        if not isinstance(payload, dict):
-            continue
-        issued_at = payload.get("issued_at")
-        if not isinstance(issued_at, str):
-            continue
-        try:
-            issued_at_value = datetime.fromisoformat(issued_at)
-        except ValueError:
-            continue
-        if issued_at_value < cutoff:
-            continue
-        pruned[str(key)] = payload
-    request.session[_OAUTH_STATE_SESSION_KEY] = pruned
-    return pruned
+def _quickbooks_state_secret() -> bytes:
+    secret = str(settings.effective_secret_key or "").strip()
+    if not secret:
+        raise QuickBooksOAuthError("APP_SECRET_KEY (or SECRET_KEY) is not configured.")
+    return secret.encode("utf-8")
+
+
+def _urlsafe_b64encode(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _urlsafe_b64decode(token: str) -> bytes:
+    raw = str(token or "").strip()
+    if not raw:
+        raise ValueError("missing token")
+    padding = "=" * (-len(raw) % 4)
+    return base64.urlsafe_b64decode(f"{raw}{padding}".encode("ascii"))
+
+
+def _signed_quickbooks_state(payload: dict[str, object]) -> str:
+    payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    payload_token = _urlsafe_b64encode(payload_json)
+    signature = hmac.new(
+        _quickbooks_state_secret(),
+        payload_token.encode("ascii"),
+        hashlib.sha256,
+    ).digest()
+    return f"{payload_token}.{_urlsafe_b64encode(signature)}"
+
+
+def _validated_quickbooks_state(state: str) -> dict[str, object]:
+    raw_state = str(state or "").strip()
+    if not raw_state or "." not in raw_state:
+        raise QuickBooksOAuthError("QuickBooks callback could not be verified.")
+    payload_token, signature_token = raw_state.split(".", 1)
+    expected_signature = hmac.new(
+        _quickbooks_state_secret(),
+        payload_token.encode("ascii"),
+        hashlib.sha256,
+    ).digest()
+    try:
+        provided_signature = _urlsafe_b64decode(signature_token)
+        payload = json.loads(_urlsafe_b64decode(payload_token))
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise QuickBooksOAuthError("QuickBooks callback could not be verified.") from exc
+    if not hmac.compare_digest(provided_signature, expected_signature):
+        raise QuickBooksOAuthError("QuickBooks callback could not be verified.")
+    if not isinstance(payload, dict):
+        raise QuickBooksOAuthError("QuickBooks callback could not be verified.")
+    issued_at_raw = payload.get("issued_at")
+    return_url = str(payload.get("return_url", "") or "").strip()
+    try:
+        issued_at = datetime.fromisoformat(str(issued_at_raw or "").strip())
+        tenant_id = int(payload.get("tenant_id") or 0)
+        user_id = int(payload.get("user_id") or 0)
+    except (TypeError, ValueError) as exc:
+        raise QuickBooksOAuthError("QuickBooks callback could not be verified.") from exc
+    if issued_at < utcnow() - _OAUTH_STATE_TTL:
+        raise QuickBooksOAuthError("QuickBooks callback could not be verified.")
+    if tenant_id <= 0 or user_id <= 0 or not return_url:
+        raise QuickBooksOAuthError("QuickBooks callback could not be verified.")
+    return {
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "return_url": return_url,
+        "issued_at": issued_at.isoformat(),
+    }
 
 
 def _issue_quickbooks_state(
@@ -103,41 +154,59 @@ def _issue_quickbooks_state(
     tenant_id: int,
     user_id: int,
 ) -> str:
-    states = _configure_state_bucket(request)
-    state = secrets.token_urlsafe(32)
-    states[state] = {
-        "tenant_id": int(tenant_id),
-        "user_id": int(user_id),
-        "issued_at": utcnow().isoformat(),
-    }
-    request.session[_OAUTH_STATE_SESSION_KEY] = states
-    return state
+    return _signed_quickbooks_state(
+        {
+            "tenant_id": int(tenant_id),
+            "user_id": int(user_id),
+            "return_url": tenant_request_url(request, path="/admin/accounting"),
+            "issued_at": utcnow().isoformat(),
+        }
+    )
 
 
-def _consume_quickbooks_state(
-    request: Request,
+def _append_query_params(url: str, params: dict[str, str]) -> str:
+    parsed = urlsplit(str(url or "").strip())
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query.update({key: value for key, value in params.items() if value is not None})
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path or "/",
+            urlencode(query),
+            parsed.fragment,
+        )
+    )
+
+
+def _quickbooks_callback_redirect(
+    state_payload: dict[str, object],
+    **params: str,
+) -> RedirectResponse:
+    return RedirectResponse(
+        url=_append_query_params(str(state_payload.get("return_url") or ""), params),
+        status_code=303,
+    )
+
+
+def _validated_quickbooks_callback_actor(
+    db: Session,
     *,
-    state: str,
-    tenant_id: int,
-    user_id: int,
-) -> bool:
-    states = _configure_state_bucket(request)
-    payload = states.pop(str(state or "").strip(), None)
-    request.session[_OAUTH_STATE_SESSION_KEY] = states
-    if not isinstance(payload, dict):
-        return False
-    if int(payload.get("tenant_id") or 0) != int(tenant_id):
-        return False
-    if int(payload.get("user_id") or 0) != int(user_id):
-        return False
-    issued_at_raw = payload.get("issued_at")
-    if not isinstance(issued_at_raw, str):
-        return False
-    try:
-        issued_at = datetime.fromisoformat(issued_at_raw)
-    except ValueError:
-        return False
-    return issued_at >= utcnow() - _OAUTH_STATE_TTL
+    state_payload: dict[str, object],
+) -> tuple[Tenant | None, User | None]:
+    tenant_id = int(state_payload["tenant_id"])
+    user_id = int(state_payload["user_id"])
+    tenant = db.get(Tenant, tenant_id)
+    user = db.get(User, user_id)
+    if tenant is None or not bool(getattr(tenant, "is_active", False)):
+        return tenant, None
+    if user is None or not bool(getattr(user, "is_active", False)):
+        return tenant, None
+    if int(getattr(user, "tenant_id", 0) or 0) != tenant_id:
+        return tenant, None
+    if ensure_user_role(db, user, allow_bootstrap=True) != ROLE_TENANT_ADMIN:
+        return tenant, None
+    return tenant, user
 
 
 def _record_accounting_event(
@@ -473,14 +542,13 @@ def admin_accounting_quickbooks_connect(
     return RedirectResponse(url=authorize_url, status_code=302)
 
 
-@router.get("/admin/accounting/quickbooks/callback")
+@router.get(QUICKBOOKS_CALLBACK_PATH)
 def admin_accounting_quickbooks_callback(
     request: Request,
     db: Session = Depends(get_db),
-) -> RedirectResponse:
-    current_user = _require_tenant_accounting_admin(request, db)
-    tenant_id = request_tenant_id(request)
-    user_id = int(current_user.id)
+) -> Response:
+    if not request_platform_mode(request):
+        raise HTTPException(status_code=404, detail="Not Found")
     state = str(request.query_params.get("state", "") or "").strip()
     code = str(request.query_params.get("code", "") or "").strip()
     realm_id = str(request.query_params.get("realmId", "") or "").strip() or None
@@ -489,13 +557,10 @@ def admin_accounting_quickbooks_callback(
         request.query_params.get("error_description", "") or ""
     ).strip()
 
-    if not state or not _consume_quickbooks_state(
-        request,
-        state=state,
-        tenant_id=tenant_id,
-        user_id=user_id,
-    ):
-        error_text = "QuickBooks callback could not be verified."
+    try:
+        state_payload = _validated_quickbooks_state(state)
+    except QuickBooksOAuthError as exc:
+        error_text = str(exc)
         audit_log(
             db,
             request,
@@ -504,19 +569,30 @@ def admin_accounting_quickbooks_callback(
             summary="QuickBooks callback failed state validation",
             details={"provider": QUICKBOOKS_PROVIDER, "error": error_text},
         )
-        _record_accounting_event(
+        db.commit()
+        return PlainTextResponse(
+            error_text,
+            status_code=400,
+        )
+
+    tenant_id = int(state_payload["tenant_id"])
+    _tenant, current_user = _validated_quickbooks_callback_actor(
+        db,
+        state_payload=state_payload,
+    )
+    if _tenant is None or current_user is None:
+        error_text = "QuickBooks callback could not be verified."
+        audit_log(
             db,
+            request,
+            action="ACCOUNTING_CALLBACK_FAILED",
+            entity_type="accounting_connection",
+            summary="QuickBooks callback failed tenant or user validation",
+            details={"provider": QUICKBOOKS_PROVIDER, "error": error_text},
             tenant_id=tenant_id,
-            event_type="oauth_callback_failed",
-            direction="INBOUND",
-            summary="QuickBooks callback failed state validation",
-            detail_json={"error": error_text},
         )
         db.commit()
-        return RedirectResponse(
-            url=f"/admin/accounting?{urlencode({'error': error_text})}",
-            status_code=303,
-        )
+        return _quickbooks_callback_redirect(state_payload, error=error_text)
 
     connection = _quickbooks_connection(db, tenant_id=tenant_id)
 
@@ -535,6 +611,8 @@ def admin_accounting_quickbooks_callback(
                 "error": provider_error,
                 "error_description": provider_error_description,
             },
+            tenant_id=tenant_id,
+            user=current_user,
         )
         _record_accounting_event(
             db,
@@ -549,9 +627,9 @@ def admin_accounting_quickbooks_callback(
             },
         )
         db.commit()
-        return RedirectResponse(
-            url=f"/admin/accounting?{urlencode({'error': error_text or 'QuickBooks callback failed.'})}",
-            status_code=303,
+        return _quickbooks_callback_redirect(
+            state_payload,
+            error=error_text or "QuickBooks callback failed.",
         )
 
     if not code:
@@ -565,6 +643,8 @@ def admin_accounting_quickbooks_callback(
             entity_id=getattr(connection, "id", None),
             summary="QuickBooks callback was missing an authorization code",
             details={"provider": QUICKBOOKS_PROVIDER, "error": error_text},
+            tenant_id=tenant_id,
+            user=current_user,
         )
         _record_accounting_event(
             db,
@@ -576,10 +656,7 @@ def admin_accounting_quickbooks_callback(
             detail_json={"error": error_text},
         )
         db.commit()
-        return RedirectResponse(
-            url=f"/admin/accounting?{urlencode({'error': error_text})}",
-            status_code=303,
-        )
+        return _quickbooks_callback_redirect(state_payload, error=error_text)
 
     try:
         redirect_uri = resolve_quickbooks_redirect_uri(request)
@@ -603,6 +680,8 @@ def admin_accounting_quickbooks_callback(
             entity_id=connection.id,
             summary="QuickBooks token exchange failed",
             details={"provider": QUICKBOOKS_PROVIDER, "error": error_text},
+            tenant_id=tenant_id,
+            user=current_user,
         )
         _record_accounting_event(
             db,
@@ -614,10 +693,7 @@ def admin_accounting_quickbooks_callback(
             detail_json={"error": error_text},
         )
         db.commit()
-        return RedirectResponse(
-            url=f"/admin/accounting?{urlencode({'error': error_text})}",
-            status_code=303,
-        )
+        return _quickbooks_callback_redirect(state_payload, error=error_text)
 
     connection = connection or get_or_create_quickbooks_connection(
         db,
@@ -636,6 +712,8 @@ def admin_accounting_quickbooks_callback(
             "realm_id": token_bundle.realm_id,
             "scopes": token_bundle.scopes,
         },
+        tenant_id=tenant_id,
+        user=current_user,
     )
     _record_accounting_event(
         db,
@@ -650,7 +728,7 @@ def admin_accounting_quickbooks_callback(
         },
     )
     db.commit()
-    return RedirectResponse(url="/admin/accounting?quickbooks_connected=1", status_code=303)
+    return _quickbooks_callback_redirect(state_payload, quickbooks_connected="1")
 
 
 @router.post("/admin/accounting/quickbooks/disconnect")
