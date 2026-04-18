@@ -67,6 +67,15 @@ class QuickBooksRevenueAccount:
     is_usable: bool
 
 
+@dataclass(frozen=True)
+class QuickBooksTaxCode:
+    remote_tax_code_id: str
+    display_code: str
+    display_name: str | None
+    description: str | None
+    is_active: bool
+
+
 def quote_query_value(value: object) -> str:
     text = str(value or "")
     return text.replace("\\", "\\\\").replace("'", "\\'")
@@ -125,6 +134,25 @@ def _quickbooks_revenue_account(account: dict[str, Any]) -> QuickBooksRevenueAcc
         remote_account_detail_type=_normalized_text(account.get("AccountSubType")),
         is_active=bool(account.get("Active", True)),
         is_usable=_account_is_revenue(account),
+    )
+
+
+def _quickbooks_tax_code(tax_code: dict[str, Any]) -> QuickBooksTaxCode | None:
+    resolved_id = str(tax_code.get("Id") or "").strip()
+    display_code = (
+        str(tax_code.get("Name") or "").strip()
+        or str(tax_code.get("Code") or "").strip()
+    )
+    if not resolved_id or not display_code:
+        return None
+    description = _normalized_text(tax_code.get("Description"))
+    display_name = description or display_code
+    return QuickBooksTaxCode(
+        remote_tax_code_id=resolved_id,
+        display_code=display_code,
+        display_name=display_name,
+        description=description,
+        is_active=bool(tax_code.get("Active", True)),
     )
 
 
@@ -205,6 +233,7 @@ class QuickBooksClient:
         self.db = db
         self.connection = connection
         self._active_accounts_cache: list[dict[str, Any]] | None = None
+        self._tax_codes_cache: list[dict[str, Any]] | None = None
 
     @property
     def realm_id(self) -> str:
@@ -440,6 +469,14 @@ class QuickBooksClient:
             )
         return list(self._active_accounts_cache)
 
+    def _tax_codes(self) -> list[dict[str, Any]]:
+        if self._tax_codes_cache is None:
+            self._tax_codes_cache = self.query_entities(
+                "taxcode",
+                "SELECT * FROM TaxCode",
+            )
+        return list(self._tax_codes_cache)
+
     def list_revenue_accounts(self) -> list[QuickBooksRevenueAccount]:
         revenue_accounts: list[QuickBooksRevenueAccount] = []
         for account in self._active_accounts():
@@ -458,6 +495,23 @@ class QuickBooksClient:
             )
         )
         return revenue_accounts
+
+    def list_tax_codes(self) -> list[QuickBooksTaxCode]:
+        tax_codes: list[QuickBooksTaxCode] = []
+        for tax_code in self._tax_codes():
+            resolved = _quickbooks_tax_code(tax_code)
+            if resolved is None:
+                continue
+            tax_codes.append(resolved)
+        tax_codes.sort(
+            key=lambda tax_code: (
+                not tax_code.is_active,
+                str(tax_code.display_code or "").lower(),
+                str(tax_code.display_name or "").lower(),
+                str(tax_code.remote_tax_code_id or ""),
+            )
+        )
+        return tax_codes
 
     def resolve_income_account_by_id(self, *, remote_account_id: str) -> QuickBooksRevenueAccount:
         normalized_account_id = str(remote_account_id or "").strip()

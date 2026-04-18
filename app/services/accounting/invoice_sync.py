@@ -28,7 +28,11 @@ from .quickbooks_client import (
     quote_query_value,
 )
 from .quickbooks_oauth import QUICKBOOKS_PROVIDER
-from .tax_mapping import QuickBooksTaxSelection, require_quickbooks_tax_selection
+from .tax_mapping import (
+    QuickBooksTaxSelection,
+    require_quickbooks_tax_selection,
+    resolve_quickbooks_invoice_tax_code_ref,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -266,19 +270,6 @@ def _invoice_line_payload(
     }
 
 
-def _require_invoice_line_tax_code_ref(
-    line: InvoiceLine,
-    *,
-    tax_selection: QuickBooksTaxSelection,
-) -> str:
-    explicit_line_tax_code_ref = str(tax_selection.invoice_line_tax_code_ref or "").strip()
-    if explicit_line_tax_code_ref:
-        return explicit_line_tax_code_ref
-    raise QuickBooksApiError(
-        f"Invoice line {line.id} uses local tax rate {tax_selection.local_tax_label}, but its QuickBooks tax mapping does not include an explicit QuickBooks VAT/tax code external ID required for invoice sync."
-    )
-
-
 def _tax_payload_summary(
     *,
     invoice_id: int,
@@ -299,8 +290,9 @@ def _tax_payload_summary(
                 "invoice_line_id": detail["invoice_line_id"],
                 "tax_rate_id": detail["tax_rate_id"],
                 "local_tax_label": detail["local_tax_label"],
-                "mapped_tax_code_ref": detail["invoice_line_tax_code_ref"],
-                "configured_line_tax_code_ref": detail["configured_line_tax_code_ref"],
+                "stored_provider_ref": detail["stored_provider_ref"],
+                "display_code": detail["display_code"],
+                "actual_tax_code_ref_sent": detail["actual_tax_code_ref_sent"],
             }
             for detail in tax_details
         ],
@@ -341,10 +333,14 @@ def _build_invoice_line_items(
             tax_rate_id=_invoice_line_tax_rate_id(line),
             usage_label=f"Invoice line {line.id}",
         )
-        invoice_line_tax_code_ref = _require_invoice_line_tax_code_ref(
-            line,
+        resolved_invoice_tax_code = resolve_quickbooks_invoice_tax_code_ref(
+            db,
+            tenant_id=int(tenant_id),
+            provider=provider,
             tax_selection=tax_selection,
+            usage_label=f"Invoice line {line.id}",
         )
+        invoice_line_tax_code_ref = resolved_invoice_tax_code.remote_tax_code_id
 
         line_items.append(
             _invoice_line_payload(
@@ -360,8 +356,12 @@ def _build_invoice_line_items(
                 "tax_rate_id": int(tax_selection.tax_rate_id),
                 "tax_map_id": int(tax_selection.tax_map_id),
                 "local_tax_label": tax_selection.local_tax_label,
+                "stored_provider_ref": tax_selection.stored_provider_ref,
+                "display_code": tax_selection.stored_display_code or resolved_invoice_tax_code.display_code,
+                "display_name": resolved_invoice_tax_code.display_name,
                 "configured_line_tax_code_ref": tax_selection.line_tax_code_ref,
                 "invoice_line_tax_code_ref": invoice_line_tax_code_ref,
+                "actual_tax_code_ref_sent": invoice_line_tax_code_ref,
                 "txn_tax_code_ref": tax_selection.txn_tax_code_ref,
                 "uses_pseudo_line_code": bool(tax_selection.uses_pseudo_line_code),
                 "line_net": _money(line.net),

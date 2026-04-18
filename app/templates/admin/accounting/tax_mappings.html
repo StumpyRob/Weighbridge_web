@@ -62,8 +62,11 @@
         </div>
 
         <p class="muted">
-          Keep provider fixed to QuickBooks for now. Use `TAX` or `NON` as the line tax code only when that matches your sandbox setup. `TAX` mappings also need the invoice tax code/group external ID in the external ID field.
+          Select a QuickBooks VAT/tax code from the connected company. The stored provider ref is what sync uses; the display code/name is shown here for operators.
         </p>
+        {% if tax_code_error %}
+          <p class="muted">{{ tax_code_error }}</p>
+        {% endif %}
 
         {% if setup and setup.next_steps %}
           <h3>Next Steps</h3>
@@ -107,9 +110,17 @@
                   <div class="summary-label">Connection</div>
                   <strong>{% if is_connected %}Connected{% else %}Disconnected{% endif %}</strong>
                 </div>
+                <div>
+                  <div class="summary-label">Stored Provider Ref</div>
+                  <strong>{{ row.external_id or "-" }}</strong>
+                </div>
+                <div>
+                  <div class="summary-label">Display Code / Name</div>
+                  <strong>{{ row.external_code or row.mapping_name or "-" }}</strong>
+                </div>
               </div>
 
-              {% if row.mapping_id %}
+              {% if row.mapping_id and is_connected and tax_code_options %}
                 <form method="post" action="{{ tenant_path('/admin/accounting/tax-mappings/' ~ row.mapping_id ~ '/update') }}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
                   <div class="invoice-summary-grid">
@@ -118,12 +129,15 @@
                       <input id="mapping-name-{{ row.tax_rate_id }}" name="name" type="text" value="{{ row.mapping_name or '' }}" maxlength="255" />
                     </div>
                     <div>
-                      <label for="mapping-external-id-{{ row.tax_rate_id }}">QuickBooks External ID</label>
-                      <input id="mapping-external-id-{{ row.tax_rate_id }}" name="external_id" type="text" value="{{ row.external_id or '' }}" maxlength="255" />
-                    </div>
-                    <div>
-                      <label for="mapping-external-code-{{ row.tax_rate_id }}">QuickBooks External Code</label>
-                      <input id="mapping-external-code-{{ row.tax_rate_id }}" name="external_code" type="text" value="{{ row.external_code or '' }}" maxlength="255" />
+                      <label for="mapping-external-id-{{ row.tax_rate_id }}">QuickBooks VAT / Tax Code</label>
+                      <select id="mapping-external-id-{{ row.tax_rate_id }}" name="external_id">
+                        <option value="">Select QuickBooks VAT / Tax Code</option>
+                        {% for option in tax_code_options %}
+                          <option value="{{ option.remote_tax_code_id }}" {% if row.external_id == option.remote_tax_code_id %}selected{% endif %}>
+                            {{ option.display_label }} (Ref {{ option.remote_tax_code_id }})
+                          </option>
+                        {% endfor %}
+                      </select>
                     </div>
                     <div>
                       <label for="mapping-active-{{ row.tax_rate_id }}">Active</label>
@@ -136,11 +150,20 @@
                     <button type="submit" class="btn btn--primary">Save Mapping</button>
                   </div>
                 </form>
+                {% if row.external_id and row.external_id not in tax_code_option_ids %}
+                  <p class="muted" style="margin-top: 0.75rem;">This stored provider ref does not match a current QuickBooks tax ref. Re-save this mapping from the QuickBooks tax list before syncing invoices.</p>
+                {% endif %}
                 <form method="post" action="{{ tenant_path('/admin/accounting/tax-mappings/' ~ row.mapping_id ~ '/delete') }}" style="margin-top: 0.75rem;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
                   <button type="submit" class="btn btn--secondary">Remove Mapping</button>
                 </form>
-              {% else %}
+              {% elif row.mapping_id %}
+                <p class="muted" style="margin-top: 0.75rem;">Connect QuickBooks and load tax codes before editing this mapping safely.</p>
+                <form method="post" action="{{ tenant_path('/admin/accounting/tax-mappings/' ~ row.mapping_id ~ '/delete') }}" style="margin-top: 0.75rem;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                  <button type="submit" class="btn btn--secondary">Remove Mapping</button>
+                </form>
+              {% elif is_connected and tax_code_options %}
                 <form method="post" action="{{ tenant_path('/admin/accounting/tax-mappings') }}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
                   <input type="hidden" name="tax_rate_id" value="{{ row.tax_rate_id }}" />
@@ -150,12 +173,15 @@
                       <input id="mapping-name-new-{{ row.tax_rate_id }}" name="name" type="text" value="" maxlength="255" />
                     </div>
                     <div>
-                      <label for="mapping-external-id-new-{{ row.tax_rate_id }}">QuickBooks External ID</label>
-                      <input id="mapping-external-id-new-{{ row.tax_rate_id }}" name="external_id" type="text" value="" maxlength="255" />
-                    </div>
-                    <div>
-                      <label for="mapping-external-code-new-{{ row.tax_rate_id }}">QuickBooks External Code</label>
-                      <input id="mapping-external-code-new-{{ row.tax_rate_id }}" name="external_code" type="text" value="" maxlength="255" />
+                      <label for="mapping-external-id-new-{{ row.tax_rate_id }}">QuickBooks VAT / Tax Code</label>
+                      <select id="mapping-external-id-new-{{ row.tax_rate_id }}" name="external_id">
+                        <option value="">Select QuickBooks VAT / Tax Code</option>
+                        {% for option in tax_code_options %}
+                          <option value="{{ option.remote_tax_code_id }}">
+                            {{ option.display_label }} (Ref {{ option.remote_tax_code_id }})
+                          </option>
+                        {% endfor %}
+                      </select>
                     </div>
                     <div>
                       <label for="mapping-active-new-{{ row.tax_rate_id }}">Active</label>
@@ -168,6 +194,8 @@
                     <button type="submit" class="btn btn--primary">Create Mapping</button>
                   </div>
                 </form>
+              {% else %}
+                <p class="muted" style="margin-top: 0.75rem;">Connect QuickBooks and load tax codes before creating a new mapping safely.</p>
               {% endif %}
 
               {% if not row.is_required %}

@@ -241,8 +241,8 @@ def test_product_job_runs_and_writes_product_map(db_session, monkeypatch):
     _seed_tax_map(
         db_session,
         tax_rate=tax_rate,
-        external_id="QB-TAX-GROUP-20",
-        external_code="TAX",
+        external_id="3",
+        external_code="20.0% S",
     )
     _seed_connection(db_session)
 
@@ -317,8 +317,8 @@ def test_product_job_fails_clearly_when_nominal_code_is_missing(db_session, monk
     _seed_tax_map(
         db_session,
         tax_rate=tax_rate,
-        external_id="QB-TAX-GROUP-20",
-        external_code="TAX",
+        external_id="3",
+        external_code="20.0% S",
     )
     _seed_connection(db_session)
 
@@ -428,8 +428,8 @@ def test_invoice_job_runs_and_writes_invoice_sync_row(db_session, monkeypatch):
     _seed_tax_map(
         db_session,
         tax_rate=tax_rate,
-        external_id="QB-TAX-GROUP-20",
-        external_code="TAX",
+        external_id="3",
+        external_code="20.0% S",
     )
     _seed_connection(db_session)
 
@@ -448,6 +448,22 @@ def test_invoice_job_runs_and_writes_invoice_sync_row(db_session, monkeypatch):
     )
 
     def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        if url.endswith("/query") and "FROM TaxCode" in str((params or {}).get("query")):
+            return _response(
+                200,
+                {
+                    "QueryResponse": {
+                        "TaxCode": [
+                            {
+                                "Id": "3",
+                                "Name": "20.0% S",
+                                "Description": "20.0% Standard Sales",
+                                "Active": True,
+                            }
+                        ]
+                    }
+                },
+            )
         if url.endswith("/query"):
             return _response(200, {"QueryResponse": {}})
         if url.endswith("/invoice"):
@@ -467,10 +483,10 @@ def test_invoice_job_runs_and_writes_invoice_sync_row(db_session, monkeypatch):
                             ],
                         }
                     },
-                )
+            )
             assert json["DocNumber"] == "INV-QB-1"
             assert json["Line"][0]["Amount"] == 10.0
-            assert line_tax_ref == "QB-TAX-GROUP-20"
+            assert line_tax_ref == "3"
             assert "TxnTaxDetail" not in json
             assert json["GlobalTaxCalculation"] == "TaxExcluded"
             return _response(
@@ -505,9 +521,11 @@ def test_invoice_job_runs_and_writes_invoice_sync_row(db_session, monkeypatch):
     assert sync_row.provider_response_json["tax_payload_summary"]["line_level_tax_fields_sent"] is True
     assert sync_row.provider_response_json["tax_payload_summary"]["invoice_level_tax_fields_sent"] is False
     assert (
-        sync_row.provider_response_json["tax_payload_summary"]["mapped_tax_refs"][0]["mapped_tax_code_ref"]
-        == "QB-TAX-GROUP-20"
+        sync_row.provider_response_json["tax_payload_summary"]["mapped_tax_refs"][0]["stored_provider_ref"]
+        == "3"
     )
+    assert sync_row.provider_response_json["tax_payload_summary"]["mapped_tax_refs"][0]["display_code"] == "20.0% S"
+    assert sync_row.provider_response_json["tax_payload_summary"]["mapped_tax_refs"][0]["actual_tax_code_ref_sent"] == "3"
     assert sync_row.provider_response_json["local_totals"]["gross_total"] == 12.0
     assert _job(db_session, job_type="sync_invoice").status == "succeeded"
 
@@ -596,14 +614,14 @@ def test_invoice_job_supports_mixed_explicit_uk_tax_refs(db_session, monkeypatch
     _seed_tax_map(
         db_session,
         tax_rate=taxable_rate,
-        external_id="QB-VAT-20",
-        external_code="TAX",
+        external_id="3",
+        external_code="20.0% S",
     )
     _seed_tax_map(
         db_session,
         tax_rate=zero_rate,
-        external_id="QB-VAT-0",
-        external_code="NON",
+        external_id="2",
+        external_code="Exempt From VAT",
     )
     _seed_connection(db_session)
 
@@ -626,14 +644,36 @@ def test_invoice_job_supports_mixed_explicit_uk_tax_refs(db_session, monkeypatch
     )
 
     def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        if url.endswith("/query") and "FROM TaxCode" in str((params or {}).get("query")):
+            return _response(
+                200,
+                {
+                    "QueryResponse": {
+                        "TaxCode": [
+                            {
+                                "Id": "3",
+                                "Name": "20.0% S",
+                                "Description": "20.0% Standard Sales",
+                                "Active": True,
+                            },
+                            {
+                                "Id": "2",
+                                "Name": "Exempt From VAT",
+                                "Description": "Exempt From VAT",
+                                "Active": True,
+                            },
+                        ]
+                    }
+                },
+            )
         if url.endswith("/query"):
             return _response(200, {"QueryResponse": {}})
         if url.endswith("/invoice"):
             assert json["GlobalTaxCalculation"] == "TaxExcluded"
             assert "TxnTaxDetail" not in json
             assert len(json["Line"]) == 2
-            assert json["Line"][0]["SalesItemLineDetail"]["TaxCodeRef"]["value"] == "QB-VAT-20"
-            assert json["Line"][1]["SalesItemLineDetail"]["TaxCodeRef"]["value"] == "QB-VAT-0"
+            assert json["Line"][0]["SalesItemLineDetail"]["TaxCodeRef"]["value"] == "3"
+            assert json["Line"][1]["SalesItemLineDetail"]["TaxCodeRef"]["value"] == "2"
             return _response(
                 200,
                 {
@@ -663,15 +703,17 @@ def test_invoice_job_supports_mixed_explicit_uk_tax_refs(db_session, monkeypatch
             "invoice_line_id": line_one.id,
             "tax_rate_id": taxable_rate.id,
             "local_tax_label": "QB VAT 20 (QuickBooks VAT 20)",
-            "mapped_tax_code_ref": "QB-VAT-20",
-            "configured_line_tax_code_ref": "TAX",
+            "stored_provider_ref": "3",
+            "display_code": "20.0% S",
+            "actual_tax_code_ref_sent": "3",
         },
         {
             "invoice_line_id": line_two.id,
             "tax_rate_id": zero_rate.id,
             "local_tax_label": "QB VAT 0 (QuickBooks VAT 0)",
-            "mapped_tax_code_ref": "QB-VAT-0",
-            "configured_line_tax_code_ref": "NON",
+            "stored_provider_ref": "2",
+            "display_code": "Exempt From VAT",
+            "actual_tax_code_ref_sent": "2",
         },
     ]
 
@@ -734,8 +776,8 @@ def test_invoice_job_logs_tax_payload_summary_when_quickbooks_rejects_vat_payloa
     _seed_tax_map(
         db_session,
         tax_rate=tax_rate,
-        external_id="QB-VAT-FAIL-20",
-        external_code="TAX",
+        external_id="3",
+        external_code="20.0% S",
     )
     _seed_connection(db_session)
 
@@ -754,6 +796,22 @@ def test_invoice_job_logs_tax_payload_summary_when_quickbooks_rejects_vat_payloa
     )
 
     def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        if url.endswith("/query") and "FROM TaxCode" in str((params or {}).get("query")):
+            return _response(
+                200,
+                {
+                    "QueryResponse": {
+                        "TaxCode": [
+                            {
+                                "Id": "3",
+                                "Name": "20.0% S",
+                                "Description": "20.0% Standard Sales",
+                                "Active": True,
+                            }
+                        ]
+                    }
+                },
+            )
         if url.endswith("/query"):
             return _response(200, {"QueryResponse": {}})
         if url.endswith("/invoice"):
@@ -787,7 +845,119 @@ def test_invoice_job_logs_tax_payload_summary_when_quickbooks_rejects_vat_payloa
     assert f"QuickBooks invoice sync failed for invoice {invoice.id}" in caplog.text
     failed_payloads = _event_payloads(db_session, event_type="job_failed")
     assert any('"tax_payload_summary"' in payload for payload in failed_payloads)
-    assert any('"mapped_tax_code_ref": "QB-VAT-FAIL-20"' in payload for payload in failed_payloads)
+    assert any('"stored_provider_ref": "3"' in payload for payload in failed_payloads)
+    assert any('"actual_tax_code_ref_sent": "3"' in payload for payload in failed_payloads)
+
+
+def test_invoice_job_fails_clearly_when_tax_mapping_uses_display_code_as_provider_ref(
+    db_session,
+    monkeypatch,
+):
+    _configure_settings(monkeypatch)
+    customer = Customer(account_code="C-QB-INV-LEGACY-TAX", name="Invoice Legacy Tax Customer")
+    tax_rate = TaxRate(
+        code="QB VAT LEGACY",
+        description="QuickBooks VAT Legacy",
+        rate_percent=Decimal("20.000"),
+        is_active=True,
+    )
+    product = Product(
+        code="QB-INV-LEGACY-PROD",
+        description="Invoice Legacy Tax Product",
+        nominal_code="4000",
+        unit_price=Decimal("12.00"),
+        tax_rate=tax_rate,
+    )
+    invoice = Invoice(
+        invoice_no="INV-QB-LEGACY-TAX",
+        customer_id=1,
+        invoice_date=date(2026, 2, 12),
+        due_date=date(2026, 3, 12),
+        status="DRAFT",
+        net_total=Decimal("10.00"),
+        vat_total=Decimal("2.00"),
+        gross_total=Decimal("12.00"),
+    )
+    db_session.add_all([customer, tax_rate, product])
+    db_session.flush()
+    invoice.customer_id = customer.id
+    db_session.add(invoice)
+    db_session.flush()
+    db_session.add(
+        InvoiceLine(
+            invoice_id=invoice.id,
+            description="Invoice Legacy Tax Line",
+            quantity=Decimal("1.000"),
+            unit_price=Decimal("10.00"),
+            net=Decimal("10.00"),
+            vat=Decimal("2.00"),
+            gross=Decimal("12.00"),
+            product_snapshot_json={
+                "product_id": product.id,
+                "product_code": product.code,
+                "tax_rate_id": tax_rate.id,
+                "tax_rate_code": tax_rate.code,
+                "tax_rate_percent": "20.000",
+                "nominal_code": "4000",
+            },
+        )
+    )
+    db_session.commit()
+    _seed_tax_map(
+        db_session,
+        tax_rate=tax_rate,
+        external_id="20.0% S",
+        external_code="20.0% S",
+    )
+    _seed_connection(db_session)
+
+    enqueue_sync_invoice(db_session, tenant_id=1, invoice_id=invoice.id)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        invoice_sync_module,
+        "sync_customer_to_quickbooks",
+        lambda *args, **kwargs: {"external_id": "QB-CUST-LEGACY-TAX"},
+    )
+    monkeypatch.setattr(
+        invoice_sync_module,
+        "sync_product_to_quickbooks",
+        lambda *args, **kwargs: {"external_id": "QB-ITEM-LEGACY-TAX"},
+    )
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        if url.endswith("/query") and "FROM TaxCode" in str((params or {}).get("query")):
+            return _response(
+                200,
+                {
+                    "QueryResponse": {
+                        "TaxCode": [
+                            {
+                                "Id": "3",
+                                "Name": "20.0% S",
+                                "Description": "20.0% Standard Sales",
+                                "Active": True,
+                            }
+                        ]
+                    }
+                },
+            )
+        if url.endswith("/invoice"):
+            raise AssertionError("Invoice should not be posted when the stored provider ref is only a display code.")
+        if url.endswith("/query"):
+            return _response(200, {"QueryResponse": {}})
+        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+
+    result = process_pending_accounting_jobs(db_session, tenant_id=1, limit=1)
+
+    assert result.processed == 1
+    assert result.failed == 1
+    job = _job(db_session, job_type="sync_invoice")
+    assert job.status == "failed"
+    assert "display code/label" in (job.error_text or "").lower()
+    assert "re-save this mapping" in (job.error_text or "").lower()
 
 
 def test_invoice_job_prefers_default_revenue_account_mapping_over_nominal_fallback(
@@ -893,8 +1063,8 @@ def test_invoice_job_prefers_default_revenue_account_mapping_over_nominal_fallba
     _seed_tax_map(
         db_session,
         tax_rate=tax_rate,
-        external_id="QB-TAX-GROUP-20",
-        external_code="TAX",
+        external_id="3",
+        external_code="20.0% S",
     )
     _seed_connection(db_session)
 
@@ -927,6 +1097,24 @@ def test_invoice_job_prefers_default_revenue_account_mapping_over_nominal_fallba
                     }
                 },
             )
+        if url.endswith("/query") and "FROM TaxCode" in str((params or {}).get("query")):
+            return _response(
+                200,
+                {
+                    "QueryResponse": {
+                        "TaxCode": [
+                            {
+                                "Id": "3",
+                                "Name": "20.0% S",
+                                "Description": "20.0% Standard Sales",
+                                "Active": True,
+                            }
+                        ]
+                    }
+                },
+            )
+        if url.endswith("/query") and "FROM Item" in str((params or {}).get("query")):
+            return _response(200, {"QueryResponse": {}})
         if url.endswith("/item/QB-ITEM-INV-MAP"):
             return _response(
                 200,
@@ -954,6 +1142,7 @@ def test_invoice_job_prefers_default_revenue_account_mapping_over_nominal_fallba
             return _response(200, {"QueryResponse": {}})
         if url.endswith("/invoice"):
             assert json["DocNumber"] == "INV-QB-MAP-1"
+            assert json["Line"][0]["SalesItemLineDetail"]["TaxCodeRef"]["value"] == "3"
             return _response(
                 200,
                 {

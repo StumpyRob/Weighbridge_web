@@ -8,7 +8,12 @@ from sqlalchemy.orm import Session
 
 from ...models import AccountingSyncJob, AccountingTaxMap, Product, TaxRate
 from ..pricing import product_effective_nominal_code
-from .quickbooks_client import QuickBooksApiError
+from .jobs import get_active_accounting_connection
+from .quickbooks_client import (
+    QuickBooksApiError,
+    QuickBooksTaxCode,
+    quickbooks_client_for_connection,
+)
 from .quickbooks_oauth import QUICKBOOKS_PROVIDER
 from .revenue_account_mapping import get_default_revenue_account_mapping
 
@@ -62,6 +67,8 @@ class QuickBooksTaxSelection:
     tax_map_id: int
     local_tax_label: str
     local_rate_percent: Decimal
+    stored_provider_ref: str | None
+    stored_display_code: str | None
     line_tax_code_ref: str
     invoice_line_tax_code_ref: str | None
     txn_tax_code_ref: str | None
@@ -86,6 +93,16 @@ class TaxMappingAdminRow:
     is_usable: bool
     status_label: str
     status_detail: str | None
+
+
+@dataclass(frozen=True)
+class ProviderTaxCodeOption:
+    remote_tax_code_id: str
+    display_code: str
+    display_name: str | None
+    description: str | None
+    is_active: bool
+    display_label: str
 
 
 @dataclass(frozen=True)
@@ -125,6 +142,15 @@ class _QuickBooksTaxMapAssessment:
     is_usable: bool
     status_label: str
     status_detail: str | None
+
+
+@dataclass(frozen=True)
+class ResolvedQuickBooksInvoiceTaxCode:
+    remote_tax_code_id: str
+    display_code: str
+    display_name: str | None
+    description: str | None
+    display_label: str
 
 
 def _resolve_quickbooks_tax_configuration(
@@ -189,9 +215,201 @@ def _resolve_quickbooks_tax_configuration(
     )
 
 
+def _provider_tax_code_display_label(
+    *,
+    display_code: str,
+    display_name: str | None,
+) -> str:
+    normalized_name = _normalize_text(display_name)
+    if normalized_name and normalized_name != display_code:
+        return f"{display_code} - {normalized_name}"
+    return display_code
+
+
+def _provider_tax_code_option(tax_code: QuickBooksTaxCode) -> ProviderTaxCodeOption:
+    display_code = str(tax_code.display_code or "").strip()
+    display_name = _normalize_text(tax_code.display_name)
+    return ProviderTaxCodeOption(
+        remote_tax_code_id=str(tax_code.remote_tax_code_id),
+        display_code=display_code,
+        display_name=display_name,
+        description=_normalize_text(tax_code.description),
+        is_active=bool(tax_code.is_active),
+        display_label=_provider_tax_code_display_label(
+            display_code=display_code,
+            display_name=display_name,
+        ),
+    )
+
+
+def _connected_quickbooks_client(
+    db: Session,
+    *,
+    tenant_id: int,
+    provider: str,
+):
+    connection = get_active_accounting_connection(
+        db,
+        int(tenant_id),
+        provider=provider,
+    )
+    if connection is None:
+        raise TaxMappingValidationError(
+            "Connect QuickBooks to load tax/VAT codes before saving mappings."
+        )
+    return quickbooks_client_for_connection(db, connection)
+
+
+def list_quickbooks_tax_codes(
+    db: Session,
+    *,
+    tenant_id: int,
+    provider: str = QUICKBOOKS_PROVIDER,
+) -> list[ProviderTaxCodeOption]:
+    client = _connected_quickbooks_client(
+        db,
+        tenant_id=int(tenant_id),
+        provider=provider,
+    )
+    options = [
+        _provider_tax_code_option(tax_code)
+        for tax_code in client.list_tax_codes()
+        if tax_code.is_active
+    ]
+    options.sort(
+        key=lambda option: (
+            str(option.display_code or "").lower(),
+            str(option.display_name or "").lower(),
+            str(option.remote_tax_code_id or ""),
+        )
+    )
+    return options
+
+
+def list_provider_tax_codes(
+    db: Session,
+    *,
+    tenant_id: int,
+    provider: str = QUICKBOOKS_PROVIDER,
+) -> list[ProviderTaxCodeOption]:
+    resolved_provider = str(provider or "").strip().lower()
+    if resolved_provider == QUICKBOOKS_PROVIDER:
+        return list_quickbooks_tax_codes(
+            db,
+            tenant_id=int(tenant_id),
+            provider=resolved_provider,
+        )
+    raise TaxMappingValidationError("Unsupported accounting provider.")
+
+
+def _provider_tax_code_by_id(
+    provider_tax_code_options: list[ProviderTaxCodeOption],
+    *,
+    remote_tax_code_id: str | None,
+) -> ProviderTaxCodeOption | None:
+    normalized_provider_ref = _normalize_text(remote_tax_code_id)
+    if normalized_provider_ref is None:
+        return None
+    for option in provider_tax_code_options:
+        if option.remote_tax_code_id == normalized_provider_ref:
+            return option
+    return None
+
+
+def _provider_tax_code_display_match(
+    provider_tax_code_options: list[ProviderTaxCodeOption],
+    *,
+    value: str | None,
+) -> ProviderTaxCodeOption | None:
+    normalized_value = _normalize_text(value)
+    if normalized_value is None:
+        return None
+    for option in provider_tax_code_options:
+        if normalized_value in {
+            option.display_code,
+            _normalize_text(option.display_name),
+            option.display_label,
+        }:
+            return option
+    return None
+
+
+def _provider_ref_issue(
+    *,
+    stored_provider_ref: str | None,
+    stored_display_code: str | None,
+    provider_tax_code_options: list[ProviderTaxCodeOption] | None,
+) -> str | None:
+    normalized_provider_ref = _normalize_text(stored_provider_ref)
+    if normalized_provider_ref is None:
+        return "Stored QuickBooks provider ref is missing."
+    if not provider_tax_code_options:
+        return None
+    selected_tax_code = _provider_tax_code_by_id(
+        provider_tax_code_options,
+        remote_tax_code_id=normalized_provider_ref,
+    )
+    if selected_tax_code is not None:
+        return None
+    display_match = _provider_tax_code_display_match(
+        provider_tax_code_options,
+        value=normalized_provider_ref,
+    ) or _provider_tax_code_display_match(
+        provider_tax_code_options,
+        value=stored_display_code,
+    )
+    if display_match is not None:
+        return (
+            f"Stored QuickBooks provider ref '{normalized_provider_ref}' is a display code/label, not the provider ref used for sync. "
+            f"Re-save this mapping from the QuickBooks tax list so it stores provider ref '{display_match.remote_tax_code_id}'."
+        )
+    return (
+        f"Stored QuickBooks provider ref '{normalized_provider_ref}' was not found in the connected QuickBooks tax code list. "
+        "Re-save or recreate this mapping."
+    )
+
+
+def _selected_provider_tax_code_option(
+    db: Session,
+    *,
+    tenant_id: int,
+    provider: str,
+    external_id: str | None,
+    external_code: str | None,
+) -> ProviderTaxCodeOption:
+    provider_tax_code_options = list_provider_tax_codes(
+        db,
+        tenant_id=int(tenant_id),
+        provider=provider,
+    )
+    if not provider_tax_code_options:
+        raise TaxMappingValidationError(
+            "No active QuickBooks tax/VAT codes were discovered for this tenant."
+        )
+    normalized_external_id = _normalize_text(external_id)
+    selected_tax_code = _provider_tax_code_by_id(
+        provider_tax_code_options,
+        remote_tax_code_id=normalized_external_id,
+    )
+    if selected_tax_code is not None:
+        return selected_tax_code
+    issue = _provider_ref_issue(
+        stored_provider_ref=normalized_external_id,
+        stored_display_code=external_code,
+        provider_tax_code_options=provider_tax_code_options,
+    )
+    if issue:
+        raise TaxMappingValidationError(issue)
+    raise TaxMappingValidationError(
+        "Select a QuickBooks tax/VAT code from the connected QuickBooks company."
+    )
+
+
 def _assess_quickbooks_tax_mapping(
     tax_rate: TaxRate | None,
     tax_map: AccountingTaxMap | None,
+    *,
+    provider_tax_code_options: list[ProviderTaxCodeOption] | None = None,
 ) -> _QuickBooksTaxMapAssessment:
     display_label = _normalize_text(getattr(tax_map, "name", None)) or _local_tax_label(tax_rate)
     if tax_map is None:
@@ -215,8 +433,13 @@ def _assess_quickbooks_tax_mapping(
         external_id=_normalize_text(tax_map.external_id),
         external_code=_normalize_text(tax_map.external_code),
     )
+    provider_ref_issue = _provider_ref_issue(
+        stored_provider_ref=_normalize_text(getattr(tax_map, "external_id", None)),
+        stored_display_code=_normalize_text(getattr(tax_map, "external_code", None)),
+        provider_tax_code_options=provider_tax_code_options,
+    )
     is_active = bool(tax_map.is_active)
-    if config.issue:
+    if config.issue or provider_ref_issue:
         return _QuickBooksTaxMapAssessment(
             config=config,
             display_label=display_label,
@@ -224,7 +447,7 @@ def _assess_quickbooks_tax_mapping(
             is_active=is_active,
             is_usable=False,
             status_label="Invalid",
-            status_detail=config.issue,
+            status_detail=config.issue or provider_ref_issue,
         )
     if not is_active:
         return _QuickBooksTaxMapAssessment(
@@ -307,12 +530,53 @@ def require_quickbooks_tax_selection(
         tax_map_id=int(tax_map.id),
         local_tax_label=assessment.config.local_tax_label,
         local_rate_percent=assessment.config.local_rate_percent,
+        stored_provider_ref=_normalize_text(tax_map.external_id),
+        stored_display_code=_normalize_text(tax_map.external_code),
         line_tax_code_ref=assessment.config.line_tax_code_ref,
         invoice_line_tax_code_ref=assessment.config.invoice_line_tax_code_ref,
         txn_tax_code_ref=assessment.config.txn_tax_code_ref,
         display_label=assessment.display_label,
         is_taxable=assessment.config.is_taxable,
         uses_pseudo_line_code=assessment.config.uses_pseudo_line_code,
+    )
+
+
+def resolve_quickbooks_invoice_tax_code_ref(
+    db: Session,
+    *,
+    tenant_id: int,
+    provider: str,
+    tax_selection: QuickBooksTaxSelection,
+    usage_label: str,
+) -> ResolvedQuickBooksInvoiceTaxCode:
+    provider_tax_code_options = list_provider_tax_codes(
+        db,
+        tenant_id=int(tenant_id),
+        provider=provider,
+    )
+    issue = _provider_ref_issue(
+        stored_provider_ref=tax_selection.stored_provider_ref,
+        stored_display_code=tax_selection.stored_display_code,
+        provider_tax_code_options=provider_tax_code_options,
+    )
+    if issue:
+        raise QuickBooksApiError(
+            f"{usage_label} uses local tax rate {tax_selection.local_tax_label}, but its QuickBooks tax mapping is invalid: {issue}"
+        )
+    selected_tax_code = _provider_tax_code_by_id(
+        provider_tax_code_options,
+        remote_tax_code_id=tax_selection.stored_provider_ref,
+    )
+    if selected_tax_code is None:  # pragma: no cover - defensive branch
+        raise QuickBooksApiError(
+            f"{usage_label} uses local tax rate {tax_selection.local_tax_label}, but its QuickBooks tax mapping could not be resolved."
+        )
+    return ResolvedQuickBooksInvoiceTaxCode(
+        remote_tax_code_id=selected_tax_code.remote_tax_code_id,
+        display_code=selected_tax_code.display_code,
+        display_name=selected_tax_code.display_name,
+        description=selected_tax_code.description,
+        display_label=selected_tax_code.display_label,
     )
 
 
@@ -341,6 +605,7 @@ def list_quickbooks_tax_mapping_rows(
     *,
     tenant_id: int,
     provider: str = QUICKBOOKS_PROVIDER,
+    provider_tax_code_options: list[ProviderTaxCodeOption] | None = None,
 ) -> list[TaxMappingAdminRow]:
     used_rate_rows = db.execute(
         select(
@@ -401,7 +666,11 @@ def list_quickbooks_tax_mapping_rows(
         tax_map, tax_rate = tax_maps_by_rate_id.get(tax_rate_id, (None, None))
         if tax_rate is None:
             tax_rate = db.get(TaxRate, int(tax_rate_id))
-        assessment = _assess_quickbooks_tax_mapping(tax_rate, tax_map)
+        assessment = _assess_quickbooks_tax_mapping(
+            tax_rate,
+            tax_map,
+            provider_tax_code_options=provider_tax_code_options,
+        )
         used_meta = used_rate_meta.get(
             tax_rate_id,
             {
@@ -506,10 +775,21 @@ def summarize_quickbooks_setup(
     connection_status: str | None,
     provider: str = QUICKBOOKS_PROVIDER,
 ) -> QuickBooksSetupSummary:
+    provider_tax_code_options: list[ProviderTaxCodeOption] | None = None
+    if str(connection_status or "").strip().lower() == "connected":
+        try:
+            provider_tax_code_options = list_provider_tax_codes(
+                db,
+                tenant_id=int(tenant_id),
+                provider=provider,
+            )
+        except (TaxMappingValidationError, QuickBooksApiError):
+            provider_tax_code_options = None
     tax_mapping_rows = list_quickbooks_tax_mapping_rows(
         db,
         tenant_id=int(tenant_id),
         provider=provider,
+        provider_tax_code_options=provider_tax_code_options,
     )
     required_tax_rate_count = sum(1 for row in tax_mapping_rows if row.is_required)
     usable_required_tax_mapping_count = sum(
@@ -682,8 +962,15 @@ def create_quickbooks_tax_mapping(
             "This local tax rate already has a QuickBooks tax mapping."
         )
 
-    normalized_external_id = _normalize_text(external_id)
-    normalized_external_code = _normalize_external_code(external_code)
+    selected_tax_code = _selected_provider_tax_code_option(
+        db,
+        tenant_id=int(tenant_id),
+        provider=provider,
+        external_id=external_id,
+        external_code=external_code,
+    )
+    normalized_external_id = _normalize_text(selected_tax_code.remote_tax_code_id)
+    normalized_external_code = _normalize_external_code(selected_tax_code.display_code)
     duplicate_external_id_owner = _duplicate_external_id_owner(
         db,
         tenant_id=int(tenant_id),
@@ -721,7 +1008,7 @@ def create_quickbooks_tax_mapping(
         tax_rate_id=int(tax_rate.id),
         external_id=normalized_external_id,
         external_code=normalized_external_code,
-        name=_normalize_text(name),
+        name=_normalize_text(name) or _normalize_text(selected_tax_code.display_name),
         is_active=bool(is_active),
     )
     db.add(tax_map)
@@ -750,8 +1037,15 @@ def update_quickbooks_tax_mapping(
     if tax_rate is None:
         raise TaxMappingValidationError("The linked local tax rate was not found.")
 
-    normalized_external_id = _normalize_text(external_id)
-    normalized_external_code = _normalize_external_code(external_code)
+    selected_tax_code = _selected_provider_tax_code_option(
+        db,
+        tenant_id=int(tenant_id),
+        provider=provider,
+        external_id=external_id,
+        external_code=external_code,
+    )
+    normalized_external_id = _normalize_text(selected_tax_code.remote_tax_code_id)
+    normalized_external_code = _normalize_external_code(selected_tax_code.display_code)
     duplicate_external_id_owner = _duplicate_external_id_owner(
         db,
         tenant_id=int(tenant_id),
@@ -785,7 +1079,7 @@ def update_quickbooks_tax_mapping(
 
     tax_map.external_id = normalized_external_id
     tax_map.external_code = normalized_external_code
-    tax_map.name = _normalize_text(name)
+    tax_map.name = _normalize_text(name) or _normalize_text(selected_tax_code.display_name)
     tax_map.is_active = bool(is_active)
     db.flush()
     return tax_map

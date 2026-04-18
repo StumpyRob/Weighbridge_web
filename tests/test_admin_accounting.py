@@ -14,6 +14,7 @@ from decimal import Decimal
 import app.routes.admin_accounting as admin_accounting_route
 import app.services.accounting.quickbooks_client as quickbooks_client_module
 import app.services.accounting.revenue_account_mapping as revenue_account_mapping_module
+import app.services.accounting.tax_mapping as tax_mapping_module
 from app.auth import ROLE_OPERATOR, ROLE_SUPERADMIN, ROLE_TENANT_ADMIN, hash_password, user_identity_kwargs
 from app.config import settings
 from app.db import TenantSession, get_db
@@ -37,6 +38,7 @@ from app.models import (
 )
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER_NAME
 from app.services.accounting.revenue_account_mapping import ProviderRevenueAccount
+from app.services.accounting.tax_mapping import ProviderTaxCodeOption
 from app.services.accounting.quickbooks_oauth import QuickBooksTokenBundle
 from app.services.secrets import decrypt_string, encrypt_string
 from app.services.system_setup import (
@@ -372,6 +374,16 @@ def _prepare_environment_with_settings(
     monkeypatch.setattr(
         revenue_account_mapping_module,
         "list_provider_revenue_accounts",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        tax_mapping_module,
+        "list_provider_tax_codes",
         lambda *args, **kwargs: [],
     )
     return {
@@ -1161,6 +1173,39 @@ def test_manual_run_sync_only_processes_current_tenant_jobs(tmp_path, monkeypatc
 
 def test_tenant_admin_can_view_create_update_and_delete_tax_mappings(tmp_path, monkeypatch):
     env = _prepare_environment(tmp_path, monkeypatch)
+    _seed_connected_connection(
+        env["SessionLocal"],
+        tenant_id=env["tenant_id"],
+        realm_id="realm-tax-manage",
+    )
+    tax_code_options = [
+        ProviderTaxCodeOption(
+            remote_tax_code_id="3",
+            display_code="20.0% S",
+            display_name="20.0% Standard Sales",
+            description="20.0% Standard Sales",
+            is_active=True,
+            display_label="20.0% S - 20.0% Standard Sales",
+        ),
+        ProviderTaxCodeOption(
+            remote_tax_code_id="2",
+            display_code="Exempt From VAT",
+            display_name="Exempt From VAT",
+            description="Exempt From VAT",
+            is_active=True,
+            display_label="Exempt From VAT",
+        ),
+    ]
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: tax_code_options,
+    )
+    monkeypatch.setattr(
+        tax_mapping_module,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: tax_code_options,
+    )
     with env["SessionLocal"]() as db:
         tax_rate = TaxRate(
             code="VAT20-MANAGE",
@@ -1191,6 +1236,7 @@ def test_tenant_admin_can_view_create_update_and_delete_tax_mappings(tmp_path, m
         assert page.status_code == 200
         assert "QuickBooks Tax Mappings" in page.text
         assert "VAT20-MANAGE" in page.text
+        assert "20.0% S - 20.0% Standard Sales (Ref 3)" in page.text
         assert "qb-access-token" not in page.text
         assert "qb-refresh-token" not in page.text
         assert "qb-client-secret" not in page.text
@@ -1201,8 +1247,7 @@ def test_tenant_admin_can_view_create_update_and_delete_tax_mappings(tmp_path, m
             data={
                 "tax_rate_id": str(tax_rate_id),
                 "name": "VAT 20 Sandbox",
-                "external_id": "QB-TAX-GROUP-20",
-                "external_code": "TAX",
+                "external_id": "3",
                 "is_active": "1",
             },
         )
@@ -1213,8 +1258,8 @@ def test_tenant_admin_can_view_create_update_and_delete_tax_mappings(tmp_path, m
         assert len(tax_maps) == 1
         mapping_id = int(tax_maps[0].id)
         assert tax_maps[0].name == "VAT 20 Sandbox"
-        assert tax_maps[0].external_id == "QB-TAX-GROUP-20"
-        assert tax_maps[0].external_code == "TAX"
+        assert tax_maps[0].external_id == "3"
+        assert tax_maps[0].external_code == "20.0% S"
         assert tax_maps[0].is_active is True
 
         update_response = _post_with_csrf(
@@ -1222,8 +1267,7 @@ def test_tenant_admin_can_view_create_update_and_delete_tax_mappings(tmp_path, m
             f"/admin/accounting/tax-mappings/{mapping_id}/update",
             data={
                 "name": "VAT 20 Sandbox Updated",
-                "external_id": "QB-TAX-GROUP-20-UPDATED",
-                "external_code": "TAX",
+                "external_id": "2",
             },
         )
         assert update_response.status_code == 303
@@ -1232,8 +1276,8 @@ def test_tenant_admin_can_view_create_update_and_delete_tax_mappings(tmp_path, m
         tax_maps = _tax_maps_for_tenant(env["SessionLocal"], env["tenant_id"])
         assert len(tax_maps) == 1
         assert tax_maps[0].name == "VAT 20 Sandbox Updated"
-        assert tax_maps[0].external_id == "QB-TAX-GROUP-20-UPDATED"
-        assert tax_maps[0].external_code == "TAX"
+        assert tax_maps[0].external_id == "2"
+        assert tax_maps[0].external_code == "Exempt From VAT"
         assert tax_maps[0].is_active is False
 
         delete_response = _post_with_csrf(
@@ -1317,6 +1361,26 @@ def test_non_admin_and_platform_mode_cannot_manage_tax_mappings(tmp_path, monkey
 
 def test_tax_mapping_management_preserves_tenant_isolation(tmp_path, monkeypatch):
     env = _prepare_environment(tmp_path, monkeypatch)
+    tax_code_options = [
+        ProviderTaxCodeOption(
+            remote_tax_code_id="3",
+            display_code="20.0% S",
+            display_name="20.0% Standard Sales",
+            description="20.0% Standard Sales",
+            is_active=True,
+            display_label="20.0% S - 20.0% Standard Sales",
+        )
+    ]
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: tax_code_options,
+    )
+    monkeypatch.setattr(
+        tax_mapping_module,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: tax_code_options,
+    )
     with env["SessionLocal"]() as db:
         shared_rate = TaxRate(
             code="VAT20-ISOLATION",
@@ -1377,8 +1441,7 @@ def test_tax_mapping_management_preserves_tenant_isolation(tmp_path, monkeypatch
             f"/admin/accounting/tax-mappings/{mapping_id}/update",
             data={
                 "name": "Other Tenant Hijack",
-                "external_id": "QB-HIJACK",
-                "external_code": "TAX",
+                "external_id": "3",
                 "is_active": "1",
             },
         )
@@ -1403,6 +1466,39 @@ def test_tax_mapping_management_preserves_tenant_isolation(tmp_path, monkeypatch
 
 def test_tax_mapping_duplicate_and_invalid_scope_errors_are_reported_cleanly(tmp_path, monkeypatch):
     env = _prepare_environment(tmp_path, monkeypatch)
+    _seed_connected_connection(
+        env["SessionLocal"],
+        tenant_id=env["tenant_id"],
+        realm_id="realm-tax-errors",
+    )
+    tax_code_options = [
+        ProviderTaxCodeOption(
+            remote_tax_code_id="3",
+            display_code="20.0% S",
+            display_name="20.0% Standard Sales",
+            description="20.0% Standard Sales",
+            is_active=True,
+            display_label="20.0% S - 20.0% Standard Sales",
+        ),
+        ProviderTaxCodeOption(
+            remote_tax_code_id="2",
+            display_code="Exempt From VAT",
+            display_name="Exempt From VAT",
+            description="Exempt From VAT",
+            is_active=True,
+            display_label="Exempt From VAT",
+        ),
+    ]
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: tax_code_options,
+    )
+    monkeypatch.setattr(
+        tax_mapping_module,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: tax_code_options,
+    )
     with env["SessionLocal"]() as db:
         mapped_rate = TaxRate(
             code="VAT20-DUPE-A",
@@ -1446,8 +1542,8 @@ def test_tax_mapping_duplicate_and_invalid_scope_errors_are_reported_cleanly(tmp
                     tenant_id=env["tenant_id"],
                     provider="quickbooks",
                     tax_rate_id=mapped_rate.id,
-                    external_id="QB-DUPE-ID",
-                    external_code="TAX",
+                    external_id="3",
+                    external_code="20.0% S",
                     is_active=True,
                 ),
             ]
@@ -1465,8 +1561,7 @@ def test_tax_mapping_duplicate_and_invalid_scope_errors_are_reported_cleanly(tmp
             "/admin/accounting/tax-mappings",
             data={
                 "tax_rate_id": str(second_rate_id),
-                "external_id": "QB-DUPE-ID",
-                "external_code": "TAX",
+                "external_id": "3",
                 "is_active": "1",
             },
         )
@@ -1481,8 +1576,7 @@ def test_tax_mapping_duplicate_and_invalid_scope_errors_are_reported_cleanly(tmp
             "/admin/accounting/tax-mappings",
             data={
                 "tax_rate_id": str(unused_rate_id),
-                "external_id": "QB-UNUSED-ID",
-                "external_code": "TAX",
+                "external_id": "2",
                 "is_active": "1",
             },
         )
@@ -1491,6 +1585,77 @@ def test_tax_mapping_duplicate_and_invalid_scope_errors_are_reported_cleanly(tmp
             invalid_scope_response.headers["location"]
         )
         assert len(_tax_maps_for_tenant(env["SessionLocal"], env["tenant_id"])) == 1
+    finally:
+        client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_tax_mapping_page_flags_legacy_display_value_refs(tmp_path, monkeypatch):
+    env = _prepare_environment(tmp_path, monkeypatch)
+    _seed_connected_connection(
+        env["SessionLocal"],
+        tenant_id=env["tenant_id"],
+        realm_id="realm-tax-legacy",
+    )
+    tax_code_options = [
+        ProviderTaxCodeOption(
+            remote_tax_code_id="3",
+            display_code="20.0% S",
+            display_name="20.0% Standard Sales",
+            description="20.0% Standard Sales",
+            is_active=True,
+            display_label="20.0% S - 20.0% Standard Sales",
+        )
+    ]
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: tax_code_options,
+    )
+    monkeypatch.setattr(
+        tax_mapping_module,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: tax_code_options,
+    )
+    with env["SessionLocal"]() as db:
+        tax_rate = TaxRate(
+            code="VAT20-LEGACY",
+            description="VAT 20 Legacy",
+            rate_percent=Decimal("20.000"),
+            is_active=True,
+        )
+        db.add(tax_rate)
+        db.flush()
+        db.add(
+            Product(
+                tenant_id=env["tenant_id"],
+                code="MAP-PROD-LEGACY",
+                description="Legacy Tax Product",
+                nominal_code="4000",
+                unit_price=Decimal("10.00"),
+                tax_rate_id=tax_rate.id,
+            )
+        )
+        db.add(
+            AccountingTaxMap(
+                tenant_id=env["tenant_id"],
+                provider="quickbooks",
+                tax_rate_id=tax_rate.id,
+                external_id="20.0% S",
+                external_code="20.0% S",
+                name="Legacy VAT 20",
+                is_active=True,
+            )
+        )
+        db.commit()
+
+    client = _client_for(env["app"], base_url="https://acme.localhost")
+    try:
+        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
+        page = client.get("/admin/accounting/tax-mappings")
+        assert page.status_code == 200
+        assert "display code/label, not the provider ref used for sync" in page.text
+        assert "Re-save this mapping from the QuickBooks tax list" in page.text
     finally:
         client.close()
         env["app"].dependency_overrides.clear()

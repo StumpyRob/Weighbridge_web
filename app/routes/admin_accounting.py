@@ -53,6 +53,7 @@ from ..services.accounting.tax_mapping import (
     TaxMappingValidationError,
     create_quickbooks_tax_mapping,
     delete_quickbooks_tax_mapping,
+    list_provider_tax_codes,
     summarize_quickbooks_setup,
     update_quickbooks_tax_mapping,
 )
@@ -565,6 +566,8 @@ def _page_context(
     revenue_account_options: list[object] | None = None,
     current_revenue_account_mapping: object | None = None,
     revenue_account_error: str = "",
+    tax_code_options: list[object] | None = None,
+    tax_code_error: str = "",
 ) -> dict[str, object]:
     return {
         "request": request,
@@ -575,6 +578,12 @@ def _page_context(
         "revenue_account_options": revenue_account_options or [],
         "current_revenue_account_mapping": current_revenue_account_mapping,
         "revenue_account_error": revenue_account_error,
+        "tax_code_options": tax_code_options or [],
+        "tax_code_option_ids": {
+            str(getattr(option, "remote_tax_code_id", "") or "").strip()
+            for option in (tax_code_options or [])
+        },
+        "tax_code_error": tax_code_error,
         "quickbooks_connected": _query_flag(request, "quickbooks_connected"),
         "quickbooks_disconnected": _query_flag(request, "quickbooks_disconnected"),
         "tax_mapping_saved": _query_flag(request, "tax_mapping_saved"),
@@ -692,6 +701,17 @@ def admin_accounting_tax_mappings(
         tenant_id=tenant_id,
         connection_status=getattr(connection, "status", None),
     )
+    tax_code_options: list[object] = []
+    tax_code_error = ""
+    if connection is not None and str(connection.status or "").strip().lower() == "connected":
+        try:
+            tax_code_options = list_provider_tax_codes(
+                db,
+                tenant_id=int(tenant_id),
+                provider=QUICKBOOKS_PROVIDER,
+            )
+        except (TaxMappingValidationError, QuickBooksApiError) as exc:
+            tax_code_error = str(exc)
     return templates.TemplateResponse(
         request,
         "admin/accounting/tax_mappings.html",
@@ -699,6 +719,8 @@ def admin_accounting_tax_mappings(
             request,
             connection=connection,
             setup_summary=setup_summary,
+            tax_code_options=tax_code_options,
+            tax_code_error=tax_code_error,
         ),
     )
 
