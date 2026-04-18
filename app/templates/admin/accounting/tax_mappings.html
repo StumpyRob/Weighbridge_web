@@ -65,7 +65,9 @@
           Select a QuickBooks VAT/tax code from the connected company. The stored provider ref is what sync uses; the display code/name is shown here for operators.
         </p>
         {% if tax_code_error %}
-          <p class="muted">{{ tax_code_error }}</p>
+          <p class="muted">QuickBooks tax codes could not be loaded: {{ tax_code_error }}</p>
+        {% elif is_connected and not tax_code_options %}
+          <p class="muted">No QuickBooks tax codes found in this company.</p>
         {% endif %}
 
         {% if setup and setup.next_steps %}
@@ -157,8 +159,14 @@
                   <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
                   <button type="submit" class="btn btn--secondary">Remove Mapping</button>
                 </form>
+              {% elif row.mapping_id and is_connected and not tax_code_options %}
+                <p class="muted" style="margin-top: 0.75rem;">No QuickBooks tax codes found in this company.</p>
+                <form method="post" action="{{ tenant_path('/admin/accounting/tax-mappings/' ~ row.mapping_id ~ '/delete') }}" style="margin-top: 0.75rem;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                  <button type="submit" class="btn btn--secondary">Remove Mapping</button>
+                </form>
               {% elif row.mapping_id %}
-                <p class="muted" style="margin-top: 0.75rem;">Connect QuickBooks and load tax codes before editing this mapping safely.</p>
+                <p class="muted" style="margin-top: 0.75rem;">Connect QuickBooks to edit this mapping.</p>
                 <form method="post" action="{{ tenant_path('/admin/accounting/tax-mappings/' ~ row.mapping_id ~ '/delete') }}" style="margin-top: 0.75rem;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
                   <button type="submit" class="btn btn--secondary">Remove Mapping</button>
@@ -194,8 +202,10 @@
                     <button type="submit" class="btn btn--primary">Create Mapping</button>
                   </div>
                 </form>
+              {% elif is_connected and not tax_code_options %}
+                <p class="muted" style="margin-top: 0.75rem;">No QuickBooks tax codes found in this company.</p>
               {% else %}
-                <p class="muted" style="margin-top: 0.75rem;">Connect QuickBooks and load tax codes before creating a new mapping safely.</p>
+                <p class="muted" style="margin-top: 0.75rem;">Connect QuickBooks to load tax codes before creating a new mapping.</p>
               {% endif %}
 
               {% if not row.is_required %}

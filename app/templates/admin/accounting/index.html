@@ -140,7 +140,7 @@
         <h2>Default Revenue Account</h2>
       </div>
       <div class="frame-body">
-        <p class="muted">Select the tenant default revenue account after connection. If no default is saved, product nominal codes still fall back to exact QuickBooks AcctNum matching for now.</p>
+        <p class="muted">Where invoice revenue is posted in QuickBooks. Usually 'Sales'.</p>
 
         {% if is_connected %}
           {% if revenue_account_error %}
@@ -153,15 +153,16 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
             <div class="form-grid">
               <div>
-                <label for="remote_account_id">Tenant Default Revenue Account</label>
+                <label for="remote_account_id">Default Revenue Account</label>
                 <select id="remote_account_id" name="remote_account_id">
-                  <option value="">No tenant default - use nominal-code fallback</option>
+                  <option value="">No default selected - use product nominal-code fallback</option>
                   {% for account in revenue_account_options %}
-                    <option value="{{ account.remote_account_id }}" {% if current_revenue_account_mapping and current_revenue_account_mapping.remote_account_id == account.remote_account_id %}selected{% endif %}>
+                    <option value="{{ account.remote_account_id }}" {% if current_revenue_account_mapping and current_revenue_account_mapping.remote_account_id == account.remote_account_id %}selected{% elif not current_revenue_account_mapping and suggested_revenue_account_id == account.remote_account_id %}selected{% endif %}>
                       {{ account.display_label }}
                     </option>
                   {% endfor %}
                 </select>
+                <div class="hint">If no default is saved, product nominal codes still fall back to exact QuickBooks AcctNum matching for now.</div>
                 {% if current_revenue_account_mapping %}
                   <div class="hint">
                     Saved default:
@@ -180,7 +181,7 @@
           </form>
 
           {% if not revenue_account_options and not revenue_account_error %}
-            <p class="muted">No active QuickBooks income or revenue accounts were discovered.</p>
+            <p class="muted">No valid QuickBooks income accounts found in this company.</p>
           {% endif %}
         {% else %}
           <p class="muted">Connect QuickBooks to load revenue accounts and choose a tenant default.</p>

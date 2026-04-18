@@ -76,6 +76,68 @@ _ACCTNUM_ERROR_PATTERNS = (
 )
 
 
+def _normalize_text(value: object) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _revenue_account_display_label(account: object) -> str:
+    code = _normalize_text(getattr(account, "remote_account_code", None))
+    name = (
+        _normalize_text(getattr(account, "remote_account_name", None))
+        or f"Account {str(getattr(account, 'remote_account_id', '') or '').strip() or '?'}"
+    )
+    account_type = _normalize_text(getattr(account, "remote_account_type", None)) or "Income"
+    base_label = f"{code} - {name}" if code else name
+    return f"{base_label} ({account_type})"
+
+
+def _is_income_revenue_account_option(account: object) -> bool:
+    if not bool(getattr(account, "is_usable", False)):
+        return False
+    account_type = str(getattr(account, "remote_account_type", "") or "").strip().lower()
+    return account_type == "income" or not account_type
+
+
+def _revenue_account_option_rows(accounts: list[object]) -> list[dict[str, object]]:
+    option_rows = [
+        {
+            "remote_account_id": str(getattr(account, "remote_account_id", "") or "").strip(),
+            "remote_account_code": _normalize_text(getattr(account, "remote_account_code", None)),
+            "remote_account_name": _normalize_text(getattr(account, "remote_account_name", None)),
+            "remote_account_type": _normalize_text(getattr(account, "remote_account_type", None)),
+            "display_label": _revenue_account_display_label(account),
+        }
+        for account in accounts
+        if _is_income_revenue_account_option(account)
+        and str(getattr(account, "remote_account_id", "") or "").strip()
+    ]
+    option_rows.sort(
+        key=lambda account: (
+            str("sales" not in str(account["remote_account_name"] or "").lower()),
+            str(account["remote_account_code"] or "").lower(),
+            str(account["remote_account_name"] or "").lower(),
+            str(account["remote_account_id"] or ""),
+        )
+    )
+    return option_rows
+
+
+def _suggested_revenue_account_id(account_rows: list[dict[str, object]]) -> str | None:
+    if not account_rows:
+        return None
+    sales_match = next(
+        (
+            row
+            for row in account_rows
+            if "sales" in str(row.get("remote_account_name") or "").lower()
+        ),
+        None,
+    )
+    selected = sales_match or account_rows[0]
+    return str(selected.get("remote_account_id") or "").strip() or None
+
+
 def _require_tenant_accounting_admin(request: Request, db: Session) -> User:
     if request_platform_mode(request):
         raise HTTPException(status_code=404, detail="Not Found")
@@ -565,6 +627,7 @@ def _page_context(
     config_error: str = "",
     revenue_account_options: list[object] | None = None,
     current_revenue_account_mapping: object | None = None,
+    suggested_revenue_account_id: str | None = None,
     revenue_account_error: str = "",
     tax_code_options: list[object] | None = None,
     tax_code_error: str = "",
@@ -577,6 +640,7 @@ def _page_context(
         "config_error": config_error,
         "revenue_account_options": revenue_account_options or [],
         "current_revenue_account_mapping": current_revenue_account_mapping,
+        "suggested_revenue_account_id": suggested_revenue_account_id,
         "revenue_account_error": revenue_account_error,
         "tax_code_options": tax_code_options or [],
         "tax_code_option_ids": {
@@ -660,14 +724,20 @@ def admin_accounting(
         build_quickbooks_authorize_url(state="preview", redirect_uri=redirect_uri)
     except QuickBooksOAuthError as exc:
         config_error = str(exc)
-    revenue_account_options: list[object] = []
+    revenue_account_options: list[dict[str, object]] = []
+    suggested_revenue_account_id: str | None = None
     revenue_account_error = ""
     if connection is not None and str(connection.status or "").strip().lower() == "connected":
         try:
-            revenue_account_options = list_provider_revenue_accounts(
-                db,
-                tenant_id=int(tenant_id),
-                provider=QUICKBOOKS_PROVIDER,
+            revenue_account_options = _revenue_account_option_rows(
+                list_provider_revenue_accounts(
+                    db,
+                    tenant_id=int(tenant_id),
+                    provider=QUICKBOOKS_PROVIDER,
+                )
+            )
+            suggested_revenue_account_id = _suggested_revenue_account_id(
+                revenue_account_options
             )
         except (RevenueAccountMappingValidationError, QuickBooksApiError) as exc:
             revenue_account_error = str(exc)
@@ -683,6 +753,7 @@ def admin_accounting(
             config_error=config_error,
             revenue_account_options=revenue_account_options,
             current_revenue_account_mapping=current_revenue_account_mapping,
+            suggested_revenue_account_id=suggested_revenue_account_id,
             revenue_account_error=revenue_account_error,
         ),
     )

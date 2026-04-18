@@ -441,7 +441,7 @@ def test_admin_accounting_can_view_and_save_default_revenue_account_mapping(
             remote_account_detail_type="SalesOfProductIncome",
             is_active=True,
             is_usable=True,
-            display_label="4100 - Sales Income (Income / SalesOfProductIncome)",
+            display_label="4100 - Sales Income (Income)",
         ),
         ProviderRevenueAccount(
             remote_account_id="88",
@@ -451,7 +451,7 @@ def test_admin_accounting_can_view_and_save_default_revenue_account_mapping(
             remote_account_detail_type="SalesOfProductIncome",
             is_active=True,
             is_usable=True,
-            display_label="4200 - Skip Hire Sales (Income / SalesOfProductIncome)",
+            display_label="4200 - Skip Hire Sales (Income)",
         ),
     ]
     monkeypatch.setattr(
@@ -467,12 +467,12 @@ def test_admin_accounting_can_view_and_save_default_revenue_account_mapping(
         page = client.get("/admin/accounting")
         assert page.status_code == 200
         assert "Default Revenue Account" in page.text
-        assert (
-            "Select the tenant default revenue account after connection. "
-            "If no default is saved, product nominal codes still fall back to exact QuickBooks AcctNum matching for now."
-        ) in " ".join(page.text.split())
-        assert "4100 - Sales Income (Income / SalesOfProductIncome)" in page.text
-        assert "No tenant default - use nominal-code fallback" in page.text
+        assert "Where invoice revenue is posted in QuickBooks. Usually 'Sales'." in " ".join(
+            page.text.split()
+        )
+        assert "4100 - Sales Income (Income)" in page.text
+        assert "4200 - Skip Hire Sales (Income)" in page.text
+        assert "No default selected - use product nominal-code fallback" in page.text
 
         save_response = _post_with_csrf(
             client,
@@ -528,7 +528,7 @@ def test_default_revenue_account_mapping_preserves_tenant_isolation(tmp_path, mo
             remote_account_detail_type="SalesOfProductIncome",
             is_active=True,
             is_usable=True,
-            display_label="4100 - Sales Income (Income / SalesOfProductIncome)",
+            display_label="4100 - Sales Income (Income)",
         ),
         ProviderRevenueAccount(
             remote_account_id="88",
@@ -538,7 +538,7 @@ def test_default_revenue_account_mapping_preserves_tenant_isolation(tmp_path, mo
             remote_account_detail_type="SalesOfProductIncome",
             is_active=True,
             is_usable=True,
-            display_label="4200 - Skip Hire Sales (Income / SalesOfProductIncome)",
+            display_label="4200 - Skip Hire Sales (Income)",
         ),
     ]
     monkeypatch.setattr(
@@ -587,6 +587,77 @@ def test_default_revenue_account_mapping_preserves_tenant_isolation(tmp_path, mo
         assert other_mappings[0].remote_account_id == "88"
     finally:
         other_client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_admin_accounting_revenue_account_dropdown_prefers_sales_income_and_hides_non_income(
+    tmp_path,
+    monkeypatch,
+):
+    env = _prepare_environment(tmp_path, monkeypatch)
+    _seed_connected_connection(
+        env["SessionLocal"],
+        tenant_id=env["tenant_id"],
+        realm_id="realm-revenue-suggested",
+    )
+    revenue_accounts = [
+        ProviderRevenueAccount(
+            remote_account_id="77",
+            remote_account_code="4100",
+            remote_account_name="Consulting Income",
+            remote_account_type="Income",
+            remote_account_detail_type="SalesOfProductIncome",
+            is_active=True,
+            is_usable=True,
+            display_label="ignored",
+        ),
+        ProviderRevenueAccount(
+            remote_account_id="79",
+            remote_account_code="4000",
+            remote_account_name="Sales",
+            remote_account_type="Income",
+            remote_account_detail_type="SalesOfProductIncome",
+            is_active=True,
+            is_usable=True,
+            display_label="ignored",
+        ),
+        ProviderRevenueAccount(
+            remote_account_id="91",
+            remote_account_code="5000",
+            remote_account_name="Cost Of Sales",
+            remote_account_type="Expense",
+            remote_account_detail_type="CostOfLabor",
+            is_active=True,
+            is_usable=False,
+            display_label="ignored",
+        ),
+    ]
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_revenue_accounts",
+        lambda *args, **kwargs: revenue_accounts,
+    )
+    monkeypatch.setattr(
+        revenue_account_mapping_module,
+        "list_provider_revenue_accounts",
+        lambda *args, **kwargs: revenue_accounts,
+    )
+
+    client = _client_for(env["app"], base_url="https://acme.localhost")
+    try:
+        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
+        page = client.get("/admin/accounting")
+        assert page.status_code == 200
+        assert "Default Revenue Account" in page.text
+        assert "Where invoice revenue is posted in QuickBooks. Usually 'Sales'." in " ".join(
+            page.text.split()
+        )
+        assert "4000 - Sales (Income)" in page.text
+        assert "4100 - Consulting Income (Income)" in page.text
+        assert "5000 - Cost Of Sales" not in page.text
+        assert '<option value="79" selected>' in page.text
+    finally:
+        client.close()
         env["app"].dependency_overrides.clear()
 
 
@@ -1239,6 +1310,8 @@ def test_tenant_admin_can_view_create_update_and_delete_tax_mappings(tmp_path, m
         assert "QuickBooks Tax Mappings" in page.text
         assert "VAT20-MANAGE" in page.text
         assert "20.0% S - 20.0% Standard Sales (Ref 3)" in page.text
+        assert "Create Mapping" in page.text
+        assert "No QuickBooks tax codes found in this company." not in page.text
         assert "qb-access-token" not in page.text
         assert "qb-refresh-token" not in page.text
         assert "qb-client-secret" not in page.text
@@ -1289,6 +1362,50 @@ def test_tenant_admin_can_view_create_update_and_delete_tax_mappings(tmp_path, m
         assert delete_response.status_code == 303
         assert delete_response.headers["location"] == "/admin/accounting/tax-mappings?tax_mapping_deleted=1"
         assert _tax_maps_for_tenant(env["SessionLocal"], env["tenant_id"]) == []
+    finally:
+        client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_tax_mapping_page_shows_clear_message_when_connected_company_has_no_tax_codes(
+    tmp_path,
+    monkeypatch,
+):
+    env = _prepare_environment(tmp_path, monkeypatch)
+    _seed_connected_connection(
+        env["SessionLocal"],
+        tenant_id=env["tenant_id"],
+        realm_id="realm-tax-empty",
+    )
+    with env["SessionLocal"]() as db:
+        tax_rate = TaxRate(
+            code="VAT20-EMPTY",
+            description="VAT 20 Empty",
+            rate_percent=Decimal("20.000"),
+            is_active=True,
+        )
+        db.add(tax_rate)
+        db.flush()
+        db.add(
+            Product(
+                tenant_id=env["tenant_id"],
+                code="MAP-PROD-EMPTY",
+                description="Empty Tax Code Product",
+                nominal_code="4000",
+                unit_price=Decimal("15.00"),
+                tax_rate_id=tax_rate.id,
+            )
+        )
+        db.commit()
+
+    client = _client_for(env["app"], base_url="https://acme.localhost")
+    try:
+        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
+        page = client.get("/admin/accounting/tax-mappings")
+        assert page.status_code == 200
+        assert "No QuickBooks tax codes found in this company." in page.text
+        assert "Connect QuickBooks to load tax codes before creating a new mapping." not in page.text
+        assert "Create Mapping" not in page.text
     finally:
         client.close()
         env["app"].dependency_overrides.clear()

@@ -10,6 +10,7 @@ from sqlalchemy import select
 import app.services.accounting.invoice_sync as invoice_sync_module
 import app.services.accounting.quickbooks_client as quickbooks_client_module
 import app.services.accounting.quickbooks_oauth as quickbooks_oauth_module
+import app.services.accounting.tax_mapping as tax_mapping_module
 from app.config import settings
 from app.models import (
     AccountingConnection,
@@ -319,6 +320,42 @@ def test_quickbooks_revenue_account_discovery_filters_income_accounts(db_session
     assert accounts[0].remote_account_detail_type == "SalesOfProductIncome"
     assert accounts[0].is_active is True
     assert accounts[0].is_usable is True
+
+
+def test_quickbooks_tax_code_discovery_accepts_description_only_records(db_session, monkeypatch):
+    _configure_settings(monkeypatch)
+    _seed_connection(db_session)
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        if url.endswith("/query") and "FROM TaxCode" in str((params or {}).get("query")):
+            return _response(
+                200,
+                {
+                    "QueryResponse": {
+                        "TaxCode": [
+                            {
+                                "Id": "3",
+                                "Description": "20.0% S",
+                                "Active": True,
+                            }
+                        ]
+                    }
+                },
+            )
+        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+
+    tax_codes = tax_mapping_module.list_provider_tax_codes(
+        db_session,
+        tenant_id=1,
+        provider="quickbooks",
+    )
+
+    assert len(tax_codes) == 1
+    assert tax_codes[0].remote_tax_code_id == "3"
+    assert tax_codes[0].display_code == "20.0% S"
+    assert tax_codes[0].display_name == "20.0% S"
 
 
 def test_product_job_runs_and_writes_product_map(db_session, monkeypatch):

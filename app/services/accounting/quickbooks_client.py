@@ -142,11 +142,17 @@ def _quickbooks_tax_code(tax_code: dict[str, Any]) -> QuickBooksTaxCode | None:
     display_code = (
         str(tax_code.get("Name") or "").strip()
         or str(tax_code.get("Code") or "").strip()
+        or str(tax_code.get("Description") or "").strip()
     )
     if not resolved_id or not display_code:
         return None
     description = _normalized_text(tax_code.get("Description"))
-    display_name = description or display_code
+    display_name = (
+        description
+        or _normalized_text(tax_code.get("Name"))
+        or _normalized_text(tax_code.get("Code"))
+        or display_code
+    )
     return QuickBooksTaxCode(
         remote_tax_code_id=resolved_id,
         display_code=display_code,
