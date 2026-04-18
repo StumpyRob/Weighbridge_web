@@ -23,10 +23,10 @@
   {% endif %}
 {% endblock %}
 
-{% block content %}
+  {% block content %}
   {% set setup = setup_summary %}
   {% set is_connected = connection and connection.status == "connected" %}
-  {% set auto_managed_tax = tax_discovery and tax_discovery.is_automated_tax %}
+  {% set auto_managed_tax = tax_discovery and tax_discovery.is_automated_tax and not tax_code_options %}
   <div class="page-header">
     <div>
       <h1>QuickBooks Tax Mappings</h1>

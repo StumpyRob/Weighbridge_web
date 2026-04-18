@@ -413,6 +413,11 @@ def _prepare_environment_with_settings(
         lambda *args, **kwargs: _tax_discovery_state(),
     )
     monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
         tax_mapping_module,
         "list_provider_tax_codes",
         lambda *args, **kwargs: [],
@@ -1302,8 +1307,16 @@ def test_tenant_admin_can_view_create_update_and_delete_tax_mappings(tmp_path, m
     ]
     monkeypatch.setattr(
         admin_accounting_route,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: tax_code_options,
+    )
+    monkeypatch.setattr(
+        admin_accounting_route,
         "inspect_quickbooks_tax_discovery",
-        lambda *args, **kwargs: _tax_discovery_state(tax_code_options),
+        lambda *args, **kwargs: _tax_discovery_state(
+            tax_code_options,
+            preferences_error="Preferences is not supported.",
+        ),
     )
     monkeypatch.setattr(
         tax_mapping_module,
@@ -1430,11 +1443,17 @@ def test_tax_mapping_page_shows_clear_message_when_connected_company_has_no_tax_
         db.commit()
     monkeypatch.setattr(
         admin_accounting_route,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        admin_accounting_route,
         "inspect_quickbooks_tax_discovery",
         lambda *args, **kwargs: _tax_discovery_state(
             [],
             tax_rate_count=2,
             tax_agency_count=1,
+            preferences_error="Preferences is not supported.",
         ),
     )
 
@@ -1446,6 +1465,135 @@ def test_tax_mapping_page_shows_clear_message_when_connected_company_has_no_tax_
         assert "No QuickBooks tax codes found in this company." in page.text
         assert "QuickBooks returned 2 tax rates and 1 tax agency, but no TaxCode records for manual mapping." in page.text
         assert "Connect QuickBooks to load tax codes before creating a new mapping." not in page.text
+        assert "Create Mapping" not in page.text
+    finally:
+        client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_tax_mapping_page_still_renders_controls_when_optional_discovery_is_unsupported(
+    tmp_path,
+    monkeypatch,
+):
+    env = _prepare_environment(tmp_path, monkeypatch)
+    _seed_connected_connection(
+        env["SessionLocal"],
+        tenant_id=env["tenant_id"],
+        realm_id="realm-tax-optional-unsupported",
+    )
+    tax_code_options = [
+        ProviderTaxCodeOption(
+            remote_tax_code_id="3",
+            display_code="20.0% S",
+            display_name="20.0% Standard Sales",
+            description="20.0% Standard Sales",
+            is_active=True,
+            display_label="20.0% S - 20.0% Standard Sales",
+        )
+    ]
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: tax_code_options,
+    )
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "inspect_quickbooks_tax_discovery",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            quickbooks_client_module.QuickBooksApiError("Preferences is not supported.")
+        ),
+    )
+    monkeypatch.setattr(
+        tax_mapping_module,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: tax_code_options,
+    )
+    with env["SessionLocal"]() as db:
+        tax_rate = TaxRate(
+            code="VAT20-OPTIONAL",
+            description="VAT 20 Optional Unsupported",
+            rate_percent=Decimal("20.000"),
+            is_active=True,
+        )
+        db.add(tax_rate)
+        db.flush()
+        db.add(
+            Product(
+                tenant_id=env["tenant_id"],
+                code="MAP-PROD-OPTIONAL",
+                description="Optional Discovery Product",
+                nominal_code="4000",
+                unit_price=Decimal("15.00"),
+                tax_rate_id=tax_rate.id,
+            )
+        )
+        db.commit()
+
+    client = _client_for(env["app"], base_url="https://acme.localhost")
+    try:
+        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
+        page = client.get("/admin/accounting/tax-mappings")
+        assert page.status_code == 200
+        assert "Create Mapping" in page.text
+        assert "20.0% S - 20.0% Standard Sales (Ref 3)" in page.text
+        assert "QuickBooks tax codes could not be loaded" not in page.text
+        assert "Preferences is not supported." not in page.text
+    finally:
+        client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_tax_mapping_page_ignores_optional_discovery_errors_when_no_tax_codes_exist(
+    tmp_path,
+    monkeypatch,
+):
+    env = _prepare_environment(tmp_path, monkeypatch)
+    _seed_connected_connection(
+        env["SessionLocal"],
+        tenant_id=env["tenant_id"],
+        realm_id="realm-tax-no-taxcodes-optional-unsupported",
+    )
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "inspect_quickbooks_tax_discovery",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            quickbooks_client_module.QuickBooksApiError("Preferences is not supported.")
+        ),
+    )
+    with env["SessionLocal"]() as db:
+        tax_rate = TaxRate(
+            code="VAT20-NONE",
+            description="VAT 20 None",
+            rate_percent=Decimal("20.000"),
+            is_active=True,
+        )
+        db.add(tax_rate)
+        db.flush()
+        db.add(
+            Product(
+                tenant_id=env["tenant_id"],
+                code="MAP-PROD-NONE",
+                description="No Tax Code Product",
+                nominal_code="4000",
+                unit_price=Decimal("15.00"),
+                tax_rate_id=tax_rate.id,
+            )
+        )
+        db.commit()
+
+    client = _client_for(env["app"], base_url="https://acme.localhost")
+    try:
+        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
+        page = client.get("/admin/accounting/tax-mappings")
+        assert page.status_code == 200
+        assert "No QuickBooks tax codes found in this company." in page.text
+        assert "QuickBooks tax codes could not be loaded" not in page.text
+        assert "Preferences is not supported." not in page.text
         assert "Create Mapping" not in page.text
     finally:
         client.close()
@@ -1482,6 +1630,11 @@ def test_tax_mapping_page_shows_automated_vat_message_when_manual_mapping_is_not
             )
         )
         db.commit()
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: [],
+    )
     monkeypatch.setattr(
         admin_accounting_route,
         "inspect_quickbooks_tax_discovery",
@@ -1586,6 +1739,11 @@ def test_tax_mapping_management_preserves_tenant_isolation(tmp_path, monkeypatch
             display_label="20.0% S - 20.0% Standard Sales",
         )
     ]
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: tax_code_options,
+    )
     monkeypatch.setattr(
         admin_accounting_route,
         "inspect_quickbooks_tax_discovery",
@@ -1706,6 +1864,11 @@ def test_tax_mapping_duplicate_and_invalid_scope_errors_are_reported_cleanly(tmp
     ]
     monkeypatch.setattr(
         admin_accounting_route,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: tax_code_options,
+    )
+    monkeypatch.setattr(
+        admin_accounting_route,
         "inspect_quickbooks_tax_discovery",
         lambda *args, **kwargs: _tax_discovery_state(tax_code_options),
     )
@@ -1822,6 +1985,11 @@ def test_tax_mapping_page_flags_legacy_display_value_refs(tmp_path, monkeypatch)
             display_label="20.0% S - 20.0% Standard Sales",
         )
     ]
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: tax_code_options,
+    )
     monkeypatch.setattr(
         admin_accounting_route,
         "inspect_quickbooks_tax_discovery",

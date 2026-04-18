@@ -54,6 +54,7 @@ from ..services.accounting.tax_mapping import (
     create_quickbooks_tax_mapping,
     delete_quickbooks_tax_mapping,
     inspect_quickbooks_tax_discovery,
+    list_provider_tax_codes,
     summarize_quickbooks_setup,
     update_quickbooks_tax_mapping,
 )
@@ -774,24 +775,28 @@ def admin_accounting_tax_mappings(
     tax_code_error = ""
     if connection is not None and str(connection.status or "").strip().lower() == "connected":
         try:
+            tax_code_options = list_provider_tax_codes(
+                db,
+                tenant_id=int(tenant_id),
+                provider=QUICKBOOKS_PROVIDER,
+            )
+        except (TaxMappingValidationError, QuickBooksApiError) as exc:
+            tax_code_error = str(exc)
+        try:
             tax_discovery = inspect_quickbooks_tax_discovery(
                 db,
                 tenant_id=int(tenant_id),
                 provider=QUICKBOOKS_PROVIDER,
             )
-            tax_code_options = list(getattr(tax_discovery, "provider_tax_code_options", []) or [])
-            if not tax_code_options:
-                tax_code_error = (
-                    str(getattr(tax_discovery, "tax_code_error", "") or "").strip()
-                    or str(getattr(tax_discovery, "preferences_error", "") or "").strip()
-                )
-        except (TaxMappingValidationError, QuickBooksApiError) as exc:
-            tax_code_error = str(exc)
+        except (TaxMappingValidationError, QuickBooksApiError):
+            tax_discovery = None
     setup_summary = summarize_quickbooks_setup(
         db,
         tenant_id=tenant_id,
         connection_status=getattr(connection, "status", None),
-        provider_tax_code_options=(tax_code_options if tax_discovery is not None else None),
+        provider_tax_code_options=(
+            tax_code_options if not tax_code_error else None
+        ),
     )
     return templates.TemplateResponse(
         request,
