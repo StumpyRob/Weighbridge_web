@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -37,7 +38,10 @@ from app.services.accounting.jobs import (
     enqueue_sync_product,
     enqueue_void_invoice,
 )
-from app.services.accounting.revenue_account_mapping import list_provider_revenue_accounts
+from app.services.accounting.revenue_account_mapping import (
+    list_provider_revenue_accounts,
+    resolve_revenue_account,
+)
 from app.services.secrets import decrypt_string, encrypt_string
 
 
@@ -674,6 +678,161 @@ def test_invoice_job_prefers_default_revenue_account_mapping_over_nominal_fallba
     assert sync_row.sync_status == "invoice_synced"
     product_synced_payloads = _event_payloads(db_session, event_type="product_synced")
     assert any("global_default_mapping" in payload for payload in product_synced_payloads)
+
+
+def test_default_mapping_overrides_nominal_code(db_session, caplog):
+    class FakeQuickBooksClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str]] = []
+
+        def resolve_income_account_ref_by_id(self, *, remote_account_id: str) -> str:
+            self.calls.append(("ref_by_id", remote_account_id))
+            return remote_account_id
+
+        def resolve_income_account_by_id(self, *, remote_account_id: str):
+            self.calls.append(("by_id", remote_account_id))
+            return quickbooks_client_module.QuickBooksRevenueAccount(
+                remote_account_id=remote_account_id,
+                remote_account_code="4000",
+                remote_account_name="Mapped Sales Income",
+                remote_account_type="Income",
+                remote_account_detail_type="SalesOfProductIncome",
+                is_active=True,
+                is_usable=True,
+            )
+
+        def resolve_income_account_ref_by_nominal_code(self, *, nominal_code: str) -> str:
+            raise AssertionError("Nominal fallback should not be used when default mapping exists.")
+
+        def resolve_income_account_by_nominal_code(self, *, nominal_code: str):
+            raise AssertionError("Nominal fallback should not be used when default mapping exists.")
+
+    db_session.add(
+        AccountingRevenueAccountMap(
+            tenant_id=1,
+            provider="quickbooks",
+            local_scope_type="global_default",
+            remote_account_id="79",
+            remote_account_code="4000",
+            remote_account_name="Mapped Sales Income",
+            remote_account_type="Income",
+            is_active=True,
+        )
+    )
+    db_session.commit()
+
+    client = FakeQuickBooksClient()
+
+    with caplog.at_level(logging.INFO):
+        resolved = resolve_revenue_account(
+            db_session,
+            tenant_id=1,
+            provider="quickbooks",
+            product_label="Product QB-MAP",
+            nominal_code="4100",
+            client=client,
+        )
+
+    assert resolved.remote_account_id == "79"
+    assert resolved.remote_account_code == "4000"
+    assert resolved.remote_account_name == "Mapped Sales Income"
+    assert resolved.resolution_source == "global_default_mapping"
+    assert client.calls == [("ref_by_id", "79"), ("by_id", "79")]
+    assert "Using default QB revenue account mapping: Mapped Sales Income" in caplog.text
+
+
+def test_mapping_does_not_fallback(db_session):
+    class FakeQuickBooksClient:
+        def resolve_income_account_ref_by_id(self, *, remote_account_id: str) -> str:
+            raise quickbooks_client_module.QuickBooksApiError(
+                "QuickBooks revenue account 79 was not found among active income/revenue accounts."
+            )
+
+        def resolve_income_account_by_id(self, *, remote_account_id: str):
+            raise AssertionError("Resolver should fail before reloading an invalid mapped account.")
+
+        def resolve_income_account_ref_by_nominal_code(self, *, nominal_code: str) -> str:
+            raise AssertionError("Nominal fallback should not run when a default mapping exists.")
+
+        def resolve_income_account_by_nominal_code(self, *, nominal_code: str):
+            raise AssertionError("Nominal fallback should not run when a default mapping exists.")
+
+    db_session.add(
+        AccountingRevenueAccountMap(
+            tenant_id=1,
+            provider="quickbooks",
+            local_scope_type="global_default",
+            remote_account_id="79",
+            remote_account_code="4000",
+            remote_account_name="Broken Sales Income",
+            remote_account_type="Income",
+            is_active=True,
+        )
+    )
+    db_session.commit()
+
+    try:
+        resolve_revenue_account(
+            db_session,
+            tenant_id=1,
+            provider="quickbooks",
+            product_label="Product QB-BROKEN",
+            nominal_code="4100",
+            client=FakeQuickBooksClient(),
+        )
+        raise AssertionError("Expected the invalid mapped account to fail without fallback.")
+    except quickbooks_client_module.QuickBooksApiError as exc:
+        assert str(exc) == "Configured default QuickBooks revenue account is invalid or not usable"
+
+
+def test_nominal_used_when_no_mapping(db_session, caplog):
+    class FakeQuickBooksClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str]] = []
+
+        def resolve_income_account_ref_by_id(self, *, remote_account_id: str) -> str:
+            raise AssertionError("Default mapping lookup should not run when no mapping exists.")
+
+        def resolve_income_account_by_id(self, *, remote_account_id: str):
+            raise AssertionError("Default mapping lookup should not run when no mapping exists.")
+
+        def resolve_income_account_ref_by_nominal_code(self, *, nominal_code: str) -> str:
+            self.calls.append(("ref_by_nominal_code", nominal_code))
+            return "88"
+
+        def resolve_income_account_by_nominal_code(self, *, nominal_code: str):
+            self.calls.append(("by_nominal_code", nominal_code))
+            return quickbooks_client_module.QuickBooksRevenueAccount(
+                remote_account_id="88",
+                remote_account_code=nominal_code,
+                remote_account_name="Nominal Sales Income",
+                remote_account_type="Income",
+                remote_account_detail_type="SalesOfProductIncome",
+                is_active=True,
+                is_usable=True,
+            )
+
+    client = FakeQuickBooksClient()
+
+    with caplog.at_level(logging.INFO):
+        resolved = resolve_revenue_account(
+            db_session,
+            tenant_id=1,
+            provider="quickbooks",
+            product_label="Product QB-NOMINAL",
+            nominal_code="4100",
+            client=client,
+        )
+
+    assert resolved.remote_account_id == "88"
+    assert resolved.remote_account_code == "4100"
+    assert resolved.remote_account_name == "Nominal Sales Income"
+    assert resolved.resolution_source == "nominal_code_fallback"
+    assert client.calls == [
+        ("ref_by_nominal_code", "4100"),
+        ("by_nominal_code", "4100"),
+    ]
+    assert "Using nominal code fallback: 4100" in caplog.text
 
 
 def test_invoice_job_fails_clearly_when_tax_mapping_is_missing(db_session, monkeypatch):

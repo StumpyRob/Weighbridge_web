@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -14,6 +15,8 @@ from .quickbooks_oauth import QUICKBOOKS_PROVIDER
 if TYPE_CHECKING:
     from .quickbooks_client import QuickBooksClient, QuickBooksRevenueAccount
 
+
+log = logging.getLogger(__name__)
 
 REVENUE_ACCOUNT_SCOPE_GLOBAL_DEFAULT = "global_default"
 REVENUE_ACCOUNT_SCOPE_PRODUCT = "product"
@@ -246,12 +249,16 @@ def resolve_revenue_account(
     )
     if mapping is not None:
         try:
+            mapped_remote_account_id = str(mapping.remote_account_id or "").strip()
+            account_ref = client.resolve_income_account_ref_by_id(
+                remote_account_id=mapped_remote_account_id
+            )
             account = client.resolve_income_account_by_id(
-                remote_account_id=str(mapping.remote_account_id or "").strip()
+                remote_account_id=mapped_remote_account_id
             )
         except QuickBooksApiError as exc:
             raise QuickBooksApiError(
-                f"Default QuickBooks revenue account mapping {mapping.remote_account_name or mapping.remote_account_id} is not usable: {exc}",
+                "Configured default QuickBooks revenue account is invalid or not usable",
                 detail_json={
                     "resolution_source": "global_default_mapping",
                     "mapping_id": int(mapping.id),
@@ -259,8 +266,9 @@ def resolve_revenue_account(
                     "remote_account_code": str(mapping.remote_account_code or "").strip() or None,
                 },
             ) from exc
+        log.info("Using default QB revenue account mapping: %s", mapping.remote_account_name)
         return ResolvedRevenueAccount(
-            remote_account_id=account.remote_account_id,
+            remote_account_id=account_ref,
             remote_account_code=account.remote_account_code,
             remote_account_name=account.remote_account_name,
             remote_account_type=account.remote_account_type,
@@ -272,11 +280,15 @@ def resolve_revenue_account(
 
     normalized_nominal_code = _normalize_text(nominal_code)
     if normalized_nominal_code:
+        log.info("Using nominal code fallback: %s", normalized_nominal_code)
+        account_ref = client.resolve_income_account_ref_by_nominal_code(
+            nominal_code=normalized_nominal_code
+        )
         account = client.resolve_income_account_by_nominal_code(
             nominal_code=normalized_nominal_code
         )
         return ResolvedRevenueAccount(
-            remote_account_id=account.remote_account_id,
+            remote_account_id=account_ref,
             remote_account_code=account.remote_account_code,
             remote_account_name=account.remote_account_name,
             remote_account_type=account.remote_account_type,

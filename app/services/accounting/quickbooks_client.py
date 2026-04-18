@@ -514,6 +514,11 @@ class QuickBooksClient:
         return resolved_account
 
     def resolve_income_account_ref(self, *, nominal_code: str) -> str:
+        return self.resolve_income_account_ref_by_nominal_code(
+            nominal_code=nominal_code
+        )
+
+    def resolve_income_account_ref_by_nominal_code(self, *, nominal_code: str) -> str:
         return self.resolve_income_account_by_nominal_code(
             nominal_code=nominal_code
         ).remote_account_id
