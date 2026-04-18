@@ -227,7 +227,6 @@ def _invoice_payload(
     *,
     customer_external_id: str,
     line_items: list[dict[str, Any]],
-    txn_tax_code_ref: str | None,
     global_tax_calculation: str | None,
 ) -> dict[str, Any]:
     payload = {
@@ -236,8 +235,6 @@ def _invoice_payload(
         "TxnDate": invoice.invoice_date.isoformat(),
         "Line": line_items,
     }
-    if txn_tax_code_ref:
-        payload["TxnTaxDetail"] = {"TxnTaxCodeRef": {"value": str(txn_tax_code_ref)}}
     if global_tax_calculation:
         payload["GlobalTaxCalculation"] = str(global_tax_calculation)
     if invoice.due_date is not None:
@@ -275,16 +272,14 @@ def _tax_payload_summary(
     invoice_id: int,
     line_items: list[dict[str, Any]],
     tax_details: list[dict[str, Any]],
-    txn_tax_code_ref: str | None,
     global_tax_calculation: str | None,
 ) -> dict[str, Any]:
     return {
         "invoice_id": int(invoice_id),
         "line_count": len(line_items),
         "line_level_tax_fields_sent": bool(line_items),
-        "invoice_level_tax_fields_sent": bool(txn_tax_code_ref),
+        "invoice_level_tax_fields_sent": False,
         "global_tax_calculation": str(global_tax_calculation or "").strip() or None,
-        "txn_tax_code_ref": str(txn_tax_code_ref or "").strip() or None,
         "mapped_tax_refs": [
             {
                 "invoice_line_id": detail["invoice_line_id"],
@@ -305,7 +300,7 @@ def _build_invoice_line_items(
     tenant_id: int,
     provider: str,
     line_rows: list[tuple[InvoiceLine, Ticket | None, Product | None]],
-) -> tuple[list[dict[str, Any]], str | None, str | None, list[dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], str | None, list[dict[str, Any]]]:
     product_external_ids: dict[int, str] = {}
     line_items: list[dict[str, Any]] = []
     tax_details: list[dict[str, Any]] = []
@@ -359,18 +354,14 @@ def _build_invoice_line_items(
                 "stored_provider_ref": tax_selection.stored_provider_ref,
                 "display_code": tax_selection.stored_display_code or resolved_invoice_tax_code.display_code,
                 "display_name": resolved_invoice_tax_code.display_name,
-                "configured_line_tax_code_ref": tax_selection.line_tax_code_ref,
-                "invoice_line_tax_code_ref": invoice_line_tax_code_ref,
                 "actual_tax_code_ref_sent": invoice_line_tax_code_ref,
-                "txn_tax_code_ref": tax_selection.txn_tax_code_ref,
-                "uses_pseudo_line_code": bool(tax_selection.uses_pseudo_line_code),
                 "line_net": _money(line.net),
                 "line_tax": _money(line.vat),
                 "line_gross": _money(line.gross),
             }
         )
 
-    return line_items, None, "TaxExcluded", tax_details
+    return line_items, "TaxExcluded", tax_details
 
 
 def _validate_remote_invoice_totals(invoice: Invoice, remote_invoice: dict[str, Any]) -> None:
@@ -434,7 +425,7 @@ def sync_invoice_to_quickbooks(
     if not line_rows:
         raise QuickBooksApiError("Invoice has no lines to sync to QuickBooks.")
     _validate_invoice_totals(invoice, line_rows=line_rows)
-    line_items, txn_tax_code_ref, global_tax_calculation, tax_details = _build_invoice_line_items(
+    line_items, global_tax_calculation, tax_details = _build_invoice_line_items(
         db,
         tenant_id=int(tenant_id),
         provider=provider,
@@ -445,7 +436,6 @@ def sync_invoice_to_quickbooks(
         invoice,
         customer_external_id=str(customer_sync["external_id"]),
         line_items=line_items,
-        txn_tax_code_ref=txn_tax_code_ref,
         global_tax_calculation=global_tax_calculation,
     )
     payload_hash = _payload_hash(payload)
@@ -453,7 +443,6 @@ def sync_invoice_to_quickbooks(
         invoice_id=int(invoice.id),
         line_items=line_items,
         tax_details=tax_details,
-        txn_tax_code_ref=txn_tax_code_ref,
         global_tax_calculation=global_tax_calculation,
     )
 
@@ -504,7 +493,6 @@ def sync_invoice_to_quickbooks(
         "invoice": compact_quickbooks_entity(remote_invoice),
         "line_amount_basis": "net_exclusive",
         "global_tax_calculation": global_tax_calculation,
-        "txn_tax_code_ref": txn_tax_code_ref,
         "tax_payload_summary": tax_payload_summary,
         "local_totals": {
             "net_total": _money(invoice.net_total),

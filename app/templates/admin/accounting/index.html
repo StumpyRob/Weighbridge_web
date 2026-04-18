@@ -50,7 +50,7 @@
   <div class="page-header">
     <div>
       <h1>Accounting Integrations</h1>
-      <p class="muted">Manage tenant-scoped QuickBooks access, a default revenue account, tax mappings, and sandbox readiness before running manual sync jobs.</p>
+      <p class="muted">Connect QuickBooks, confirm revenue and VAT mappings, then run small manual sync batches for this tenant.</p>
     </div>
     <div class="actions btn-group">
       <a class="btn btn--secondary" href="{{ tenant_path('/admin') }}">Back to Settings</a>
@@ -73,7 +73,7 @@
   <div class="stacked-frames">
     <section class="frame">
       <div class="frame-header">
-        <h2>QuickBooks Online</h2>
+        <h2>QuickBooks Connection</h2>
       </div>
       <div class="frame-body">
         <div class="invoice-summary-grid">
@@ -96,7 +96,7 @@
         </div>
 
         <p class="muted">
-          This phase supports tenant-admin setup and manual outbound sandbox sync only. Automatic processing, webhooks, and bidirectional sync are not active.
+          Manual sync is tenant-scoped and operator-triggered. Automatic processing, webhooks, and inbound sync are not active in this phase.
         </p>
 
         <div class="actions btn-group">
@@ -118,7 +118,7 @@
 
         {% if is_connected %}
           <hr>
-          <p class="muted">Manual sync processes up to 5 jobs per click for this tenant only.</p>
+          <p class="muted">Run up to 5 queued jobs per click for this tenant.</p>
           <div class="actions btn-group">
             <form method="post" action="{{ tenant_path('/admin/accounting/run-sync') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
@@ -140,7 +140,7 @@
         <h2>Default Revenue Account</h2>
       </div>
       <div class="frame-body">
-        <p class="muted">Select a default QuickBooks revenue account after connection. If no default is saved, product nominal codes still fall back to exact QuickBooks AcctNum matching for now.</p>
+        <p class="muted">Select the tenant default revenue account after connection. If no default is saved, product nominal codes still fall back to exact QuickBooks AcctNum matching for now.</p>
 
         {% if is_connected %}
           {% if revenue_account_error %}
@@ -155,7 +155,7 @@
               <div>
                 <label for="remote_account_id">Tenant Default Revenue Account</label>
                 <select id="remote_account_id" name="remote_account_id">
-                  <option value="">Use nominal-code fallback only</option>
+                  <option value="">No tenant default - use nominal-code fallback</option>
                   {% for account in revenue_account_options %}
                     <option value="{{ account.remote_account_id }}" {% if current_revenue_account_mapping and current_revenue_account_mapping.remote_account_id == account.remote_account_id %}selected{% endif %}>
                       {{ account.display_label }}
@@ -164,7 +164,7 @@
                 </select>
                 {% if current_revenue_account_mapping %}
                   <div class="hint">
-                    Current default:
+                    Saved default:
                     {% if current_revenue_account_mapping.remote_account_code %}{{ current_revenue_account_mapping.remote_account_code }} - {% endif %}
                     {{ current_revenue_account_mapping.remote_account_name }}
                     {% if current_revenue_account_mapping.remote_account_type %} ({{ current_revenue_account_mapping.remote_account_type }}){% endif %}
@@ -190,10 +190,10 @@
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Configuration Blockers &amp; Readiness</h2>
+        <h2>Setup Status</h2>
       </div>
       <div class="frame-body">
-        <p class="muted">QuickBooks sandbox UAT requires explicit tenant-scoped tax mappings, valid product tax setup, and either a default revenue account or nominal codes that resolve cleanly to QuickBooks income accounts.</p>
+        <p class="muted">Check these before syncing or retrying invoices for this tenant.</p>
 
         <div class="invoice-summary-grid">
           <div class="card">
@@ -209,7 +209,7 @@
             <strong>{{ setup.products_missing_tax_rate if setup else 0 }}</strong>
           </div>
           <div class="card">
-            <div class="summary-label">Products Missing Nominal Code Fallback</div>
+            <div class="summary-label">Products Missing Nominal Fallback</div>
             <strong>{{ setup.products_missing_nominal_code if setup else 0 }}</strong>
           </div>
           <div class="card">
@@ -232,7 +232,7 @@
 
         {% if setup and setup.next_steps %}
           <hr>
-          <h3>Next Steps for Sandbox Testing</h3>
+          <h3>Next Steps</h3>
           <ul>
             {% for step in setup.next_steps %}
               <li>{{ step }}</li>
@@ -282,29 +282,30 @@
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Recent Sync Jobs</h2>
+        <h2>Latest Sync Jobs</h2>
       </div>
       <div class="frame-body">
         {% if recent_jobs %}
+          <p class="muted">Latest 10 jobs for this tenant. Failed invoice jobs include extra mapping context where available.</p>
           <div class="table-responsive">
             <table class="table">
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Type</th>
-                  <th>Entity</th>
+                  <th>Job</th>
+                  <th>Record</th>
                   <th>Status</th>
                   <th>Attempts</th>
                   <th>Updated</th>
-                  <th>Error</th>
+                  <th>Notes</th>
                 </tr>
               </thead>
               <tbody>
                 {% for job in recent_jobs %}
                   <tr>
                     <td>{{ job.id }}</td>
-                    <td>{{ job.job_type }}</td>
-                    <td>{{ job.entity_type }} {{ job.entity_id }}</td>
+                    <td>{{ job.job_type | replace('_', ' ') | title }}</td>
+                    <td>{{ job.entity_type | replace('_', ' ') | title }} {{ job.entity_id }}</td>
                     <td>{{ job.status | replace('_', ' ') | title }}</td>
                     <td>{{ job.attempts }}</td>
                     <td>{{ job.updated_at | uk_datetime('%d/%m/%Y %H:%M:%S') if job.updated_at else '-' }}</td>
@@ -339,10 +340,11 @@
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Recent Accounting Events</h2>
+        <h2>Latest Sync Events</h2>
       </div>
       <div class="frame-body">
         {% if recent_events %}
+          <p class="muted">Latest 10 accounting events for this tenant.</p>
           <div class="table-responsive">
             <table class="table">
               <thead>
@@ -358,8 +360,8 @@
                 {% for event in recent_events %}
                   <tr>
                     <td>{{ event.created_at | uk_datetime('%d/%m/%Y %H:%M:%S') if event.created_at else '-' }}</td>
-                    <td>{{ event.event_type }}</td>
-                    <td>{% if event.entity_type %}{{ event.entity_type }} {{ event.entity_id or '' }}{% else %}-{% endif %}</td>
+                    <td>{{ event.event_type | replace('_', ' ') | title }}</td>
+                    <td>{% if event.entity_type %}{{ event.entity_type | replace('_', ' ') | title }} {{ event.entity_id or '' }}{% else %}-{% endif %}</td>
                     <td>{{ event.direction }}</td>
                     <td>{{ event.summary }}</td>
                   </tr>

@@ -406,9 +406,11 @@ def test_tenant_admin_can_access_admin_accounting(tmp_path, monkeypatch):
         response = client.get("/admin/accounting")
         assert response.status_code == 200
         assert "Accounting Integrations" in response.text
-        assert "QuickBooks Online" in response.text
+        assert "QuickBooks Connection" in response.text
         assert "Manage Tax Mappings" in response.text
-        assert "Configuration Blockers &amp; Readiness" in response.text
+        assert "Setup Status" in response.text
+        assert "Latest Sync Jobs" in response.text
+        assert "Latest Sync Events" in response.text
         assert "qb-client-secret" not in response.text
     finally:
         client.close()
@@ -466,11 +468,11 @@ def test_admin_accounting_can_view_and_save_default_revenue_account_mapping(
         assert page.status_code == 200
         assert "Default Revenue Account" in page.text
         assert (
-            "Select a default QuickBooks revenue account after connection. "
+            "Select the tenant default revenue account after connection. "
             "If no default is saved, product nominal codes still fall back to exact QuickBooks AcctNum matching for now."
         ) in " ".join(page.text.split())
         assert "4100 - Sales Income (Income / SalesOfProductIncome)" in page.text
-        assert "Use nominal-code fallback only" in page.text
+        assert "No tenant default - use nominal-code fallback" in page.text
 
         save_response = _post_with_csrf(
             client,
@@ -494,7 +496,7 @@ def test_admin_accounting_can_view_and_save_default_revenue_account_mapping(
         follow = client.get(save_response.headers["location"])
         assert follow.status_code == 200
         assert "Default revenue account saved." in follow.text
-        assert "Current default:" in follow.text
+        assert "Saved default:" in follow.text
     finally:
         client.close()
         env["app"].dependency_overrides.clear()
@@ -637,8 +639,8 @@ def test_admin_accounting_shows_tax_mapping_blockers(tmp_path, monkeypatch):
                     tenant_id=env["tenant_id"],
                     provider="quickbooks",
                     tax_rate_id=tax_rate_mapped.id,
-                    external_id="QB-TAX-20",
-                    external_code="TAX",
+                    external_id="3",
+                    external_code="20.0% S",
                     is_active=True,
                 ),
                 AccountingSyncJob(
@@ -671,18 +673,18 @@ def test_admin_accounting_shows_tax_mapping_blockers(tmp_path, monkeypatch):
         _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
         response = client.get("/admin/accounting")
         assert response.status_code == 200
-        assert "Configuration Blockers &amp; Readiness" in response.text
+        assert "Setup Status" in response.text
         assert "Required Tax Mappings" in response.text
         assert "Missing Tax Mappings" in response.text
         assert "Products Missing Tax Rate" in response.text
-        assert "Products Missing Nominal Code" in response.text
+        assert "Products Missing Nominal Fallback" in response.text
         assert "Pending Sync Jobs" in response.text
         assert "Failed Sync Jobs" in response.text
-        assert "Next Steps for Sandbox Testing" in response.text
+        assert "Next Steps" in response.text
         assert "Connect this tenant to the QuickBooks sandbox company" not in response.text
         assert "VAT20-ADMIN" in response.text
         assert "ZERO-ADMIN" in response.text
-        assert "QB-TAX-20" in response.text
+        assert "20.0% S" in response.text
         assert "Missing" in response.text
         assert "Review Tax Mappings" in response.text
         assert "qb-access-token" not in response.text

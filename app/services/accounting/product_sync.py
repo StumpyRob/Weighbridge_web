@@ -232,7 +232,8 @@ def sync_product_to_quickbooks(
         "resolved_remote_account_type": resolved_revenue_account.remote_account_type,
         "resolved_remote_account_detail_type": resolved_revenue_account.remote_account_detail_type,
         "tax_mapping_id": tax_selection.tax_map_id,
-        "tax_code_ref": tax_selection.line_tax_code_ref,
+        "tax_provider_ref": tax_selection.stored_provider_ref,
+        "tax_display_code": tax_selection.stored_display_code,
         "taxable": tax_selection.is_taxable,
         "product": compact_quickbooks_entity(synced_item),
     }

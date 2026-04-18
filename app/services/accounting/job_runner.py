@@ -5,7 +5,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from ...models import AccountingSyncJob
@@ -56,6 +56,12 @@ def claim_next_accounting_job(
         _CLAIMABLE_RETRY_STATUSES if retry_failed else _CLAIMABLE_PENDING_STATUSES
     )
     now = utcnow()
+    availability_filter = AccountingSyncJob.available_at <= now
+    if retry_failed:
+        availability_filter = or_(
+            AccountingSyncJob.status == "failed",
+            AccountingSyncJob.available_at <= now,
+        )
     candidate = (
         db.execute(
             select(AccountingSyncJob)
@@ -63,7 +69,7 @@ def claim_next_accounting_job(
                 AccountingSyncJob.tenant_id == int(tenant_id),
                 AccountingSyncJob.provider == str(provider or "").strip().lower(),
                 AccountingSyncJob.status.in_(claimable_statuses),
-                AccountingSyncJob.available_at <= now,
+                availability_filter,
             )
             .order_by(
                 AccountingSyncJob.available_at.asc(),

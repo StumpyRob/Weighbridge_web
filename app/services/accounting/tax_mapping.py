@@ -17,9 +17,6 @@ from .quickbooks_client import (
 from .quickbooks_oauth import QUICKBOOKS_PROVIDER
 from .revenue_account_mapping import get_default_revenue_account_mapping
 
-_PSEUDO_LINE_CODES = {"TAX", "NON"}
-
-
 class TaxMappingValidationError(ValueError):
     pass
 
@@ -30,13 +27,7 @@ def _normalize_text(value: object) -> str | None:
 
 
 def _normalize_external_code(value: object) -> str | None:
-    text = _normalize_text(value)
-    if text is None:
-        return None
-    upper_text = text.upper()
-    if upper_text in _PSEUDO_LINE_CODES:
-        return upper_text
-    return text
+    return _normalize_text(value)
 
 
 def _local_rate_percent(tax_rate: TaxRate | None) -> Decimal:
@@ -69,12 +60,7 @@ class QuickBooksTaxSelection:
     local_rate_percent: Decimal
     stored_provider_ref: str | None
     stored_display_code: str | None
-    line_tax_code_ref: str
-    invoice_line_tax_code_ref: str | None
-    txn_tax_code_ref: str | None
-    display_label: str | None
     is_taxable: bool
-    uses_pseudo_line_code: bool
 
 
 @dataclass(frozen=True)
@@ -126,17 +112,12 @@ class _ResolvedQuickBooksTaxConfig:
     local_tax_label: str
     local_rate_percent: Decimal
     is_taxable: bool
-    line_tax_code_ref: str | None
-    invoice_line_tax_code_ref: str | None
-    txn_tax_code_ref: str | None
-    uses_pseudo_line_code: bool
     issue: str | None
 
 
 @dataclass(frozen=True)
 class _QuickBooksTaxMapAssessment:
     config: _ResolvedQuickBooksTaxConfig
-    display_label: str | None
     is_present: bool
     is_active: bool
     is_usable: bool
@@ -163,55 +144,19 @@ def _resolve_quickbooks_tax_configuration(
     local_rate_percent = _local_rate_percent(tax_rate)
     is_taxable = local_rate_percent > Decimal("0")
     normalized_external_id = _normalize_text(external_id)
-    normalized_external_code = _normalize_external_code(external_code)
-    if not normalized_external_id and not normalized_external_code:
+    if not normalized_external_id:
         return _ResolvedQuickBooksTaxConfig(
             local_tax_label=local_label,
             local_rate_percent=local_rate_percent,
             is_taxable=is_taxable,
-            line_tax_code_ref=None,
-            invoice_line_tax_code_ref=None,
-            txn_tax_code_ref=None,
-            uses_pseudo_line_code=False,
-            issue="QuickBooks external ID or external code is required.",
+            issue="QuickBooks provider ref is required.",
         )
-
-    line_ref = normalized_external_code or normalized_external_id
-    assert line_ref is not None
-    normalized_line_ref = line_ref.upper()
-    uses_pseudo_line_code = normalized_line_ref in _PSEUDO_LINE_CODES
-    txn_tax_code_ref: str | None = None
-    issue: str | None = None
-    invoice_line_tax_code_ref = normalized_external_id or (
-        None if uses_pseudo_line_code else line_ref
-    )
-
-    if uses_pseudo_line_code:
-        if normalized_line_ref == "NON" and is_taxable:
-            issue = f"Local tax rate {local_label} is taxable and cannot map to NON."
-        elif normalized_line_ref == "TAX":
-            txn_tax_code_ref = (
-                normalized_external_id
-                if normalized_external_id and normalized_external_id.upper() != "TAX"
-                else None
-            )
-            if not txn_tax_code_ref:
-                issue = (
-                    "QuickBooks TAX mappings require an invoice tax code/group external ID."
-                )
-            elif not is_taxable:
-                issue = f"Local tax rate {local_label} is non-taxable and cannot map to TAX."
-        line_ref = normalized_line_ref
 
     return _ResolvedQuickBooksTaxConfig(
         local_tax_label=local_label,
         local_rate_percent=local_rate_percent,
         is_taxable=is_taxable,
-        line_tax_code_ref=line_ref,
-        invoice_line_tax_code_ref=invoice_line_tax_code_ref,
-        txn_tax_code_ref=txn_tax_code_ref,
-        uses_pseudo_line_code=uses_pseudo_line_code,
-        issue=issue,
+        issue=None,
     )
 
 
@@ -411,7 +356,6 @@ def _assess_quickbooks_tax_mapping(
     *,
     provider_tax_code_options: list[ProviderTaxCodeOption] | None = None,
 ) -> _QuickBooksTaxMapAssessment:
-    display_label = _normalize_text(getattr(tax_map, "name", None)) or _local_tax_label(tax_rate)
     if tax_map is None:
         config = _resolve_quickbooks_tax_configuration(
             tax_rate,
@@ -420,7 +364,6 @@ def _assess_quickbooks_tax_mapping(
         )
         return _QuickBooksTaxMapAssessment(
             config=config,
-            display_label=display_label,
             is_present=False,
             is_active=False,
             is_usable=False,
@@ -442,7 +385,6 @@ def _assess_quickbooks_tax_mapping(
     if config.issue or provider_ref_issue:
         return _QuickBooksTaxMapAssessment(
             config=config,
-            display_label=display_label,
             is_present=True,
             is_active=is_active,
             is_usable=False,
@@ -452,7 +394,6 @@ def _assess_quickbooks_tax_mapping(
     if not is_active:
         return _QuickBooksTaxMapAssessment(
             config=config,
-            display_label=display_label,
             is_present=True,
             is_active=False,
             is_usable=False,
@@ -461,7 +402,6 @@ def _assess_quickbooks_tax_mapping(
         )
     return _QuickBooksTaxMapAssessment(
         config=config,
-        display_label=display_label,
         is_present=True,
         is_active=True,
         is_usable=True,
@@ -524,7 +464,6 @@ def require_quickbooks_tax_selection(
             f"{usage_label} uses local tax rate {assessment.config.local_tax_label}, but its QuickBooks tax mapping is invalid: {assessment.status_detail}"
         )
     assert tax_map is not None
-    assert assessment.config.line_tax_code_ref is not None
     return QuickBooksTaxSelection(
         tax_rate_id=int(tax_map.tax_rate_id),
         tax_map_id=int(tax_map.id),
@@ -532,12 +471,7 @@ def require_quickbooks_tax_selection(
         local_rate_percent=assessment.config.local_rate_percent,
         stored_provider_ref=_normalize_text(tax_map.external_id),
         stored_display_code=_normalize_text(tax_map.external_code),
-        line_tax_code_ref=assessment.config.line_tax_code_ref,
-        invoice_line_tax_code_ref=assessment.config.invoice_line_tax_code_ref,
-        txn_tax_code_ref=assessment.config.txn_tax_code_ref,
-        display_label=assessment.display_label,
         is_taxable=assessment.config.is_taxable,
-        uses_pseudo_line_code=assessment.config.uses_pseudo_line_code,
     )
 
 
@@ -923,7 +857,7 @@ def _duplicate_external_code_owner(
     current_mapping_id: int | None,
 ) -> AccountingTaxMap | None:
     normalized_external_code = _normalize_external_code(external_code)
-    if normalized_external_code is None or normalized_external_code in _PSEUDO_LINE_CODES:
+    if normalized_external_code is None:
         return None
     query = select(AccountingTaxMap).where(
         AccountingTaxMap.tenant_id == int(tenant_id),
