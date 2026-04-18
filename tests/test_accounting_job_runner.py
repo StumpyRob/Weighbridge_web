@@ -451,11 +451,28 @@ def test_invoice_job_runs_and_writes_invoice_sync_row(db_session, monkeypatch):
         if url.endswith("/query"):
             return _response(200, {"QueryResponse": {}})
         if url.endswith("/invoice"):
+            line_tax_ref = json["Line"][0]["SalesItemLineDetail"]["TaxCodeRef"]["value"]
+            if line_tax_ref == "TAX" or "TxnTaxDetail" in json or json.get("GlobalTaxCalculation") != "TaxExcluded":
+                return _response(
+                    400,
+                    {
+                        "Fault": {
+                            "type": "ValidationFault",
+                            "Error": [
+                                {
+                                    "code": "6000",
+                                    "Message": "Business Validation Error",
+                                    "Detail": "Make sure all your transactions have a VAT rate before you save.",
+                                }
+                            ],
+                        }
+                    },
+                )
             assert json["DocNumber"] == "INV-QB-1"
             assert json["Line"][0]["Amount"] == 10.0
-            assert json["Line"][0]["SalesItemLineDetail"]["TaxCodeRef"]["value"] == "TAX"
-            assert json["TxnTaxDetail"]["TxnTaxCodeRef"]["value"] == "QB-TAX-GROUP-20"
-            assert "GlobalTaxCalculation" not in json
+            assert line_tax_ref == "QB-TAX-GROUP-20"
+            assert "TxnTaxDetail" not in json
+            assert json["GlobalTaxCalculation"] == "TaxExcluded"
             return _response(
                 200,
                 {
@@ -483,9 +500,294 @@ def test_invoice_job_runs_and_writes_invoice_sync_row(db_session, monkeypatch):
     assert sync_row.external_doc_number == "INV-QB-1"
     assert sync_row.sync_status == "invoice_synced"
     assert sync_row.provider_response_json["line_amount_basis"] == "net_exclusive"
-    assert sync_row.provider_response_json["txn_tax_code_ref"] == "QB-TAX-GROUP-20"
+    assert sync_row.provider_response_json["txn_tax_code_ref"] is None
+    assert sync_row.provider_response_json["global_tax_calculation"] == "TaxExcluded"
+    assert sync_row.provider_response_json["tax_payload_summary"]["line_level_tax_fields_sent"] is True
+    assert sync_row.provider_response_json["tax_payload_summary"]["invoice_level_tax_fields_sent"] is False
+    assert (
+        sync_row.provider_response_json["tax_payload_summary"]["mapped_tax_refs"][0]["mapped_tax_code_ref"]
+        == "QB-TAX-GROUP-20"
+    )
     assert sync_row.provider_response_json["local_totals"]["gross_total"] == 12.0
     assert _job(db_session, job_type="sync_invoice").status == "succeeded"
+
+
+def test_invoice_job_supports_mixed_explicit_uk_tax_refs(db_session, monkeypatch):
+    _configure_settings(monkeypatch)
+    customer = Customer(account_code="C-QB-INV-MIX-1", name="Invoice Mixed Tax Customer")
+    taxable_rate = TaxRate(
+        code="QB VAT 20",
+        description="QuickBooks VAT 20",
+        rate_percent=Decimal("20.000"),
+        is_active=True,
+    )
+    zero_rate = TaxRate(
+        code="QB VAT 0",
+        description="QuickBooks VAT 0",
+        rate_percent=Decimal("0.000"),
+        is_active=True,
+    )
+    product_a = Product(
+        code="QB-INV-MIX-A",
+        description="Invoice Mixed Product A",
+        nominal_code="4000",
+        unit_price=Decimal("12.00"),
+        tax_rate=taxable_rate,
+    )
+    product_b = Product(
+        code="QB-INV-MIX-B",
+        description="Invoice Mixed Product B",
+        nominal_code="4000",
+        unit_price=Decimal("5.00"),
+        tax_rate=zero_rate,
+    )
+    invoice = Invoice(
+        invoice_no="INV-QB-MIX-1",
+        customer_id=1,
+        invoice_date=date(2026, 2, 12),
+        due_date=date(2026, 3, 12),
+        status="DRAFT",
+        net_total=Decimal("15.00"),
+        vat_total=Decimal("2.00"),
+        gross_total=Decimal("17.00"),
+    )
+    db_session.add_all([customer, taxable_rate, zero_rate, product_a, product_b])
+    db_session.flush()
+    invoice.customer_id = customer.id
+    db_session.add(invoice)
+    db_session.flush()
+    line_one = InvoiceLine(
+        invoice_id=invoice.id,
+        description="Invoice Mixed Line 1",
+        quantity=Decimal("1.000"),
+        unit_price=Decimal("10.00"),
+        net=Decimal("10.00"),
+        vat=Decimal("2.00"),
+        gross=Decimal("12.00"),
+        product_snapshot_json={
+            "product_id": product_a.id,
+            "product_code": product_a.code,
+            "tax_rate_id": taxable_rate.id,
+            "tax_rate_code": taxable_rate.code,
+            "tax_rate_percent": "20.000",
+            "nominal_code": "4000",
+        },
+    )
+    line_two = InvoiceLine(
+        invoice_id=invoice.id,
+        description="Invoice Mixed Line 2",
+        quantity=Decimal("1.000"),
+        unit_price=Decimal("5.00"),
+        net=Decimal("5.00"),
+        vat=Decimal("0.00"),
+        gross=Decimal("5.00"),
+        product_snapshot_json={
+            "product_id": product_b.id,
+            "product_code": product_b.code,
+            "tax_rate_id": zero_rate.id,
+            "tax_rate_code": zero_rate.code,
+            "tax_rate_percent": "0.000",
+            "nominal_code": "4000",
+        },
+    )
+    db_session.add_all([line_one, line_two])
+    db_session.flush()
+    db_session.commit()
+    _seed_tax_map(
+        db_session,
+        tax_rate=taxable_rate,
+        external_id="QB-VAT-20",
+        external_code="TAX",
+    )
+    _seed_tax_map(
+        db_session,
+        tax_rate=zero_rate,
+        external_id="QB-VAT-0",
+        external_code="NON",
+    )
+    _seed_connection(db_session)
+
+    enqueue_sync_invoice(db_session, tenant_id=1, invoice_id=invoice.id)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        invoice_sync_module,
+        "sync_customer_to_quickbooks",
+        lambda *args, **kwargs: {"external_id": "QB-CUST-INV-MIX"},
+    )
+    monkeypatch.setattr(
+        invoice_sync_module,
+        "sync_product_to_quickbooks",
+        lambda *args, **kwargs: {
+            "external_id": "QB-ITEM-MIX-A"
+            if int(kwargs["product_id"]) == int(product_a.id)
+            else "QB-ITEM-MIX-B"
+        },
+    )
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        if url.endswith("/query"):
+            return _response(200, {"QueryResponse": {}})
+        if url.endswith("/invoice"):
+            assert json["GlobalTaxCalculation"] == "TaxExcluded"
+            assert "TxnTaxDetail" not in json
+            assert len(json["Line"]) == 2
+            assert json["Line"][0]["SalesItemLineDetail"]["TaxCodeRef"]["value"] == "QB-VAT-20"
+            assert json["Line"][1]["SalesItemLineDetail"]["TaxCodeRef"]["value"] == "QB-VAT-0"
+            return _response(
+                200,
+                {
+                    "Invoice": {
+                        "Id": "QB-INV-MIX-1",
+                        "DocNumber": "INV-QB-MIX-1",
+                        "SyncToken": "0",
+                        "TotalAmt": 17.0,
+                        "TxnTaxDetail": {"TotalTax": 2.0},
+                    }
+                },
+            )
+        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+
+    result = process_pending_accounting_jobs(db_session, tenant_id=1, limit=1)
+
+    assert result.processed == 1
+    assert result.succeeded == 1
+    sync_row = db_session.execute(
+        select(AccountingInvoiceSync).where(AccountingInvoiceSync.invoice_id == invoice.id)
+    ).scalar_one()
+    assert sync_row.sync_status == "invoice_synced"
+    assert sync_row.provider_response_json["tax_payload_summary"]["mapped_tax_refs"] == [
+        {
+            "invoice_line_id": line_one.id,
+            "tax_rate_id": taxable_rate.id,
+            "local_tax_label": "QB VAT 20 (QuickBooks VAT 20)",
+            "mapped_tax_code_ref": "QB-VAT-20",
+            "configured_line_tax_code_ref": "TAX",
+        },
+        {
+            "invoice_line_id": line_two.id,
+            "tax_rate_id": zero_rate.id,
+            "local_tax_label": "QB VAT 0 (QuickBooks VAT 0)",
+            "mapped_tax_code_ref": "QB-VAT-0",
+            "configured_line_tax_code_ref": "NON",
+        },
+    ]
+
+
+def test_invoice_job_logs_tax_payload_summary_when_quickbooks_rejects_vat_payload(
+    db_session,
+    monkeypatch,
+    caplog,
+):
+    _configure_settings(monkeypatch)
+    customer = Customer(account_code="C-QB-INV-VAT-FAIL", name="Invoice VAT Failure Customer")
+    tax_rate = TaxRate(
+        code="QB VAT FAIL LOG",
+        description="QuickBooks VAT Fail Log",
+        rate_percent=Decimal("20.000"),
+        is_active=True,
+    )
+    product = Product(
+        code="QB-INV-VAT-FAIL",
+        description="Invoice VAT Failure Product",
+        nominal_code="4000",
+        unit_price=Decimal("12.00"),
+        tax_rate=tax_rate,
+    )
+    invoice = Invoice(
+        invoice_no="INV-QB-VAT-FAIL",
+        customer_id=1,
+        invoice_date=date(2026, 2, 12),
+        due_date=date(2026, 3, 12),
+        status="DRAFT",
+        net_total=Decimal("10.00"),
+        vat_total=Decimal("2.00"),
+        gross_total=Decimal("12.00"),
+    )
+    db_session.add_all([customer, tax_rate, product])
+    db_session.flush()
+    invoice.customer_id = customer.id
+    db_session.add(invoice)
+    db_session.flush()
+    db_session.add(
+        InvoiceLine(
+            invoice_id=invoice.id,
+            description="Invoice VAT Failure Line",
+            quantity=Decimal("1.000"),
+            unit_price=Decimal("10.00"),
+            net=Decimal("10.00"),
+            vat=Decimal("2.00"),
+            gross=Decimal("12.00"),
+            product_snapshot_json={
+                "product_id": product.id,
+                "product_code": product.code,
+                "tax_rate_id": tax_rate.id,
+                "tax_rate_code": tax_rate.code,
+                "tax_rate_percent": "20.000",
+                "nominal_code": "4000",
+            },
+        )
+    )
+    db_session.commit()
+    _seed_tax_map(
+        db_session,
+        tax_rate=tax_rate,
+        external_id="QB-VAT-FAIL-20",
+        external_code="TAX",
+    )
+    _seed_connection(db_session)
+
+    enqueue_sync_invoice(db_session, tenant_id=1, invoice_id=invoice.id)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        invoice_sync_module,
+        "sync_customer_to_quickbooks",
+        lambda *args, **kwargs: {"external_id": "QB-CUST-VAT-FAIL"},
+    )
+    monkeypatch.setattr(
+        invoice_sync_module,
+        "sync_product_to_quickbooks",
+        lambda *args, **kwargs: {"external_id": "QB-ITEM-VAT-FAIL"},
+    )
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        if url.endswith("/query"):
+            return _response(200, {"QueryResponse": {}})
+        if url.endswith("/invoice"):
+            return _response(
+                400,
+                {
+                    "Fault": {
+                        "type": "ValidationFault",
+                        "Error": [
+                            {
+                                "code": "6000",
+                                "Message": "Business Validation Error",
+                                "Detail": "Make sure all your transactions have a VAT rate before you save.",
+                            }
+                        ],
+                    }
+                },
+            )
+        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+
+    with caplog.at_level(logging.WARNING):
+        result = process_pending_accounting_jobs(db_session, tenant_id=1, limit=1)
+
+    assert result.processed == 1
+    assert result.failed == 1
+    job = _job(db_session, job_type="sync_invoice")
+    assert job.status == "failed"
+    assert "vat rate before you save" in (job.error_text or "").lower()
+    assert f"QuickBooks invoice sync failed for invoice {invoice.id}" in caplog.text
+    failed_payloads = _event_payloads(db_session, event_type="job_failed")
+    assert any('"tax_payload_summary"' in payload for payload in failed_payloads)
+    assert any('"mapped_tax_code_ref": "QB-VAT-FAIL-20"' in payload for payload in failed_payloads)
 
 
 def test_invoice_job_prefers_default_revenue_account_mapping_over_nominal_fallback(
@@ -1028,6 +1330,83 @@ def test_paid_job_runs_and_updates_sync_state(db_session, monkeypatch):
     ).scalar_one()
     assert sync_row.sync_status == "payment_synced"
     assert sync_row.provider_response_json["payment"]["id"] == "QB-PAY-1"
+
+
+def test_paid_job_fails_when_remote_invoice_is_missing(db_session, monkeypatch):
+    _configure_settings(monkeypatch)
+    customer = Customer(account_code="C-QB-PAID-MISSING", name="Paid Missing Invoice Customer")
+    invoice = Invoice(
+        invoice_no="INV-QB-PAID-MISSING",
+        customer_id=1,
+        invoice_date=date(2026, 1, 10),
+        due_date=date(2026, 1, 20),
+        status="PAID",
+        paid_at=datetime(2026, 1, 12, 8, 30, 0),
+        net_total=Decimal("10.00"),
+        vat_total=Decimal("2.00"),
+        gross_total=Decimal("12.00"),
+    )
+    db_session.add(customer)
+    db_session.flush()
+    invoice.customer_id = customer.id
+    db_session.add(invoice)
+    db_session.commit()
+    _seed_connection(db_session)
+
+    enqueue_mark_invoice_paid(db_session, tenant_id=1, invoice_id=invoice.id)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        invoice_sync_module,
+        "sync_customer_to_quickbooks",
+        lambda *args, **kwargs: {"external_id": "QB-CUST-PAID-MISSING"},
+    )
+    monkeypatch.setattr(
+        invoice_sync_module,
+        "sync_invoice_to_quickbooks",
+        lambda *args, **kwargs: {
+            "external_id": "QB-INV-MISSING",
+            "external_doc_number": "INV-QB-PAID-MISSING",
+        },
+    )
+
+    payment_called = {"value": False}
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        if url.endswith("/invoice/QB-INV-MISSING"):
+            return _response(
+                400,
+                {
+                    "Fault": {
+                        "type": "ValidationFault",
+                        "Error": [
+                            {
+                                "code": "610",
+                                "Message": "Object Not Found",
+                                "Detail": "Object Not Found : Something you're trying to use has been made inactive.",
+                            }
+                        ],
+                    }
+                },
+            )
+        if url.endswith("/payment"):
+            payment_called["value"] = True
+            raise AssertionError("Payment should not be created when the remote invoice does not exist.")
+        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+
+    result = process_pending_accounting_jobs(db_session, tenant_id=1, limit=1)
+
+    assert result.processed == 1
+    assert result.failed == 1
+    assert payment_called["value"] is False
+    job = _job(db_session, job_type="mark_invoice_paid")
+    assert job.status == "failed"
+    sync_row = db_session.execute(
+        select(AccountingInvoiceSync).where(AccountingInvoiceSync.invoice_id == invoice.id)
+    ).scalar_one()
+    assert sync_row.sync_status == "failed"
 
 
 def test_failed_provider_response_marks_job_failed_cleanly(db_session, monkeypatch):

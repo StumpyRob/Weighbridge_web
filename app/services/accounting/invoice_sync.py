@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from decimal import Decimal
 from typing import Any
 
@@ -28,6 +29,8 @@ from .quickbooks_client import (
 )
 from .quickbooks_oauth import QUICKBOOKS_PROVIDER
 from .tax_mapping import QuickBooksTaxSelection, require_quickbooks_tax_selection
+
+logger = logging.getLogger(__name__)
 
 
 def _payload_hash(payload: dict[str, Any]) -> str:
@@ -242,7 +245,7 @@ def _invoice_line_payload(
     line: InvoiceLine,
     *,
     item_external_id: str,
-    tax_selection: QuickBooksTaxSelection,
+    line_tax_code_ref: str,
 ) -> dict[str, Any]:
     amount = _money(line.net)
     qty = _quantity(line.quantity)
@@ -258,8 +261,49 @@ def _invoice_line_payload(
             "ItemRef": {"value": str(item_external_id)},
             "Qty": qty,
             "UnitPrice": unit_price,
-            "TaxCodeRef": {"value": tax_selection.line_tax_code_ref},
+            "TaxCodeRef": {"value": str(line_tax_code_ref)},
         },
+    }
+
+
+def _require_invoice_line_tax_code_ref(
+    line: InvoiceLine,
+    *,
+    tax_selection: QuickBooksTaxSelection,
+) -> str:
+    explicit_line_tax_code_ref = str(tax_selection.invoice_line_tax_code_ref or "").strip()
+    if explicit_line_tax_code_ref:
+        return explicit_line_tax_code_ref
+    raise QuickBooksApiError(
+        f"Invoice line {line.id} uses local tax rate {tax_selection.local_tax_label}, but its QuickBooks tax mapping does not include an explicit QuickBooks VAT/tax code external ID required for invoice sync."
+    )
+
+
+def _tax_payload_summary(
+    *,
+    invoice_id: int,
+    line_items: list[dict[str, Any]],
+    tax_details: list[dict[str, Any]],
+    txn_tax_code_ref: str | None,
+    global_tax_calculation: str | None,
+) -> dict[str, Any]:
+    return {
+        "invoice_id": int(invoice_id),
+        "line_count": len(line_items),
+        "line_level_tax_fields_sent": bool(line_items),
+        "invoice_level_tax_fields_sent": bool(txn_tax_code_ref),
+        "global_tax_calculation": str(global_tax_calculation or "").strip() or None,
+        "txn_tax_code_ref": str(txn_tax_code_ref or "").strip() or None,
+        "mapped_tax_refs": [
+            {
+                "invoice_line_id": detail["invoice_line_id"],
+                "tax_rate_id": detail["tax_rate_id"],
+                "local_tax_label": detail["local_tax_label"],
+                "mapped_tax_code_ref": detail["invoice_line_tax_code_ref"],
+                "configured_line_tax_code_ref": detail["configured_line_tax_code_ref"],
+            }
+            for detail in tax_details
+        ],
     }
 
 
@@ -273,8 +317,6 @@ def _build_invoice_line_items(
     product_external_ids: dict[int, str] = {}
     line_items: list[dict[str, Any]] = []
     tax_details: list[dict[str, Any]] = []
-    pseudo_mode: bool | None = None
-    txn_tax_code_refs: set[str] = set()
 
     for line, ticket, product in line_rows:
         product_id = _invoice_line_product_id(line, ticket=ticket, product=product)
@@ -299,21 +341,16 @@ def _build_invoice_line_items(
             tax_rate_id=_invoice_line_tax_rate_id(line),
             usage_label=f"Invoice line {line.id}",
         )
-        if pseudo_mode is None:
-            pseudo_mode = tax_selection.uses_pseudo_line_code
-        elif pseudo_mode != tax_selection.uses_pseudo_line_code:
-            raise QuickBooksApiError(
-                "Invoice mixes incompatible QuickBooks tax mapping styles; use either pseudo TAX/NON mappings or direct tax-code mappings on all lines."
-            )
-
-        if tax_selection.txn_tax_code_ref:
-            txn_tax_code_refs.add(str(tax_selection.txn_tax_code_ref))
+        invoice_line_tax_code_ref = _require_invoice_line_tax_code_ref(
+            line,
+            tax_selection=tax_selection,
+        )
 
         line_items.append(
             _invoice_line_payload(
                 line,
                 item_external_id=product_external_ids[product_id],
-                tax_selection=tax_selection,
+                line_tax_code_ref=invoice_line_tax_code_ref,
             )
         )
         tax_details.append(
@@ -323,31 +360,17 @@ def _build_invoice_line_items(
                 "tax_rate_id": int(tax_selection.tax_rate_id),
                 "tax_map_id": int(tax_selection.tax_map_id),
                 "local_tax_label": tax_selection.local_tax_label,
-                "line_tax_code_ref": tax_selection.line_tax_code_ref,
+                "configured_line_tax_code_ref": tax_selection.line_tax_code_ref,
+                "invoice_line_tax_code_ref": invoice_line_tax_code_ref,
                 "txn_tax_code_ref": tax_selection.txn_tax_code_ref,
+                "uses_pseudo_line_code": bool(tax_selection.uses_pseudo_line_code),
                 "line_net": _money(line.net),
                 "line_tax": _money(line.vat),
                 "line_gross": _money(line.gross),
             }
         )
 
-    txn_tax_code_ref: str | None = None
-    global_tax_calculation: str | None = None
-    if pseudo_mode:
-        if len(txn_tax_code_refs) > 1:
-            raise QuickBooksApiError(
-                "QuickBooks invoice sync found multiple invoice-level tax code mappings on one invoice."
-            )
-        if any(_decimal_money(line.vat) > Decimal("0.00") for line, _ticket, _product in line_rows):
-            txn_tax_code_ref = next(iter(txn_tax_code_refs), None)
-            if not txn_tax_code_ref:
-                raise QuickBooksApiError(
-                    "QuickBooks invoice sync is missing an invoice-level tax code/group mapping for taxable lines."
-                )
-    else:
-        global_tax_calculation = "TaxExcluded"
-
-    return line_items, txn_tax_code_ref, global_tax_calculation, tax_details
+    return line_items, None, "TaxExcluded", tax_details
 
 
 def _validate_remote_invoice_totals(invoice: Invoice, remote_invoice: dict[str, Any]) -> None:
@@ -426,18 +449,40 @@ def sync_invoice_to_quickbooks(
         global_tax_calculation=global_tax_calculation,
     )
     payload_hash = _payload_hash(payload)
-
-    matches = client.query_entities(
-        "invoice",
-        f"SELECT * FROM Invoice WHERE DocNumber = '{quote_query_value(invoice.invoice_no)}'",
+    tax_payload_summary = _tax_payload_summary(
+        invoice_id=int(invoice.id),
+        line_items=line_items,
+        tax_details=tax_details,
+        txn_tax_code_ref=txn_tax_code_ref,
+        global_tax_calculation=global_tax_calculation,
     )
-    if matches:
-        remote_invoice = matches[0]
-        response_status_code = 200
-    else:
-        result = client.create_entity("invoice", payload)
-        remote_invoice = result.payload
-        response_status_code = result.status_code
+
+    try:
+        matches = client.query_entities(
+            "invoice",
+            f"SELECT * FROM Invoice WHERE DocNumber = '{quote_query_value(invoice.invoice_no)}'",
+        )
+        if matches:
+            remote_invoice = matches[0]
+            response_status_code = 200
+        else:
+            result = client.create_entity("invoice", payload)
+            remote_invoice = result.payload
+            response_status_code = result.status_code
+    except QuickBooksApiError as exc:
+        logger.warning(
+            "QuickBooks invoice sync failed for invoice %s with tax payload summary %s",
+            invoice.id,
+            tax_payload_summary,
+        )
+        detail_json = dict(exc.detail_json or {})
+        detail_json["tax_payload_summary"] = tax_payload_summary
+        raise QuickBooksApiError(
+            str(exc),
+            status_code=exc.status_code,
+            detail_json=detail_json,
+            auth_error=exc.auth_error,
+        ) from exc
 
     _validate_remote_invoice_totals(invoice, remote_invoice)
 
@@ -460,6 +505,7 @@ def sync_invoice_to_quickbooks(
         "line_amount_basis": "net_exclusive",
         "global_tax_calculation": global_tax_calculation,
         "txn_tax_code_ref": txn_tax_code_ref,
+        "tax_payload_summary": tax_payload_summary,
         "local_totals": {
             "net_total": _money(invoice.net_total),
             "tax_total": _money(invoice.vat_total),

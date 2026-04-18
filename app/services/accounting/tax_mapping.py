@@ -63,6 +63,7 @@ class QuickBooksTaxSelection:
     local_tax_label: str
     local_rate_percent: Decimal
     line_tax_code_ref: str
+    invoice_line_tax_code_ref: str | None
     txn_tax_code_ref: str | None
     display_label: str | None
     is_taxable: bool
@@ -109,6 +110,7 @@ class _ResolvedQuickBooksTaxConfig:
     local_rate_percent: Decimal
     is_taxable: bool
     line_tax_code_ref: str | None
+    invoice_line_tax_code_ref: str | None
     txn_tax_code_ref: str | None
     uses_pseudo_line_code: bool
     issue: str | None
@@ -142,6 +144,7 @@ def _resolve_quickbooks_tax_configuration(
             local_rate_percent=local_rate_percent,
             is_taxable=is_taxable,
             line_tax_code_ref=None,
+            invoice_line_tax_code_ref=None,
             txn_tax_code_ref=None,
             uses_pseudo_line_code=False,
             issue="QuickBooks external ID or external code is required.",
@@ -153,6 +156,9 @@ def _resolve_quickbooks_tax_configuration(
     uses_pseudo_line_code = normalized_line_ref in _PSEUDO_LINE_CODES
     txn_tax_code_ref: str | None = None
     issue: str | None = None
+    invoice_line_tax_code_ref = normalized_external_id or (
+        None if uses_pseudo_line_code else line_ref
+    )
 
     if uses_pseudo_line_code:
         if normalized_line_ref == "NON" and is_taxable:
@@ -176,6 +182,7 @@ def _resolve_quickbooks_tax_configuration(
         local_rate_percent=local_rate_percent,
         is_taxable=is_taxable,
         line_tax_code_ref=line_ref,
+        invoice_line_tax_code_ref=invoice_line_tax_code_ref,
         txn_tax_code_ref=txn_tax_code_ref,
         uses_pseudo_line_code=uses_pseudo_line_code,
         issue=issue,
@@ -301,6 +308,7 @@ def require_quickbooks_tax_selection(
         local_tax_label=assessment.config.local_tax_label,
         local_rate_percent=assessment.config.local_rate_percent,
         line_tax_code_ref=assessment.config.line_tax_code_ref,
+        invoice_line_tax_code_ref=assessment.config.invoice_line_tax_code_ref,
         txn_tax_code_ref=assessment.config.txn_tax_code_ref,
         display_label=assessment.display_label,
         is_taxable=assessment.config.is_taxable,
