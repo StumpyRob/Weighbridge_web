@@ -11,6 +11,7 @@ from ..pricing import product_effective_nominal_code
 from .jobs import get_active_accounting_connection
 from .quickbooks_client import (
     QuickBooksApiError,
+    QuickBooksTaxDiscovery,
     QuickBooksTaxCode,
     quickbooks_client_for_connection,
 )
@@ -89,6 +90,26 @@ class ProviderTaxCodeOption:
     description: str | None
     is_active: bool
     display_label: str
+
+
+@dataclass(frozen=True)
+class QuickBooksTaxDiscoveryState:
+    provider_tax_code_options: list[ProviderTaxCodeOption]
+    using_sales_tax: bool | None
+    partner_tax_enabled: bool | None
+    company_country: str | None
+    company_country_subdivision_code: str | None
+    tax_rate_count: int
+    tax_agency_count: int
+    tax_code_error: str | None
+    tax_rate_error: str | None
+    tax_agency_error: str | None
+    preferences_error: str | None
+    company_info_error: str | None
+
+    @property
+    def is_automated_tax(self) -> bool:
+        return bool(self.partner_tax_enabled)
 
 
 @dataclass(frozen=True)
@@ -229,6 +250,51 @@ def list_quickbooks_tax_codes(
         )
     )
     return options
+
+
+def _quickbooks_tax_discovery_state(
+    discovery: QuickBooksTaxDiscovery,
+) -> QuickBooksTaxDiscoveryState:
+    options = [
+        _provider_tax_code_option(tax_code)
+        for tax_code in discovery.tax_codes
+        if tax_code.is_active
+    ]
+    options.sort(
+        key=lambda option: (
+            str(option.display_code or "").lower(),
+            str(option.display_name or "").lower(),
+            str(option.remote_tax_code_id or ""),
+        )
+    )
+    return QuickBooksTaxDiscoveryState(
+        provider_tax_code_options=options,
+        using_sales_tax=discovery.using_sales_tax,
+        partner_tax_enabled=discovery.partner_tax_enabled,
+        company_country=discovery.company_country,
+        company_country_subdivision_code=discovery.company_country_subdivision_code,
+        tax_rate_count=len(discovery.tax_rates),
+        tax_agency_count=len(discovery.tax_agencies),
+        tax_code_error=discovery.tax_code_error,
+        tax_rate_error=discovery.tax_rate_error,
+        tax_agency_error=discovery.tax_agency_error,
+        preferences_error=discovery.preferences_error,
+        company_info_error=discovery.company_info_error,
+    )
+
+
+def inspect_quickbooks_tax_discovery(
+    db: Session,
+    *,
+    tenant_id: int,
+    provider: str = QUICKBOOKS_PROVIDER,
+) -> QuickBooksTaxDiscoveryState:
+    client = _connected_quickbooks_client(
+        db,
+        tenant_id=int(tenant_id),
+        provider=provider,
+    )
+    return _quickbooks_tax_discovery_state(client.describe_tax_discovery())
 
 
 def list_provider_tax_codes(
@@ -708,9 +774,9 @@ def summarize_quickbooks_setup(
     tenant_id: int,
     connection_status: str | None,
     provider: str = QUICKBOOKS_PROVIDER,
+    provider_tax_code_options: list[ProviderTaxCodeOption] | None = None,
 ) -> QuickBooksSetupSummary:
-    provider_tax_code_options: list[ProviderTaxCodeOption] | None = None
-    if str(connection_status or "").strip().lower() == "connected":
+    if provider_tax_code_options is None and str(connection_status or "").strip().lower() == "connected":
         try:
             provider_tax_code_options = list_provider_tax_codes(
                 db,

@@ -26,6 +26,7 @@
 {% block content %}
   {% set setup = setup_summary %}
   {% set is_connected = connection and connection.status == "connected" %}
+  {% set auto_managed_tax = tax_discovery and tax_discovery.is_automated_tax %}
   <div class="page-header">
     <div>
       <h1>QuickBooks Tax Mappings</h1>
@@ -66,8 +67,13 @@
         </p>
         {% if tax_code_error %}
           <p class="muted">QuickBooks tax codes could not be loaded: {{ tax_code_error }}</p>
+        {% elif auto_managed_tax %}
+          <p class="muted">This QuickBooks company uses automated VAT. Manual tax mapping is not required.</p>
         {% elif is_connected and not tax_code_options %}
           <p class="muted">No QuickBooks tax codes found in this company.</p>
+          {% if tax_discovery and (tax_discovery.tax_rate_count or tax_discovery.tax_agency_count) %}
+            <p class="muted">QuickBooks returned {{ tax_discovery.tax_rate_count }} tax rate{% if tax_discovery.tax_rate_count != 1 %}s{% endif %} and {{ tax_discovery.tax_agency_count }} tax agenc{% if tax_discovery.tax_agency_count == 1 %}y{% else %}ies{% endif %}, but no TaxCode records for manual mapping.</p>
+          {% endif %}
         {% endif %}
 
         {% if setup and setup.next_steps %}
@@ -86,6 +92,9 @@
         <h2>Manage Mappings</h2>
       </div>
       <div class="frame-body">
+        {% if auto_managed_tax %}
+          <p class="muted">This QuickBooks company uses automated VAT. Manual tax mapping is not required.</p>
+        {% endif %}
         {% if setup and setup.tax_mapping_rows %}
           {% for row in setup.tax_mapping_rows %}
             <div class="card" style="margin-bottom: 1rem;">
@@ -159,6 +168,12 @@
                   <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
                   <button type="submit" class="btn btn--secondary">Remove Mapping</button>
                 </form>
+              {% elif row.mapping_id and auto_managed_tax %}
+                <p class="muted" style="margin-top: 0.75rem;">This QuickBooks company uses automated VAT. Manual tax mapping is not required.</p>
+                <form method="post" action="{{ tenant_path('/admin/accounting/tax-mappings/' ~ row.mapping_id ~ '/delete') }}" style="margin-top: 0.75rem;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
+                  <button type="submit" class="btn btn--secondary">Remove Mapping</button>
+                </form>
               {% elif row.mapping_id and is_connected and not tax_code_options %}
                 <p class="muted" style="margin-top: 0.75rem;">No QuickBooks tax codes found in this company.</p>
                 <form method="post" action="{{ tenant_path('/admin/accounting/tax-mappings/' ~ row.mapping_id ~ '/delete') }}" style="margin-top: 0.75rem;">
@@ -202,6 +217,8 @@
                     <button type="submit" class="btn btn--primary">Create Mapping</button>
                   </div>
                 </form>
+              {% elif auto_managed_tax %}
+                <p class="muted" style="margin-top: 0.75rem;">This QuickBooks company uses automated VAT. Manual tax mapping is not required.</p>
               {% elif is_connected and not tax_code_options %}
                 <p class="muted" style="margin-top: 0.75rem;">No QuickBooks tax codes found in this company.</p>
               {% else %}

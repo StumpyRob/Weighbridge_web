@@ -38,7 +38,7 @@ from app.models import (
 )
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER_NAME
 from app.services.accounting.revenue_account_mapping import ProviderRevenueAccount
-from app.services.accounting.tax_mapping import ProviderTaxCodeOption
+from app.services.accounting.tax_mapping import ProviderTaxCodeOption, QuickBooksTaxDiscoveryState
 from app.services.accounting.quickbooks_oauth import QuickBooksTokenBundle
 from app.services.secrets import decrypt_string, encrypt_string
 from app.services.system_setup import (
@@ -299,6 +299,37 @@ def _client_for(app: FastAPI, *, base_url: str) -> TestClient:
     return TestClient(app, base_url=base_url)
 
 
+def _tax_discovery_state(
+    options: list[ProviderTaxCodeOption] | None = None,
+    *,
+    using_sales_tax: bool | None = True,
+    partner_tax_enabled: bool | None = False,
+    company_country: str | None = "GB",
+    company_country_subdivision_code: str | None = None,
+    tax_rate_count: int = 0,
+    tax_agency_count: int = 0,
+    tax_code_error: str | None = None,
+    tax_rate_error: str | None = None,
+    tax_agency_error: str | None = None,
+    preferences_error: str | None = None,
+    company_info_error: str | None = None,
+) -> QuickBooksTaxDiscoveryState:
+    return QuickBooksTaxDiscoveryState(
+        provider_tax_code_options=list(options or []),
+        using_sales_tax=using_sales_tax,
+        partner_tax_enabled=partner_tax_enabled,
+        company_country=company_country,
+        company_country_subdivision_code=company_country_subdivision_code,
+        tax_rate_count=tax_rate_count,
+        tax_agency_count=tax_agency_count,
+        tax_code_error=tax_code_error,
+        tax_rate_error=tax_rate_error,
+        tax_agency_error=tax_agency_error,
+        preferences_error=preferences_error,
+        company_info_error=company_info_error,
+    )
+
+
 def _prepare_environment(tmp_path: Path, monkeypatch):
     return _prepare_environment_with_settings(
         tmp_path,
@@ -378,8 +409,8 @@ def _prepare_environment_with_settings(
     )
     monkeypatch.setattr(
         admin_accounting_route,
-        "list_provider_tax_codes",
-        lambda *args, **kwargs: [],
+        "inspect_quickbooks_tax_discovery",
+        lambda *args, **kwargs: _tax_discovery_state(),
     )
     monkeypatch.setattr(
         tax_mapping_module,
@@ -1271,8 +1302,8 @@ def test_tenant_admin_can_view_create_update_and_delete_tax_mappings(tmp_path, m
     ]
     monkeypatch.setattr(
         admin_accounting_route,
-        "list_provider_tax_codes",
-        lambda *args, **kwargs: tax_code_options,
+        "inspect_quickbooks_tax_discovery",
+        lambda *args, **kwargs: _tax_discovery_state(tax_code_options),
     )
     monkeypatch.setattr(
         tax_mapping_module,
@@ -1397,6 +1428,15 @@ def test_tax_mapping_page_shows_clear_message_when_connected_company_has_no_tax_
             )
         )
         db.commit()
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "inspect_quickbooks_tax_discovery",
+        lambda *args, **kwargs: _tax_discovery_state(
+            [],
+            tax_rate_count=2,
+            tax_agency_count=1,
+        ),
+    )
 
     client = _client_for(env["app"], base_url="https://acme.localhost")
     try:
@@ -1404,7 +1444,63 @@ def test_tax_mapping_page_shows_clear_message_when_connected_company_has_no_tax_
         page = client.get("/admin/accounting/tax-mappings")
         assert page.status_code == 200
         assert "No QuickBooks tax codes found in this company." in page.text
+        assert "QuickBooks returned 2 tax rates and 1 tax agency, but no TaxCode records for manual mapping." in page.text
         assert "Connect QuickBooks to load tax codes before creating a new mapping." not in page.text
+        assert "Create Mapping" not in page.text
+    finally:
+        client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_tax_mapping_page_shows_automated_vat_message_when_manual_mapping_is_not_required(
+    tmp_path,
+    monkeypatch,
+):
+    env = _prepare_environment(tmp_path, monkeypatch)
+    _seed_connected_connection(
+        env["SessionLocal"],
+        tenant_id=env["tenant_id"],
+        realm_id="realm-tax-auto",
+    )
+    with env["SessionLocal"]() as db:
+        tax_rate = TaxRate(
+            code="VAT20-AUTO",
+            description="VAT 20 Auto",
+            rate_percent=Decimal("20.000"),
+            is_active=True,
+        )
+        db.add(tax_rate)
+        db.flush()
+        db.add(
+            Product(
+                tenant_id=env["tenant_id"],
+                code="MAP-PROD-AUTO",
+                description="Automated VAT Product",
+                nominal_code="4000",
+                unit_price=Decimal("15.00"),
+                tax_rate_id=tax_rate.id,
+            )
+        )
+        db.commit()
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "inspect_quickbooks_tax_discovery",
+        lambda *args, **kwargs: _tax_discovery_state(
+            [],
+            partner_tax_enabled=True,
+            company_country="GB",
+            tax_rate_count=2,
+            tax_agency_count=1,
+        ),
+    )
+
+    client = _client_for(env["app"], base_url="https://acme.localhost")
+    try:
+        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
+        page = client.get("/admin/accounting/tax-mappings")
+        assert page.status_code == 200
+        assert "This QuickBooks company uses automated VAT. Manual tax mapping is not required." in page.text
+        assert "No QuickBooks tax codes found in this company." not in page.text
         assert "Create Mapping" not in page.text
     finally:
         client.close()
@@ -1492,8 +1588,8 @@ def test_tax_mapping_management_preserves_tenant_isolation(tmp_path, monkeypatch
     ]
     monkeypatch.setattr(
         admin_accounting_route,
-        "list_provider_tax_codes",
-        lambda *args, **kwargs: tax_code_options,
+        "inspect_quickbooks_tax_discovery",
+        lambda *args, **kwargs: _tax_discovery_state(tax_code_options),
     )
     monkeypatch.setattr(
         tax_mapping_module,
@@ -1610,8 +1706,8 @@ def test_tax_mapping_duplicate_and_invalid_scope_errors_are_reported_cleanly(tmp
     ]
     monkeypatch.setattr(
         admin_accounting_route,
-        "list_provider_tax_codes",
-        lambda *args, **kwargs: tax_code_options,
+        "inspect_quickbooks_tax_discovery",
+        lambda *args, **kwargs: _tax_discovery_state(tax_code_options),
     )
     monkeypatch.setattr(
         tax_mapping_module,
@@ -1728,8 +1824,8 @@ def test_tax_mapping_page_flags_legacy_display_value_refs(tmp_path, monkeypatch)
     ]
     monkeypatch.setattr(
         admin_accounting_route,
-        "list_provider_tax_codes",
-        lambda *args, **kwargs: tax_code_options,
+        "inspect_quickbooks_tax_discovery",
+        lambda *args, **kwargs: _tax_discovery_state(tax_code_options),
     )
     monkeypatch.setattr(
         tax_mapping_module,

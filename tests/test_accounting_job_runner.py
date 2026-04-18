@@ -358,6 +358,102 @@ def test_quickbooks_tax_code_discovery_accepts_description_only_records(db_sessi
     assert tax_codes[0].display_name == "20.0% S"
 
 
+def test_quickbooks_tax_discovery_logs_raw_responses_for_non_us_company(
+    db_session,
+    monkeypatch,
+    caplog,
+):
+    _configure_settings(monkeypatch)
+    connection = _seed_connection(db_session)
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        if url.endswith("/preferences/realm-1"):
+            return _response(
+                200,
+                {
+                    "Preferences": {
+                        "Id": "realm-1",
+                        "TaxPrefs": {
+                            "UsingSalesTax": True,
+                            "PartnerTaxEnabled": False,
+                        },
+                    }
+                },
+            )
+        if url.endswith("/companyinfo/realm-1"):
+            return _response(
+                200,
+                {
+                    "CompanyInfo": {
+                        "Id": "realm-1",
+                        "Country": "GB",
+                        "LegalAddr": {
+                            "Country": "GB",
+                            "CountrySubDivisionCode": "GB-LND",
+                        },
+                    }
+                },
+            )
+        if url.endswith("/query") and "FROM TaxCode" in str((params or {}).get("query")):
+            return _response(
+                200,
+                {
+                    "QueryResponse": {}
+                },
+            )
+        if url.endswith("/query") and "FROM TaxRate" in str((params or {}).get("query")):
+            return _response(
+                200,
+                {
+                    "QueryResponse": {
+                        "TaxRate": [
+                            {
+                                "Id": "4",
+                                "Name": "20.0% VAT",
+                                "RateValue": "20",
+                                "Active": True,
+                                "AgencyRef": {"value": "1"},
+                            }
+                        ]
+                    }
+                },
+            )
+        if url.endswith("/query") and "FROM TaxAgency" in str((params or {}).get("query")):
+            return _response(
+                200,
+                {
+                    "QueryResponse": {
+                        "TaxAgency": [
+                            {
+                                "Id": "1",
+                                "DisplayName": "HMRC",
+                            }
+                        ]
+                    }
+                },
+            )
+        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+    caplog.set_level(logging.INFO, logger=quickbooks_client_module.__name__)
+
+    client = quickbooks_client_module.quickbooks_client_for_connection(db_session, connection)
+    discovery = client.describe_tax_discovery()
+
+    assert discovery.using_sales_tax is True
+    assert discovery.partner_tax_enabled is False
+    assert discovery.company_country == "GB"
+    assert discovery.company_country_subdivision_code == "GB-LND"
+    assert discovery.tax_codes == []
+    assert len(discovery.tax_rates) == 1
+    assert discovery.tax_rates[0].remote_tax_rate_id == "4"
+    assert len(discovery.tax_agencies) == 1
+    assert discovery.tax_agencies[0].remote_tax_agency_id == "1"
+    assert "QuickBooks tax discovery taxcode raw response for realm realm-1" in caplog.text
+    assert "QuickBooks tax discovery taxrate raw response for realm realm-1" in caplog.text
+    assert "QuickBooks tax discovery taxagency raw response for realm realm-1" in caplog.text
+
+
 def test_product_job_runs_and_writes_product_map(db_session, monkeypatch):
     _configure_settings(monkeypatch)
     tax_rate = TaxRate(code="QB VAT", description="QB VAT", rate_percent=Decimal("20.000"), is_active=True)

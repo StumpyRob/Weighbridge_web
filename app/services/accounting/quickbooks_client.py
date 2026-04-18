@@ -28,6 +28,10 @@ _ENTITY_RESPONSE_KEYS = {
     "invoice": "Invoice",
     "payment": "Payment",
     "taxcode": "TaxCode",
+    "taxrate": "TaxRate",
+    "taxagency": "TaxAgency",
+    "preferences": "Preferences",
+    "companyinfo": "CompanyInfo",
 }
 
 
@@ -76,6 +80,41 @@ class QuickBooksTaxCode:
     is_active: bool
 
 
+@dataclass(frozen=True)
+class QuickBooksTaxRate:
+    remote_tax_rate_id: str
+    display_name: str
+    rate_value: str | None
+    agency_id: str | None
+    is_active: bool
+
+
+@dataclass(frozen=True)
+class QuickBooksTaxAgency:
+    remote_tax_agency_id: str
+    display_name: str
+
+
+@dataclass(frozen=True)
+class QuickBooksTaxDiscovery:
+    using_sales_tax: bool | None
+    partner_tax_enabled: bool | None
+    company_country: str | None
+    company_country_subdivision_code: str | None
+    tax_codes: list[QuickBooksTaxCode]
+    tax_rates: list[QuickBooksTaxRate]
+    tax_agencies: list[QuickBooksTaxAgency]
+    tax_code_error: str | None
+    tax_rate_error: str | None
+    tax_agency_error: str | None
+    preferences_error: str | None
+    company_info_error: str | None
+
+    @property
+    def is_automated_tax(self) -> bool:
+        return bool(self.partner_tax_enabled)
+
+
 def quote_query_value(value: object) -> str:
     text = str(value or "")
     return text.replace("\\", "\\\\").replace("'", "\\'")
@@ -105,6 +144,17 @@ def _safe_number(value: object) -> float | int | None:
 def _normalized_text(value: object) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _normalized_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    normalized = str(value or "").strip().lower()
+    if normalized in {"true", "1", "yes"}:
+        return True
+    if normalized in {"false", "0", "no"}:
+        return False
+    return None
 
 
 def _account_is_revenue(account: dict[str, Any]) -> bool:
@@ -159,6 +209,42 @@ def _quickbooks_tax_code(tax_code: dict[str, Any]) -> QuickBooksTaxCode | None:
         display_name=display_name,
         description=description,
         is_active=bool(tax_code.get("Active", True)),
+    )
+
+
+def _quickbooks_tax_rate(tax_rate: dict[str, Any]) -> QuickBooksTaxRate | None:
+    resolved_id = str(tax_rate.get("Id") or "").strip()
+    display_name = (
+        str(tax_rate.get("Name") or "").strip()
+        or str(tax_rate.get("RateValue") or "").strip()
+        or f"Tax rate {resolved_id or '?'}"
+    )
+    if not resolved_id:
+        return None
+    agency_ref = tax_rate.get("AgencyRef")
+    agency_id = None
+    if isinstance(agency_ref, dict):
+        agency_id = _normalized_text(agency_ref.get("value"))
+    return QuickBooksTaxRate(
+        remote_tax_rate_id=resolved_id,
+        display_name=display_name,
+        rate_value=_normalized_text(tax_rate.get("RateValue")),
+        agency_id=agency_id,
+        is_active=bool(tax_rate.get("Active", True)),
+    )
+
+
+def _quickbooks_tax_agency(tax_agency: dict[str, Any]) -> QuickBooksTaxAgency | None:
+    resolved_id = str(tax_agency.get("Id") or "").strip()
+    display_name = (
+        str(tax_agency.get("DisplayName") or "").strip()
+        or str(tax_agency.get("Name") or "").strip()
+    )
+    if not resolved_id or not display_name:
+        return None
+    return QuickBooksTaxAgency(
+        remote_tax_agency_id=resolved_id,
+        display_name=display_name,
     )
 
 
@@ -240,6 +326,10 @@ class QuickBooksClient:
         self.connection = connection
         self._active_accounts_cache: list[dict[str, Any]] | None = None
         self._tax_codes_cache: list[dict[str, Any]] | None = None
+        self._tax_rates_cache: list[dict[str, Any]] | None = None
+        self._tax_agencies_cache: list[dict[str, Any]] | None = None
+        self._preferences_cache: dict[str, Any] | None = None
+        self._company_info_cache: dict[str, Any] | None = None
 
     @property
     def realm_id(self) -> str:
@@ -416,6 +506,102 @@ class QuickBooksClient:
             return [value]
         return []
 
+    def _log_tax_discovery_response(
+        self,
+        label: str,
+        payload: dict[str, Any],
+    ) -> None:
+        logger.info(
+            "QuickBooks tax discovery %s raw response for realm %s: %s",
+            label,
+            self.realm_id,
+            payload,
+        )
+
+    def _query_tax_entities(self, entity_name: str, sql: str) -> list[dict[str, Any]]:
+        query_response = self.query(sql)
+        self._log_tax_discovery_response(
+            entity_name,
+            {"QueryResponse": query_response},
+        )
+        value = query_response.get(_entity_response_key(entity_name))
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+        if isinstance(value, dict):
+            return [value]
+        return []
+
+    def _preferences(self) -> dict[str, Any]:
+        if self._preferences_cache is None:
+            result = self._request(
+                "GET",
+                f"/v3/company/{self.realm_id}/preferences/{self.realm_id}",
+                params={"minorversion": 3},
+            )
+            preferences = result.payload.get("Preferences")
+            if isinstance(preferences, dict):
+                self._preferences_cache = preferences
+            else:
+                self._preferences_cache = {}
+            self._log_tax_discovery_response(
+                "Preferences",
+                {
+                    "Preferences": {
+                        "Id": str(self._preferences_cache.get("Id") or "").strip() or None,
+                        "TaxPrefs": (
+                            self._preferences_cache.get("TaxPrefs")
+                            if isinstance(self._preferences_cache.get("TaxPrefs"), dict)
+                            else None
+                        ),
+                    }
+                },
+            )
+        return dict(self._preferences_cache)
+
+    def _company_info(self) -> dict[str, Any]:
+        if self._company_info_cache is None:
+            result = self._request(
+                "GET",
+                f"/v3/company/{self.realm_id}/companyinfo/{self.realm_id}",
+            )
+            company_info = result.payload.get("CompanyInfo")
+            if isinstance(company_info, dict):
+                self._company_info_cache = company_info
+            else:
+                self._company_info_cache = {}
+            legal_addr = (
+                self._company_info_cache.get("LegalAddr")
+                if isinstance(self._company_info_cache.get("LegalAddr"), dict)
+                else {}
+            )
+            company_addr = (
+                self._company_info_cache.get("CompanyAddr")
+                if isinstance(self._company_info_cache.get("CompanyAddr"), dict)
+                else {}
+            )
+            self._log_tax_discovery_response(
+                "CompanyInfo",
+                {
+                    "CompanyInfo": {
+                        "Id": str(self._company_info_cache.get("Id") or "").strip() or None,
+                        "Country": _normalized_text(self._company_info_cache.get("Country")),
+                        "LegalAddr": {
+                            "Country": _normalized_text(legal_addr.get("Country")),
+                            "CountrySubDivisionCode": _normalized_text(
+                                legal_addr.get("CountrySubDivisionCode")
+                            ),
+                        },
+                        "CompanyAddr": {
+                            "Country": _normalized_text(company_addr.get("Country")),
+                            "CountrySubDivisionCode": _normalized_text(
+                                company_addr.get("CountrySubDivisionCode")
+                            ),
+                        },
+                    }
+                },
+            )
+        return dict(self._company_info_cache)
+
     def get_entity(
         self,
         entity_name: str,
@@ -477,11 +663,27 @@ class QuickBooksClient:
 
     def _tax_codes(self) -> list[dict[str, Any]]:
         if self._tax_codes_cache is None:
-            self._tax_codes_cache = self.query_entities(
+            self._tax_codes_cache = self._query_tax_entities(
                 "taxcode",
                 "SELECT * FROM TaxCode",
             )
         return list(self._tax_codes_cache)
+
+    def _tax_rates(self) -> list[dict[str, Any]]:
+        if self._tax_rates_cache is None:
+            self._tax_rates_cache = self._query_tax_entities(
+                "taxrate",
+                "SELECT * FROM TaxRate",
+            )
+        return list(self._tax_rates_cache)
+
+    def _tax_agencies(self) -> list[dict[str, Any]]:
+        if self._tax_agencies_cache is None:
+            self._tax_agencies_cache = self._query_tax_entities(
+                "taxagency",
+                "SELECT * FROM TaxAgency",
+            )
+        return list(self._tax_agencies_cache)
 
     def list_revenue_accounts(self) -> list[QuickBooksRevenueAccount]:
         revenue_accounts: list[QuickBooksRevenueAccount] = []
@@ -518,6 +720,131 @@ class QuickBooksClient:
             )
         )
         return tax_codes
+
+    def list_tax_rates(self) -> list[QuickBooksTaxRate]:
+        tax_rates: list[QuickBooksTaxRate] = []
+        for tax_rate in self._tax_rates():
+            resolved = _quickbooks_tax_rate(tax_rate)
+            if resolved is None:
+                continue
+            tax_rates.append(resolved)
+        tax_rates.sort(
+            key=lambda tax_rate: (
+                not tax_rate.is_active,
+                str(tax_rate.display_name or "").lower(),
+                str(tax_rate.remote_tax_rate_id or ""),
+            )
+        )
+        return tax_rates
+
+    def list_tax_agencies(self) -> list[QuickBooksTaxAgency]:
+        tax_agencies: list[QuickBooksTaxAgency] = []
+        for tax_agency in self._tax_agencies():
+            resolved = _quickbooks_tax_agency(tax_agency)
+            if resolved is None:
+                continue
+            tax_agencies.append(resolved)
+        tax_agencies.sort(
+            key=lambda tax_agency: (
+                str(tax_agency.display_name or "").lower(),
+                str(tax_agency.remote_tax_agency_id or ""),
+            )
+        )
+        return tax_agencies
+
+    def describe_tax_discovery(self) -> QuickBooksTaxDiscovery:
+        using_sales_tax = None
+        partner_tax_enabled = None
+        company_country = None
+        company_country_subdivision_code = None
+        tax_codes: list[QuickBooksTaxCode] = []
+        tax_rates: list[QuickBooksTaxRate] = []
+        tax_agencies: list[QuickBooksTaxAgency] = []
+        tax_code_error = None
+        tax_rate_error = None
+        tax_agency_error = None
+        preferences_error = None
+        company_info_error = None
+
+        try:
+            preferences = self._preferences()
+            tax_prefs = preferences.get("TaxPrefs")
+            if isinstance(tax_prefs, dict):
+                using_sales_tax = _normalized_bool(tax_prefs.get("UsingSalesTax"))
+                partner_tax_enabled = _normalized_bool(tax_prefs.get("PartnerTaxEnabled"))
+        except QuickBooksApiError as exc:
+            preferences_error = str(exc)
+            logger.warning(
+                "QuickBooks tax discovery Preferences lookup failed for realm %s: %s",
+                self.realm_id,
+                exc,
+            )
+
+        try:
+            company_info = self._company_info()
+            company_country = _normalized_text(company_info.get("Country"))
+            legal_addr = company_info.get("LegalAddr")
+            company_addr = company_info.get("CompanyAddr")
+            if isinstance(legal_addr, dict):
+                company_country_subdivision_code = _normalized_text(
+                    legal_addr.get("CountrySubDivisionCode")
+                )
+            if company_country_subdivision_code is None and isinstance(company_addr, dict):
+                company_country_subdivision_code = _normalized_text(
+                    company_addr.get("CountrySubDivisionCode")
+                )
+        except QuickBooksApiError as exc:
+            company_info_error = str(exc)
+            logger.warning(
+                "QuickBooks tax discovery CompanyInfo lookup failed for realm %s: %s",
+                self.realm_id,
+                exc,
+            )
+
+        try:
+            tax_codes = self.list_tax_codes()
+        except QuickBooksApiError as exc:
+            tax_code_error = str(exc)
+            logger.warning(
+                "QuickBooks tax discovery TaxCode lookup failed for realm %s: %s",
+                self.realm_id,
+                exc,
+            )
+
+        try:
+            tax_rates = self.list_tax_rates()
+        except QuickBooksApiError as exc:
+            tax_rate_error = str(exc)
+            logger.warning(
+                "QuickBooks tax discovery TaxRate lookup failed for realm %s: %s",
+                self.realm_id,
+                exc,
+            )
+
+        try:
+            tax_agencies = self.list_tax_agencies()
+        except QuickBooksApiError as exc:
+            tax_agency_error = str(exc)
+            logger.warning(
+                "QuickBooks tax discovery TaxAgency lookup failed for realm %s: %s",
+                self.realm_id,
+                exc,
+            )
+
+        return QuickBooksTaxDiscovery(
+            using_sales_tax=using_sales_tax,
+            partner_tax_enabled=partner_tax_enabled,
+            company_country=company_country,
+            company_country_subdivision_code=company_country_subdivision_code,
+            tax_codes=tax_codes,
+            tax_rates=tax_rates,
+            tax_agencies=tax_agencies,
+            tax_code_error=tax_code_error,
+            tax_rate_error=tax_rate_error,
+            tax_agency_error=tax_agency_error,
+            preferences_error=preferences_error,
+            company_info_error=company_info_error,
+        )
 
     def resolve_income_account_by_id(self, *, remote_account_id: str) -> QuickBooksRevenueAccount:
         normalized_account_id = str(remote_account_id or "").strip()
