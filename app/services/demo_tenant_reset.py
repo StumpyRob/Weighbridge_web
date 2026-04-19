@@ -91,17 +91,20 @@ DEMO_LOGO_SOURCE = (
     Path(__file__).resolve().parents[1] / "static" / "uploads" / "company" / DEMO_LOGO_FILENAME
 )
 
-_ACCOUNTING_RESET_MODELS = (
+_ACCOUNTING_RUNTIME_RESET_MODELS = (
     # Remove entity-linked accounting rows before deleting invoices, customers, or products.
     AccountingInvoiceSync,
     AccountingCustomerMap,
     AccountingProductMap,
-    AccountingTaxMap,
-    AccountingRevenueAccountMap,
     # Remaining tenant-scoped accounting state has no direct FK back to tenant business rows
     # but still needs clearing to keep the demo tenant sandbox-safe between resets.
     AccountingSyncJob,
     AccountingSyncEvent,
+)
+
+_ACCOUNTING_SETUP_RESET_MODELS = (
+    AccountingTaxMap,
+    AccountingRevenueAccountMap,
     AccountingConnection,
 )
 
@@ -199,6 +202,12 @@ def _seed_number_sequences(db: Session, tenant_id: int) -> None:
 def _delete_tenant_rows(db: Session, tenant_id: int, models) -> None:
     for model in models:
         db.execute(delete(model).where(model.tenant_id == tenant_id))
+
+
+def _accounting_reset_models_for_tenant(tenant: Tenant):
+    if is_reserved_demo_tenant(tenant):
+        return _ACCOUNTING_RUNTIME_RESET_MODELS
+    return _ACCOUNTING_RUNTIME_RESET_MODELS + _ACCOUNTING_SETUP_RESET_MODELS
 
 
 def _clear_tenant_printing_state(db: Session, tenant_id: int) -> None:
@@ -436,7 +445,7 @@ def reset_demo_tenant_data(
 
     db.execute(delete(AuditEvent).where(AuditEvent.tenant_id == str(tenant_id)))
     db.execute(delete(AIUsageLog).where(AIUsageLog.tenant_id == tenant_id))
-    _delete_tenant_rows(db, tenant_id, _ACCOUNTING_RESET_MODELS)
+    _delete_tenant_rows(db, tenant_id, _accounting_reset_models_for_tenant(tenant))
     _clear_tenant_printing_state(db, tenant_id)
     _delete_tenant_rows(db, tenant_id, _DELETE_CASCADE_MODELS)
     _delete_tenant_rows(db, tenant_id, _USER_RESET_MODELS)

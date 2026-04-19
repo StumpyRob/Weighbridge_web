@@ -63,14 +63,19 @@ def _demo_request() -> Request:
     )
 
 
-def _seed_demo_tenant_with_accounting_rows(db_session) -> dict[str, int]:
+def _seed_demo_tenant_with_accounting_rows(
+    db_session,
+    *,
+    subdomain: str | None = None,
+    is_demo: bool = True,
+) -> dict[str, int]:
     seed_required_reference_data(db_session)
 
     tenant = Tenant(
         name="Demo",
-        subdomain=settings.effective_demo_tenant_subdomain,
+        subdomain=subdomain or settings.effective_demo_tenant_subdomain,
         is_active=True,
-        is_demo=True,
+        is_demo=is_demo,
     )
     db_session.add(tenant)
     db_session.flush()
@@ -211,7 +216,7 @@ def _seed_demo_tenant_with_accounting_rows(db_session) -> dict[str, int]:
     }
 
 
-def test_reset_demo_tenant_data_clears_accounting_rows_before_core_entities(
+def test_reset_demo_tenant_data_preserves_accounting_setup_for_reserved_demo_tenant(
     db_session,
     tmp_path,
     monkeypatch,
@@ -229,18 +234,15 @@ def test_reset_demo_tenant_data_clears_accounting_rows_before_core_entities(
         reset_reason="automatic",
     )
 
-    for model in (
-        AccountingConnection,
-        AccountingCustomerMap,
-        AccountingProductMap,
-        AccountingInvoiceSync,
-        AccountingSyncJob,
-        AccountingSyncEvent,
-        AccountingTaxMap,
-        AccountingRevenueAccountMap,
-        UserFeedback,
-    ):
-        assert _tenant_row_count(db_session, model, ids["tenant_id"]) == 0
+    assert _tenant_row_count(db_session, AccountingCustomerMap, ids["tenant_id"]) == 0
+    assert _tenant_row_count(db_session, AccountingProductMap, ids["tenant_id"]) == 0
+    assert _tenant_row_count(db_session, AccountingInvoiceSync, ids["tenant_id"]) == 0
+    assert _tenant_row_count(db_session, AccountingSyncJob, ids["tenant_id"]) == 0
+    assert _tenant_row_count(db_session, AccountingSyncEvent, ids["tenant_id"]) == 0
+    assert _tenant_row_count(db_session, UserFeedback, ids["tenant_id"]) == 0
+    assert _tenant_row_count(db_session, AccountingConnection, ids["tenant_id"]) == 1
+    assert _tenant_row_count(db_session, AccountingTaxMap, ids["tenant_id"]) == 1
+    assert _tenant_row_count(db_session, AccountingRevenueAccountMap, ids["tenant_id"]) == 1
 
     assert (
         db_session.execute(
@@ -315,7 +317,7 @@ def test_reset_demo_tenant_data_clears_accounting_rows_before_core_entities(
     assert reset_event is not None
 
 
-def test_maybe_auto_reset_demo_tenant_handles_accounting_rows_when_reset_is_due(
+def test_maybe_auto_reset_demo_tenant_preserves_accounting_setup_when_reset_is_due(
     db_session,
     tmp_path,
     monkeypatch,
@@ -341,9 +343,9 @@ def test_maybe_auto_reset_demo_tenant_handles_accounting_rows_when_reset_is_due(
     assert _tenant_row_count(db_session, AccountingProductMap, ids["tenant_id"]) == 0
     assert _tenant_row_count(db_session, AccountingSyncJob, ids["tenant_id"]) == 0
     assert _tenant_row_count(db_session, AccountingSyncEvent, ids["tenant_id"]) == 0
-    assert _tenant_row_count(db_session, AccountingConnection, ids["tenant_id"]) == 0
-    assert _tenant_row_count(db_session, AccountingTaxMap, ids["tenant_id"]) == 0
-    assert _tenant_row_count(db_session, AccountingRevenueAccountMap, ids["tenant_id"]) == 0
+    assert _tenant_row_count(db_session, AccountingConnection, ids["tenant_id"]) == 1
+    assert _tenant_row_count(db_session, AccountingTaxMap, ids["tenant_id"]) == 1
+    assert _tenant_row_count(db_session, AccountingRevenueAccountMap, ids["tenant_id"]) == 1
     assert _tenant_row_count(db_session, UserFeedback, ids["tenant_id"]) == 0
     assert (
         db_session.execute(
@@ -358,16 +360,22 @@ def test_maybe_auto_reset_demo_tenant_handles_accounting_rows_when_reset_is_due(
     )
 
 
-def test_demo_reset_explicitly_clears_quickbooks_tax_mappings(
+def test_demo_reset_still_clears_accounting_setup_for_non_reserved_demo_tenant(
     db_session,
     tmp_path,
     monkeypatch,
 ):
     monkeypatch.setattr(settings, "uploads_dir", str(tmp_path / "uploads"))
-    ids = _seed_demo_tenant_with_accounting_rows(db_session)
+    ids = _seed_demo_tenant_with_accounting_rows(
+        db_session,
+        subdomain="acme-reset",
+        is_demo=True,
+    )
     tenant = db_session.get(Tenant, ids["tenant_id"])
     assert tenant is not None
     assert _tenant_row_count(db_session, AccountingTaxMap, ids["tenant_id"]) == 1
+    assert _tenant_row_count(db_session, AccountingRevenueAccountMap, ids["tenant_id"]) == 1
+    assert _tenant_row_count(db_session, AccountingConnection, ids["tenant_id"]) == 1
 
     reset_demo_tenant_data(
         db_session,
@@ -378,3 +386,28 @@ def test_demo_reset_explicitly_clears_quickbooks_tax_mappings(
     )
 
     assert _tenant_row_count(db_session, AccountingTaxMap, ids["tenant_id"]) == 0
+    assert _tenant_row_count(db_session, AccountingRevenueAccountMap, ids["tenant_id"]) == 0
+    assert _tenant_row_count(db_session, AccountingConnection, ids["tenant_id"]) == 0
+
+
+def test_maybe_auto_reset_demo_tenant_skips_non_reserved_tenant(db_session):
+    tenant = Tenant(
+        name="Acme",
+        subdomain="acme",
+        is_active=True,
+        is_demo=False,
+    )
+    db_session.add(tenant)
+    db_session.flush()
+    tenant.demo_reset_interval_days = 1
+    tenant.demo_reset_time_minutes = 0
+    tenant.demo_last_reset_at = utcnow() - timedelta(days=2)
+    db_session.commit()
+
+    was_reset = maybe_auto_reset_demo_tenant(
+        db_session,
+        _demo_request(),
+        tenant=tenant,
+    )
+
+    assert was_reset is False
