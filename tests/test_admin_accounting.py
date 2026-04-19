@@ -446,9 +446,10 @@ def test_tenant_admin_can_access_admin_accounting(tmp_path, monkeypatch):
         assert "Accounting Integrations" in response.text
         assert "QuickBooks Connection" in response.text
         assert "Manage Tax Mappings" in response.text
-        assert "Setup Status" in response.text
-        assert "Latest Sync Jobs" in response.text
-        assert "Latest Sync Events" in response.text
+        assert "Setup Overview" in response.text
+        assert "Needs Attention" in response.text
+        assert "Recent Jobs" in response.text
+        assert "Recent Activity" in response.text
         assert "qb-client-secret" not in response.text
     finally:
         client.close()
@@ -782,7 +783,8 @@ def test_admin_accounting_shows_tax_mapping_blockers(tmp_path, monkeypatch):
         _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
         response = client.get("/admin/accounting")
         assert response.status_code == 200
-        assert "Setup Status" in response.text
+        assert "Setup Overview" in response.text
+        assert "Needs Attention" in response.text
         assert "Required Tax Mappings" in response.text
         assert "Missing Tax Mappings" in response.text
         assert "Products Missing Tax Rate" in response.text
@@ -791,10 +793,13 @@ def test_admin_accounting_shows_tax_mapping_blockers(tmp_path, monkeypatch):
         assert "Failed Sync Jobs" in response.text
         assert "Next Steps" in response.text
         assert "Connect this tenant to the QuickBooks sandbox company" not in response.text
-        assert "VAT20-ADMIN" in response.text
-        assert "ZERO-ADMIN" in response.text
-        assert "20.0% S" in response.text
-        assert "Missing" in response.text
+        assert "Tax mappings" in response.text
+        assert "1 required local tax rate(s) still need QuickBooks mappings." in response.text
+        assert "1 product(s) do not have a local tax rate." in response.text
+        assert "2 product(s) have no nominal fallback and no default revenue account is saved." in response.text
+        assert "Review Tax Mappings" in response.text
+        assert "Recent Jobs" in response.text
+        assert "Recent Activity" in response.text
         assert "Review Tax Mappings" in response.text
         assert "qb-access-token" not in response.text
         assert "qb-refresh-token" not in response.text
@@ -894,13 +899,92 @@ def test_admin_accounting_shows_invoice_account_mismatch_context_for_failed_jobs
             "After fixing product/account setup, you may need to create and sync a new invoice instead."
         ) in page_text
         assert (
-            f"Invoice {invoice_id} requested AcctNum 4000. "
-            "Retry Failed Jobs retries this existing failed job; it does not create a fresh invoice."
+            "Invoice still expects AcctNum 4000."
+        ) in page_text
+        assert (
+            "Retrying the same failed job keeps the same invoice context; create a fresh invoice if needed."
         ) in page_text
         assert (
             f"Product {product_id} ADMIN-ACCT-PROD - Admin Account Product "
             "(product group default nominal code: 4000)"
         ) in page_text
+    finally:
+        client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_admin_accounting_classifies_failed_jobs_and_succeeded_rows(tmp_path, monkeypatch):
+    env = _prepare_environment(tmp_path, monkeypatch)
+    _seed_connected_connection(
+        env["SessionLocal"],
+        tenant_id=env["tenant_id"],
+        realm_id="realm-job-categories",
+    )
+    with env["SessionLocal"]() as db:
+        db.add_all(
+            [
+                AccountingSyncJob(
+                    tenant_id=env["tenant_id"],
+                    provider="quickbooks",
+                    job_type="sync_invoice",
+                    entity_type="invoice",
+                    entity_id=201,
+                    status="failed",
+                    attempts=2,
+                    available_at=datetime(2026, 4, 16, 10, 0, 0),
+                    error_text="Invoice line 10 uses local tax rate Standard VAT with no QuickBooks tax mapping.",
+                ),
+                AccountingSyncJob(
+                    tenant_id=env["tenant_id"],
+                    provider="quickbooks",
+                    job_type="sync_invoice",
+                    entity_type="invoice",
+                    entity_id=202,
+                    status="failed",
+                    attempts=1,
+                    available_at=datetime(2026, 4, 16, 10, 0, 0),
+                    error_text="QuickBooks invoice total does not match the local invoice gross total.",
+                ),
+                AccountingSyncJob(
+                    tenant_id=env["tenant_id"],
+                    provider="quickbooks",
+                    job_type="sync_customer",
+                    entity_type="customer",
+                    entity_id=203,
+                    status="failed",
+                    attempts=1,
+                    available_at=datetime(2026, 4, 16, 10, 0, 0),
+                    error_text="QuickBooks service unavailable.",
+                ),
+                AccountingSyncJob(
+                    tenant_id=env["tenant_id"],
+                    provider="quickbooks",
+                    job_type="sync_product",
+                    entity_type="product",
+                    entity_id=204,
+                    status="succeeded",
+                    attempts=1,
+                    available_at=datetime(2026, 4, 16, 10, 0, 0),
+                ),
+            ]
+        )
+        db.commit()
+
+    client = _client_for(env["app"], base_url="https://acme.localhost")
+    try:
+        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
+        response = client.get("/admin/accounting")
+        assert response.status_code == 200
+        page_text = " ".join(response.text.split())
+        assert "Setup required" in page_text
+        assert "Manual review required" in page_text
+        assert "Retryable failure" in page_text
+        assert "Resolved / succeeded" in page_text
+        assert "After fix" in page_text
+        assert "After review" in page_text
+        assert "Yes" in page_text
+        assert "This is not an ordinary retry-only failure." in page_text
+        assert "Job completed successfully." in page_text
     finally:
         client.close()
         env["app"].dependency_overrides.clear()

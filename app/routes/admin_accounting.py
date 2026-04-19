@@ -542,12 +542,206 @@ def _invoice_account_mismatch_context(
     return {
         "invoice_id": int(invoice_id),
         "requested_acctnum": requested_acctnum,
-        "summary_text": (
-            f"Invoice {int(invoice_id)} requested AcctNum {requested_acctnum}. "
-            "Retry Failed Jobs retries this existing failed job; it does not create a fresh invoice."
-        ),
         "product_sources": product_sources,
     }
+
+
+def _display_label(value: object) -> str:
+    text = str(value or "").strip().replace("_", " ")
+    return text.title() if text else "-"
+
+
+def _job_label(job: AccountingSyncJob) -> str:
+    return _display_label(job.job_type)
+
+
+def _job_entity_label(job: AccountingSyncJob) -> str:
+    entity_type = _display_label(job.entity_type)
+    entity_id = int(getattr(job, "entity_id", 0) or 0)
+    return f"{entity_type} {entity_id}" if entity_id > 0 else entity_type
+
+
+def _setup_attention_rows(
+    *,
+    connection: AccountingConnection | None,
+    setup_summary: object | None,
+) -> list[dict[str, object]]:
+    setup = setup_summary
+    if setup is None:
+        return []
+    rows: list[dict[str, object]] = []
+    connection_status = str(getattr(connection, "status", "") or "").strip().lower()
+    if connection_status != "connected":
+        rows.append(
+            {
+                "category_label": "Setup required",
+                "entity_label": "QuickBooks connection",
+                "reason_text": "QuickBooks is not connected for this tenant.",
+                "next_action_hint": "Connect or reconnect QuickBooks before running sync jobs.",
+                "retry_guidance": "No",
+                "sort_order": 0,
+            }
+        )
+    missing_tax_mapping_count = int(getattr(setup, "missing_tax_mapping_count", 0) or 0)
+    if missing_tax_mapping_count > 0:
+        rows.append(
+            {
+                "category_label": "Setup required",
+                "entity_label": "Tax mappings",
+                "reason_text": f"{missing_tax_mapping_count} required local tax rate(s) still need QuickBooks mappings.",
+                "next_action_hint": "Open Manage Tax Mappings and save the missing QuickBooks mappings.",
+                "retry_guidance": "After fix",
+                "sort_order": 1,
+            }
+        )
+    products_missing_tax_rate = int(getattr(setup, "products_missing_tax_rate", 0) or 0)
+    if products_missing_tax_rate > 0:
+        rows.append(
+            {
+                "category_label": "Setup required",
+                "entity_label": "Products",
+                "reason_text": f"{products_missing_tax_rate} product(s) do not have a local tax rate.",
+                "next_action_hint": "Add a local tax rate to each affected product before syncing invoices.",
+                "retry_guidance": "After fix",
+                "sort_order": 2,
+            }
+        )
+    products_missing_nominal_code = int(getattr(setup, "products_missing_nominal_code", 0) or 0)
+    has_default_revenue_account_mapping = bool(
+        getattr(setup, "has_default_revenue_account_mapping", False)
+    )
+    if products_missing_nominal_code > 0 and not has_default_revenue_account_mapping:
+        rows.append(
+            {
+                "category_label": "Setup required",
+                "entity_label": "Revenue account setup",
+                "reason_text": (
+                    f"{products_missing_nominal_code} product(s) have no nominal fallback and no default revenue account is saved."
+                ),
+                "next_action_hint": "Save a default revenue account or add product nominal codes before retrying.",
+                "retry_guidance": "After fix",
+                "sort_order": 3,
+            }
+        )
+    return rows
+
+
+def _job_failure_guidance(
+    job: AccountingSyncJob,
+    *,
+    account_mismatch: dict[str, object] | None,
+) -> dict[str, object]:
+    error_text = _normalize_text(job.error_text) or "Accounting sync failed."
+    normalized_error = error_text.lower()
+    if account_mismatch is not None:
+        requested_acctnum = str(account_mismatch.get("requested_acctnum") or "").strip()
+        return {
+            "category_label": "Setup required",
+            "reason_text": (
+                f"Invoice still expects AcctNum {requested_acctnum}."
+                if requested_acctnum
+                else error_text
+            ),
+            "next_action_hint": (
+                "Update the product or revenue-account setup so the invoice resolves to the correct QuickBooks income account. "
+                "Retrying the same failed job keeps the same invoice context; create a fresh invoice if needed."
+            ),
+            "retry_guidance": "After fix",
+            "sort_order": 10,
+        }
+    if "no quickbooks tax mapping" in normalized_error:
+        return {
+            "category_label": "Setup required",
+            "reason_text": error_text,
+            "next_action_hint": "Save the missing QuickBooks tax mapping, then retry this job.",
+            "retry_guidance": "After fix",
+            "sort_order": 11,
+        }
+    if (
+        "display code/label" in normalized_error
+        or "provider ref" in normalized_error
+        or "re-save this mapping" in normalized_error
+    ):
+        return {
+            "category_label": "Setup required",
+            "reason_text": error_text,
+            "next_action_hint": "Re-save the affected tax mapping from the QuickBooks list, then retry.",
+            "retry_guidance": "After fix",
+            "sort_order": 12,
+        }
+    if (
+        "no default revenue account is selected" in normalized_error
+        or "nominal code fallback" in normalized_error
+        or "income account with acctnum" in normalized_error
+        or "configured default quickbooks revenue account is invalid" in normalized_error
+        or "quickbooks connection is not active" in normalized_error
+        or "missing snapshotted tax rate data" in normalized_error
+    ):
+        return {
+            "category_label": "Setup required",
+            "reason_text": error_text,
+            "next_action_hint": "Fix the tenant setup for this record, then retry the failed job.",
+            "retry_guidance": "After fix",
+            "sort_order": 13,
+        }
+    if (
+        "invoice total does not match the local invoice gross total" in normalized_error
+        or "invoice tax total does not match the local invoice tax total" in normalized_error
+        or "invoice gross total does not match its local invoice lines" in normalized_error
+        or "invoice tax total does not match its local invoice lines" in normalized_error
+        or "invoice net total does not match its local invoice lines" in normalized_error
+    ):
+        return {
+            "category_label": "Manual review required",
+            "reason_text": error_text,
+            "next_action_hint": (
+                "Compare the local invoice with the remote QuickBooks invoice before retrying. "
+                "This is not an ordinary retry-only failure."
+            ),
+            "retry_guidance": "After review",
+            "sort_order": 20,
+        }
+    if str(job.job_type or "").strip().lower() == "mark_invoice_paid" and "not found" in normalized_error:
+        return {
+            "category_label": "Setup required",
+            "reason_text": error_text,
+            "next_action_hint": "Make sure invoice sync has succeeded first, then retry the payment job.",
+            "retry_guidance": "After fix",
+            "sort_order": 14,
+        }
+    return {
+        "category_label": "Retryable failure",
+        "reason_text": error_text,
+        "next_action_hint": "Retry the failed job. If it fails again, review the recent activity and provider error details.",
+        "retry_guidance": "Yes",
+        "sort_order": 30,
+    }
+
+
+def _account_mismatch_detail_lines(account_mismatch: dict[str, object] | None) -> list[str]:
+    if not isinstance(account_mismatch, dict):
+        return []
+    lines: list[str] = []
+    for source in account_mismatch.get("product_sources", []):
+        if not isinstance(source, dict):
+            continue
+        lines.append(
+            (
+                f"Product {source['product_id']}" if source.get("product_id") else "Product"
+            )
+            + (f" {source['product_code']}" if source.get("product_code") else "")
+            + (
+                f" - {source['product_description']}"
+                if source.get("product_description")
+                else ""
+            )
+            + (
+                f" ({source['nominal_source']}: {source['nominal_code']})"
+                if source.get("nominal_code")
+                else f" ({source['nominal_source']})"
+            )
+        )
+    return lines
 
 
 def _recent_job_row(
@@ -556,27 +750,105 @@ def _recent_job_row(
     tenant_id: int,
     job: AccountingSyncJob,
 ) -> dict[str, object]:
+    account_mismatch = (
+        _invoice_account_mismatch_context(
+            db,
+            tenant_id=int(tenant_id),
+            invoice_id=int(job.entity_id),
+            error_text=job.error_text,
+        )
+        if str(job.status or "").strip().lower() == "failed"
+        and str(job.job_type or "").strip().lower() == "sync_invoice"
+        and str(job.entity_type or "").strip().lower() == "invoice"
+        else None
+    )
+    status_label = _display_label(job.status)
+    category_label = None
+    reason_text = None
+    next_action_hint = None
+    retry_guidance = "-"
+    sort_order = 999
+    if str(job.status or "").strip().lower() == "failed":
+        guidance = _job_failure_guidance(job, account_mismatch=account_mismatch)
+        category_label = str(guidance["category_label"])
+        reason_text = str(guidance["reason_text"])
+        next_action_hint = str(guidance["next_action_hint"])
+        retry_guidance = str(guidance["retry_guidance"])
+        sort_order = int(guidance["sort_order"])
+    elif str(job.status or "").strip().lower() == "succeeded":
+        category_label = "Resolved / succeeded"
+        reason_text = "Job completed successfully."
+        sort_order = 1000
     return {
         "id": job.id,
         "job_type": job.job_type,
+        "job_label": _job_label(job),
         "entity_type": job.entity_type,
         "entity_id": job.entity_id,
+        "entity_label": _job_entity_label(job),
         "status": job.status,
+        "status_label": status_label,
         "attempts": job.attempts,
         "updated_at": job.updated_at,
         "error_text": job.error_text,
-        "account_mismatch": (
-            _invoice_account_mismatch_context(
-                db,
-                tenant_id=int(tenant_id),
-                invoice_id=int(job.entity_id),
-                error_text=job.error_text,
-            )
-            if str(job.status or "").strip().lower() == "failed"
-            and str(job.job_type or "").strip().lower() == "sync_invoice"
-            and str(job.entity_type or "").strip().lower() == "invoice"
-            else None
-        ),
+        "category_label": category_label,
+        "reason_text": reason_text,
+        "next_action_hint": next_action_hint,
+        "retry_guidance": retry_guidance,
+        "sort_order": sort_order,
+        "account_mismatch": account_mismatch,
+        "account_mismatch_detail_lines": _account_mismatch_detail_lines(account_mismatch),
+    }
+
+
+def _needs_attention_rows(
+    *,
+    connection: AccountingConnection | None,
+    setup_summary: object | None,
+    recent_jobs: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    setup_rows = _setup_attention_rows(
+        connection=connection,
+        setup_summary=setup_summary,
+    )
+    failed_job_rows = [
+        {
+            "category_label": str(job.get("category_label") or ""),
+            "entity_label": str(job.get("entity_label") or ""),
+            "reason_text": str(job.get("reason_text") or ""),
+            "next_action_hint": str(job.get("next_action_hint") or ""),
+            "retry_guidance": str(job.get("retry_guidance") or "-"),
+            "sort_order": int(job.get("sort_order") or 999),
+        }
+        for job in recent_jobs
+        if str(job.get("status") or "").strip().lower() == "failed"
+    ]
+    attention_rows = setup_rows + failed_job_rows
+    attention_rows.sort(
+        key=lambda row: (
+            int(row.get("sort_order") or 999),
+            str(row.get("entity_label") or "").lower(),
+            str(row.get("reason_text") or "").lower(),
+        )
+    )
+    return attention_rows[:8]
+
+
+def _recent_event_row(event: AccountingSyncEvent) -> dict[str, object]:
+    entity_type = _normalize_text(getattr(event, "entity_type", None))
+    entity_id = int(getattr(event, "entity_id", 0) or 0)
+    entity_label = None
+    if entity_type:
+        entity_label = (
+            f"{_display_label(entity_type)} {entity_id}"
+            if entity_id > 0
+            else _display_label(entity_type)
+        )
+    return {
+        "created_at": event.created_at,
+        "event_label": _display_label(event.event_type),
+        "entity_label": entity_label,
+        "summary": str(event.summary or "").strip() or None,
     }
 
 
@@ -624,6 +896,7 @@ def _page_context(
     connection: AccountingConnection | None,
     recent_jobs: list[AccountingSyncJob] | None = None,
     recent_events: list[AccountingSyncEvent] | None = None,
+    needs_attention_rows: list[dict[str, object]] | None = None,
     setup_summary: object | None = None,
     config_error: str = "",
     revenue_account_options: list[object] | None = None,
@@ -639,6 +912,7 @@ def _page_context(
         "connection": connection,
         "recent_jobs": recent_jobs or [],
         "recent_events": recent_events or [],
+        "needs_attention_rows": needs_attention_rows or [],
         "config_error": config_error,
         "revenue_account_options": revenue_account_options or [],
         "current_revenue_account_mapping": current_revenue_account_mapping,
@@ -719,6 +993,7 @@ def admin_accounting(
         .scalars()
         .all()
     )
+    recent_event_rows = [_recent_event_row(event) for event in recent_events]
     config_error = ""
     try:
         redirect_uri = resolve_quickbooks_redirect_uri(request)
@@ -751,7 +1026,12 @@ def admin_accounting(
             request,
             connection=connection,
             recent_jobs=recent_job_rows,
-            recent_events=recent_events,
+            recent_events=recent_event_rows,
+            needs_attention_rows=_needs_attention_rows(
+                connection=connection,
+                setup_summary=setup_summary,
+                recent_jobs=recent_job_rows,
+            ),
             setup_summary=setup_summary,
             config_error=config_error,
             revenue_account_options=revenue_account_options,

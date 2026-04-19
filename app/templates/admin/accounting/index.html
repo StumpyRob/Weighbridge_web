@@ -28,10 +28,10 @@
     </div>
   {% endif %}
   {% if sync_run %}
-    <div class="flash-toast flash-toast--success" data-flash-toast data-flash-success="1">
+    <div class="flash-toast {% if sync_failed %}flash-toast--error{% else %}flash-toast--success{% endif %}" data-flash-toast {% if not sync_failed %}data-flash-success="1"{% endif %}>
       <div class="flash-toast__content">
         {% if sync_retry_run %}Retry run finished.{% else %}Sync run finished.{% endif %}
-        Processed {{ sync_processed }}, succeeded {{ sync_succeeded }}, failed {{ sync_failed }}.
+        Processed {{ sync_processed }}, succeeded {{ sync_succeeded }}, failed {{ sync_failed }}.{% if sync_failed %} Review Needs Attention below.{% endif %}
       </div>
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
@@ -50,7 +50,7 @@
   <div class="page-header">
     <div>
       <h1>Accounting Integrations</h1>
-      <p class="muted">Connect QuickBooks, confirm revenue and VAT mappings, then run small manual sync batches for this tenant.</p>
+      <p class="muted">Connect QuickBooks, complete the required setup, then review Needs Attention before retrying failed jobs.</p>
     </div>
     <div class="actions btn-group">
       <a class="btn btn--secondary" href="{{ tenant_path('/admin') }}">Back to Settings</a>
@@ -61,12 +61,6 @@
   {% if config_error %}
     <div class="alert alert--danger">
       QuickBooks OAuth is not configured: {{ config_error }}
-    </div>
-  {% endif %}
-
-  {% if connection and connection.last_error %}
-    <div class="alert alert--danger">
-      Last QuickBooks error: {{ connection.last_error }}
     </div>
   {% endif %}
 
@@ -95,9 +89,13 @@
           </div>
         </div>
 
-        <p class="muted">
-          Manual sync is tenant-scoped and operator-triggered. Automatic processing, webhooks, and inbound sync are not active in this phase.
-        </p>
+        <p class="muted">Sync runs are started manually for this tenant. Automatic processing is not enabled in this phase.</p>
+
+        {% if connection and connection.last_error %}
+          <div class="alert alert--danger">
+            Last QuickBooks error: {{ connection.last_error }}
+          </div>
+        {% endif %}
 
         <div class="actions btn-group">
           {% if config_error %}
@@ -191,7 +189,7 @@
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Setup Status</h2>
+        <h2>Setup Overview</h2>
       </div>
       <div class="frame-body">
         <p class="muted">Check these before syncing or retrying invoices for this tenant.</p>
@@ -240,90 +238,88 @@
             {% endfor %}
           </ul>
         {% endif %}
+      </div>
+    </section>
 
-        {% if setup and setup.tax_mapping_rows %}
+    <section class="frame">
+      <div class="frame-header">
+        <h2>Needs Attention</h2>
+      </div>
+      <div class="frame-body">
+        {% if needs_attention_rows %}
+          <p class="muted">Focus on these setup blockers and failed jobs first.</p>
           <div class="table-responsive">
             <table class="table">
               <thead>
                 <tr>
-                  <th>Local Tax Rate</th>
-                  <th>Rate</th>
-                  <th>Products</th>
-                  <th>QuickBooks Mapping</th>
-                  <th>Status</th>
-                  <th>Detail</th>
+                  <th>Category</th>
+                  <th>Entity</th>
+                  <th>Reason</th>
+                  <th>Next Action</th>
+                  <th>Retry</th>
                 </tr>
               </thead>
               <tbody>
-                {% for row in setup.tax_mapping_rows %}
+                {% for row in needs_attention_rows %}
                   <tr>
+                    <td><strong>{{ row.category_label }}</strong></td>
+                    <td>{{ row.entity_label }}</td>
+                    <td>{{ row.reason_text }}</td>
                     <td>
-                      {{ row.tax_rate_code }}
-                      {% if row.tax_rate_description %}<div class="muted">{{ row.tax_rate_description }}</div>{% endif %}
+                      {{ row.next_action_hint }}
                     </td>
-                    <td>{{ row.rate_percent or "-" }}</td>
-                    <td>{{ row.product_count }}</td>
-                    <td>
-                      {% if row.mapping_name %}<div>{{ row.mapping_name }}</div>{% endif %}
-                      <div class="muted">ID: {{ row.external_id or "-" }}</div>
-                      <div class="muted">Code: {{ row.external_code or "-" }}</div>
-                    </td>
-                    <td>{{ row.status_label }}</td>
-                    <td>{{ row.status_detail or "-" }}</td>
+                    <td>{{ row.retry_guidance }}</td>
                   </tr>
                 {% endfor %}
               </tbody>
             </table>
           </div>
         {% else %}
-          <p class="muted">No tenant product tax rates are in use yet.</p>
+          <p class="muted">No current setup blockers or failed sync jobs.</p>
         {% endif %}
       </div>
     </section>
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Latest Sync Jobs</h2>
+        <h2>Recent Jobs</h2>
       </div>
       <div class="frame-body">
         {% if recent_jobs %}
-          <p class="muted">Latest 10 jobs for this tenant. Failed invoice jobs include extra mapping context where available.</p>
+          <p class="muted">Recent sync jobs and their next action.</p>
           <div class="table-responsive">
             <table class="table">
               <thead>
                 <tr>
-                  <th>ID</th>
                   <th>Job</th>
                   <th>Record</th>
-                  <th>Status</th>
+                  <th>Outcome</th>
                   <th>Attempts</th>
                   <th>Updated</th>
-                  <th>Notes</th>
+                  <th>Next Action</th>
                 </tr>
               </thead>
               <tbody>
                 {% for job in recent_jobs %}
                   <tr>
-                    <td>{{ job.id }}</td>
-                    <td>{{ job.job_type | replace('_', ' ') | title }}</td>
-                    <td>{{ job.entity_type | replace('_', ' ') | title }} {{ job.entity_id }}</td>
-                    <td>{{ job.status | replace('_', ' ') | title }}</td>
+                    <td>
+                      <div>{{ job.job_label }}</div>
+                      <div class="muted">Job {{ job.id }}</div>
+                    </td>
+                    <td>{{ job.entity_label }}</td>
+                    <td>
+                      <div>{{ job.status_label }}</div>
+                      {% if job.category_label %}<div class="muted">{{ job.category_label }}</div>{% endif %}
+                    </td>
                     <td>{{ job.attempts }}</td>
                     <td>{{ job.updated_at | uk_datetime('%d/%m/%Y %H:%M:%S') if job.updated_at else '-' }}</td>
                     <td>
-                      {% if job.error_text %}
-                        <div>{{ job.error_text }}</div>
-                        {% if job.account_mismatch %}
-                          <div class="muted">{{ job.account_mismatch.summary_text }}</div>
-                          {% for source in job.account_mismatch.product_sources %}
-                            <div class="muted">
-                              {% if source.product_id %}Product {{ source.product_id }}{% else %}Product{% endif %}
-                              {% if source.product_code %} {{ source.product_code }}{% endif %}
-                              {% if source.product_description %} - {{ source.product_description }}{% endif %}
-                              {% if source.nominal_code %} ({{ source.nominal_source }}: {{ source.nominal_code }}){% else %} ({{ source.nominal_source }}){% endif %}
-                            </div>
-                          {% endfor %}
-                        {% endif %}
+                      {% if job.reason_text %}
+                        <div>{{ job.reason_text }}</div>
+                        {% if job.next_action_hint %}<div class="muted">{{ job.next_action_hint }}</div>{% endif %}
+                        {% for detail in job.account_mismatch_detail_lines %}
+                          <div class="muted">{{ detail }}</div>
+                        {% endfor %}
                       {% else %}
                         -
                       {% endif %}
@@ -341,19 +337,17 @@
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Latest Sync Events</h2>
+        <h2>Recent Activity</h2>
       </div>
       <div class="frame-body">
         {% if recent_events %}
-          <p class="muted">Latest 10 accounting events for this tenant.</p>
+          <p class="muted">Recent accounting activity for this tenant.</p>
           <div class="table-responsive">
             <table class="table">
               <thead>
                 <tr>
                   <th>When</th>
-                  <th>Event</th>
-                  <th>Entity</th>
-                  <th>Direction</th>
+                  <th>Activity</th>
                   <th>Summary</th>
                 </tr>
               </thead>
@@ -361,10 +355,11 @@
                 {% for event in recent_events %}
                   <tr>
                     <td>{{ event.created_at | uk_datetime('%d/%m/%Y %H:%M:%S') if event.created_at else '-' }}</td>
-                    <td>{{ event.event_type | replace('_', ' ') | title }}</td>
-                    <td>{% if event.entity_type %}{{ event.entity_type | replace('_', ' ') | title }} {{ event.entity_id or '' }}{% else %}-{% endif %}</td>
-                    <td>{{ event.direction }}</td>
-                    <td>{{ event.summary }}</td>
+                    <td>
+                      <div>{{ event.event_label }}</div>
+                      {% if event.entity_label %}<div class="muted">{{ event.entity_label }}</div>{% endif %}
+                    </td>
+                    <td>{{ event.summary or "-" }}</td>
                   </tr>
                 {% endfor %}
               </tbody>
