@@ -358,6 +358,42 @@ def test_quickbooks_tax_code_discovery_accepts_description_only_records(db_sessi
     assert tax_codes[0].display_name == "20.0% S"
 
 
+def test_quickbooks_discovered_tax_codes_win_over_uk_fallback_values(db_session, monkeypatch):
+    _configure_settings(monkeypatch)
+    _seed_connection(db_session)
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        if url.endswith("/query") and "FROM TaxCode" in str((params or {}).get("query")):
+            return _response(
+                200,
+                {
+                    "QueryResponse": {
+                        "TaxCode": [
+                            {
+                                "Id": "77",
+                                "Name": "Sandbox VAT 15",
+                                "Description": "Sandbox VAT 15",
+                                "Active": True,
+                            }
+                        ]
+                    }
+                },
+            )
+        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+
+    tax_codes = tax_mapping_module.list_provider_tax_codes(
+        db_session,
+        tenant_id=1,
+        provider="quickbooks",
+    )
+
+    assert [(code.remote_tax_code_id, code.display_code) for code in tax_codes] == [
+        ("77", "Sandbox VAT 15")
+    ]
+
+
 def test_quickbooks_tax_discovery_logs_raw_responses_for_non_us_company(
     db_session,
     monkeypatch,
@@ -452,6 +488,191 @@ def test_quickbooks_tax_discovery_logs_raw_responses_for_non_us_company(
     assert "QuickBooks tax discovery taxcode raw response for realm realm-1" in caplog.text
     assert "QuickBooks tax discovery taxrate raw response for realm realm-1" in caplog.text
     assert "QuickBooks tax discovery taxagency raw response for realm realm-1" in caplog.text
+
+
+def test_quickbooks_uk_tax_code_fallback_unblocks_invoice_sync_when_taxcode_query_is_empty(
+    db_session,
+    monkeypatch,
+):
+    _configure_settings(monkeypatch)
+    customer = Customer(account_code="C-QB-FALLBACK-1", name="Fallback VAT Customer")
+    tax_rate = TaxRate(
+        code="QB VAT FALLBACK",
+        description="QuickBooks VAT Fallback",
+        rate_percent=Decimal("20.000"),
+        is_active=True,
+    )
+    product = Product(
+        code="QB-FALLBACK-PROD",
+        description="Fallback VAT Product",
+        nominal_code="4000",
+        unit_price=Decimal("10.00"),
+        tax_rate=tax_rate,
+    )
+    db_session.add_all([customer, tax_rate, product])
+    db_session.flush()
+    ticket = Ticket(
+        ticket_no="QB-FALLBACK-T-1",
+        datetime=datetime(2026, 2, 13, 10, 0, 0),
+        status=TicketStatusEnum.COMPLETE.value,
+        direction=DirectionEnum.INWARD.value,
+        transaction_type=TransactionTypeEnum.WASTEIN.value,
+        customer_id=customer.id,
+        product_id=product.id,
+        qty=1,
+        unit_price=Decimal("10.00"),
+        total=Decimal("12.00"),
+        dont_invoice=False,
+        paid=False,
+    )
+    invoice = Invoice(
+        invoice_no="INV-QB-FALLBACK-1",
+        customer_id=customer.id,
+        invoice_date=date(2026, 2, 13),
+        due_date=date(2026, 2, 20),
+        status="ISSUED",
+        net_total=Decimal("10.00"),
+        vat_total=Decimal("2.00"),
+        gross_total=Decimal("12.00"),
+    )
+    db_session.add_all([ticket, invoice])
+    db_session.flush()
+    db_session.add(
+        InvoiceLine(
+            invoice_id=invoice.id,
+            ticket_id=ticket.id,
+            description="Fallback VAT line",
+            quantity=Decimal("1.000"),
+            unit_price=Decimal("10.00"),
+            net=Decimal("10.00"),
+            vat=Decimal("2.00"),
+            gross=Decimal("12.00"),
+            product_snapshot_json={
+                "product_id": product.id,
+                "product_code": product.code,
+                "product_description": product.description,
+                "tax_rate_id": tax_rate.id,
+                "tax_rate_code": tax_rate.code,
+                "tax_rate_description": tax_rate.description,
+                "tax_rate_percent": "20.000",
+                "nominal_code": "4000",
+            },
+        )
+    )
+    db_session.commit()
+    _seed_tax_map(
+        db_session,
+        tax_rate=tax_rate,
+        external_id="3",
+        external_code="20.0% S",
+    )
+    _seed_connection(db_session)
+
+    enqueue_sync_invoice(db_session, tenant_id=1, invoice_id=invoice.id)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        invoice_sync_module,
+        "sync_customer_to_quickbooks",
+        lambda *args, **kwargs: {"external_id": "QB-CUST-FALLBACK-1"},
+    )
+    monkeypatch.setattr(
+        invoice_sync_module,
+        "sync_product_to_quickbooks",
+        lambda *args, **kwargs: {"external_id": "QB-ITEM-FALLBACK-1"},
+    )
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        query = str((params or {}).get("query") or "")
+        if url.endswith("/query") and "FROM TaxCode" in query:
+            return _response(200, {"QueryResponse": {}})
+        if url.endswith("/preferences/realm-1"):
+            return _response(
+                200,
+                {
+                    "Preferences": {
+                        "Id": "realm-1",
+                        "TaxPrefs": {
+                            "UsingSalesTax": True,
+                            "PartnerTaxEnabled": False,
+                        },
+                    }
+                },
+            )
+        if url.endswith("/companyinfo/realm-1"):
+            return _response(
+                200,
+                {
+                    "CompanyInfo": {
+                        "Id": "realm-1",
+                        "Country": "GB",
+                        "LegalAddr": {
+                            "Country": "GB",
+                            "CountrySubDivisionCode": "GB-LND",
+                        },
+                    }
+                },
+            )
+        if url.endswith("/query") and "FROM TaxRate" in query:
+            return _response(
+                200,
+                {
+                    "QueryResponse": {
+                        "TaxRate": [
+                            {
+                                "Id": "4",
+                                "Name": "20.0% VAT",
+                                "RateValue": "20",
+                                "Active": True,
+                                "AgencyRef": {"value": "1"},
+                            }
+                        ]
+                    }
+                },
+            )
+        if url.endswith("/query") and "FROM TaxAgency" in query:
+            return _response(
+                200,
+                {
+                    "QueryResponse": {
+                        "TaxAgency": [
+                            {
+                                "Id": "1",
+                                "DisplayName": "HMRC",
+                            }
+                        ]
+                    }
+                },
+            )
+        if url.endswith("/query") and "FROM Invoice" in query:
+            return _response(200, {"QueryResponse": {}})
+        if url.endswith("/invoice"):
+            assert json["Line"][0]["SalesItemLineDetail"]["TaxCodeRef"]["value"] == "3"
+            return _response(
+                200,
+                {
+                    "Invoice": {
+                        "Id": "QB-INV-FALLBACK-1",
+                        "DocNumber": "INV-QB-FALLBACK-1",
+                        "SyncToken": "0",
+                        "TotalAmt": 12.0,
+                        "TxnTaxDetail": {"TotalTax": 2.0},
+                    }
+                },
+            )
+        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+
+    result = process_pending_accounting_jobs(db_session, tenant_id=1, limit=1)
+
+    assert result.processed == 1
+    assert result.succeeded == 1
+    sync_row = db_session.execute(
+        select(AccountingInvoiceSync).where(AccountingInvoiceSync.invoice_id == invoice.id)
+    ).scalar_one()
+    assert sync_row.external_id == "QB-INV-FALLBACK-1"
+    assert sync_row.sync_status == "invoice_synced"
 
 
 def test_product_job_runs_and_writes_product_map(db_session, monkeypatch):

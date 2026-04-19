@@ -22,6 +22,23 @@ class TaxMappingValidationError(ValueError):
     pass
 
 
+_QUICKBOOKS_UK_FALLBACK_COUNTRIES = {"GB", "UK", "GBR", "UNITED KINGDOM"}
+_QUICKBOOKS_UK_FALLBACK_TAX_CODES = (
+    {
+        "remote_tax_code_id": "3",
+        "display_code": "20.0% S",
+        "display_name": "Standard VAT",
+        "description": "QuickBooks UK fallback values",
+    },
+    {
+        "remote_tax_code_id": "10",
+        "display_code": "0.0% Z",
+        "display_name": "Zero VAT",
+        "description": "QuickBooks UK fallback values",
+    },
+)
+
+
 def _normalize_text(value: object) -> str | None:
     text = str(value or "").strip()
     return text or None
@@ -99,6 +116,7 @@ class QuickBooksTaxDiscoveryState:
     partner_tax_enabled: bool | None
     company_country: str | None
     company_country_subdivision_code: str | None
+    uses_uk_fallback_tax_codes: bool
     tax_rate_count: int
     tax_agency_count: int
     tax_code_error: str | None
@@ -237,19 +255,94 @@ def list_quickbooks_tax_codes(
         tenant_id=int(tenant_id),
         provider=provider,
     )
-    options = [
+    live_options = [
         _provider_tax_code_option(tax_code)
         for tax_code in client.list_tax_codes()
         if tax_code.is_active
     ]
-    options.sort(
+    live_options.sort(
         key=lambda option: (
             str(option.display_code or "").lower(),
             str(option.display_name or "").lower(),
             str(option.remote_tax_code_id or ""),
         )
     )
-    return options
+    if live_options:
+        return live_options
+    discovery_state = _quickbooks_tax_discovery_state(client.describe_tax_discovery())
+    return list(discovery_state.provider_tax_code_options)
+
+
+def _quickbooks_uk_fallback_tax_code_options() -> list[ProviderTaxCodeOption]:
+    return [
+        ProviderTaxCodeOption(
+            remote_tax_code_id=row["remote_tax_code_id"],
+            display_code=row["display_code"],
+            display_name=row["display_name"],
+            description=row["description"],
+            is_active=True,
+            display_label=_provider_tax_code_display_label(
+                display_code=row["display_code"],
+                display_name=row["display_name"],
+            ),
+        )
+        for row in _QUICKBOOKS_UK_FALLBACK_TAX_CODES
+    ]
+
+
+def _appears_quickbooks_uk_vat_mode(
+    *,
+    company_country: str | None,
+    company_country_subdivision_code: str | None,
+    using_sales_tax: bool | None,
+    partner_tax_enabled: bool | None,
+    tax_rate_count: int,
+    tax_agency_count: int,
+) -> bool:
+    if bool(partner_tax_enabled):
+        return False
+    normalized_country = str(company_country or "").strip().upper()
+    normalized_subdivision = str(company_country_subdivision_code or "").strip().upper()
+    if normalized_country in _QUICKBOOKS_UK_FALLBACK_COUNTRIES:
+        return True
+    if normalized_subdivision.startswith("GB"):
+        return True
+    return (
+        bool(using_sales_tax)
+        and normalized_country in {"", *sorted(_QUICKBOOKS_UK_FALLBACK_COUNTRIES)}
+        and (int(tax_rate_count or 0) > 0 or int(tax_agency_count or 0) > 0)
+    )
+
+
+def _with_quickbooks_uk_fallback_tax_codes(
+    discovery_state: QuickBooksTaxDiscoveryState,
+) -> QuickBooksTaxDiscoveryState:
+    if discovery_state.provider_tax_code_options:
+        return discovery_state
+    if not _appears_quickbooks_uk_vat_mode(
+        company_country=discovery_state.company_country,
+        company_country_subdivision_code=discovery_state.company_country_subdivision_code,
+        using_sales_tax=discovery_state.using_sales_tax,
+        partner_tax_enabled=discovery_state.partner_tax_enabled,
+        tax_rate_count=discovery_state.tax_rate_count,
+        tax_agency_count=discovery_state.tax_agency_count,
+    ):
+        return discovery_state
+    return QuickBooksTaxDiscoveryState(
+        provider_tax_code_options=_quickbooks_uk_fallback_tax_code_options(),
+        using_sales_tax=discovery_state.using_sales_tax,
+        partner_tax_enabled=discovery_state.partner_tax_enabled,
+        company_country=discovery_state.company_country,
+        company_country_subdivision_code=discovery_state.company_country_subdivision_code,
+        uses_uk_fallback_tax_codes=True,
+        tax_rate_count=discovery_state.tax_rate_count,
+        tax_agency_count=discovery_state.tax_agency_count,
+        tax_code_error=discovery_state.tax_code_error,
+        tax_rate_error=discovery_state.tax_rate_error,
+        tax_agency_error=discovery_state.tax_agency_error,
+        preferences_error=discovery_state.preferences_error,
+        company_info_error=discovery_state.company_info_error,
+    )
 
 
 def _quickbooks_tax_discovery_state(
@@ -267,12 +360,13 @@ def _quickbooks_tax_discovery_state(
             str(option.remote_tax_code_id or ""),
         )
     )
-    return QuickBooksTaxDiscoveryState(
+    return _with_quickbooks_uk_fallback_tax_codes(QuickBooksTaxDiscoveryState(
         provider_tax_code_options=options,
         using_sales_tax=discovery.using_sales_tax,
         partner_tax_enabled=discovery.partner_tax_enabled,
         company_country=discovery.company_country,
         company_country_subdivision_code=discovery.company_country_subdivision_code,
+        uses_uk_fallback_tax_codes=False,
         tax_rate_count=len(discovery.tax_rates),
         tax_agency_count=len(discovery.tax_agencies),
         tax_code_error=discovery.tax_code_error,
@@ -280,7 +374,7 @@ def _quickbooks_tax_discovery_state(
         tax_agency_error=discovery.tax_agency_error,
         preferences_error=discovery.preferences_error,
         company_info_error=discovery.company_info_error,
-    )
+    ))
 
 
 def inspect_quickbooks_tax_discovery(

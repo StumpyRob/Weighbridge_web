@@ -306,6 +306,7 @@ def _tax_discovery_state(
     partner_tax_enabled: bool | None = False,
     company_country: str | None = "GB",
     company_country_subdivision_code: str | None = None,
+    uses_uk_fallback_tax_codes: bool = False,
     tax_rate_count: int = 0,
     tax_agency_count: int = 0,
     tax_code_error: str | None = None,
@@ -320,6 +321,7 @@ def _tax_discovery_state(
         partner_tax_enabled=partner_tax_enabled,
         company_country=company_country,
         company_country_subdivision_code=company_country_subdivision_code,
+        uses_uk_fallback_tax_codes=uses_uk_fallback_tax_codes,
         tax_rate_count=tax_rate_count,
         tax_agency_count=tax_agency_count,
         tax_code_error=tax_code_error,
@@ -1466,6 +1468,86 @@ def test_tax_mapping_page_shows_clear_message_when_connected_company_has_no_tax_
         assert "QuickBooks returned 2 tax rates and 1 tax agency, but no TaxCode records for manual mapping." in page.text
         assert "Connect QuickBooks to load tax codes before creating a new mapping." not in page.text
         assert "Create Mapping" not in page.text
+    finally:
+        client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_tax_mapping_page_shows_quickbooks_uk_fallback_values_when_taxcode_discovery_is_empty(
+    tmp_path,
+    monkeypatch,
+):
+    env = _prepare_environment(tmp_path, monkeypatch)
+    _seed_connected_connection(
+        env["SessionLocal"],
+        tenant_id=env["tenant_id"],
+        realm_id="realm-tax-uk-fallback",
+    )
+    fallback_tax_code_options = [
+        ProviderTaxCodeOption(
+            remote_tax_code_id="3",
+            display_code="20.0% S",
+            display_name="Standard VAT",
+            description="QuickBooks UK fallback values",
+            is_active=True,
+            display_label="20.0% S - Standard VAT",
+        ),
+        ProviderTaxCodeOption(
+            remote_tax_code_id="10",
+            display_code="0.0% Z",
+            display_name="Zero VAT",
+            description="QuickBooks UK fallback values",
+            is_active=True,
+            display_label="0.0% Z - Zero VAT",
+        ),
+    ]
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: fallback_tax_code_options,
+    )
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "inspect_quickbooks_tax_discovery",
+        lambda *args, **kwargs: _tax_discovery_state(
+            fallback_tax_code_options,
+            company_country="GB",
+            uses_uk_fallback_tax_codes=True,
+            tax_rate_count=2,
+            tax_agency_count=1,
+        ),
+    )
+    with env["SessionLocal"]() as db:
+        tax_rate = TaxRate(
+            code="VAT20-FALLBACK",
+            description="VAT 20 Fallback",
+            rate_percent=Decimal("20.000"),
+            is_active=True,
+        )
+        db.add(tax_rate)
+        db.flush()
+        db.add(
+            Product(
+                tenant_id=env["tenant_id"],
+                code="MAP-PROD-FALLBACK",
+                description="Fallback Tax Code Product",
+                nominal_code="4000",
+                unit_price=Decimal("15.00"),
+                tax_rate_id=tax_rate.id,
+            )
+        )
+        db.commit()
+
+    client = _client_for(env["app"], base_url="https://acme.localhost")
+    try:
+        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
+        page = client.get("/admin/accounting/tax-mappings")
+        assert page.status_code == 200
+        assert "No QuickBooks tax codes found in this company." in page.text
+        assert "QuickBooks UK fallback values are shown because live tax-code discovery returned no usable rows." in page.text
+        assert "Create Mapping" in page.text
+        assert "20.0% S - Standard VAT (Ref 3)" in page.text
+        assert "0.0% Z - Zero VAT (Ref 10)" in page.text
     finally:
         client.close()
         env["app"].dependency_overrides.clear()
