@@ -57,6 +57,13 @@ def _decimal_money(value: object) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.01"))
 
 
+def _decimal_quantity(value: object) -> Decimal:
+    quantity = Decimal(str(value or 0))
+    if quantity <= 0:
+        return Decimal("1.000")
+    return quantity.quantize(Decimal("0.001"))
+
+
 def _invoice_for_sync(db: Session, *, tenant_id: int, invoice_id: int) -> Invoice:
     invoice = (
         db.execute(
@@ -248,12 +255,19 @@ def _invoice_line_payload(
     item_external_id: str,
     line_tax_code_ref: str,
 ) -> dict[str, Any]:
-    amount = _money(line.net)
-    qty = _quantity(line.quantity)
+    amount_decimal = _decimal_money(line.net)
+    amount = float(amount_decimal)
+    qty_decimal = _decimal_quantity(line.quantity)
+    qty = float(qty_decimal)
     if line.unit_price not in (None, ""):
-        unit_price = _money(line.unit_price)
+        unit_price_decimal = _decimal_money(line.unit_price)
     else:
-        unit_price = round(amount / qty, 2) if qty > 0 else amount
+        unit_price_decimal = (
+            (amount_decimal / qty_decimal).quantize(Decimal("0.01"))
+            if qty_decimal > 0
+            else amount_decimal
+        )
+    unit_price = float(unit_price_decimal)
     return {
         "Amount": amount,
         "Description": str(line.description or "").strip() or None,
@@ -264,6 +278,71 @@ def _invoice_line_payload(
             "UnitPrice": unit_price,
             "TaxCodeRef": {"value": str(line_tax_code_ref)},
         },
+    }
+
+
+def _line_sync_summary(line: InvoiceLine, payload_line: dict[str, Any]) -> dict[str, Any]:
+    payload_detail = payload_line.get("SalesItemLineDetail")
+    if not isinstance(payload_detail, dict):
+        payload_detail = {}
+    payload_qty = _decimal_quantity(payload_detail.get("Qty"))
+    payload_unit_price = _decimal_money(payload_detail.get("UnitPrice"))
+    payload_amount = _decimal_money(payload_line.get("Amount"))
+    payload_extended_amount = (payload_qty * payload_unit_price).quantize(Decimal("0.01"))
+    return {
+        "invoice_line_id": int(line.id),
+        "description": str(line.description or "").strip() or None,
+        "local_quantity": _quantity(line.quantity),
+        "local_unit_price": _money(line.unit_price),
+        "local_net": _money(line.net),
+        "local_tax": _money(line.vat),
+        "local_gross": _money(line.gross),
+        "payload_quantity": float(payload_qty),
+        "payload_unit_price": float(payload_unit_price),
+        "payload_amount": float(payload_amount),
+        "payload_extended_amount": float(payload_extended_amount),
+        "payload_tax_code_ref": (
+            str((payload_detail.get("TaxCodeRef") or {}).get("value") or "").strip() or None
+            if isinstance(payload_detail.get("TaxCodeRef"), dict)
+            else None
+        ),
+    }
+
+
+def _invoice_sync_diagnostics(
+    invoice: Invoice,
+    *,
+    line_rows: list[tuple[InvoiceLine, Ticket | None, Product | None]],
+    line_items: list[dict[str, Any]],
+    tax_details: list[dict[str, Any]],
+    global_tax_calculation: str | None,
+) -> dict[str, Any]:
+    local_line_summaries = [
+        _line_sync_summary(line, payload_line)
+        for (line, _ticket, _product), payload_line in zip(line_rows, line_items)
+    ]
+    payload_net_total = _decimal_money(
+        sum(Decimal(str(item["payload_amount"])) for item in local_line_summaries)
+    )
+    payload_tax_total = _decimal_money(
+        sum(Decimal(str(detail["line_tax"])) for detail in tax_details)
+    )
+    return {
+        "invoice_id": int(invoice.id),
+        "invoice_no": str(invoice.invoice_no or "").strip() or None,
+        "local_totals": {
+            "net_total": _money(invoice.net_total),
+            "tax_total": _money(invoice.vat_total),
+            "gross_total": _money(invoice.gross_total),
+        },
+        "local_line_totals": local_line_summaries,
+        "payload_line_totals": local_line_summaries,
+        "payload_tax_mode": str(global_tax_calculation or "").strip() or None,
+        "payload_net_total": float(payload_net_total),
+        "payload_tax_total": float(payload_tax_total),
+        "expected_quickbooks_total_from_payload": float(
+            _decimal_money(payload_net_total + payload_tax_total)
+        ),
     }
 
 
@@ -375,14 +454,72 @@ def _validate_remote_invoice_totals(invoice: Invoice, remote_invoice: dict[str, 
         remote_total = _decimal_money(remote_total_raw)
         if remote_total != _decimal_money(invoice.gross_total):
             raise QuickBooksApiError(
-                "QuickBooks invoice total does not match the local invoice gross total."
+                "QuickBooks invoice total does not match the local invoice gross total.",
+                detail_json={
+                    "local_gross_total": _money(invoice.gross_total),
+                    "remote_total": float(remote_total),
+                },
             )
     if remote_tax_raw not in (None, ""):
         remote_tax = _decimal_money(remote_tax_raw)
         if remote_tax != _decimal_money(invoice.vat_total):
             raise QuickBooksApiError(
-                "QuickBooks invoice tax total does not match the local invoice tax total."
+                "QuickBooks invoice tax total does not match the local invoice tax total.",
+                detail_json={
+                    "local_tax_total": _money(invoice.vat_total),
+                    "remote_tax_total": float(remote_tax),
+                },
             )
+
+
+def _remote_invoice_summary(remote_invoice: dict[str, Any]) -> dict[str, Any]:
+    customer_ref = remote_invoice.get("CustomerRef")
+    txn_tax_detail = remote_invoice.get("TxnTaxDetail")
+    return {
+        "external_id": str(remote_invoice.get("Id") or "").strip() or None,
+        "doc_number": str(remote_invoice.get("DocNumber") or "").strip() or None,
+        "customer_ref": (
+            str(customer_ref.get("value") or "").strip() or None
+            if isinstance(customer_ref, dict)
+            else None
+        ),
+        "txn_date": str(remote_invoice.get("TxnDate") or "").strip() or None,
+        "total_amt": _money(remote_invoice.get("TotalAmt")),
+        "tax_total": (
+            _money(txn_tax_detail.get("TotalTax"))
+            if isinstance(txn_tax_detail, dict) and txn_tax_detail.get("TotalTax") not in (None, "")
+            else None
+        ),
+    }
+
+
+def _remote_invoice_matches_local_invoice(
+    remote_invoice: dict[str, Any],
+    *,
+    invoice: Invoice,
+    customer_external_id: str,
+) -> bool:
+    customer_ref = remote_invoice.get("CustomerRef")
+    if isinstance(customer_ref, dict):
+        if str(customer_ref.get("value") or "").strip() != str(customer_external_id or "").strip():
+            return False
+
+    remote_txn_date = str(remote_invoice.get("TxnDate") or "").strip()
+    if remote_txn_date and remote_txn_date != invoice.invoice_date.isoformat():
+        return False
+
+    remote_total_raw = remote_invoice.get("TotalAmt")
+    if remote_total_raw in (None, ""):
+        return False
+    if _decimal_money(remote_total_raw) != _decimal_money(invoice.gross_total):
+        return False
+
+    txn_tax_detail = remote_invoice.get("TxnTaxDetail")
+    if isinstance(txn_tax_detail, dict) and txn_tax_detail.get("TotalTax") not in (None, ""):
+        if _decimal_money(txn_tax_detail.get("TotalTax")) != _decimal_money(invoice.vat_total):
+            return False
+
+    return True
 
 
 def sync_invoice_to_quickbooks(
@@ -445,35 +582,67 @@ def sync_invoice_to_quickbooks(
         tax_details=tax_details,
         global_tax_calculation=global_tax_calculation,
     )
+    invoice_sync_diagnostics = _invoice_sync_diagnostics(
+        invoice,
+        line_rows=line_rows,
+        line_items=line_items,
+        tax_details=tax_details,
+        global_tax_calculation=global_tax_calculation,
+    )
 
     try:
         matches = client.query_entities(
             "invoice",
             f"SELECT * FROM Invoice WHERE DocNumber = '{quote_query_value(invoice.invoice_no)}'",
         )
-        if matches:
-            remote_invoice = matches[0]
+        invoice_sync_diagnostics["doc_number_lookup_candidates"] = [
+            _remote_invoice_summary(match) for match in matches
+        ]
+        matching_remote_invoice = next(
+            (
+                match
+                for match in matches
+                if _remote_invoice_matches_local_invoice(
+                    match,
+                    invoice=invoice,
+                    customer_external_id=str(customer_sync["external_id"]),
+                )
+            ),
+            None,
+        )
+        if matching_remote_invoice is not None:
+            remote_invoice = matching_remote_invoice
             response_status_code = 200
+            invoice_sync_diagnostics["remote_resolution"] = "reused_matching_doc_number"
         else:
+            if matches:
+                logger.info(
+                    "Ignoring QuickBooks invoice DocNumber collision for invoice %s with diagnostics %s",
+                    invoice.id,
+                    invoice_sync_diagnostics,
+                )
             result = client.create_entity("invoice", payload)
             remote_invoice = result.payload
             response_status_code = result.status_code
+            invoice_sync_diagnostics["remote_resolution"] = "created_new_invoice"
+        invoice_sync_diagnostics["remote_invoice"] = _remote_invoice_summary(remote_invoice)
+        _validate_remote_invoice_totals(invoice, remote_invoice)
     except QuickBooksApiError as exc:
         logger.warning(
-            "QuickBooks invoice sync failed for invoice %s with tax payload summary %s",
+            "QuickBooks invoice sync failed for invoice %s with diagnostics %s and tax payload summary %s",
             invoice.id,
+            invoice_sync_diagnostics,
             tax_payload_summary,
         )
         detail_json = dict(exc.detail_json or {})
         detail_json["tax_payload_summary"] = tax_payload_summary
+        detail_json["invoice_sync_diagnostics"] = invoice_sync_diagnostics
         raise QuickBooksApiError(
             str(exc),
             status_code=exc.status_code,
             detail_json=detail_json,
             auth_error=exc.auth_error,
         ) from exc
-
-    _validate_remote_invoice_totals(invoice, remote_invoice)
 
     external_id = str(remote_invoice.get("Id") or "").strip()
     if not external_id:
@@ -494,11 +663,8 @@ def sync_invoice_to_quickbooks(
         "line_amount_basis": "net_exclusive",
         "global_tax_calculation": global_tax_calculation,
         "tax_payload_summary": tax_payload_summary,
-        "local_totals": {
-            "net_total": _money(invoice.net_total),
-            "tax_total": _money(invoice.vat_total),
-            "gross_total": _money(invoice.gross_total),
-        },
+        "local_totals": invoice_sync_diagnostics["local_totals"],
+        "invoice_sync_diagnostics": invoice_sync_diagnostics,
         "tax_details": tax_details,
     }
 
