@@ -356,3 +356,25 @@ def test_maybe_auto_reset_demo_tenant_handles_accounting_rows_when_reset_is_due(
         .first()
         is None
     )
+
+
+def test_demo_reset_explicitly_clears_quickbooks_tax_mappings(
+    db_session,
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "uploads_dir", str(tmp_path / "uploads"))
+    ids = _seed_demo_tenant_with_accounting_rows(db_session)
+    tenant = db_session.get(Tenant, ids["tenant_id"])
+    assert tenant is not None
+    assert _tenant_row_count(db_session, AccountingTaxMap, ids["tenant_id"]) == 1
+
+    reset_demo_tenant_data(
+        db_session,
+        None,
+        tenant=tenant,
+        current_user=None,
+        reset_reason="automatic",
+    )
+
+    assert _tenant_row_count(db_session, AccountingTaxMap, ids["tenant_id"]) == 0

@@ -1070,6 +1070,121 @@ def test_callback_success_stores_encrypted_tokens_and_realm_id(tmp_path, monkeyp
         env["app"].dependency_overrides.clear()
 
 
+def test_saved_tax_mappings_remain_visible_after_quickbooks_reconnect(tmp_path, monkeypatch):
+    env = _prepare_environment(tmp_path, monkeypatch)
+    _seed_connected_connection(
+        env["SessionLocal"],
+        tenant_id=env["tenant_id"],
+        realm_id="realm-old",
+    )
+    tax_code_options = [
+        ProviderTaxCodeOption(
+            remote_tax_code_id="3",
+            display_code="20.0% S",
+            display_name="20.0% Standard Sales",
+            description="20.0% Standard Sales",
+            is_active=True,
+            display_label="20.0% S - 20.0% Standard Sales",
+        ),
+        ProviderTaxCodeOption(
+            remote_tax_code_id="10",
+            display_code="0.0% Z",
+            display_name="Zero VAT",
+            description="Zero VAT",
+            is_active=True,
+            display_label="0.0% Z - Zero VAT",
+        ),
+    ]
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: tax_code_options,
+    )
+    monkeypatch.setattr(
+        tax_mapping_module,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: tax_code_options,
+    )
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "inspect_quickbooks_tax_discovery",
+        lambda *args, **kwargs: _tax_discovery_state(tax_code_options),
+    )
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "exchange_code_for_tokens",
+        lambda **kwargs: _fake_token_bundle(realm_id=str(kwargs["realm_id"])),
+    )
+    with env["SessionLocal"]() as db:
+        tax_rate = TaxRate(
+            code="VAT20-RECONNECT",
+            description="VAT 20 Reconnect",
+            rate_percent=Decimal("20.000"),
+            is_active=True,
+        )
+        db.add(tax_rate)
+        db.flush()
+        db.add(
+            Product(
+                tenant_id=env["tenant_id"],
+                code="MAP-PROD-RECONNECT",
+                description="Reconnect Product",
+                nominal_code="4000",
+                unit_price=Decimal("15.00"),
+                tax_rate_id=tax_rate.id,
+            )
+        )
+        db.flush()
+        db.add(
+            AccountingTaxMap(
+                tenant_id=env["tenant_id"],
+                provider="quickbooks",
+                tax_rate_id=tax_rate.id,
+                external_id="3",
+                external_code="20.0% S",
+                name="VAT 20 Saved",
+                is_active=True,
+            )
+        )
+        db.commit()
+
+    tenant_client = _client_for(env["app"], base_url="https://acme.localhost")
+    platform_client = _client_for(env["app"], base_url="https://admin.localhost")
+    try:
+        _login(tenant_client, email=env["admin_email"], password=env["password"], next_path="/admin")
+        connect_response = tenant_client.get(
+            "/admin/accounting/quickbooks/connect",
+            follow_redirects=False,
+        )
+        state = _authorize_state_from_redirect(connect_response.headers["location"])
+
+        callback = platform_client.get(
+            f"/api/accounting/quickbooks/callback?state={state}&code=auth-code&realmId=realm-new",
+            follow_redirects=False,
+        )
+        assert callback.status_code == 303
+
+        connection = _connection_for_tenant(env["SessionLocal"], env["tenant_id"])
+        assert connection is not None
+        assert connection.realm_id == "realm-new"
+
+        tax_maps = _tax_maps_for_tenant(env["SessionLocal"], env["tenant_id"])
+        assert len(tax_maps) == 1
+        assert tax_maps[0].external_id == "3"
+        assert tax_maps[0].external_code == "20.0% S"
+
+        page = tenant_client.get("/admin/accounting/tax-mappings")
+        assert page.status_code == 200
+        assert "VAT20-RECONNECT" in page.text
+        assert "Stored Provider Ref" in page.text
+        assert "20.0% S" in page.text
+        assert 'option value="3" selected' in page.text
+    finally:
+        tenant_client.close()
+        platform_client.close()
+        env["app"].dependency_overrides.clear()
+
+
 def test_callback_requires_initiating_user_to_still_match_tenant_admin_binding(tmp_path, monkeypatch):
     env = _prepare_environment(tmp_path, monkeypatch)
     tenant_client = _client_for(env["app"], base_url="https://acme.localhost")
@@ -1518,25 +1633,43 @@ def test_tax_mapping_page_shows_quickbooks_uk_fallback_values_when_taxcode_disco
         ),
     )
     with env["SessionLocal"]() as db:
-        tax_rate = TaxRate(
+        standard_rate = TaxRate(
             code="VAT20-FALLBACK",
             description="VAT 20 Fallback",
             rate_percent=Decimal("20.000"),
             is_active=True,
         )
-        db.add(tax_rate)
+        zero_rate = TaxRate(
+            code="VAT0-FALLBACK",
+            description="VAT 0 Fallback",
+            rate_percent=Decimal("0.000"),
+            is_active=True,
+        )
+        db.add_all([standard_rate, zero_rate])
         db.flush()
         db.add(
             Product(
                 tenant_id=env["tenant_id"],
-                code="MAP-PROD-FALLBACK",
-                description="Fallback Tax Code Product",
+                code="MAP-PROD-FALLBACK-STD",
+                description="Fallback Tax Code Product Standard",
                 nominal_code="4000",
                 unit_price=Decimal("15.00"),
-                tax_rate_id=tax_rate.id,
+                tax_rate_id=standard_rate.id,
+            )
+        )
+        db.add(
+            Product(
+                tenant_id=env["tenant_id"],
+                code="MAP-PROD-FALLBACK-ZERO",
+                description="Fallback Tax Code Product Zero",
+                nominal_code="4000",
+                unit_price=Decimal("15.00"),
+                tax_rate_id=zero_rate.id,
             )
         )
         db.commit()
+        standard_rate_id = int(standard_rate.id)
+        zero_rate_id = int(zero_rate.id)
 
     client = _client_for(env["app"], base_url="https://acme.localhost")
     try:
@@ -1548,6 +1681,10 @@ def test_tax_mapping_page_shows_quickbooks_uk_fallback_values_when_taxcode_disco
         assert "Create Mapping" in page.text
         assert "20.0% S - Standard VAT (Ref 3)" in page.text
         assert "0.0% Z - Zero VAT (Ref 10)" in page.text
+        standard_select = page.text.split(f'id="mapping-external-id-new-{standard_rate_id}"', 1)[1].split("</select>", 1)[0]
+        zero_select = page.text.split(f'id="mapping-external-id-new-{zero_rate_id}"', 1)[1].split("</select>", 1)[0]
+        assert 'option value="3" selected' in standard_select
+        assert 'option value="10" selected' in zero_select
     finally:
         client.close()
         env["app"].dependency_overrides.clear()

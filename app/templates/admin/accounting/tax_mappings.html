@@ -193,6 +193,14 @@
                   <button type="submit" class="btn btn--secondary">Remove Mapping</button>
                 </form>
               {% elif is_connected and tax_code_options %}
+                {% set fallback_default_tax_ref = None %}
+                {% if uk_fallback_tax_codes %}
+                  {% if row.rate_percent in ["20", "20.0", "20.00", "20.000"] %}
+                    {% set fallback_default_tax_ref = "3" %}
+                  {% elif row.rate_percent in ["0", "0.0", "0.00", "0.000"] %}
+                    {% set fallback_default_tax_ref = "10" %}
+                  {% endif %}
+                {% endif %}
                 <form method="post" action="{{ tenant_path('/admin/accounting/tax-mappings') }}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
                   <input type="hidden" name="tax_rate_id" value="{{ row.tax_rate_id }}" />
@@ -206,7 +214,7 @@
                       <select id="mapping-external-id-new-{{ row.tax_rate_id }}" name="external_id">
                         <option value="">Select QuickBooks VAT / Tax Code</option>
                         {% for option in tax_code_options %}
-                          <option value="{{ option.remote_tax_code_id }}">
+                          <option value="{{ option.remote_tax_code_id }}" {% if fallback_default_tax_ref == option.remote_tax_code_id %}selected{% endif %}>
                             {{ option.display_label }} (Ref {{ option.remote_tax_code_id }})
                           </option>
                         {% endfor %}
