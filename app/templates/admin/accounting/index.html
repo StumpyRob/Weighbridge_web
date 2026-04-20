@@ -32,7 +32,7 @@
       <div class="flash-toast__content">
         {% if sync_retry_run %}Retry run finished.{% else %}Sync run finished.{% endif %}
         {% if sync_processed == 0 %}
-          {% if sync_retry_run %}No retryable failed jobs were ready.{% else %}No retryable jobs were ready.{% endif %}
+          {% if sync_retry_run %}No retryable failed jobs were ready.{% else %}No pending jobs were ready.{% endif %}
         {% else %}
           Processed {{ sync_processed }} job{% if sync_processed != 1 %}s{% endif %}, succeeded {{ sync_succeeded }}, failed {{ sync_failed }}.
         {% endif %}
@@ -58,7 +58,7 @@
   <div class="page-header">
     <div>
       <h1>Accounting Integrations</h1>
-      <p class="muted">Connect QuickBooks, complete the required setup, then review Needs Attention before retrying failed jobs.</p>
+      <p class="muted">Connect QuickBooks, choose a revenue account, complete the required setup, then review anything that needs action.</p>
     </div>
     <div class="actions btn-group">
       <a class="btn btn--secondary" href="{{ tenant_path('/admin') }}">Back to Settings</a>
@@ -97,7 +97,7 @@
           </div>
         </div>
 
-        <p class="muted">Sync runs are started manually for this tenant. Automatic processing is not enabled in this phase.</p>
+        <p class="muted">Sync runs are manual in this phase.</p>
 
         {% if connection and connection.last_error %}
           <div class="alert alert--danger">
@@ -124,7 +124,7 @@
 
         {% if is_connected %}
           <hr>
-          <p class="muted">Run up to 5 queued jobs per click for this tenant.</p>
+          <p class="muted">Up to 5 queued jobs are processed per click.</p>
           <div class="actions btn-group">
             <form method="post" action="{{ tenant_path('/admin/accounting/run-sync') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
@@ -136,7 +136,7 @@
               <button type="submit" class="btn btn--secondary">Retry Failed Jobs</button>
             </form>
           </div>
-          <p class="muted">Retry Failed Jobs retries the existing failed jobs below. It does not create a fresh invoice. After fixing product/account setup, you may need to create and sync a new invoice instead.</p>
+          <p class="muted">Retry Failed Jobs reruns the same failed jobs shown below. It does not create a new invoice. If the original invoice setup was wrong, fix setup first and then create a fresh invoice.</p>
         {% endif %}
       </div>
     </section>
@@ -159,7 +159,7 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
             <div class="form-grid">
               <div>
-                <label for="remote_account_id">Default Revenue Account</label>
+                <label for="remote_account_id" title="Where invoice revenue is posted in QuickBooks. Usually Sales.">Default Revenue Account</label>
                 <select id="remote_account_id" name="remote_account_id">
                   <option value="">No default selected - use product nominal-code fallback</option>
                   {% for account in revenue_account_options %}
@@ -200,16 +200,18 @@
         <h2>Setup Overview</h2>
       </div>
       <div class="frame-body">
-        <p class="muted">Counts below are jobs, not invoices. One invoice may create separate invoice and payment jobs.</p>
+        <p class="muted">Use this as a checklist before running or retrying sync. Counts below are jobs, not invoices.</p>
 
         <div class="invoice-summary-grid">
           <div class="card">
-            <div class="summary-label">Required Tax Mappings</div>
+            <div class="summary-label" title="Local tax rates used by your products that should have a QuickBooks VAT code.">Required Tax Mappings</div>
             <strong>{{ setup.usable_required_tax_mapping_count if setup else 0 }} / {{ setup.required_tax_rate_count if setup else 0 }}</strong>
+            <div class="muted">Local rates currently in use.</div>
           </div>
           <div class="card">
-            <div class="summary-label">Missing Tax Mappings</div>
+            <div class="summary-label" title="Required local tax rates that do not yet have a usable QuickBooks VAT code.">Missing Tax Mappings</div>
             <strong>{{ setup.missing_tax_mapping_count if setup else 0 }}</strong>
+            <div class="muted">These need a QuickBooks VAT code.</div>
           </div>
           <div class="card">
             <div class="summary-label">Products Missing Tax Rate</div>
@@ -224,12 +226,14 @@
             <strong>{{ setup.pending_job_count if setup else 0 }}</strong>
           </div>
           <div class="card">
-            <div class="summary-label">Retryable Failed Jobs</div>
+            <div class="summary-label" title="Jobs that can usually be rerun after fixing setup or a temporary issue.">Retryable Failed Jobs</div>
             <strong>{{ setup.failed_job_count if setup else 0 }}</strong>
+            <div class="muted">Usually safe to retry after a fix.</div>
           </div>
           <div class="card">
-            <div class="summary-label">Manual Review Jobs</div>
+            <div class="summary-label" title="Jobs that should be checked by a person before retrying.">Manual Review Jobs</div>
             <strong>{{ setup.manual_review_job_count if setup else 0 }}</strong>
+            <div class="muted">Check these before retrying.</div>
           </div>
           <div class="card">
             <div class="summary-label">Sandbox Ready</div>
@@ -259,7 +263,7 @@
       </div>
       <div class="frame-body">
         {% if needs_attention_rows %}
-          <p class="muted">Focus on these setup blockers and failed jobs first.</p>
+          <p class="muted">Work through these items first.</p>
           <div class="table-responsive">
             <table class="table">
               <thead>
@@ -287,7 +291,7 @@
             </table>
           </div>
         {% else %}
-          <p class="muted">No current setup blockers or failed sync jobs.</p>
+          <p class="muted">Nothing needs attention right now.</p>
         {% endif %}
       </div>
     </section>
@@ -298,7 +302,7 @@
       </div>
       <div class="frame-body">
         {% if recent_jobs %}
-          <p class="muted">Recent sync jobs and their next action.</p>
+          <p class="muted">Recent sync jobs with the latest outcome and next step.</p>
           <div class="table-responsive">
             <table class="table">
               <thead>
@@ -342,7 +346,7 @@
             </table>
           </div>
         {% else %}
-          <p class="muted">No sync jobs recorded yet.</p>
+          <p class="muted">No recent sync jobs yet.</p>
         {% endif %}
       </div>
     </section>
@@ -353,7 +357,7 @@
       </div>
       <div class="frame-body">
         {% if recent_events %}
-          <p class="muted">Recent accounting activity for this tenant.</p>
+          <p class="muted">Recent QuickBooks and sync activity for this tenant.</p>
           <div class="table-responsive">
             <table class="table">
               <thead>
@@ -378,7 +382,7 @@
             </table>
           </div>
         {% else %}
-          <p class="muted">No accounting events recorded yet.</p>
+          <p class="muted">No recent activity yet.</p>
         {% endif %}
       </div>
     </section>

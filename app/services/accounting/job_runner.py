@@ -66,11 +66,13 @@ def claim_next_accounting_job(
     tenant_id: int,
     provider: str = QUICKBOOKS_PROVIDER,
     retry_failed: bool = False,
+    attempted_job_ids: set[int] | None = None,
 ) -> AccountingSyncJob | None:
     claimable_statuses = (
         _CLAIMABLE_RETRY_STATUSES if retry_failed else _CLAIMABLE_PENDING_STATUSES
     )
     now = utcnow()
+    attempted_ids = attempted_job_ids or set()
     candidates = (
         db.execute(
             (
@@ -100,6 +102,8 @@ def claim_next_accounting_job(
 
     candidate: AccountingSyncJob | None = None
     for queued_job in candidates:
+        if int(getattr(queued_job, "id", 0) or 0) in attempted_ids:
+            continue
         queued_status = str(queued_job.status or "").strip().lower()
         if retry_failed and queued_status == ACCOUNTING_JOB_STATUS_FAILED:
             if newer_succeeded_job_exists(db, queued_job):
@@ -332,6 +336,7 @@ def process_pending_accounting_jobs(
     failed = 0
     batch_limit = max(1, min(int(limit or 0), 20))
     processed_job_types: Counter[str] = Counter()
+    attempted_job_ids: set[int] = set()
 
     for _ in range(batch_limit):
         job = claim_next_accounting_job(
@@ -339,9 +344,11 @@ def process_pending_accounting_jobs(
             tenant_id=int(tenant_id),
             provider=provider,
             retry_failed=retry_failed,
+            attempted_job_ids=attempted_job_ids,
         )
         if job is None:
             break
+        attempted_job_ids.add(int(job.id))
         processed += 1
         processed_job_types[str(job.job_type or "").strip()] += 1
         completed_job = run_accounting_job(db, job)

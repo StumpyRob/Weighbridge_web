@@ -896,9 +896,9 @@ def test_admin_accounting_shows_invoice_account_mismatch_context_for_failed_jobs
         assert response.status_code == 200
         page_text = " ".join(response.text.split())
         assert (
-            "Retry Failed Jobs retries the existing failed jobs below. "
-            "It does not create a fresh invoice. "
-            "After fixing product/account setup, you may need to create and sync a new invoice instead."
+            "Retry Failed Jobs reruns the same failed jobs shown below. "
+            "It does not create a new invoice. "
+            "If the original invoice setup was wrong, fix setup first and then create a fresh invoice."
         ) in page_text
         assert (
             "Invoice still expects AcctNum 4000."
@@ -1274,7 +1274,7 @@ def test_saved_tax_mappings_remain_visible_after_quickbooks_reconnect(tmp_path, 
         page = tenant_client.get("/admin/accounting/tax-mappings")
         assert page.status_code == 200
         assert "VAT20-RECONNECT" in page.text
-        assert "Stored Provider Ref" in page.text
+        assert "QuickBooks Ref Used for Sync" in page.text
         assert "20.0% S" in page.text
         assert 'option value="3" selected' in page.text
     finally:
@@ -1523,9 +1523,39 @@ def test_admin_accounting_sync_summary_clarifies_job_counts_and_types(tmp_path, 
         assert "Processed 2 jobs, succeeded 2, failed 0." in follow.text
         assert "Jobs: 1 Mark Invoice Paid, 1 Sync Invoice." in follow.text
         assert (
-            "Counts below are jobs, not invoices. One invoice may create separate invoice and payment jobs."
+            "Use this as a checklist before running or retrying sync. Counts below are jobs, not invoices."
             in " ".join(follow.text.split())
         )
+    finally:
+        client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_admin_accounting_sync_summary_uses_pending_wording_for_empty_normal_run(
+    tmp_path, monkeypatch
+):
+    env = _prepare_environment(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "process_pending_accounting_jobs",
+        lambda *args, **kwargs: AccountingJobBatchResult(
+            processed=0,
+            succeeded=0,
+            failed=0,
+            processed_job_types={},
+        ),
+    )
+
+    client = _client_for(env["app"], base_url="https://acme.localhost")
+    try:
+        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
+        response = _post_with_csrf(client, "/admin/accounting/run-sync")
+        assert response.status_code == 303
+
+        follow = client.get(response.headers["location"])
+        assert follow.status_code == 200
+        assert "No pending jobs were ready." in follow.text
+        assert "No retryable jobs were ready." not in follow.text
     finally:
         client.close()
         env["app"].dependency_overrides.clear()
@@ -1713,7 +1743,7 @@ def test_tax_mapping_page_shows_clear_message_when_connected_company_has_no_tax_
         _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
         page = client.get("/admin/accounting/tax-mappings")
         assert page.status_code == 200
-        assert "No QuickBooks tax codes found in this company." in page.text
+        assert "No QuickBooks VAT codes are available in this company yet." in page.text
         assert "QuickBooks returned 2 tax rates and 1 tax agency, but no TaxCode records for manual mapping." in page.text
         assert "Connect QuickBooks to load tax codes before creating a new mapping." not in page.text
         assert "Create Mapping" not in page.text
@@ -1810,8 +1840,7 @@ def test_tax_mapping_page_shows_quickbooks_uk_fallback_values_when_taxcode_disco
         _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
         page = client.get("/admin/accounting/tax-mappings")
         assert page.status_code == 200
-        assert "No QuickBooks tax codes found in this company." in page.text
-        assert "QuickBooks UK fallback values are shown because live tax-code discovery returned no usable rows." in page.text
+        assert "Live QuickBooks VAT codes are not available for this company right now, so common QuickBooks UK sandbox VAT options are shown below." in page.text
         assert "Create Mapping" in page.text
         assert "20.0% S - Standard VAT (Ref 3)" in page.text
         assert "0.0% Z - Zero VAT (Ref 10)" in page.text
@@ -1944,7 +1973,7 @@ def test_tax_mapping_page_ignores_optional_discovery_errors_when_no_tax_codes_ex
         _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
         page = client.get("/admin/accounting/tax-mappings")
         assert page.status_code == 200
-        assert "No QuickBooks tax codes found in this company." in page.text
+        assert "No QuickBooks VAT codes are available in this company yet." in page.text
         assert "QuickBooks tax codes could not be loaded" not in page.text
         assert "Preferences is not supported." not in page.text
         assert "Create Mapping" not in page.text
@@ -2005,8 +2034,8 @@ def test_tax_mapping_page_shows_automated_vat_message_when_manual_mapping_is_not
         _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
         page = client.get("/admin/accounting/tax-mappings")
         assert page.status_code == 200
-        assert "This QuickBooks company uses automated VAT. Manual tax mapping is not required." in page.text
-        assert "No QuickBooks tax codes found in this company." not in page.text
+        assert "This QuickBooks company manages VAT automatically, so you do not need manual tax mappings here." in page.text
+        assert "No QuickBooks VAT codes are available in this company yet." not in page.text
         assert "Create Mapping" not in page.text
     finally:
         client.close()

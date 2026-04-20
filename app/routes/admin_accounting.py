@@ -788,7 +788,6 @@ def _recent_job_row(
         "next_action_hint": next_action_hint,
         "retry_guidance": retry_guidance,
         "sort_order": sort_order,
-        "account_mismatch": account_mismatch,
         "account_mismatch_detail_lines": _account_mismatch_detail_lines(account_mismatch),
         "is_superseded": is_superseded,
     }

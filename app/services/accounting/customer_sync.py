@@ -135,26 +135,27 @@ def sync_customer_to_quickbooks(
         customer_id=int(customer_id),
         provider=provider,
     )
+    mapped_external_id = str(getattr(mapping, "external_id", "") or "").strip()
+    remote_customer: dict[str, Any] | None = None
+    if mapping is not None and mapped_external_id:
+        remote_customer = client.get_entity(
+            "customer",
+            mapped_external_id,
+            allow_not_found=True,
+        )
 
     if (
         mapping is not None
-        and str(mapping.external_id or "").strip()
+        and mapped_external_id
         and str(mapping.sync_status or "").strip().lower() == "synced"
         and str(mapping.payload_hash or "").strip() == payload_hash
+        and remote_customer is not None
     ):
         return {
-            "external_id": str(mapping.external_id),
+            "external_id": mapped_external_id,
             "status": "unchanged",
             "payload_hash": payload_hash,
         }
-
-    remote_customer: dict[str, Any] | None = None
-    if mapping is not None and str(mapping.external_id or "").strip():
-        remote_customer = client.get_entity(
-            "customer",
-            str(mapping.external_id),
-            allow_not_found=True,
-        )
 
     if remote_customer is None:
         display_name = _customer_display_name(customer)

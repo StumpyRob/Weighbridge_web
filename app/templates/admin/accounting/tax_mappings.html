@@ -31,7 +31,7 @@
   <div class="page-header">
     <div>
       <h1>QuickBooks Tax Mappings</h1>
-      <p class="muted">Manage tenant-scoped local tax rate mappings for QuickBooks sandbox testing. The UI only exposes the current tenant's required tax rates and saved mappings.</p>
+      <p class="muted">Match each local tax rate used by your products to the QuickBooks VAT code sent on invoice lines.</p>
     </div>
     <div class="actions btn-group">
       <a class="btn btn--secondary" href="{{ tenant_path('/admin/accounting') }}">Back to Accounting</a>
@@ -41,7 +41,7 @@
   <div class="stacked-frames">
     <section class="frame">
       <div class="frame-header">
-        <h2>Setup Summary</h2>
+        <h2>Overview</h2>
       </div>
       <div class="frame-body">
         <div class="invoice-summary-grid">
@@ -50,12 +50,14 @@
             <strong>{{ (connection.status if connection else "disconnected") | replace("_", " ") | title }}</strong>
           </div>
           <div class="card">
-            <div class="summary-label">Required Tax Mappings</div>
+            <div class="summary-label" title="Local tax rates used by your products that should have a QuickBooks VAT code.">Required Tax Mappings</div>
             <strong>{{ setup.usable_required_tax_mapping_count if setup else 0 }} / {{ setup.required_tax_rate_count if setup else 0 }}</strong>
+            <div class="muted">Local rates currently in use.</div>
           </div>
           <div class="card">
-            <div class="summary-label">Missing Tax Mappings</div>
+            <div class="summary-label" title="Required local tax rates that do not yet have a usable QuickBooks VAT code.">Missing Tax Mappings</div>
             <strong>{{ setup.missing_tax_mapping_count if setup else 0 }}</strong>
+            <div class="muted">These still need a QuickBooks VAT code.</div>
           </div>
           <div class="card">
             <div class="summary-label">Sandbox Ready</div>
@@ -63,18 +65,15 @@
           </div>
         </div>
 
-        <p class="muted">
-          Select a QuickBooks VAT/tax code from the connected company. The stored provider ref is what sync uses; the display code/name is shown here for operators.
-        </p>
+        <p class="muted">Each row below links one local tax rate to one QuickBooks VAT code.</p>
         {% if tax_code_error %}
-          <p class="muted">QuickBooks tax codes could not be loaded: {{ tax_code_error }}</p>
+          <p class="muted">QuickBooks VAT codes could not be loaded: {{ tax_code_error }}</p>
         {% elif uk_fallback_tax_codes %}
-          <p class="muted">No QuickBooks tax codes found in this company.</p>
-          <p class="muted">QuickBooks UK fallback values are shown because live tax-code discovery returned no usable rows.</p>
+          <p class="muted">Live QuickBooks VAT codes are not available for this company right now, so common QuickBooks UK sandbox VAT options are shown below.</p>
         {% elif auto_managed_tax %}
-          <p class="muted">This QuickBooks company uses automated VAT. Manual tax mapping is not required.</p>
+          <p class="muted">This QuickBooks company manages VAT automatically, so you do not need manual tax mappings here.</p>
         {% elif is_connected and not tax_code_options %}
-          <p class="muted">No QuickBooks tax codes found in this company.</p>
+          <p class="muted">No QuickBooks VAT codes are available in this company yet.</p>
           {% if tax_discovery and (tax_discovery.tax_rate_count or tax_discovery.tax_agency_count) %}
             <p class="muted">QuickBooks returned {{ tax_discovery.tax_rate_count }} tax rate{% if tax_discovery.tax_rate_count != 1 %}s{% endif %} and {{ tax_discovery.tax_agency_count }} tax agenc{% if tax_discovery.tax_agency_count == 1 %}y{% else %}ies{% endif %}, but no TaxCode records for manual mapping.</p>
           {% endif %}
@@ -93,17 +92,12 @@
 
     <section class="frame">
       <div class="frame-header">
-        <h2>Manage Mappings</h2>
+        <h2>Tax Rate Mappings</h2>
       </div>
       <div class="frame-body">
-        {% if uk_fallback_tax_codes %}
-          <p class="muted">QuickBooks UK fallback values are shown because live tax-code discovery returned no usable rows.</p>
-        {% elif auto_managed_tax %}
-          <p class="muted">This QuickBooks company uses automated VAT. Manual tax mapping is not required.</p>
-        {% endif %}
         {% if setup and setup.tax_mapping_rows %}
           {% for row in setup.tax_mapping_rows %}
-            <div class="card" style="margin-bottom: 1rem;">
+            <div class="card" style="margin-bottom: 0.75rem;">
               <div class="invoice-summary-grid">
                 <div>
                   <div class="summary-label">Local Tax Rate</div>
@@ -115,7 +109,7 @@
                   <strong>{{ row.rate_percent or "-" }}</strong>
                 </div>
                 <div>
-                  <div class="summary-label">Products Using This Rate</div>
+                  <div class="summary-label">Products</div>
                   <strong>{{ row.product_count }}</strong>
                 </div>
                 <div>
@@ -128,11 +122,11 @@
                   <strong>{% if is_connected %}Connected{% else %}Disconnected{% endif %}</strong>
                 </div>
                 <div>
-                  <div class="summary-label">Stored Provider Ref</div>
+                  <div class="summary-label" title="The QuickBooks reference sent on invoice lines for this mapping.">QuickBooks Ref Used for Sync</div>
                   <strong>{{ row.external_id or "-" }}</strong>
                 </div>
                 <div>
-                  <div class="summary-label">Display Code / Name</div>
+                  <div class="summary-label">QuickBooks VAT Code</div>
                   <strong>{{ row.external_code or row.mapping_name or "-" }}</strong>
                 </div>
               </div>
@@ -146,15 +140,16 @@
                       <input id="mapping-name-{{ row.tax_rate_id }}" name="name" type="text" value="{{ row.mapping_name or '' }}" maxlength="255" />
                     </div>
                     <div>
-                      <label for="mapping-external-id-{{ row.tax_rate_id }}">QuickBooks VAT / Tax Code</label>
+                      <label for="mapping-external-id-{{ row.tax_rate_id }}" title="The QuickBooks VAT code sent on invoice lines for this local tax rate.">QuickBooks VAT Code</label>
                       <select id="mapping-external-id-{{ row.tax_rate_id }}" name="external_id">
-                        <option value="">Select QuickBooks VAT / Tax Code</option>
+                        <option value="">Choose QuickBooks VAT code</option>
                         {% for option in tax_code_options %}
                           <option value="{{ option.remote_tax_code_id }}" {% if row.external_id == option.remote_tax_code_id %}selected{% endif %}>
                             {{ option.display_label }} (Ref {{ option.remote_tax_code_id }})
                           </option>
                         {% endfor %}
                       </select>
+                      <div class="hint">This is the VAT code QuickBooks receives for this local tax rate.</div>
                     </div>
                     <div>
                       <label for="mapping-active-{{ row.tax_rate_id }}">Active</label>
@@ -168,20 +163,20 @@
                   </div>
                 </form>
                 {% if row.external_id and row.external_id not in tax_code_option_ids %}
-                  <p class="muted" style="margin-top: 0.75rem;">This stored provider ref does not match a current QuickBooks tax ref. Re-save this mapping from the QuickBooks tax list before syncing invoices.</p>
+                  <p class="muted" style="margin-top: 0.75rem;">This saved QuickBooks ref no longer matches the current QuickBooks VAT list. Re-save this mapping before syncing invoices.</p>
                 {% endif %}
                 <form method="post" action="{{ tenant_path('/admin/accounting/tax-mappings/' ~ row.mapping_id ~ '/delete') }}" style="margin-top: 0.75rem;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
                   <button type="submit" class="btn btn--secondary">Remove Mapping</button>
                 </form>
               {% elif row.mapping_id and auto_managed_tax %}
-                <p class="muted" style="margin-top: 0.75rem;">This QuickBooks company uses automated VAT. Manual tax mapping is not required.</p>
+                <p class="muted" style="margin-top: 0.75rem;">This QuickBooks company manages VAT automatically, so manual tax mapping is not needed here.</p>
                 <form method="post" action="{{ tenant_path('/admin/accounting/tax-mappings/' ~ row.mapping_id ~ '/delete') }}" style="margin-top: 0.75rem;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
                   <button type="submit" class="btn btn--secondary">Remove Mapping</button>
                 </form>
               {% elif row.mapping_id and is_connected and not tax_code_options %}
-                <p class="muted" style="margin-top: 0.75rem;">No QuickBooks tax codes found in this company.</p>
+                <p class="muted" style="margin-top: 0.75rem;">No QuickBooks VAT codes are available to edit this mapping right now.</p>
                 <form method="post" action="{{ tenant_path('/admin/accounting/tax-mappings/' ~ row.mapping_id ~ '/delete') }}" style="margin-top: 0.75rem;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}" />
                   <button type="submit" class="btn btn--secondary">Remove Mapping</button>
@@ -210,15 +205,22 @@
                       <input id="mapping-name-new-{{ row.tax_rate_id }}" name="name" type="text" value="" maxlength="255" />
                     </div>
                     <div>
-                      <label for="mapping-external-id-new-{{ row.tax_rate_id }}">QuickBooks VAT / Tax Code</label>
+                      <label for="mapping-external-id-new-{{ row.tax_rate_id }}" title="The QuickBooks VAT code sent on invoice lines for this local tax rate.">QuickBooks VAT Code</label>
                       <select id="mapping-external-id-new-{{ row.tax_rate_id }}" name="external_id">
-                        <option value="">Select QuickBooks VAT / Tax Code</option>
+                        <option value="">Choose QuickBooks VAT code</option>
                         {% for option in tax_code_options %}
                           <option value="{{ option.remote_tax_code_id }}" {% if fallback_default_tax_ref == option.remote_tax_code_id %}selected{% endif %}>
                             {{ option.display_label }} (Ref {{ option.remote_tax_code_id }})
                           </option>
                         {% endfor %}
                       </select>
+                      <div class="hint">
+                        {% if uk_fallback_tax_codes %}
+                          Using QuickBooks UK sandbox fallback options for this company.
+                        {% else %}
+                          This is the VAT code QuickBooks receives for this local tax rate.
+                        {% endif %}
+                      </div>
                     </div>
                     <div>
                       <label for="mapping-active-new-{{ row.tax_rate_id }}">Active</label>
@@ -232,15 +234,15 @@
                   </div>
                 </form>
               {% elif auto_managed_tax %}
-                <p class="muted" style="margin-top: 0.75rem;">This QuickBooks company uses automated VAT. Manual tax mapping is not required.</p>
+                <p class="muted" style="margin-top: 0.75rem;">This QuickBooks company manages VAT automatically, so manual tax mapping is not needed here.</p>
               {% elif is_connected and not tax_code_options %}
-                <p class="muted" style="margin-top: 0.75rem;">No QuickBooks tax codes found in this company.</p>
+                <p class="muted" style="margin-top: 0.75rem;">No QuickBooks VAT codes are available to choose from yet.</p>
               {% else %}
                 <p class="muted" style="margin-top: 0.75rem;">Connect QuickBooks to load tax codes before creating a new mapping.</p>
               {% endif %}
 
               {% if not row.is_required %}
-                <p class="muted" style="margin-top: 0.75rem;">This tax rate is not currently required by tenant products, but an existing mapping can still be reviewed or removed here.</p>
+                <p class="muted" style="margin-top: 0.75rem;">Not currently used by tenant products, but any saved mapping can still be reviewed or removed here.</p>
               {% endif %}
             </div>
           {% endfor %}

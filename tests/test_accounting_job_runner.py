@@ -7,7 +7,9 @@ from cryptography.fernet import Fernet
 import httpx
 from sqlalchemy import select
 
+import app.services.accounting.customer_sync as customer_sync_module
 import app.services.accounting.invoice_sync as invoice_sync_module
+import app.services.accounting.job_runner as job_runner_module
 import app.services.accounting.quickbooks_client as quickbooks_client_module
 import app.services.accounting.quickbooks_oauth as quickbooks_oauth_module
 import app.services.accounting.tax_mapping as tax_mapping_module
@@ -65,6 +67,22 @@ def _response(status_code: int, payload: dict) -> httpx.Response:
     )
 
 
+def _not_found_fault_response() -> httpx.Response:
+    return _response(
+        404,
+        {
+            "Fault": {
+                "Error": [
+                    {
+                        "Message": "Object Not Found",
+                        "Detail": "Object Not Found",
+                    }
+                ]
+            }
+        },
+    )
+
+
 def _seed_connection(
     db_session,
     *,
@@ -106,6 +124,10 @@ def _event_payloads(db_session, *, event_type: str) -> list[str]:
         .order_by(AccountingSyncEvent.id.asc())
     ).scalars()
     return [json.dumps(event.detail_json or {}, sort_keys=True) for event in events]
+
+
+def _customer_payload_hash(customer: Customer) -> str:
+    return customer_sync_module._payload_hash(customer_sync_module._customer_payload(customer))
 
 
 def _seed_tax_map(
@@ -400,6 +422,207 @@ def test_customer_job_updates_existing_remote_customer(db_session, monkeypatch):
         select(AccountingCustomerMap).where(AccountingCustomerMap.customer_id == customer.id)
     ).scalar_one()
     assert mapping.external_id == "QB-CUST-REMOTE-1"
+    assert mapping.sync_status == "synced"
+    assert _job(db_session, job_type="sync_customer").status == "succeeded"
+
+
+def test_customer_job_reuses_valid_unchanged_customer_map(db_session, monkeypatch):
+    _configure_settings(monkeypatch)
+    customer = Customer(account_code="C-QB-UNCHANGED-1", name="Unchanged Remote Customer")
+    db_session.add(customer)
+    db_session.flush()
+    db_session.add(
+        AccountingCustomerMap(
+            tenant_id=1,
+            provider="quickbooks",
+            customer_id=customer.id,
+            external_id="QB-CUST-UNCHANGED-1",
+            sync_status="synced",
+            payload_hash=_customer_payload_hash(customer),
+        )
+    )
+    db_session.commit()
+    _seed_connection(db_session)
+
+    enqueue_sync_customer(db_session, tenant_id=1, customer_id=customer.id)
+    db_session.commit()
+
+    calls: list[tuple[str, str, str | None]] = []
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        if url.endswith("/customer/QB-CUST-UNCHANGED-1"):
+            calls.append((method, url, None))
+            return _response(
+                200,
+                {
+                    "Customer": {
+                        "Id": "QB-CUST-UNCHANGED-1",
+                        "SyncToken": "7",
+                        "DisplayName": "C-QB-UNCHANGED-1 - Unchanged Remote Customer",
+                    }
+                },
+            )
+        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+
+    result = process_pending_accounting_jobs(db_session, tenant_id=1, limit=1)
+
+    assert result.processed == 1
+    assert result.succeeded == 1
+    assert result.failed == 0
+    assert len(calls) == 1
+    assert calls[0][0] == "GET"
+    assert calls[0][1].endswith("/customer/QB-CUST-UNCHANGED-1")
+    mapping = db_session.execute(
+        select(AccountingCustomerMap).where(AccountingCustomerMap.customer_id == customer.id)
+    ).scalar_one()
+    assert mapping.external_id == "QB-CUST-UNCHANGED-1"
+    assert mapping.sync_status == "synced"
+    assert _job(db_session, job_type="sync_customer").status == "succeeded"
+
+
+def test_customer_job_repairs_stale_external_id_by_relinking_existing_remote_customer(
+    db_session, monkeypatch
+):
+    _configure_settings(monkeypatch)
+    customer = Customer(account_code="C-QB-STALE-RELINK", name="Stale Relink Customer")
+    db_session.add(customer)
+    db_session.flush()
+    db_session.add(
+        AccountingCustomerMap(
+            tenant_id=1,
+            provider="quickbooks",
+            customer_id=customer.id,
+            external_id="QB-CUST-STALE-OLD",
+            sync_status="synced",
+            payload_hash=_customer_payload_hash(customer),
+        )
+    )
+    db_session.commit()
+    _seed_connection(db_session)
+
+    enqueue_sync_customer(db_session, tenant_id=1, customer_id=customer.id)
+    db_session.commit()
+
+    calls: list[tuple[str, str, str | None]] = []
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        query = str((params or {}).get("query") or "")
+        if url.endswith("/customer/QB-CUST-STALE-OLD"):
+            calls.append((method, url, None))
+            return _not_found_fault_response()
+        if url.endswith("/query") and "FROM Customer" in query:
+            calls.append((method, url, "query"))
+            return _response(
+                200,
+                {
+                    "QueryResponse": {
+                        "Customer": [
+                            {
+                                "Id": "QB-CUST-RELINK-1",
+                                "SyncToken": "9",
+                                "DisplayName": "C-QB-STALE-RELINK - Stale Relink Customer",
+                            }
+                        ]
+                    }
+                },
+            )
+        if url.endswith("/customer") and str((params or {}).get("operation")) == "update":
+            calls.append((method, url, "update"))
+            assert json["Id"] == "QB-CUST-RELINK-1"
+            assert json["SyncToken"] == "9"
+            return _response(
+                200,
+                {
+                    "Customer": {
+                        "Id": "QB-CUST-RELINK-1",
+                        "SyncToken": "10",
+                        "DisplayName": "C-QB-STALE-RELINK - Stale Relink Customer",
+                    }
+                },
+            )
+        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+
+    result = process_pending_accounting_jobs(db_session, tenant_id=1, limit=1)
+
+    assert result.processed == 1
+    assert result.succeeded == 1
+    assert result.failed == 0
+    assert calls[0][1].endswith("/customer/QB-CUST-STALE-OLD")
+    assert calls[1][2] == "query"
+    assert calls[2][2] == "update"
+    mapping = db_session.execute(
+        select(AccountingCustomerMap).where(AccountingCustomerMap.customer_id == customer.id)
+    ).scalar_one()
+    assert mapping.external_id == "QB-CUST-RELINK-1"
+    assert mapping.sync_status == "synced"
+    assert _job(db_session, job_type="sync_customer").status == "succeeded"
+
+
+def test_customer_job_repairs_stale_external_id_by_creating_new_remote_customer(
+    db_session, monkeypatch
+):
+    _configure_settings(monkeypatch)
+    customer = Customer(account_code="C-QB-STALE-CREATE", name="Stale Create Customer")
+    db_session.add(customer)
+    db_session.flush()
+    db_session.add(
+        AccountingCustomerMap(
+            tenant_id=1,
+            provider="quickbooks",
+            customer_id=customer.id,
+            external_id="QB-CUST-MISSING-OLD",
+            sync_status="synced",
+            payload_hash=_customer_payload_hash(customer),
+        )
+    )
+    db_session.commit()
+    _seed_connection(db_session)
+
+    enqueue_sync_customer(db_session, tenant_id=1, customer_id=customer.id)
+    db_session.commit()
+
+    calls: list[tuple[str, str, str | None]] = []
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        query = str((params or {}).get("query") or "")
+        if url.endswith("/customer/QB-CUST-MISSING-OLD"):
+            calls.append((method, url, None))
+            return _not_found_fault_response()
+        if url.endswith("/query") and "FROM Customer" in query:
+            calls.append((method, url, "query"))
+            return _response(200, {"QueryResponse": {}})
+        if url.endswith("/customer"):
+            calls.append((method, url, "create"))
+            return _response(
+                200,
+                {
+                    "Customer": {
+                        "Id": "QB-CUST-CREATED-1",
+                        "SyncToken": "0",
+                        "DisplayName": "C-QB-STALE-CREATE - Stale Create Customer",
+                    }
+                },
+            )
+        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+
+    result = process_pending_accounting_jobs(db_session, tenant_id=1, limit=1)
+
+    assert result.processed == 1
+    assert result.succeeded == 1
+    assert result.failed == 0
+    assert calls[0][1].endswith("/customer/QB-CUST-MISSING-OLD")
+    assert calls[1][2] == "query"
+    assert calls[2][2] == "create"
+    mapping = db_session.execute(
+        select(AccountingCustomerMap).where(AccountingCustomerMap.customer_id == customer.id)
+    ).scalar_one()
+    assert mapping.external_id == "QB-CUST-CREATED-1"
     assert mapping.sync_status == "synced"
     assert _job(db_session, job_type="sync_customer").status == "succeeded"
 
@@ -1224,6 +1447,132 @@ def test_invoice_job_runs_and_writes_invoice_sync_row(db_session, monkeypatch):
     assert diagnostics["local_line_totals"][0]["payload_tax_code_ref"] == "3"
     assert diagnostics["payload_line_totals"][0]["payload_amount"] == 10.0
     assert _job(db_session, job_type="sync_invoice").status == "succeeded"
+
+
+def test_invoice_job_repairs_stale_customer_map_before_creating_remote_invoice(
+    db_session, monkeypatch
+):
+    _configure_settings(monkeypatch)
+    seeded = _seed_quickbooks_invoice_case(
+        db_session,
+        customer_code="C-QB-INV-STALE-CUST",
+        customer_name="Invoice Stale Customer",
+        invoice_no="INV-QB-STALE-CUST-1",
+        product_code="QB-INV-STALE-CUST-PROD",
+        product_description="Invoice Stale Customer Product",
+        tax_rate_code="QB VAT ZERO",
+        tax_rate_description="QuickBooks VAT Zero",
+        tax_rate_percent=Decimal("0.000"),
+        quantity=Decimal("2.000"),
+        unit_price=Decimal("5.50"),
+        net_total=Decimal("11.00"),
+        vat_total=Decimal("0.00"),
+        gross_total=Decimal("11.00"),
+        customer_external_id="QB-CUST-STALE-OLD",
+        product_external_id="QB-ITEM-STALE-CUST",
+    )
+    customer = seeded["customer"]
+    invoice = seeded["invoice"]
+    tax_rate = seeded["tax_rate"]
+    customer_map = db_session.execute(
+        select(AccountingCustomerMap).where(AccountingCustomerMap.customer_id == customer.id)
+    ).scalar_one()
+    customer_map.sync_status = "synced"
+    customer_map.payload_hash = _customer_payload_hash(customer)
+    db_session.commit()
+    _seed_tax_map(
+        db_session,
+        tax_rate=tax_rate,
+        external_id="10",
+        external_code="0.0% Z",
+    )
+    _seed_connection(db_session)
+
+    enqueue_sync_invoice(db_session, tenant_id=1, invoice_id=invoice.id)
+    db_session.commit()
+
+    monkeypatch.setattr(
+        invoice_sync_module,
+        "sync_product_to_quickbooks",
+        lambda *args, **kwargs: {"external_id": "QB-ITEM-STALE-CUST"},
+    )
+    monkeypatch.setattr(
+        tax_mapping_module,
+        "list_provider_tax_codes",
+        lambda *args, **kwargs: [
+            tax_mapping_module.ProviderTaxCodeOption(
+                remote_tax_code_id="10",
+                display_code="0.0% Z",
+                display_name="Zero VAT",
+                description="Zero VAT",
+                is_active=True,
+                display_label="0.0% Z - Zero VAT",
+            )
+        ],
+    )
+
+    calls: list[tuple[str, str, str | None]] = []
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        query = str((params or {}).get("query") or "")
+        if url.endswith("/customer/QB-CUST-STALE-OLD"):
+            calls.append((method, url, None))
+            return _not_found_fault_response()
+        if url.endswith("/query") and "FROM Customer" in query:
+            calls.append((method, url, "customer_query"))
+            return _response(200, {"QueryResponse": {}})
+        if url.endswith("/customer"):
+            calls.append((method, url, "customer_create"))
+            return _response(
+                200,
+                {
+                    "Customer": {
+                        "Id": "QB-CUST-STALE-NEW",
+                        "SyncToken": "0",
+                        "DisplayName": "C-QB-INV-STALE-CUST - Invoice Stale Customer",
+                    }
+                },
+            )
+        if url.endswith("/query") and "FROM Invoice" in query:
+            calls.append((method, url, "invoice_query"))
+            return _response(200, {"QueryResponse": {}})
+        if url.endswith("/invoice"):
+            calls.append((method, url, "invoice_create"))
+            assert json["CustomerRef"]["value"] == "QB-CUST-STALE-NEW"
+            assert json["Line"][0]["SalesItemLineDetail"]["ItemRef"]["value"] == "QB-ITEM-STALE-CUST"
+            assert json["Line"][0]["SalesItemLineDetail"]["TaxCodeRef"]["value"] == "10"
+            return _response(
+                200,
+                {
+                    "Invoice": {
+                        "Id": "QB-INV-STALE-CUST-1",
+                        "DocNumber": "INV-QB-STALE-CUST-1",
+                        "SyncToken": "0",
+                        "TotalAmt": 11.0,
+                        "TxnTaxDetail": {"TotalTax": 0.0},
+                    }
+                },
+            )
+        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+
+    result = process_pending_accounting_jobs(db_session, tenant_id=1, limit=1)
+
+    assert result.processed == 1
+    assert result.succeeded == 1
+    repaired_map = db_session.execute(
+        select(AccountingCustomerMap).where(AccountingCustomerMap.customer_id == customer.id)
+    ).scalar_one()
+    assert repaired_map.external_id == "QB-CUST-STALE-NEW"
+    sync_row = db_session.execute(
+        select(AccountingInvoiceSync).where(AccountingInvoiceSync.invoice_id == invoice.id)
+    ).scalar_one()
+    assert sync_row.external_id == "QB-INV-STALE-CUST-1"
+    assert sync_row.sync_status == "invoice_synced"
+    assert calls[0][1].endswith("/customer/QB-CUST-STALE-OLD")
+    assert any(call[2] == "customer_create" for call in calls)
+    assert any(call[2] == "invoice_create" for call in calls)
 
 
 def test_invoice_job_ignores_stale_docnumber_collision_and_creates_new_remote_invoice(
@@ -2150,6 +2499,155 @@ def test_duplicate_document_number_failures_are_not_bulk_retried(db_session, mon
     db_session.refresh(stale_job)
     assert stale_job.status == "manual_review"
     assert _event_payloads(db_session, event_type="job_manual_review_required")
+
+
+def test_retry_batch_attempts_failed_job_only_once_even_if_it_fails_again(
+    db_session, monkeypatch
+):
+    retryable_job = AccountingSyncJob(
+        tenant_id=1,
+        provider="quickbooks",
+        job_type="sync_customer",
+        entity_type="customer",
+        entity_id=701,
+        status="failed",
+        attempts=1,
+        available_at=datetime(2026, 2, 12, 9, 0, 0),
+        error_text="QuickBooks service unavailable.",
+    )
+    db_session.add(retryable_job)
+    db_session.commit()
+
+    attempted_entity_ids: list[int] = []
+
+    def _failing_sync_customer(*args, **kwargs):
+        attempted_entity_ids.append(int(kwargs["customer_id"]))
+        raise quickbooks_client_module.QuickBooksApiError("QuickBooks service unavailable.")
+
+    monkeypatch.setattr(job_runner_module, "sync_customer_to_quickbooks", _failing_sync_customer)
+
+    result = process_pending_accounting_jobs(
+        db_session,
+        tenant_id=1,
+        limit=5,
+        retry_failed=True,
+    )
+
+    assert result.processed == 1
+    assert result.succeeded == 0
+    assert result.failed == 1
+    assert attempted_entity_ids == [701]
+    db_session.refresh(retryable_job)
+    assert retryable_job.status == "failed"
+    assert retryable_job.attempts == 2
+
+
+def test_retry_batch_can_process_multiple_distinct_failed_jobs_once_each(
+    db_session, monkeypatch
+):
+    first_job = AccountingSyncJob(
+        tenant_id=1,
+        provider="quickbooks",
+        job_type="sync_customer",
+        entity_type="customer",
+        entity_id=801,
+        status="failed",
+        attempts=1,
+        available_at=datetime(2026, 2, 12, 9, 0, 0),
+        error_text="QuickBooks service unavailable.",
+    )
+    second_job = AccountingSyncJob(
+        tenant_id=1,
+        provider="quickbooks",
+        job_type="sync_customer",
+        entity_type="customer",
+        entity_id=802,
+        status="failed",
+        attempts=2,
+        available_at=datetime(2026, 2, 12, 9, 5, 0),
+        error_text="QuickBooks service unavailable.",
+    )
+    db_session.add_all([first_job, second_job])
+    db_session.commit()
+
+    attempted_entity_ids: list[int] = []
+
+    def _successful_sync_customer(*args, **kwargs):
+        customer_id = int(kwargs["customer_id"])
+        attempted_entity_ids.append(customer_id)
+        return {"external_id": f"QB-CUST-{customer_id}"}
+
+    monkeypatch.setattr(job_runner_module, "sync_customer_to_quickbooks", _successful_sync_customer)
+
+    result = process_pending_accounting_jobs(
+        db_session,
+        tenant_id=1,
+        limit=5,
+        retry_failed=True,
+    )
+
+    assert result.processed == 2
+    assert result.succeeded == 2
+    assert result.failed == 0
+    assert attempted_entity_ids == [801, 802]
+    db_session.refresh(first_job)
+    db_session.refresh(second_job)
+    assert first_job.status == "succeeded"
+    assert second_job.status == "succeeded"
+    assert first_job.attempts == 2
+    assert second_job.attempts == 3
+
+
+def test_pending_batch_still_processes_multiple_distinct_jobs(db_session, monkeypatch):
+    first_job = AccountingSyncJob(
+        tenant_id=1,
+        provider="quickbooks",
+        job_type="sync_customer",
+        entity_type="customer",
+        entity_id=901,
+        status="pending",
+        attempts=0,
+        available_at=datetime(2026, 2, 12, 9, 0, 0),
+    )
+    second_job = AccountingSyncJob(
+        tenant_id=1,
+        provider="quickbooks",
+        job_type="sync_customer",
+        entity_type="customer",
+        entity_id=902,
+        status="pending",
+        attempts=0,
+        available_at=datetime(2026, 2, 12, 9, 1, 0),
+    )
+    db_session.add_all([first_job, second_job])
+    db_session.commit()
+
+    attempted_entity_ids: list[int] = []
+
+    def _successful_sync_customer(*args, **kwargs):
+        customer_id = int(kwargs["customer_id"])
+        attempted_entity_ids.append(customer_id)
+        return {"external_id": f"QB-CUST-{customer_id}"}
+
+    monkeypatch.setattr(job_runner_module, "sync_customer_to_quickbooks", _successful_sync_customer)
+
+    result = process_pending_accounting_jobs(
+        db_session,
+        tenant_id=1,
+        limit=5,
+        retry_failed=False,
+    )
+
+    assert result.processed == 2
+    assert result.succeeded == 2
+    assert result.failed == 0
+    assert attempted_entity_ids == [901, 902]
+    db_session.refresh(first_job)
+    db_session.refresh(second_job)
+    assert first_job.status == "succeeded"
+    assert second_job.status == "succeeded"
+    assert first_job.attempts == 1
+    assert second_job.attempts == 1
 
 
 def test_invoice_job_fails_clearly_when_tax_mapping_uses_display_code_as_provider_ref(
