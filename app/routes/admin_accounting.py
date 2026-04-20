@@ -30,6 +30,15 @@ from ..models import (
 from ..models.base import utcnow
 from ..permissions import PERM_MANAGE_SETTINGS, require_permission
 from ..services.accounting.job_runner import process_pending_accounting_jobs
+from ..services.accounting.job_lifecycle import (
+    ACCOUNTING_JOB_STATUS_FAILED,
+    ACCOUNTING_JOB_STATUS_MANUAL_REVIEW,
+    ACCOUNTING_JOB_STATUS_SUCCEEDED,
+    ACCOUNTING_JOB_STATUS_SUPERSEDED,
+    job_requires_manual_review,
+    job_requires_setup_fix,
+    newer_succeeded_job_exists,
+)
 from ..services.accounting.quickbooks_oauth import (
     QUICKBOOKS_CALLBACK_PATH,
     QUICKBOOKS_PROVIDER,
@@ -345,6 +354,10 @@ def _query_flag(request: Request, key: str) -> bool:
     return str(request.query_params.get(key, "") or "").strip() == "1"
 
 
+def _query_text(request: Request, key: str) -> str:
+    return str(request.query_params.get(key, "") or "").strip()
+
+
 def _form_flag(form: object, key: str) -> bool:
     raw = str(getattr(form, "get", lambda _key, _default=None: None)(key, "") or "").strip().lower()
     return raw in {"1", "true", "on", "yes"}
@@ -632,7 +645,6 @@ def _job_failure_guidance(
     account_mismatch: dict[str, object] | None,
 ) -> dict[str, object]:
     error_text = _normalize_text(job.error_text) or "Accounting sync failed."
-    normalized_error = error_text.lower()
     if account_mismatch is not None:
         requested_acctnum = str(account_mismatch.get("requested_acctnum") or "").strip()
         return {
@@ -649,48 +661,15 @@ def _job_failure_guidance(
             "retry_guidance": "After fix",
             "sort_order": 10,
         }
-    if "no quickbooks tax mapping" in normalized_error:
-        return {
-            "category_label": "Setup required",
-            "reason_text": error_text,
-            "next_action_hint": "Save the missing QuickBooks tax mapping, then retry this job.",
-            "retry_guidance": "After fix",
-            "sort_order": 11,
-        }
-    if (
-        "display code/label" in normalized_error
-        or "provider ref" in normalized_error
-        or "re-save this mapping" in normalized_error
-    ):
-        return {
-            "category_label": "Setup required",
-            "reason_text": error_text,
-            "next_action_hint": "Re-save the affected tax mapping from the QuickBooks list, then retry.",
-            "retry_guidance": "After fix",
-            "sort_order": 12,
-        }
-    if (
-        "no default revenue account is selected" in normalized_error
-        or "nominal code fallback" in normalized_error
-        or "income account with acctnum" in normalized_error
-        or "configured default quickbooks revenue account is invalid" in normalized_error
-        or "quickbooks connection is not active" in normalized_error
-        or "missing snapshotted tax rate data" in normalized_error
-    ):
+    if job_requires_setup_fix(error_text):
         return {
             "category_label": "Setup required",
             "reason_text": error_text,
             "next_action_hint": "Fix the tenant setup for this record, then retry the failed job.",
             "retry_guidance": "After fix",
-            "sort_order": 13,
+            "sort_order": 11,
         }
-    if (
-        "invoice total does not match the local invoice gross total" in normalized_error
-        or "invoice tax total does not match the local invoice tax total" in normalized_error
-        or "invoice gross total does not match its local invoice lines" in normalized_error
-        or "invoice tax total does not match its local invoice lines" in normalized_error
-        or "invoice net total does not match its local invoice lines" in normalized_error
-    ):
+    if job_requires_manual_review(error_text):
         return {
             "category_label": "Manual review required",
             "reason_text": error_text,
@@ -701,6 +680,7 @@ def _job_failure_guidance(
             "retry_guidance": "After review",
             "sort_order": 20,
         }
+    normalized_error = error_text.lower()
     if str(job.job_type or "").strip().lower() == "mark_invoice_paid" and "not found" in normalized_error:
         return {
             "category_label": "Setup required",
@@ -762,23 +742,35 @@ def _recent_job_row(
         and str(job.entity_type or "").strip().lower() == "invoice"
         else None
     )
-    status_label = _display_label(job.status)
+    job_status = str(job.status or "").strip().lower()
+    is_superseded = job_status == ACCOUNTING_JOB_STATUS_SUPERSEDED or (
+        job_status in {ACCOUNTING_JOB_STATUS_FAILED, ACCOUNTING_JOB_STATUS_MANUAL_REVIEW}
+        and newer_succeeded_job_exists(db, job)
+    )
+    status_label = _display_label(
+        ACCOUNTING_JOB_STATUS_SUPERSEDED if is_superseded else job.status
+    )
     category_label = None
     reason_text = None
     next_action_hint = None
     retry_guidance = "-"
     sort_order = 999
-    if str(job.status or "").strip().lower() == "failed":
+    if is_superseded:
+        category_label = "Resolved / superseded"
+        reason_text = "A later job for this record succeeded, so this older failure is only historical."
+        next_action_hint = "No action needed unless you are auditing the earlier failure."
+        sort_order = 1001
+    elif job_status == ACCOUNTING_JOB_STATUS_SUCCEEDED:
+        category_label = "Resolved / succeeded"
+        reason_text = "Job completed successfully."
+        sort_order = 1000
+    elif job_status in {ACCOUNTING_JOB_STATUS_FAILED, ACCOUNTING_JOB_STATUS_MANUAL_REVIEW}:
         guidance = _job_failure_guidance(job, account_mismatch=account_mismatch)
         category_label = str(guidance["category_label"])
         reason_text = str(guidance["reason_text"])
         next_action_hint = str(guidance["next_action_hint"])
         retry_guidance = str(guidance["retry_guidance"])
         sort_order = int(guidance["sort_order"])
-    elif str(job.status or "").strip().lower() == "succeeded":
-        category_label = "Resolved / succeeded"
-        reason_text = "Job completed successfully."
-        sort_order = 1000
     return {
         "id": job.id,
         "job_type": job.job_type,
@@ -798,6 +790,7 @@ def _recent_job_row(
         "sort_order": sort_order,
         "account_mismatch": account_mismatch,
         "account_mismatch_detail_lines": _account_mismatch_detail_lines(account_mismatch),
+        "is_superseded": is_superseded,
     }
 
 
@@ -821,7 +814,8 @@ def _needs_attention_rows(
             "sort_order": int(job.get("sort_order") or 999),
         }
         for job in recent_jobs
-        if str(job.get("status") or "").strip().lower() == "failed"
+        if str(job.get("category_label") or "").strip().lower()
+        in {"setup required", "retryable failure", "manual review required"}
     ]
     attention_rows = setup_rows + failed_job_rows
     attention_rows.sort(
@@ -850,6 +844,20 @@ def _recent_event_row(event: AccountingSyncEvent) -> dict[str, object]:
         "entity_label": entity_label,
         "summary": str(event.summary or "").strip() or None,
     }
+
+
+def _job_type_summary_text(processed_job_types: dict[str, int]) -> str:
+    if not processed_job_types:
+        return ""
+    parts = [
+        f"{count} {_display_label(job_type)}"
+        for job_type, count in sorted(
+            processed_job_types.items(),
+            key=lambda item: (_display_label(item[0]).lower(), item[0]),
+        )
+        if int(count or 0) > 0
+    ]
+    return ", ".join(parts)
 
 
 def _tax_mappings_redirect(
@@ -936,6 +944,7 @@ def _page_context(
         "sync_processed": _query_int(request, "sync_processed"),
         "sync_succeeded": _query_int(request, "sync_succeeded"),
         "sync_failed": _query_int(request, "sync_failed"),
+        "sync_job_summary": _query_text(request, "sync_job_summary"),
         "setup_summary": setup_summary,
         "error": str(request.query_params.get("error", "") or "").strip(),
     }
@@ -1536,6 +1545,9 @@ async def admin_accounting_run_sync(
         "sync_succeeded": str(result.succeeded),
         "sync_failed": str(result.failed),
     }
+    job_summary = _job_type_summary_text(result.processed_job_types)
+    if job_summary:
+        query["sync_job_summary"] = job_summary
     if retry_failed:
         query["sync_retry_run"] = "1"
     return RedirectResponse(

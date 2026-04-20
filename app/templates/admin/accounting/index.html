@@ -31,7 +31,15 @@
     <div class="flash-toast {% if sync_failed %}flash-toast--error{% else %}flash-toast--success{% endif %}" data-flash-toast {% if not sync_failed %}data-flash-success="1"{% endif %}>
       <div class="flash-toast__content">
         {% if sync_retry_run %}Retry run finished.{% else %}Sync run finished.{% endif %}
-        Processed {{ sync_processed }}, succeeded {{ sync_succeeded }}, failed {{ sync_failed }}.{% if sync_failed %} Review Needs Attention below.{% endif %}
+        {% if sync_processed == 0 %}
+          {% if sync_retry_run %}No retryable failed jobs were ready.{% else %}No retryable jobs were ready.{% endif %}
+        {% else %}
+          Processed {{ sync_processed }} job{% if sync_processed != 1 %}s{% endif %}, succeeded {{ sync_succeeded }}, failed {{ sync_failed }}.
+        {% endif %}
+        {% if sync_job_summary %}
+          Jobs: {{ sync_job_summary }}.
+        {% endif %}
+        {% if sync_failed %} Review Needs Attention below.{% endif %}
       </div>
       <button type="button" class="flash-toast__close" aria-label="Dismiss notification" data-toast-close>&times;</button>
     </div>
@@ -192,7 +200,7 @@
         <h2>Setup Overview</h2>
       </div>
       <div class="frame-body">
-        <p class="muted">Check these before syncing or retrying invoices for this tenant.</p>
+        <p class="muted">Counts below are jobs, not invoices. One invoice may create separate invoice and payment jobs.</p>
 
         <div class="invoice-summary-grid">
           <div class="card">
@@ -212,12 +220,16 @@
             <strong>{{ setup.products_missing_nominal_code if setup else 0 }}</strong>
           </div>
           <div class="card">
-            <div class="summary-label">Pending Sync Jobs</div>
+            <div class="summary-label">Pending Jobs</div>
             <strong>{{ setup.pending_job_count if setup else 0 }}</strong>
           </div>
           <div class="card">
-            <div class="summary-label">Failed Sync Jobs</div>
+            <div class="summary-label">Retryable Failed Jobs</div>
             <strong>{{ setup.failed_job_count if setup else 0 }}</strong>
+          </div>
+          <div class="card">
+            <div class="summary-label">Manual Review Jobs</div>
+            <strong>{{ setup.manual_review_job_count if setup else 0 }}</strong>
           </div>
           <div class="card">
             <div class="summary-label">Sandbox Ready</div>

@@ -37,6 +37,7 @@ from app.models import (
     User,
 )
 from app.security_hardening import CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER_NAME
+from app.services.accounting.job_runner import AccountingJobBatchResult
 from app.services.accounting.revenue_account_mapping import ProviderRevenueAccount
 from app.services.accounting.tax_mapping import ProviderTaxCodeOption, QuickBooksTaxDiscoveryState
 from app.services.accounting.quickbooks_oauth import QuickBooksTokenBundle
@@ -789,8 +790,9 @@ def test_admin_accounting_shows_tax_mapping_blockers(tmp_path, monkeypatch):
         assert "Missing Tax Mappings" in response.text
         assert "Products Missing Tax Rate" in response.text
         assert "Products Missing Nominal Fallback" in response.text
-        assert "Pending Sync Jobs" in response.text
-        assert "Failed Sync Jobs" in response.text
+        assert "Pending Jobs" in response.text
+        assert "Retryable Failed Jobs" in response.text
+        assert "Manual Review Jobs" in response.text
         assert "Next Steps" in response.text
         assert "Connect this tenant to the QuickBooks sandbox company" not in response.text
         assert "Tax mappings" in response.text
@@ -962,6 +964,17 @@ def test_admin_accounting_classifies_failed_jobs_and_succeeded_rows(tmp_path, mo
                     job_type="sync_product",
                     entity_type="product",
                     entity_id=204,
+                    status="failed",
+                    attempts=1,
+                    available_at=datetime(2026, 4, 16, 9, 30, 0),
+                    error_text="QuickBooks service unavailable.",
+                ),
+                AccountingSyncJob(
+                    tenant_id=env["tenant_id"],
+                    provider="quickbooks",
+                    job_type="sync_product",
+                    entity_type="product",
+                    entity_id=204,
                     status="succeeded",
                     attempts=1,
                     available_at=datetime(2026, 4, 16, 10, 0, 0),
@@ -979,6 +992,7 @@ def test_admin_accounting_classifies_failed_jobs_and_succeeded_rows(tmp_path, mo
         assert "Setup required" in page_text
         assert "Manual review required" in page_text
         assert "Retryable failure" in page_text
+        assert "Resolved / superseded" in page_text
         assert "Resolved / succeeded" in page_text
         assert "After fix" in page_text
         assert "After review" in page_text
@@ -1473,9 +1487,45 @@ def test_manual_run_sync_only_processes_current_tenant_jobs(tmp_path, monkeypatc
 
         follow = client.get(response.headers["location"])
         assert follow.status_code == 200
-        assert "Processed 1, succeeded 1, failed 0." in follow.text
+        assert "Processed 1 job, succeeded 1, failed 0." in follow.text
+        assert "Jobs: 1 Sync Customer." in follow.text
         assert "qb-access-token" not in follow.text
         assert "qb-refresh-token" not in follow.text
+    finally:
+        client.close()
+        env["app"].dependency_overrides.clear()
+
+
+def test_admin_accounting_sync_summary_clarifies_job_counts_and_types(tmp_path, monkeypatch):
+    env = _prepare_environment(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        admin_accounting_route,
+        "process_pending_accounting_jobs",
+        lambda *args, **kwargs: AccountingJobBatchResult(
+            processed=2,
+            succeeded=2,
+            failed=0,
+            processed_job_types={
+                "sync_invoice": 1,
+                "mark_invoice_paid": 1,
+            },
+        ),
+    )
+
+    client = _client_for(env["app"], base_url="https://acme.localhost")
+    try:
+        _login(client, email=env["admin_email"], password=env["password"], next_path="/admin")
+        response = _post_with_csrf(client, "/admin/accounting/run-sync")
+        assert response.status_code == 303
+
+        follow = client.get(response.headers["location"])
+        assert follow.status_code == 200
+        assert "Processed 2 jobs, succeeded 2, failed 0." in follow.text
+        assert "Jobs: 1 Mark Invoice Paid, 1 Sync Invoice." in follow.text
+        assert (
+            "Counts below are jobs, not invoices. One invoice may create separate invoice and payment jobs."
+            in " ".join(follow.text.split())
+        )
     finally:
         client.close()
         env["app"].dependency_overrides.clear()

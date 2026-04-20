@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ...models import AccountingSyncJob, AccountingTaxMap, Product, TaxRate
 from ..pricing import product_effective_nominal_code
+from .job_lifecycle import ACCOUNTING_JOB_STATUS_MANUAL_REVIEW
 from .jobs import get_active_accounting_connection
 from .quickbooks_client import (
     QuickBooksApiError,
@@ -141,6 +142,7 @@ class QuickBooksSetupSummary:
     has_default_revenue_account_mapping: bool
     pending_job_count: int
     failed_job_count: int
+    manual_review_job_count: int
     required_tax_mappings_complete: bool
     is_ready_for_sandbox: bool
     next_steps: list[str]
@@ -801,7 +803,7 @@ def _job_counts(
     *,
     tenant_id: int,
     provider: str,
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     counts = {
         str(status or "").strip().lower(): int(count or 0)
         for status, count in db.execute(
@@ -818,7 +820,8 @@ def _job_counts(
     }
     pending_job_count = counts.get("pending", 0) + counts.get("running", 0)
     failed_job_count = counts.get("failed", 0)
-    return pending_job_count, failed_job_count
+    manual_review_job_count = counts.get(ACCOUNTING_JOB_STATUS_MANUAL_REVIEW, 0)
+    return pending_job_count, failed_job_count, manual_review_job_count
 
 
 def _setup_guidance(
@@ -830,6 +833,7 @@ def _setup_guidance(
     has_default_revenue_account_mapping: bool,
     pending_job_count: int,
     failed_job_count: int,
+    manual_review_job_count: int,
     is_ready_for_sandbox: bool,
 ) -> list[str]:
     steps: list[str] = []
@@ -850,6 +854,10 @@ def _setup_guidance(
     if failed_job_count:
         steps.append(
             f"Review or retry {failed_job_count} failed sync job(s) after fixing mappings and product setup."
+        )
+    if manual_review_job_count:
+        steps.append(
+            f"Review {manual_review_job_count} job(s) marked for manual review before retrying or creating fresh records."
         )
     elif pending_job_count:
         steps.append(
@@ -912,7 +920,7 @@ def summarize_quickbooks_setup(
         )
         is not None
     )
-    pending_job_count, failed_job_count = _job_counts(
+    pending_job_count, failed_job_count, manual_review_job_count = _job_counts(
         db,
         tenant_id=int(tenant_id),
         provider=provider,
@@ -932,6 +940,7 @@ def summarize_quickbooks_setup(
         has_default_revenue_account_mapping=has_default_revenue_account_mapping,
         pending_job_count=pending_job_count,
         failed_job_count=failed_job_count,
+        manual_review_job_count=manual_review_job_count,
         is_ready_for_sandbox=is_ready_for_sandbox,
     )
     return QuickBooksSetupSummary(
@@ -944,6 +953,7 @@ def summarize_quickbooks_setup(
         has_default_revenue_account_mapping=has_default_revenue_account_mapping,
         pending_job_count=pending_job_count,
         failed_job_count=failed_job_count,
+        manual_review_job_count=manual_review_job_count,
         required_tax_mappings_complete=required_tax_mappings_complete,
         is_ready_for_sandbox=is_ready_for_sandbox,
         next_steps=next_steps,

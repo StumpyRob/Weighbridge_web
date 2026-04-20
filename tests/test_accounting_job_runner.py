@@ -2034,16 +2034,122 @@ def test_invoice_job_logs_total_mismatch_diagnostics(db_session, monkeypatch, ca
     assert result.processed == 1
     assert result.failed == 1
     job = _job(db_session, job_type="sync_invoice")
-    assert job.status == "failed"
+    assert job.status == "manual_review"
     assert "gross total" in (job.error_text or "").lower()
     assert f"QuickBooks invoice sync failed for invoice {invoice.id}" in caplog.text
-    failed_payloads = _event_payloads(db_session, event_type="job_failed")
+    failed_payloads = _event_payloads(
+        db_session,
+        event_type="job_manual_review_required",
+    )
     assert any('"invoice_sync_diagnostics"' in payload for payload in failed_payloads)
     assert any('"payload_tax_mode": "TaxExcluded"' in payload for payload in failed_payloads)
     assert any('"expected_quickbooks_total_from_payload": 12.0' in payload for payload in failed_payloads)
     assert any('"payload_extended_amount": 10.0' in payload for payload in failed_payloads)
     assert any('"local_gross_total": 12.0' in payload for payload in failed_payloads)
     assert any('"remote_total": 11.0' in payload for payload in failed_payloads)
+
+
+def test_manual_review_failures_are_excluded_from_bulk_retry(db_session, monkeypatch):
+    _configure_settings(monkeypatch)
+    customer = Customer(account_code="C-QB-MANUAL-RETRY", name="Manual Review Retry Customer")
+    db_session.add(customer)
+    db_session.flush()
+    _seed_connection(db_session)
+
+    stale_job = AccountingSyncJob(
+        tenant_id=1,
+        provider="quickbooks",
+        job_type="sync_invoice",
+        entity_type="invoice",
+        entity_id=501,
+        status="failed",
+        attempts=1,
+        available_at=datetime(2026, 2, 12, 9, 0, 0),
+        error_text="QuickBooks invoice total does not match the local invoice gross total.",
+    )
+    retryable_job = AccountingSyncJob(
+        tenant_id=1,
+        provider="quickbooks",
+        job_type="sync_customer",
+        entity_type="customer",
+        entity_id=customer.id,
+        status="failed",
+        attempts=1,
+        available_at=datetime(2026, 2, 12, 9, 5, 0),
+        error_text="QuickBooks service unavailable.",
+    )
+    db_session.add_all([stale_job, retryable_job])
+    db_session.commit()
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        if url.endswith("/query"):
+            return _response(200, {"QueryResponse": {}})
+        if url.endswith("/customer"):
+            return _response(
+                200,
+                {
+                    "Customer": {
+                        "Id": "QB-CUST-MANUAL-RETRY",
+                        "SyncToken": "0",
+                        "DisplayName": "C-QB-MANUAL-RETRY - Manual Review Retry Customer",
+                    }
+                },
+            )
+        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+
+    result = process_pending_accounting_jobs(
+        db_session,
+        tenant_id=1,
+        limit=1,
+        retry_failed=True,
+    )
+
+    assert result.processed == 1
+    assert result.succeeded == 1
+    db_session.refresh(stale_job)
+    db_session.refresh(retryable_job)
+    assert stale_job.status == "manual_review"
+    assert retryable_job.status == "succeeded"
+    assert _event_payloads(db_session, event_type="job_manual_review_required")
+
+
+def test_duplicate_document_number_failures_are_not_bulk_retried(db_session, monkeypatch):
+    _configure_settings(monkeypatch)
+    _seed_connection(db_session)
+    stale_job = AccountingSyncJob(
+        tenant_id=1,
+        provider="quickbooks",
+        job_type="sync_invoice",
+        entity_type="invoice",
+        entity_id=601,
+        status="failed",
+        attempts=2,
+        available_at=datetime(2026, 2, 12, 9, 0, 0),
+        error_text="Duplicate Document Number Error : You must specify a different number.",
+    )
+    db_session.add(stale_job)
+    db_session.commit()
+
+    def _unexpected_request(*args, **kwargs):
+        raise AssertionError("Manual-review duplicate document failures should not be retried.")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", _unexpected_request)
+
+    result = process_pending_accounting_jobs(
+        db_session,
+        tenant_id=1,
+        limit=1,
+        retry_failed=True,
+    )
+
+    assert result.processed == 0
+    assert result.succeeded == 0
+    assert result.failed == 0
+    db_session.refresh(stale_job)
+    assert stale_job.status == "manual_review"
+    assert _event_payloads(db_session, event_type="job_manual_review_required")
 
 
 def test_invoice_job_fails_clearly_when_tax_mapping_uses_display_code_as_provider_ref(
@@ -2643,6 +2749,59 @@ def test_invoice_job_fails_clearly_when_tax_mapping_is_missing(db_session, monke
     assert "no QuickBooks tax mapping".lower() in str(sync_row.last_error or "").lower()
 
 
+def test_later_success_supersedes_older_failed_job_for_same_record(db_session, monkeypatch):
+    _configure_settings(monkeypatch)
+    customer = Customer(account_code="C-QB-SUPERSEDE", name="Superseded Customer")
+    db_session.add(customer)
+    db_session.flush()
+    older_failed_job = AccountingSyncJob(
+        tenant_id=1,
+        provider="quickbooks",
+        job_type="sync_customer",
+        entity_type="customer",
+        entity_id=customer.id,
+        status="failed",
+        attempts=1,
+        available_at=datetime(2026, 2, 12, 9, 0, 0),
+        error_text="QuickBooks service unavailable.",
+    )
+    db_session.add(older_failed_job)
+    db_session.commit()
+    _seed_connection(db_session)
+
+    enqueue_sync_customer(db_session, tenant_id=1, customer_id=customer.id)
+    db_session.commit()
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        if url.endswith("/query"):
+            return _response(200, {"QueryResponse": {}})
+        if url.endswith("/customer"):
+            return _response(
+                200,
+                {
+                    "Customer": {
+                        "Id": "QB-CUST-SUPERSEDE",
+                        "SyncToken": "0",
+                        "DisplayName": "C-QB-SUPERSEDE - Superseded Customer",
+                    }
+                },
+            )
+        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+
+    result = process_pending_accounting_jobs(db_session, tenant_id=1, limit=1)
+
+    assert result.processed == 1
+    assert result.succeeded == 1
+    db_session.refresh(older_failed_job)
+    assert older_failed_job.status == "superseded"
+    latest_job = _job(db_session, job_type="sync_customer")
+    assert latest_job.id != older_failed_job.id
+    assert latest_job.status == "succeeded"
+    assert _event_payloads(db_session, event_type="job_superseded")
+
+
 def test_failed_invoice_job_retries_successfully_after_fixing_tax_mapping(db_session, monkeypatch):
     _configure_settings(monkeypatch)
     customer = Customer(account_code="C-QB-INV-RETRY", name="Invoice Retry Customer")
@@ -2822,7 +2981,7 @@ def test_failed_invoice_job_retries_successfully_after_fixing_tax_mapping(db_ses
     assert sync_row.sync_status == "invoice_synced"
 
 
-def test_failed_invoice_job_retry_succeeds_after_ignoring_stale_docnumber_collision(
+def test_failed_invoice_job_with_stale_docnumber_collision_stays_manual_review(
     db_session,
     monkeypatch,
 ):
@@ -2882,60 +3041,10 @@ def test_failed_invoice_job_retry_succeeds_after_ignoring_stale_docnumber_collis
         lambda *args, **kwargs: {"external_id": "QB-ITEM-COLLISION-RETRY"},
     )
 
-    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
-        query = str((params or {}).get("query"))
-        if url.endswith("/query") and "FROM TaxCode" in query:
-            return _response(
-                200,
-                {
-                    "QueryResponse": {
-                        "TaxCode": [
-                            {
-                                "Id": "3",
-                                "Name": "20.0% S",
-                                "Description": "20.0% Standard Sales",
-                                "Active": True,
-                            }
-                        ]
-                    }
-                },
-            )
-        if url.endswith("/query") and "FROM Invoice" in query:
-            return _response(
-                200,
-                {
-                    "QueryResponse": {
-                        "Invoice": [
-                            {
-                                "Id": "QB-INV-STALE-RETRY",
-                                "DocNumber": "INV-QB-COLLISION-RETRY",
-                                "CustomerRef": {"value": "QB-CUST-COLLISION-RETRY"},
-                                "TxnDate": "2026-02-12",
-                                "TotalAmt": 11.0,
-                                "TxnTaxDetail": {"TotalTax": 1.0},
-                            }
-                        ]
-                    }
-                },
-            )
-        if url.endswith("/query"):
-            return _response(200, {"QueryResponse": {}})
-        if url.endswith("/invoice"):
-            return _response(
-                200,
-                {
-                    "Invoice": {
-                        "Id": "QB-INV-COLLISION-RETRY",
-                        "DocNumber": "INV-QB-COLLISION-RETRY",
-                        "SyncToken": "0",
-                        "TotalAmt": 12.0,
-                        "TxnTaxDetail": {"TotalTax": 2.0},
-                    }
-                },
-            )
-        raise AssertionError(f"Unexpected QuickBooks request: {method} {url}")
+    def _unexpected_request(*args, **kwargs):
+        raise AssertionError("Manual-review total mismatch failures should not be bulk retried.")
 
-    monkeypatch.setattr(quickbooks_client_module.httpx, "request", fake_request)
+    monkeypatch.setattr(quickbooks_client_module.httpx, "request", _unexpected_request)
 
     retry_result = process_pending_accounting_jobs(
         db_session,
@@ -2944,17 +3053,19 @@ def test_failed_invoice_job_retry_succeeds_after_ignoring_stale_docnumber_collis
         retry_failed=True,
     )
 
-    assert retry_result.processed == 1
-    assert retry_result.succeeded == 1
+    assert retry_result.processed == 0
+    assert retry_result.succeeded == 0
+    assert retry_result.failed == 0
     retried_job = _job(db_session, job_type="sync_invoice")
     assert retried_job.id == failed_job.id
-    assert retried_job.status == "succeeded"
-    assert retried_job.attempts == 2
+    assert retried_job.status == "manual_review"
+    assert retried_job.attempts == 1
     sync_row = db_session.execute(
         select(AccountingInvoiceSync).where(AccountingInvoiceSync.invoice_id == invoice.id)
     ).scalar_one()
-    assert sync_row.external_id == "QB-INV-COLLISION-RETRY"
-    assert sync_row.sync_status == "invoice_synced"
+    assert sync_row.external_id is None
+    assert sync_row.sync_status == "failed"
+    assert _event_payloads(db_session, event_type="job_manual_review_required")
 
 
 def test_paid_job_runs_and_updates_sync_state(db_session, monkeypatch):
